@@ -1,0 +1,44 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - name: Install
+        run: |
+          python -m pip install --upgrade build
+          python -m build
+          python -m pip install dist/*.whl
+      - name: Import smoke test
+        run: python -c "import oxe; print(oxe.__version__)"
+      - name: Boot + health
+        env:
+          OXE_PORT: "18080"
+        run: |
+          nohup oxe > /tmp/oxe.log 2>&1 &
+          ok=0
+          for i in 1 2 3 4 5 6 7 8 9 10; do
+            sleep 1
+            if curl -fsS http://127.0.0.1:18080/health >/dev/null; then
+              ok=1
+              break
+            fi
+          done
+          if [ "$ok" != "1" ]; then
+            echo "Health check failed; logs:"
+            cat /tmp/oxe.log
+            exit 1
+          fi
+          curl -fsS http://127.0.0.1:18080/health
+          echo
+          curl -fsS http://127.0.0.1:18080/ -o /dev/null -w "ui_status=%{http_code}\n"
+          curl -fsS http://127.0.0.1:18080/static/app.js -o /dev/null -w "appjs_status=%{http_code}\n"
