@@ -70,6 +70,50 @@ class TTLCache:
             cur = self._conn.execute("DELETE FROM cache")
             return cur.rowcount
 
+    def list_rows(
+        self,
+        q: str | None = None,
+        include_expired: bool = False,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> list[dict]:
+        now = int(time.time())
+        clauses: list[str] = []
+        params: list = []
+        if not include_expired:
+            clauses.append("expires_at >= ?")
+            params.append(now)
+        if q:
+            clauses.append("query_text LIKE ?")
+            params.append(f"%{q}%")
+        where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
+        sql = (
+            "SELECT query_hash, query_text, expires_at, hits, length(response) "
+            f"FROM cache{where} ORDER BY expires_at DESC LIMIT ? OFFSET ?"
+        )
+        params.extend([limit, offset])
+        with self._lock:
+            rows = self._conn.execute(sql, params).fetchall()
+        return [
+            {
+                "hash": h,
+                "query": qtext,
+                "expires_at": exp,
+                "hits": hits,
+                "size_bytes": size,
+                "expired": exp < now,
+            }
+            for h, qtext, exp, hits, size in rows
+        ]
+
+    def peek(self, key: str) -> dict | None:
+        return self.get(key)
+
+    def delete(self, key: str) -> bool:
+        with self._lock:
+            cur = self._conn.execute("DELETE FROM cache WHERE query_hash = ?", (key,))
+            return cur.rowcount > 0
+
     def stats(self) -> dict:
         now = int(time.time())
         with self._lock:
