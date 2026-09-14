@@ -18,6 +18,7 @@ def do_search(cache: TTLCache, req_dict: dict, ttl: Optional[int] = None) -> dic
     if cached is not None:
         out = dict(cached)
         out["_source"] = "cache"
+        out["_q_hash"] = key
         return out
 
     response = exa_compat.search(req_dict)
@@ -28,4 +29,5 @@ def do_search(cache: TTLCache, req_dict: dict, ttl: Optional[int] = None) -> dic
     cache.set(key, to_store, effective_ttl)
     out = dict(response)
     out["_source"] = "network"
+    out["_q_hash"] = key
     return out
