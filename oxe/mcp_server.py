@@ -16,10 +16,26 @@ def set_cache(c: TTLCache) -> None:
     _cache = c
 
 
-mcp = MCPServer(name="oxe", version="0.2.0")
+mcp = MCPServer(
+    name="oxe",
+    instructions=(
+        "Local Exa-compatible web search backed by DuckDuckGo with a TTL cache. "
+        "Query returns Exa-shaped JSON: {requestId, searchType, results, costDollars} "
+        "where each result has {title, url, id, text, highlights, highlightScores, "
+        "publishedDate, author, image, favicon, extras}. Unimplemented Exa fields "
+        "(deep search variants, contents.summary, additionalQueries, systemPrompt, "
+        "outputSchema, stream) are silently ignored."
+    ),
+)
 
 
-@mcp.tool(description="Search the web via DuckDuckGo and return Exa-shaped JSON. Args: query (required), num_results (1-30, default 10), type ('auto'|'instant'; deep variants ignored), contents_highlights, contents_text, include_domains, exclude_domains, category ('news' for last 24h, else ''). Returns {requestId, searchType, results, costDollars, _source}.")
+@mcp.tool(name="exa_search", description=(
+    "Search the web via DuckDuckGo and return Exa-shaped JSON. "
+    "Args: query (required), num_results (1-30, default 10), type ('auto'|'instant'; "
+    "deep variants ignored), contents_highlights, contents_text, include_domains, "
+    "exclude_domains, category ('news' for last 24h, else ''). "
+    "Returns {requestId, searchType, results, costDollars, _source}."
+))
 def exa_search(
     query: str,
     num_results: int = 10,
@@ -35,13 +51,12 @@ def exa_search(
         "numResults": num_results,
         "type": type,
         "contents": {"highlights": contents_highlights, "text": contents_text},
+        "category": category,
     }
     if include_domains:
         req["includeDomains"] = include_domains
     if exclude_domains:
         req["excludeDomains"] = exclude_domains
-    if category:
-        req["category"] = category
     if _cache is None:
         return exa_compat.search(req)
     from .search import do_search
@@ -51,6 +66,7 @@ def exa_search(
             query_text=(query or "")[:200],
             query_hash=out.get("_q_hash") or "",
             source=out.get("_source") or "network",
+            backend=out.get("_backend", "ddg"),
             result_count=len(out.get("results") or []),
             duration_ms=duration_ms,
             client="mcp",
@@ -61,8 +77,11 @@ def exa_search(
 
 
 @mcp.tool(name="exa_user_history", description=(
-    "Recent URLs the user clicked from the oxe web UI, filtered by query text or hash."
-    " Use BEFORE searching to reuse what the user already explored."
+    "Recent URLs the user has clicked from the search UI for a given query. "
+    "Use this to avoid re-researching what the user has already explored. "
+    "Args: query (optional substring match against query text), query_hash "
+    "(optional exact match), limit (1-200, default 20), since_hours (default 168 = 1 week). "
+    "Returns {clicks: [{query_hash, query, result_id, url, title, clicked_at, source}], count}."
 ))
 def exa_user_history(
     query: str = "",

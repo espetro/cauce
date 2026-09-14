@@ -16,7 +16,9 @@ _FAVICON = "https://www.google.com/s2/favicons?domain={netloc}&sz=32"
 
 def cache_key(req: dict) -> str:
     contents = req.get("contents") or {}
+    backend = req.get("_backend") or "ddg"
     norm = (
+        backend,
         (req.get("query") or "").lower().strip(),
         max(_NUM_CLAMP[0], min(_NUM_CLAMP[1], int(req.get("numResults") or 10))),
         req.get("type") or "auto",
@@ -74,7 +76,7 @@ def _dgr_to_exa(r: dict, contents_highlights: bool, contents_text: bool) -> dict
     }
 
 
-def search(req: dict) -> dict:
+def search(req: dict, engine: str | None = None) -> dict:
     ignored = []
     for field in ("startPublishedDate", "endPublishedDate", "additionalQueries",
                   "systemPrompt", "outputSchema", "stream"):
@@ -96,7 +98,11 @@ def search(req: dict) -> dict:
     region = "wt-wt" if search_type == "instant" else None
     timelimit = "d" if req.get("category") == "news" else None
 
-    backends_to_try = ["duckduckgo", "auto"]
+    # Explicit engine (from DdgsBackend) wins; otherwise DDG with auto fallback.
+    if engine:
+        backends_to_try = [engine]
+    else:
+        backends_to_try = ["duckduckgo", "auto"]
     raw: list[dict[str, Any]] = []
     last_err: Exception | None = None
     for backend in backends_to_try:

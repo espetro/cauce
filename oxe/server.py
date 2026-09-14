@@ -76,6 +76,7 @@ def _http_search_logger(c: TTLCache) -> Callable[[dict], None]:
             query_text=(payload.get("_q") or "")[:200],
             query_hash=payload.get("_q_hash") or "",
             source=payload.get("_source") or "network",
+            backend=payload.get("_backend", "ddg"),
             result_count=len(payload.get("results") or []),
             duration_ms=payload.get("_duration_ms"),
             client="http",
@@ -86,6 +87,7 @@ def _http_search_logger(c: TTLCache) -> Callable[[dict], None]:
 
 def make_app(
     cache: TTLCache | None = None,
+    backend: object | None = None,
     on_result: Callable[[dict], None] | None = None,
 ) -> FastAPI:
     """Build the oxe FastAPI app. All handlers close over the given cache.
@@ -94,6 +96,10 @@ def make_app(
     search_log writer with client='http'.
     """
     c = cache or globals()["cache"]
+    if backend is None:
+        from .registry import build_from_env
+
+        backend = build_from_env()
     observer = on_result or _http_search_logger(c)
 
     try:
@@ -151,7 +157,7 @@ def make_app(
         req_dict = req.model_dump(exclude_none=True)
         if req_dict.get("numResults") is None:
             req_dict["numResults"] = 10
-        return do_search(c, req_dict, on_result=observer)
+        return do_search(c, req_dict, backend=backend, on_result=observer)
 
     def _search_payload(q: str, num_results: int = 10) -> dict:
         return do_search(
@@ -161,6 +167,7 @@ def make_app(
                 "numResults": num_results,
                 "contents": {"text": True, "highlights": True},
             },
+            backend=backend,
             on_result=observer,
         )
 

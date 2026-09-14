@@ -197,7 +197,40 @@ All optional. Override via env vars:
 | `OXE_NEGATIVE_TTL` | `300` | TTL for empty results (s) |
 | `OXE_CLICK_RETENTION_DAYS` | `30` | how long to keep click history |
 | `OXE_SEARCH_LOG_RETENTION_DAYS` | `30` | how long to keep search_log rows (feeds `oxe stats`) |
+| `OXE_BACKENDS` | unset | JSON backend spec, see [Backends](#backends). Unset means DuckDuckGo. |
 | `OXE_LOG_LEVEL` | `INFO` | log level |
+
+## Backends
+
+DuckDuckGo is the default search backend, but the backend layer is pluggable. Since 0.3.0, oxe can drive **any engine that the bundled [ddgs](https://pypi.org/project/ddgs/) library supports** (bing, brave, google, mojeek, yahoo, yandex, wikipedia, and more; see [ddgs's engine list](https://github.com/deedy5/ddgs#engines)), plus any third-party backend registered under the `oxe.backends` entry-point group.
+
+Set `OXE_BACKENDS` to a JSON spec:
+
+```bash
+# single named engine
+OXE_BACKENDS='"mojeek"' oxe
+
+# try DDG first, fall back to Brave on failure
+OXE_BACKENDS='["ddg", "brave"]' oxe
+
+# query DDG and Google concurrently, merge + dedupe results
+OXE_BACKENDS='{"mode": "fanout", "backends": ["ddg", "google"]}' oxe
+```
+
+Rules: a string is a single engine name, a list is a fallback chain, an object is a compositor (`mode: fallback` or `fanout`) with nested `backends`. Unknown names fall back to DuckDuckGo with a log warning. The cache key includes the backend name, so results from different engines never collide in one database.
+
+Engine reliability varies a lot by network and time of day: engines rate-limit by IP, and some (google, brave) throttle aggressively from datacenter or VPN addresses. A single-engine spec that returns zero today may work tomorrow. Prefer fallback chains (`["ddg", "bing", "mojeek"]`) so a throttled engine falls through to a healthy one; that is also what the default (unset `OXE_BACKENDS`) does internally by trying `duckduckgo` then `auto`.
+
+Python equivalent:
+
+```python
+import oxe
+
+backend = oxe.build_from_env()  # or oxe.registry.resolve(["ddg", "brave"])
+app = oxe.make_app(backend=backend)
+```
+
+Custom backends implement the `SearchBackend` protocol (`oxe.backends`) and register an `oxe.backends` entry point in their own package; they are discovered by name automatically.
 
 ## Exa → DuckDuckGo translation notes
 
@@ -320,7 +353,7 @@ Useful entry points:
 | `TTLCache(db_path)` | `oxe.cache` | Reusable SQLite cache with TTL eviction, click history, stats. Threadsafe (WAL + lock). |
 | `do_search(cache, req_dict, ttl=None)` | `oxe.search` | The single canonical search path; shared by HTTP and MCP. |
 | `exa_compat.search(req)` | `oxe.exa_compat` | Lower-level Exa↔DDGS translation (no cache). |
-| `SearchBackend` / `CacheAdapter` / `DDGBackend` | `oxe.backends` | Protocols for plugging in your own search backend or cache; `DDGBackend` is the default. |
+| `SearchBackend` / `CacheAdapter` / `DDGBackend` | `oxe.backends` | Protocols for plugging in your own search backend or cache; `DDGBackend` is the default, `DdgsBackend(engine)` drives any ddgs-supported engine. |
 | `make_app(cache=None, backend=None, on_result=None)` | `oxe.server` | Build the FastAPI app with your own cache/backend/observer; ready to wrap in `uvicorn` or mount under another app. Module-level `app` is the default instance. |
 
 Configuration is via env vars (`OXE_*`, listed below). For non-trivial embedding, instantiate `TTLCache(...)` yourself and pass it where you need it; the global module-level instance in `oxe.server` is only used by the bundled CLI.

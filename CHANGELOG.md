@@ -5,6 +5,21 @@ All notable changes to oxe are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-09-14
+
+### Added
+
+- Multi-backend support. `OXE_BACKENDS` env var (JSON) selects and composes search backends; unset means plain DuckDuckGo as before. Any backend registered under the `oxe.backends` entry-point group works by name, including everything the bundled `ddgs` library supports.
+- Built-in compositors: `fallback` (first backend that returns results wins) and `fanout` (query all backends concurrently, merge and dedupe by URL) via `oxe.backends.FallbackBackend` / `FanoutBackend`.
+- `oxe.registry` with `discover()` (builtins + engine names + entry-point discovery), `resolve(spec)`, and `build_from_env()`. Third-party packages can ship a backend by declaring an `oxe.backends` entry point.
+- `DdgsBackend(engine)`: drives any engine the bundled `ddgs` library supports (bing, brave, google, mojeek, yahoo, yandex, wikipedia) through the same Exa-compatible translation layer; `DDGBackend` is now a thin `ddg` specialization of it.
+- `BackendError` exported for backend implementers; new `SearchBackend` protocol members documented in the README.
+- `BackendError`, `FallbackBackend`, `FanoutBackend`, `SearchBackend`, and `oxe.registry.build_from_env` are exported from the package root.
+
+### Changed
+
+- The cache key now includes the backend name, so results from different backends never collide in the same database.
+
 ## [0.2.0] - 2026-09-15
 
 ### Added
