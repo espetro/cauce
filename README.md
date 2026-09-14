@@ -70,14 +70,24 @@ Most of the time `http://127.0.0.1:4479/` is fine. But three things are nicer wi
 - **Your MCP agent talks to the same URL from anywhere on your LAN.** Hermes, Claude Code, and Cursor all accept `https://search.localhost/mcp/` as a transport once you've set it up once.
 - **HTTPS solves the MCP `isahc`/curl clients that ignore Mac Keychain.** Without it you'll get opaque TLS errors when an MCP client (maki, Hermes) calls your local oxe.
 
-Install [portless](https://portless.sh) (`brew install portless` or follow the [docs](https://portless.sh/llms.txt)), then:
+Install [portless](https://portless.sh) (`brew install portless` or follow the [docs](https://portless.sh/llms.txt)). `oxe` reads `OXE_PORT` (default `4479`), not the generic `PORT` env var that portless sets for the proxied process, so the cleanest pairing is the static-alias path: let your supervisor (oxmgr / systemd / launchd) own the port, then point portless at it.
 
 ```bash
-portless oxe oxe                       # foreground
-# or background:
-nohup portless oxe oxe >/tmp/oxe.log 2>&1 &
+# One-time: pin a hostname to the port oxe is already listening on.
+portless alias search 4479
 
-curl https://search.localhost/health   # served at a permanent https URL
+curl https://search.localhost/health   # {"status":"ok", ...}
+```
+
+If you'd rather let portless supervise the process itself, pick a port up front so the route stays stable, and stop your supervisor first so portless can bind 4479:
+
+```bash
+# 1. stop whatever is already on 4479 (oxmgr / systemd / launchd):
+oxmgr stop oxe    # or:  sudo systemctl stop oxe   /   launchctl unload ~/Library/LaunchAgents/oxe.plist
+
+# 2. hand the port to portless and let it spawn oxe:
+OXE_PORT=4479 nohup portless oxe oxe --name search --app-port 4479 >/tmp/oxe.log 2>&1 &
+portless list     # -> https://search.localhost  ->  localhost:4479  (portless-managed)
 ```
 
 Open `https://search.localhost/` in any browser — the cert is automatically trusted (portless manages its own local CA). Use `portless list` to confirm the route, `portless doctor` to debug.
