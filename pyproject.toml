@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "oxe"
-version = "0.1.1"
+version = "0.1.2"
 description = "Local web-search proxy and cache for AI agents. Exa-compatible HTTP API + MCP, DuckDuckGo backend, SQLite TTL."
 readme = "README.md"
 requires-python = ">=3.10"

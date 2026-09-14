@@ -13,6 +13,7 @@ from typing import Any
 from .cache import TTLCache
 from .search import do_search
 from . import ui
+from . import __version__
 
 log = logging.getLogger(__name__)
 
@@ -25,7 +26,7 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
 )
 
-VERSION = "0.1.0"
+VERSION = __version__
 SERVICE_NAME = "oxe"
 
 

@@ -32,7 +32,7 @@ uv tool install oxe
 ### Pinned from GitHub
 
 ```bash
-uv tool install "git+https://github.com/espetro/oxe@v0.1.0"
+uv tool install "git+https://github.com/espetro/oxe@v0.1.1"
 ```
 
 ### With [mise](https://mise.jdx.dev/)
@@ -60,7 +60,27 @@ curl http://127.0.0.1:4479/health              # {"status":"ok",...}
 
 Binds to `127.0.0.1:4479` by default. Override with `OXE_PORT=8080 oxe`.
 
-Open `http://127.0.0.1:4479/` for the search UI.
+Open `http://127.0.0.1:4479/` for the search UI, or hit it as `https://search.localhost/` if you run it under [portless](https://portless.sh) (see [Browser-friendly URLs](#browser-friendly-urls)).
+
+## Browser-friendly URLs
+
+Most of the time `http://127.0.0.1:4479/` is fine. But three things are nicer with a real hostname + TLS:
+
+- **Browsers let you grant microphone / clipboard / persistent-storage per-origin.** A trusted hostname (`https://search.localhost/`) makes per-site permissions stick across tabs, and lets you bookmark `/history` cleanly.
+- **Your MCP agent talks to the same URL from anywhere on your LAN.** Hermes, Claude Code, and Cursor all accept `https://search.localhost/mcp/` as a transport once you've set it up once.
+- **HTTPS solves the MCP `isahc`/curl clients that ignore Mac Keychain.** Without it you'll get opaque TLS errors when an MCP client (maki, Hermes) calls your local oxe.
+
+Install [portless](https://portless.sh) (`brew install portless` or follow the [docs](https://portless.sh/llms.txt)), then:
+
+```bash
+portless oxe oxe                       # foreground
+# or background:
+nohup portless oxe oxe >/tmp/oxe.log 2>&1 &
+
+curl https://search.localhost/health   # served at a permanent https URL
+```
+
+Open `https://search.localhost/` in any browser — the cert is automatically trusted (portless manages its own local CA). Use `portless list` to confirm the route, `portless doctor` to debug.
 
 ## Endpoints
 
@@ -213,6 +233,66 @@ systemctl --user enable --now oxe
 launchctl load ~/Library/LaunchAgents/local.oxe.plist
 ```
 
+## Use as a Python library
+
+`oxe` is more than a CLI: every internal seam is a normal Python import.
+
+```python
+from oxe.cache import TTLCache
+from oxe.search import do_search
+
+cache = TTLCache("/tmp/my-cache.db")
+hits = do_search(cache, {"query": "python asyncio", "numResults": 5})
+```
+
+Useful entry points:
+
+| Symbol | Where | Use it for |
+|---|---|---|
+| `TTLCache(db_path)` | `oxe.cache` | Reusable SQLite cache with TTL eviction, click history, stats. Threadsafe (WAL + lock). |
+| `do_search(cache, req_dict, ttl=None)` | `oxe.search` | The single canonical search path; shared by HTTP and MCP. |
+| `exa_compat.search(req)` | `oxe.exa_compat` | Lower-level Exa↔DDGS translation (no cache). |
+| `build_app()` / `app` | `oxe.server` | The FastAPI app — ready to wrap in `uvicorn` or mount under another app. |
+
+Configuration is via env vars (`OXE_*`, listed below). For non-trivial embedding, instantiate `TTLCache(...)` yourself and pass it where you need it; the global module-level instance in `oxe.server` is only used by the bundled CLI.
+
+## Multi-device setups
+
+The most common "I want this everywhere" question is whether you can install oxe on every device on your network and point them at the **same** cache file on the router. **Don't.** SQLite in WAL mode is explicitly documented as not safe over NFS or SMB:
+
+> *"WAL does not work over a network filesystem. This is because WAL requires all processes to share a small amount of memory and processes on separate host machines obviously cannot share memory with each other."* — [sqlite.org/wal.html](https://www.sqlite.org/wal.html)
+
+> *"the network link ... in the File I/O channel, transactions may fail ... but with the additional effect that the remote database is corrupted."* — [sqlite.org/useovernet.html](https://www.sqlite.org/useovernet.html)
+
+Real-world post-mortems (e.g. *"the SQLite trap that corrupted my S3 metadata"*, 2026) confirm that NFSv4 lock delegation silently fails under concurrent reader + writer and corrupts the database.
+
+Three patterns that **do** work:
+
+1. **Run one oxe on your router, every device hits it.** Simplest and recommended. Set `OXE_BIND=0.0.0.0` (currently `127.0.0.1` only — see `oxe/__main__.py`), expose `4479`, and have devices use `http://router.lan:4479/search`. Optionally put portless on the same box and get `https://search.localhost/` everywhere.
+2. **Per-device cache + [Litestream](https://litestream.io) replication to a single S3/R2 bucket.** Each box has its own local SQLite; `litestream replicate ~/.cache/oxe/cache.db s3://bucket/$HOSTNAME.db` runs alongside oxe. Disaster recovery + a shared history you can merge from on boot. Adds a tiny Go binary per box.
+3. **One central writer, many readers via oxe's HTTP API.** Same as (1) but framed deliberately — devices never touch SQLite directly, they POST to the central oxe.
+
+For the LAN case, expose the port with care: `oxe` does **not** require auth today, so binding it to a public-facing interface means anyone on that network can search through you. Run it behind a reverse proxy with a bearer token, or on a trusted LAN only.
+
+## Observability
+
+Today the proxy exposes:
+
+- `GET /health` — liveness, version, cache row count.
+- `GET /cache/stats` — rows, unexpired rows, hits total, db size on disk, oldest/newest.
+- `GET /cache`, `GET /history` — human-readable listings rendered server-side.
+
+Missing (planned for `0.2.x`):
+
+- Per-backend hit ratio (`cache` vs `ddgs`) over time.
+- Top queries by hits / by recency.
+- Top domains returned across the cache.
+- Click-through rate (rows x clicks).
+
+All of these can be answered with **one new SQLite table** (`search_log(ts, query_hash, backend, duration_ms, num_results)`) and **zero new runtime deps**. They're intentionally not in `0.1.x` to keep the live process CPU-light — the dashboards that surface them should be rendered as static HTML/SSG (no per-request DB scans), not as additional SSR routes.
+
+Idea for the dashboard (sketch, not implemented yet): a stdlib-only `python -m oxe stats build` subcommand that reads the SQLite file read-only with a separate connection and emits `dist/dashboard/*.html` + inline SVG charts. Total new code: ~150 lines, no `node_modules`. See `oxe/ui.py` for the existing template helpers it would reuse. Tools evaluated and rejected as overbuilt for this: [Astro 7](https://astro.build/), [Evidence.dev](https://evidence.dev), [Docusaurus](https://docusaurus.io).
+
 ## How is this different from X?
 
 | Feature | oxe | `ddgs` direct | MCP-server competitors |
@@ -221,6 +301,8 @@ launchctl load ~/Library/LaunchAgents/local.oxe.plist
 | MCP server | ✅ | ❌ | ✅ |
 | SQLite TTL cache | ✅ | ❌ | ❌ |
 | Click-history tool | ✅ | ❌ | ❌ |
+| Python library | ✅ (see [Use as a library](#use-as-a-python-library)) | ✅ (low-level) | ❌ |
+| Multi-device via LAN | ✅ (run-on-router, see [Multi-device](#multi-device-setups)) | manual | manual |
 | Single process | ✅ | n/a | ✅ |
 | External API key | ❌ | ❌ | ❌ |
 | Web UI | ✅ | ❌ | ❌ |
@@ -229,7 +311,7 @@ launchctl load ~/Library/LaunchAgents/local.oxe.plist
 
 Runtime: `ddgs`, `fastapi`, `uvicorn`, `pydantic`, `mcp`. All pulled by `uv tool install oxe` automatically. No system-level dependencies.
 
-Optional host tools (not required): `portless` for `https://*.localhost/` URLs, `oxmgr` / `systemd` / `launchd` for supervision.
+Optional host tools (not required): [`portless`](https://portless.sh) for `https://*.localhost/` URLs (recommended for browser + TLS), `oxmgr` / `systemd` / `launchd` for supervision.
 
 ## License
 

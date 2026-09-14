@@ -5,6 +5,17 @@ All notable changes to oxe are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.2] - 2026-09-14
+
+### Fixed
+
+- `/health` and `/openapi.json` now report the actual installed version (was hardcoded to `0.1.0`; now reads `from oxe import __version__`).
+
+### Documentation
+
+- New README sections: Browser-friendly URLs (portless + `https://search.localhost/`), Use as a Python library, Multi-device setups (with explicit warning about SQLite over NFS/SMB), Observability roadmap (SSG dashboard plan).
+- Comparison table now reflects library + multi-device capabilities.
+
 ## [0.1.1] - 2026-09-14
 
 ### Removed
