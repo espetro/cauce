@@ -3,7 +3,8 @@ name: publish-testpypi
 on:
   push:
     tags:
-      - "v*-rc*"
+      - "v*rc*"
+      - "v*.rc*"
 
 jobs:
   publish-testpypi:
