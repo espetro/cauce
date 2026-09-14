@@ -1,15 +1,18 @@
 import logging
 import os
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI, Header
+from fastapi import FastAPI, Header, HTTPException, Query, Request
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from mcp.server.transport_security import TransportSecuritySettings
 from pydantic import BaseModel
 from typing import Any
 
 from .cache import TTLCache
 from .search import do_search
+from . import ui
 
 log = logging.getLogger(__name__)
 
@@ -117,3 +120,43 @@ def cache_invalidate(
     log.warning("/cache/invalidate called by %s", actor)
     deleted = cache.invalidate()
     return {"deleted": deleted}
+
+
+_STATIC_DIR = Path(__file__).parent / "static"
+
+
+@app.get("/", response_class=HTMLResponse)
+def ui_index(
+    q: Optional[str] = Query(default=None),
+    include_expired: bool = Query(default=False),
+    page: int = Query(default=0, ge=0),
+) -> str:
+    title, body = ui._render_index(cache, q=q, include_expired=include_expired, page=page)
+    return ui.render_shell(title, body, VERSION)
+
+
+@app.get("/row/{key}", response_class=HTMLResponse)
+def ui_row(key: str) -> Response:
+    body = ui._render_row(cache, key)
+    if body is None:
+        raise HTTPException(status_code=404, detail="cache row not found or expired")
+    return HTMLResponse(ui.render_shell("Row", body, VERSION))
+
+
+@app.post("/row/{key}/delete")
+def ui_row_delete(key: str) -> RedirectResponse:
+    if not cache.delete(key):
+        raise HTTPException(status_code=404, detail="cache row not found")
+    log.info("UI: deleted cache row %s", key[:12])
+    return RedirectResponse(url="/", status_code=303)
+
+
+@app.get("/static/{name}")
+def ui_static(name: str) -> Response:
+    if "/" in name or ".." in name:
+        raise HTTPException(status_code=400, detail="bad path")
+    p = _STATIC_DIR / name
+    if not p.is_file():
+        raise HTTPException(status_code=404, detail="not found")
+    media = "text/css" if name.endswith(".css") else "application/javascript" if name.endswith(".js") else "text/plain"
+    return Response(p.read_text(encoding="utf-8"), media_type=media)
