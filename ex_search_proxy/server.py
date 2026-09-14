@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI, Header, HTTPException, Query, Request
+from fastapi import FastAPI, Form, Header, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from mcp.server.transport_security import TransportSecuritySettings
 from pydantic import BaseModel
@@ -123,16 +123,60 @@ def cache_invalidate(
 
 
 _STATIC_DIR = Path(__file__).parent / "static"
+CLICK_RETENTION_DAYS = int(os.getenv("EX_SEARCH_CLICK_RETENTION_DAYS", "30"))
+
+
+@app.on_event("startup")
+def _prune_clicks_on_startup() -> None:
+    n = cache.prune_clicks(CLICK_RETENTION_DAYS)
+    if n:
+        log.info("startup: pruned %d clicks older than %d days", n, CLICK_RETENTION_DAYS)
 
 
 @app.get("/", response_class=HTMLResponse)
-def ui_index(
+def ui_search(q: Optional[str] = Query(default=None)) -> str:
+    title, body = ui.render_search(initial_query=q or "")
+    return ui.render_shell(title, body, VERSION, page_class="search")
+
+
+@app.get("/history", response_class=HTMLResponse)
+def ui_history(
+    q: Optional[str] = Query(default=None),
+    since: Optional[str] = Query(default=None),
+) -> str:
+    since_hours = int(since) if since else None
+    title, body = ui.render_history(cache, q=q, since_hours=since_hours)
+    return ui.render_shell(title, body, VERSION, page_class="history")
+
+
+@app.post("/history/delete")
+def ui_history_delete(scope: str = Form(...)) -> RedirectResponse:
+    n = cache.delete_clicks(scope)
+    log.info("UI: deleted %d clicks (scope=%s)", n, scope)
+    return RedirectResponse(url="/history", status_code=303)
+
+
+@app.post("/click")
+def ui_click(payload: dict) -> dict:
+    qh = (payload.get("query_hash") or "").strip()
+    rid = (payload.get("result_id") or "").strip()
+    url = (payload.get("url") or "").strip()
+    title = (payload.get("title") or "").strip()[:500]
+    source = (payload.get("source") or "web").strip()[:16]
+    if not (qh and rid and url):
+        raise HTTPException(status_code=422, detail="query_hash, result_id, url required")
+    click_id = cache.record_click(qh, rid, url, title, source=source)
+    return {"ok": True, "click_id": click_id}
+
+
+@app.get("/cache", response_class=HTMLResponse)
+def ui_cache(
     q: Optional[str] = Query(default=None),
     include_expired: bool = Query(default=False),
     page: int = Query(default=0, ge=0),
 ) -> str:
     title, body = ui._render_index(cache, q=q, include_expired=include_expired, page=page)
-    return ui.render_shell(title, body, VERSION)
+    return ui.render_shell(title, body, VERSION, page_class="cache")
 
 
 @app.get("/row/{key}", response_class=HTMLResponse)
@@ -140,7 +184,7 @@ def ui_row(key: str) -> Response:
     body = ui._render_row(cache, key)
     if body is None:
         raise HTTPException(status_code=404, detail="cache row not found or expired")
-    return HTMLResponse(ui.render_shell("Row", body, VERSION))
+    return HTMLResponse(ui.render_shell("Row", body, VERSION, page_class="cache"))
 
 
 @app.post("/row/{key}/delete")
@@ -148,7 +192,7 @@ def ui_row_delete(key: str) -> RedirectResponse:
     if not cache.delete(key):
         raise HTTPException(status_code=404, detail="cache row not found")
     log.info("UI: deleted cache row %s", key[:12])
-    return RedirectResponse(url="/", status_code=303)
+    return RedirectResponse(url="/cache", status_code=303)
 
 
 @app.get("/static/{name}")
