@@ -3,10 +3,41 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "ex-search-proxy"
+name = "oxe"
 version = "0.1.0"
-description = "Local Exa.ai-compatible web-search proxy with a SQLite TTL cache, backed by DuckDuckGo."
+description = "Local web-search proxy and cache for AI agents. Exa-compatible HTTP API + MCP, DuckDuckGo backend, SQLite TTL."
+readme = "README.md"
 requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "espetro" }]
+keywords = [
+    "duckduckgo",
+    "duckduckgo-search",
+    "exa",
+    "exa-search",
+    "mcp",
+    "model-context-protocol",
+    "web-search",
+    "search-api",
+    "cache",
+    "proxy",
+    "ai-agents",
+    "llm-tools",
+    "claude",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Internet :: WWW/HTTP",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
 dependencies = [
     "ddgs>=9.16.0",
     "fastapi>=0.110",
@@ -15,9 +46,15 @@ dependencies = [
     "mcp>=2.0",
 ]
 
+[project.urls]
+Homepage = "https://github.com/espetro/oxe"
+Repository = "https://github.com/espetro/oxe"
+Issues = "https://github.com/espetro/oxe/issues"
+
 [project.scripts]
-ex-search-proxy = "ex_search_proxy.__main__:main"
+oxe = "oxe.__main__:main"
+ex-search-proxy = "oxe.__main__:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["ex_search_proxy*"]
+include = ["oxe*"]

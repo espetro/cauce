@@ -7,9 +7,9 @@ from .cache import TTLCache
 
 log = logging.getLogger(__name__)
 
-TTL_DEFAULT = int(os.getenv("EX_SEARCH_TTL_DEFAULT", "3600"))
-TTL_MAX = int(os.getenv("EX_SEARCH_TTL_MAX", "86400"))
-NEGATIVE_TTL = int(os.getenv("EX_SEARCH_NEGATIVE_TTL", "300"))
+TTL_DEFAULT = int(os.getenv("OXE_TTL_DEFAULT", "3600"))
+TTL_MAX = int(os.getenv("OXE_TTL_MAX", "86400"))
+NEGATIVE_TTL = int(os.getenv("OXE_NEGATIVE_TTL", "300"))
 
 
 def do_search(cache: TTLCache, req_dict: dict, ttl: Optional[int] = None) -> dict:

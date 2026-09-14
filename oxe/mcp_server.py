@@ -14,7 +14,7 @@ def set_cache(c: TTLCache) -> None:
 
 
 mcp = MCPServer(
-    name="ex-search-proxy",
+    name="oxe",
     instructions=(
         "Local Exa-compatible web search backed by DuckDuckGo with a TTL cache. "
         "Query returns Exa-shaped JSON: {requestId, searchType, results, costDollars} "

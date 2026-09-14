@@ -61,13 +61,13 @@ _SHELL = Template("""<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${title} · ex-search-proxy</title>
+<title>${title} · oxe</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='14' cy='14' r='9' fill='none' stroke='%237aa2f7' stroke-width='3'/%3E%3Cline x1='21' y1='21' x2='28' y2='28' stroke='%237aa2f7' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E">
 <link rel="stylesheet" href="${css}">
 </head>
 <body class="${page_class}">
 <header class="top">
-  <a class="brand" href="/">ex-search-proxy</a>
+  <a class="brand" href="/">oxe</a>
   <nav>
     <a href="/"${nav_search}>search</a>
     <a href="/history"${nav_history}>history</a>

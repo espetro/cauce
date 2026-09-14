@@ -9,9 +9,9 @@ def main() -> None:
     uvicorn.run(
         app,
         host="127.0.0.1",
-        port=int(os.getenv("EX_SEARCH_PORT", "4479")),
+        port=int(os.getenv("OXE_PORT", "4479")),
         workers=1,
-        log_level=os.getenv("EX_SEARCH_LOG_LEVEL", "info").lower(),
+        log_level=os.getenv("OXE_LOG_LEVEL", "info").lower(),
     )
 
 

@@ -16,9 +16,9 @@ from . import ui
 
 log = logging.getLogger(__name__)
 
-PORT = int(os.getenv("EX_SEARCH_PORT", "4479"))
-CACHE_DIR = os.getenv("EX_SEARCH_CACHE_DIR", os.path.expanduser("~/.cache/ex-search-proxy"))
-LOG_LEVEL = os.getenv("EX_SEARCH_LOG_LEVEL", "INFO").upper()
+PORT = int(os.getenv("OXE_PORT", "4479"))
+CACHE_DIR = os.getenv("OXE_CACHE_DIR", os.path.expanduser("~/.cache/oxe"))
+LOG_LEVEL = os.getenv("OXE_LOG_LEVEL", "INFO").upper()
 
 logging.basicConfig(
     level=getattr(logging, LOG_LEVEL, logging.INFO),
@@ -26,7 +26,7 @@ logging.basicConfig(
 )
 
 VERSION = "0.1.0"
-SERVICE_NAME = "ex-search-proxy"
+SERVICE_NAME = "oxe"
 
 
 class ContentsModel(BaseModel):
@@ -123,7 +123,7 @@ def cache_invalidate(
 
 
 _STATIC_DIR = Path(__file__).parent / "static"
-CLICK_RETENTION_DAYS = int(os.getenv("EX_SEARCH_CLICK_RETENTION_DAYS", "30"))
+CLICK_RETENTION_DAYS = int(os.getenv("OXE_CLICK_RETENTION_DAYS", "30"))
 
 
 @app.on_event("startup")
