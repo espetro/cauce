@@ -21,6 +21,18 @@ CREATE TABLE IF NOT EXISTS cache (
   hits        INTEGER NOT NULL DEFAULT 0
 ) WITHOUT ROWID;
 CREATE INDEX IF NOT EXISTS expires_idx ON cache(expires_at);
+
+CREATE TABLE IF NOT EXISTS clicks (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  query_hash TEXT    NOT NULL,
+  result_id  TEXT    NOT NULL,
+  url        TEXT    NOT NULL,
+  title      TEXT    NOT NULL,
+  clicked_at INTEGER NOT NULL,
+  source     TEXT    NOT NULL DEFAULT 'web'
+);
+CREATE INDEX IF NOT EXISTS clicks_query_idx  ON clicks(query_hash);
+CREATE INDEX IF NOT EXISTS clicks_recent_idx ON clicks(clicked_at);
 """
 
 
@@ -141,3 +153,93 @@ class TTLCache:
     def close(self) -> None:
         with self._lock:
             self._conn.close()
+
+    # -- click tracking -----------------------------------------------------
+
+    def record_click(
+        self,
+        query_hash: str,
+        result_id: str,
+        url: str,
+        title: str,
+        source: str = "web",
+    ) -> int:
+        now = int(time.time())
+        with self._lock:
+            cur = self._conn.execute(
+                "INSERT INTO clicks (query_hash, result_id, url, title, clicked_at, source) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (query_hash, result_id, url, title, now, source),
+            )
+            return cur.lastrowid or 0
+
+    def get_clicks(
+        self,
+        query_hash: str | None = None,
+        query_text: str | None = None,
+        limit: int = 50,
+        since_hours: int | None = None,
+    ) -> list[dict]:
+        clauses: list[str] = []
+        params: list = []
+        join = " LEFT JOIN cache k ON k.query_hash = c.query_hash "
+        if query_hash:
+            clauses.append("c.query_hash = ?")
+            params.append(query_hash)
+        if query_text:
+            clauses.append("k.query_text LIKE ?")
+            params.append(f"%{query_text}%")
+        if since_hours is not None:
+            clauses.append("c.clicked_at >= ?")
+            params.append(int(time.time()) - since_hours * 3600)
+        where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
+        sql = (
+            "SELECT c.id, c.query_hash, COALESCE(k.query_text, ''), c.result_id, c.url, "
+            "c.title, c.clicked_at, c.source "
+            f"FROM clicks c{join}{where} ORDER BY c.clicked_at DESC LIMIT ?"
+        )
+        params.append(limit)
+        with self._lock:
+            rows = self._conn.execute(sql, params).fetchall()
+        return [
+            {
+                "id": cid,
+                "query_hash": qh,
+                "query": qt,
+                "result_id": rid,
+                "url": url,
+                "title": title,
+                "clicked_at": ts,
+                "source": src,
+            }
+            for cid, qh, qt, rid, url, title, ts, src in rows
+        ]
+
+    def click_stats(self) -> dict:
+        now = int(time.time())
+        with self._lock:
+            total = self._conn.execute("SELECT COUNT(*) FROM clicks").fetchone()[0]
+            last_24h = self._conn.execute(
+                "SELECT COUNT(*) FROM clicks WHERE clicked_at >= ?", (now - 86400,)
+            ).fetchone()[0]
+            oldest = self._conn.execute("SELECT MIN(clicked_at) FROM clicks").fetchone()[0]
+        return {"total": total, "last_24h": last_24h, "oldest": oldest}
+
+    def prune_clicks(self, retention_days: int) -> int:
+        cutoff = int(time.time()) - retention_days * 86400
+        with self._lock:
+            cur = self._conn.execute("DELETE FROM clicks WHERE clicked_at < ?", (cutoff,))
+            return cur.rowcount
+
+    def delete_clicks(self, scope: str) -> int:
+        """scope: '24h' deletes last 24h, 'all' deletes everything."""
+        with self._lock:
+            if scope == "all":
+                cur = self._conn.execute("DELETE FROM clicks")
+            elif scope == "24h":
+                cur = self._conn.execute(
+                    "DELETE FROM clicks WHERE clicked_at >= ?", (int(time.time()) - 86400,)
+                )
+            else:
+                return 0
+            return cur.rowcount
