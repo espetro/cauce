@@ -35,6 +35,9 @@ htmlcov/
 .tox/
 .cache/
 
+# uv (this is an app, not a uv-managed workspace)
+uv.lock
+
 # Local data
 *.db
 *.db-wal
@@ -46,3 +49,4 @@ htmlcov/
 .idea/
 *.swp
 *.swo
+uv.lock
