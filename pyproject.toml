@@ -58,3 +58,6 @@ ex-search-proxy = "oxe.__main__:main"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["oxe*"]
+
+[tool.setuptools.package-data]
+oxe = ["static/*"]
