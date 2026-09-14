@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ex-search-proxy"
+version = "0.1.0"
+description = "Local Exa.ai-compatible web-search proxy with a SQLite TTL cache, backed by DuckDuckGo."
+requires-python = ">=3.10"
+dependencies = [
+    "ddgs>=9.16.0",
+    "fastapi>=0.110",
+    "uvicorn>=0.27",
+    "pydantic>=2.0",
+    "mcp>=2.0",
+]
+
+[project.scripts]
+ex-search-proxy = "ex_search_proxy.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["ex_search_proxy*"]
