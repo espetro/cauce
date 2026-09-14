@@ -59,3 +59,26 @@ def exa_search(
     from .search import do_search
     out = do_search(_cache, req)
     return out
+
+
+@mcp.tool(name="exa_user_history", description=(
+    "Recent URLs the user has clicked from the search UI for a given query. "
+    "Use this to avoid re-researching what the user has already explored. "
+    "Args: query (optional substring match against query text), query_hash "
+    "(optional exact match), limit (1-200, default 20), since_hours (default 168 = 1 week). "
+    "Returns {clicks: [{query_hash, query, result_id, url, title, clicked_at, source}], count}."
+))
+def exa_user_history(
+    query: str = "",
+    query_hash: str = "",
+    limit: int = 20,
+    since_hours: int = 168,
+) -> dict[str, Any]:
+    if _cache is None:
+        return {"clicks": [], "count": 0, "error": "cache not initialized"}
+    qh = query_hash.strip() or None
+    qt = query.strip() or None
+    since = max(1, min(since_hours, 24 * 365))
+    lim = max(1, min(limit, 200))
+    rows = _cache.get_clicks(query_hash=qh, query_text=qt, limit=lim, since_hours=since)
+    return {"clicks": rows, "count": len(rows)}
