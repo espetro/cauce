@@ -53,7 +53,7 @@ def _first_preview(text: str | None, n: int = 280) -> str:
 
 
 _BASE_CSS = "/static/ui.css?v=" + ASSET_VERSION
-_BASE_JS = "/static/ui.js?v=" + ASSET_VERSION
+_BASE_JS = "/static/app.js?v=" + ASSET_VERSION
 
 
 _SHELL = Template("""<!doctype html>
@@ -62,14 +62,16 @@ _SHELL = Template("""<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${title} · ex-search-proxy</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='14' cy='14' r='9' fill='none' stroke='%237aa2f7' stroke-width='3'/%3E%3Cline x1='21' y1='21' x2='28' y2='28' stroke='%237aa2f7' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E">
 <link rel="stylesheet" href="${css}">
 </head>
-<body>
+<body class="${page_class}">
 <header class="top">
   <a class="brand" href="/">ex-search-proxy</a>
   <nav>
-    <a href="/">cache</a>
-    <a href="/cache/stats">stats</a>
+    <a href="/"${nav_search}>search</a>
+    <a href="/history"${nav_history}>history</a>
+    <a href="/cache"${nav_cache}>cache</a>
     <a href="/health">health</a>
     <a href="/docs">api</a>
   </nav>
@@ -88,7 +90,7 @@ _INDEX = Template("""<section class="hero">
   <h1>Cached searches</h1>
   <p>${stats_line}</p>
 </section>
-<form class="filters" method="get" action="/">
+<form class="filters" method="get" action="/cache">
   <input type="search" name="q" placeholder="filter by query text…" value="${q_esc}">
   <label class="check"><input type="checkbox" name="include_expired" ${exp_check}> include expired</label>
   <button type="submit">filter</button>
@@ -113,6 +115,67 @@ ${rows_html}
 <div class="pager">
   ${pager_html}
 </div>
+""")
+
+
+_SEARCH = Template("""<form id="search-form" class="search-bar" autocomplete="off">
+  <input type="search" id="q" name="q" placeholder="search the web…" autofocus
+         value="${q_esc}" required>
+  <input type="number" id="num" name="num" min="1" max="30" value="10" title="numResults">
+  <button type="submit">search</button>
+</form>
+<div id="meta" class="meta-bar"></div>
+<div id="status" class="status" hidden></div>
+<div id="results" class="results"></div>
+<template id="card-tpl">
+  <article class="card" data-result-id="">
+    <h3 class="title"><a class="link" rel="noopener noreferrer" target="_blank"></a></h3>
+    <div class="url"></div>
+    <div class="meta"></div>
+    <p class="text"></p>
+    <details class="hl"><summary>highlights</summary><ul></ul></details>
+  </article>
+</template>
+""")
+
+
+_HISTORY = Template("""<section class="hero">
+  <h1>Click history</h1>
+  <p>${stats_line}</p>
+</section>
+<form class="filters" method="get" action="/history">
+  <input type="search" name="q" placeholder="filter by query text…" value="${q_esc}">
+  <select name="since">
+    <option value="24" ${sel_24}>last 24h</option>
+    <option value="168" ${sel_168}>last week</option>
+    <option value="720" ${sel_720}>last month</option>
+    <option value="" ${sel_all}>all time</option>
+  </select>
+  <button type="submit">filter</button>
+  ${clear_link}
+</form>
+<div class="bulk-actions">
+  <form method="post" action="/history/delete" class="danger" data-confirm="Delete all clicks from the last 24 hours?">
+    <button type="submit" name="scope" value="24h">delete last 24h</button>
+  </form>
+  <form method="post" action="/history/delete" class="danger" data-confirm="Delete ALL click history?">
+    <button type="submit" name="scope" value="all">delete all</button>
+  </form>
+</div>
+<table class="rows">
+  <thead>
+    <tr>
+      <th>clicked</th>
+      <th>query</th>
+      <th>title</th>
+      <th>url</th>
+      <th>source</th>
+    </tr>
+  </thead>
+  <tbody>
+${rows_html}
+  </tbody>
+</table>
 """)
 
 
@@ -182,13 +245,13 @@ def _render_index(
     pager_bits = []
     if page > 0:
         qp = _qs(q, include_expired, page - 1)
-        pager_bits.append(f"<a href='/?{qp}'>← prev</a>")
+        pager_bits.append(f"<a href='/cache?{qp}'>← prev</a>")
     if len(rows) == PAGE:
         qp = _qs(q, include_expired, page + 1)
-        pager_bits.append(f"<a href='/?{qp}'>next →</a>")
+        pager_bits.append(f"<a href='/cache?{qp}'>next →</a>")
     pager_html = " ".join(pager_bits) if pager_bits else f"<span class='muted'>page {page + 1} · {total_rows} total rows</span>"
 
-    clear_link = "<a href='/' class='clear'>clear</a>" if (q or include_expired) else ""
+    clear_link = "<a href='/cache' class='clear'>clear</a>" if (q or include_expired) else ""
     body = _INDEX.substitute(
         stats_line=stats_line,
         q_esc=_esc(q or ""),
@@ -198,6 +261,53 @@ def _render_index(
         clear_link=clear_link,
     )
     return "Cache", body
+
+
+def render_search(initial_query: str = "") -> tuple[str, str]:
+    body = _SEARCH.substitute(q_esc=_esc(initial_query))
+    return "Search", body
+
+
+def render_history(
+    cache: TTLCache,
+    q: str | None,
+    since_hours: int | None,
+) -> tuple[str, str]:
+    cs = cache.click_stats()
+    stats_line = (
+        f"{cs['last_24h']} clicks in last 24h · {cs['total']} total · "
+        f"{'—' if not cs['oldest'] else _fmt_ts(cs['oldest']) + ' (oldest)'}"
+    )
+    rows = cache.get_clicks(query_text=q, limit=200, since_hours=since_hours)
+    if not rows:
+        rows_html = '<tr><td colspan="5" class="empty">no clicks yet — open a result from the <a href="/">search</a> page.</td></tr>'
+    else:
+        rendered = []
+        for r in rows:
+            rendered.append(
+                "<tr>"
+                f"<td class='ts'>{_esc(_fmt_ts(r['clicked_at']))}</td>"
+                f"<td><a href='/row/{_esc(r['query_hash'])}'>{_esc(r['query'] or '(no query)')}</a></td>"
+                f"<td>{_esc(r['title'])}</td>"
+                f"<td class='url'><a href='{_esc(r['url'])}' rel='noopener noreferrer' target='_blank'>{_esc(r['url'][:80])}{'…' if len(r['url']) > 80 else ''}</a></td>"
+                f"<td class='src'>{_esc(r['source'])}</td>"
+                "</tr>"
+            )
+        rows_html = "\n".join(rendered)
+
+    clear_link = "<a href='/history' class='clear'>clear</a>" if (q or since_hours is not None) else ""
+
+    body = _HISTORY.substitute(
+        stats_line=stats_line,
+        q_esc=_esc(q or ""),
+        sel_24="selected" if since_hours == 24 else "",
+        sel_168="selected" if since_hours == 168 else "",
+        sel_720="selected" if since_hours == 720 else "",
+        sel_all="selected" if since_hours is None else "",
+        rows_html=rows_html,
+        clear_link=clear_link,
+    )
+    return "History", body
 
 
 def _qs(q: str | None, include_expired: bool, page: int) -> str:
@@ -269,11 +379,18 @@ def _render_row(cache: TTLCache, key: str) -> str | None:
     return body
 
 
-def render_shell(title: str, body: str, version: str) -> str:
+def render_shell(title: str, body: str, version: str, page_class: str = "") -> str:
+    def _active(suffix: str) -> str:
+        return " class='active'" if page_class == suffix else ""
+
     return _SHELL.substitute(
         title=_esc(title),
         body=body,
         css=_BASE_CSS,
         js=_BASE_JS,
         ver=_esc(version),
+        page_class=_esc(page_class),
+        nav_search=_active("search"),
+        nav_history=_active("history"),
+        nav_cache=_active("cache"),
     )
