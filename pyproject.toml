@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "oxe"
-version = "0.1.0"
+version = "0.1.1"
 description = "Local web-search proxy and cache for AI agents. Exa-compatible HTTP API + MCP, DuckDuckGo backend, SQLite TTL."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -53,7 +53,6 @@ Issues = "https://github.com/espetro/oxe/issues"
 
 [project.scripts]
 oxe = "oxe.__main__:main"
-ex-search-proxy = "oxe.__main__:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
