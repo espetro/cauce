@@ -74,33 +74,64 @@ Install [portless](https://portless.sh) (`brew install portless` or follow the [
 
 ```bash
 # One-time: pin a hostname to the port oxe is already listening on.
+# oxe must be up first (oxmgr start oxe / your supervisor); the alias itself
+# survives reboots and restarts, so this is genuinely one-time.
 portless alias search 4479
 
 curl https://search.localhost/health   # {"status":"ok", ...}
 ```
 
-If you'd rather let portless supervise the process itself, pick a port up front so the route stays stable, and stop your supervisor first so portless can bind 4479:
+Order does not matter for the alias itself (it just points a hostname at a
+port), but `curl` only succeeds once something is listening on 4479. To undo:
+`portless alias --remove search`.
+
+If you'd rather let portless supervise the process itself, pick a port up front so the route stays stable, and stop your supervisor first so the spawned oxe can bind 4479. The `--name` / `--app-port` flags belong to portless and must come **before** the command; anything after the command is passed to `oxe` as arguments and silently ignored, and the route ends up on a random port (502). Use the `run` subcommand:
 
 ```bash
-# 1. stop whatever is already on 4479 (oxmgr / systemd / launchd):
+# 1. stop whatever is already on 4479 (oxmgr / systemd / launchd).
+#    Note: this stays stopped across reboots until you start it again.
 oxmgr stop oxe    # or:  sudo systemctl stop oxe   /   launchctl unload ~/Library/LaunchAgents/oxe.plist
 
-# 2. hand the port to portless and let it spawn oxe:
-OXE_PORT=4479 nohup portless oxe oxe --name search --app-port 4479 >/tmp/oxe.log 2>&1 &
-portless list     # -> https://search.localhost  ->  localhost:4479  (portless-managed)
+# 2. let portless spawn oxe pinned to a fixed port and hostname:
+nohup env OXE_PORT=4479 portless run --name search --app-port 4479 oxe >/tmp/oxe.log 2>&1 &
+portless list     # -> https://search.localhost  ->  localhost:4479  (pid ...)
 ```
 
+`OXE_PORT=4479` is still required: oxe reads `OXE_PORT`, not the generic
+`PORT` env var portless sets for the proxied child. `--app-port 4479` keeps
+the portless route stable and lets its proxy find the app. The pid-managed
+route dies with the process, so teardown is just `kill <pid from portless
+list>`; there is no alias to remove. To go back to the supervised setup, `oxmgr start oxe` (if
+oxmgr refuses with "failed to spawn", use `oxmgr restart oxe`) and re-register
+the alias if you removed it.
+
 Open `https://search.localhost/` in any browser — the cert is automatically trusted (portless manages its own local CA). Use `portless list` to confirm the route, `portless doctor` to debug.
+
+### Register as a browser search engine
+
+Once oxe is reachable on a stable hostname, add it as a browser search
+engine (Chrome: Settings > Search engine > Site search):
+
+```
+https://search.localhost/search?q=%s
+```
+
+(or `http://127.0.0.1:4479/search?q=%s` without portless). Typing a
+query in the address bar lands on the rendered results page at
+`/search?q=...`, served from the same cache your agents use.
 
 ## Endpoints
 
 | Method | Path | Purpose |
 |---|---|---|
 | `POST` | `/search` | Exa-compatible search (JSON in, JSON out) |
+| `GET` | `/search?q=X` | search results: HTML for browsers, Exa JSON with `Accept: application/json` |
+| `GET` | `/` | server-rendered HTML search UI (`/?q=X` redirects to `/search?q=X`) |
+| `GET` | `/row/{hash}` | redirect to `/search?q=<original query>` for a cache row |
 | `GET` | `/health` | liveness + cache stats |
 | `GET` | `/cache/stats` | cache row count, hits, db size |
 | `POST` | `/cache/invalidate` | wipe all cached rows |
-| `GET` | `/` | server-rendered HTML search UI |
+| `GET` | `/` | server-rendered HTML search UI (`/?q=X` redirects to `/search?q=X`) |
 | `GET` | `/history` | click history |
 | `POST` | `/click` | record a click (called by the UI) |
 | `GET` | `/mcp/` | StreamableHTTP MCP transport |
@@ -114,6 +145,27 @@ curl -s -X POST http://127.0.0.1:4479/search \
   -d '{"query":"python asyncio","numResults":3,"contents":{"text":true,"highlights":true}}' \
   | jq '.results[].title'
 ```
+
+### Share a search
+
+Every search has a canonical, shareable URL. Browsers get the rendered
+results page; agents and scripts get Exa-shaped JSON from the same path:
+
+```bash
+# Browser: rendered results, cached server-side like any other query
+open 'http://127.0.0.1:4479/search?q=python+asyncio'
+
+# Agent: same URL, Exa JSON response
+curl -s 'http://127.0.0.1:4479/search?q=python+asyncio' \
+  -H 'Accept: application/json' | jq '.results[].title'
+```
+
+The results page shows a share row with the canonical link and a
+copy-JSON button that puts the cached Exa payload on your clipboard.
+`/?q=X` (what a browser search engine sends) redirects to `/search?q=X`,
+so you can register `http://127.0.0.1:4479/search?q=%s` (or
+`https://search.localhost/search?q=%s` under portless) as a browser
+search engine.
 
 ### MCP handshake
 
@@ -144,6 +196,7 @@ All optional. Override via env vars:
 | `OXE_TTL_MAX` | `86400` | TTL ceiling (s) |
 | `OXE_NEGATIVE_TTL` | `300` | TTL for empty results (s) |
 | `OXE_CLICK_RETENTION_DAYS` | `30` | how long to keep click history |
+| `OXE_SEARCH_LOG_RETENTION_DAYS` | `30` | how long to keep search_log rows (feeds `oxe stats`) |
 | `OXE_LOG_LEVEL` | `INFO` | log level |
 
 ## Exa → DuckDuckGo translation notes
@@ -251,8 +304,13 @@ launchctl load ~/Library/LaunchAgents/local.oxe.plist
 from oxe.cache import TTLCache
 from oxe.search import do_search
 
+import oxe
+
 cache = TTLCache("/tmp/my-cache.db")
 hits = do_search(cache, {"query": "python asyncio", "numResults": 5})
+
+# Or build a standalone app with your own cache/backend/observer:
+app = oxe.make_app(cache=cache)
 ```
 
 Useful entry points:
@@ -262,7 +320,8 @@ Useful entry points:
 | `TTLCache(db_path)` | `oxe.cache` | Reusable SQLite cache with TTL eviction, click history, stats. Threadsafe (WAL + lock). |
 | `do_search(cache, req_dict, ttl=None)` | `oxe.search` | The single canonical search path; shared by HTTP and MCP. |
 | `exa_compat.search(req)` | `oxe.exa_compat` | Lower-level Exa↔DDGS translation (no cache). |
-| `build_app()` / `app` | `oxe.server` | The FastAPI app — ready to wrap in `uvicorn` or mount under another app. |
+| `SearchBackend` / `CacheAdapter` / `DDGBackend` | `oxe.backends` | Protocols for plugging in your own search backend or cache; `DDGBackend` is the default. |
+| `make_app(cache=None, backend=None, on_result=None)` | `oxe.server` | Build the FastAPI app with your own cache/backend/observer; ready to wrap in `uvicorn` or mount under another app. Module-level `app` is the default instance. |
 
 Configuration is via env vars (`OXE_*`, listed below). For non-trivial embedding, instantiate `TTLCache(...)` yourself and pass it where you need it; the global module-level instance in `oxe.server` is only used by the bundled CLI.
 
@@ -286,22 +345,25 @@ For the LAN case, expose the port with care: `oxe` does **not** require auth tod
 
 ## Observability
 
-Today the proxy exposes:
+The live process exposes `GET /health` (liveness, version, cache row count),
+`GET /cache/stats` (rows, unexpired rows, hits total, db size, oldest/newest)
+and the server-rendered listings at `GET /cache` and `GET /history`.
 
-- `GET /health` — liveness, version, cache row count.
-- `GET /cache/stats` — rows, unexpired rows, hits total, db size on disk, oldest/newest.
-- `GET /cache`, `GET /history` — human-readable listings rendered server-side.
+For trends, every search (HTTP and MCP) writes a row to the `search_log`
+SQLite table: query text + hash, cache vs network, result count, latency in
+ms, and the client (`http`, `mcp`, `web-ui`). Rows are pruned to
+`OXE_SEARCH_LOG_RETENTION_DAYS` (default 30).
 
-Missing (planned for `0.2.x`):
+Build the dashboard with the `oxe stats` subcommand:
 
-- Per-backend hit ratio (`cache` vs `ddgs`) over time.
-- Top queries by hits / by recency.
-- Top domains returned across the cache.
-- Click-through rate (rows x clicks).
+```bash
+oxe stats --db ~/.cache/oxe/cache.db --out ./dist/dashboard --days 30
+```
 
-All of these can be answered with **one new SQLite table** (`search_log(ts, query_hash, backend, duration_ms, num_results)`) and **zero new runtime deps**. They're intentionally not in `0.1.x` to keep the live process CPU-light — the dashboards that surface them should be rendered as static HTML/SSG (no per-request DB scans), not as additional SSR routes.
-
-Idea for the dashboard (sketch, not implemented yet): a stdlib-only `python -m oxe stats build` subcommand that reads the SQLite file read-only with a separate connection and emits `dist/dashboard/*.html` + inline SVG charts. Total new code: ~150 lines, no `node_modules`. See `oxe/ui.py` for the existing template helpers it would reuse. Tools evaluated and rejected as overbuilt for this: [Astro 7](https://astro.build/), [Evidence.dev](https://evidence.dev), [Docusaurus](https://docusaurus.io).
+- `--db` defaults to `$OXE_CACHE_DIR/cache.db` (or `~/.cache/oxe/cache.db`), `--out` to `./dist/dashboard`, `--days` to `30`.
+- Emits a single self-contained `index.html`: six panels (searches per day, cache hit rate, network latency p50/p95, client split, top queries, zero-result queries) as inline SVG. No JavaScript, no external assets.
+- Opens the SQLite file read-only (`mode=ro` + `PRAGMA query_only`), so it is safe to run against the live cache while the server is writing (WAL).
+- Open the file directly in a browser or serve it from any static host.
 
 ## How is this different from X?
 

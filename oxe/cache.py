@@ -33,6 +33,20 @@ CREATE TABLE IF NOT EXISTS clicks (
 );
 CREATE INDEX IF NOT EXISTS clicks_query_idx  ON clicks(query_hash);
 CREATE INDEX IF NOT EXISTS clicks_recent_idx ON clicks(clicked_at);
+
+CREATE TABLE IF NOT EXISTS search_log (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  ts           INTEGER NOT NULL,
+  query_text   TEXT    NOT NULL,
+  query_hash   TEXT    NOT NULL,
+  source       TEXT    NOT NULL,
+  backend      TEXT    NOT NULL DEFAULT 'ddg',
+  result_count INTEGER NOT NULL DEFAULT 0,
+  duration_ms  INTEGER,
+  client       TEXT    NOT NULL DEFAULT 'http'
+);
+CREATE INDEX IF NOT EXISTS search_log_ts_idx   ON search_log(ts);
+CREATE INDEX IF NOT EXISTS search_log_query_idx ON search_log(query_hash);
 """
 
 
@@ -229,6 +243,78 @@ class TTLCache:
         cutoff = int(time.time()) - retention_days * 86400
         with self._lock:
             cur = self._conn.execute("DELETE FROM clicks WHERE clicked_at < ?", (cutoff,))
+            return cur.rowcount
+
+    # -- search log ---------------------------------------------------------
+
+    def log_search(
+        self,
+        query_text: str,
+        query_hash: str,
+        source: str,
+        backend: str = "ddg",
+        result_count: int = 0,
+        duration_ms: int | None = None,
+        client: str = "http",
+    ) -> int:
+        now = int(time.time())
+        with self._lock:
+            cur = self._conn.execute(
+                "INSERT INTO search_log (ts, query_text, query_hash, source, backend, "
+                "result_count, duration_ms, client) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    now,
+                    (query_text or "")[:200],
+                    query_hash,
+                    source,
+                    backend,
+                    result_count,
+                    duration_ms,
+                    client,
+                ),
+            )
+            return cur.lastrowid or 0
+
+    def get_search_log(self, limit: int = 100) -> list[dict]:
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT id, ts, query_text, query_hash, source, backend, result_count, "
+                "duration_ms, client FROM search_log ORDER BY ts DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+        return [
+            {
+                "id": rid,
+                "ts": ts,
+                "query": qt,
+                "query_hash": qh,
+                "source": src,
+                "backend": be,
+                "result_count": rc,
+                "duration_ms": dm,
+                "client": cl,
+            }
+            for rid, ts, qt, qh, src, be, rc, dm, cl in rows
+        ]
+
+    def lookup_query_text(self, query_hash: str) -> str | None:
+        """Best-effort original query text for a hash, from cache or search_log."""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT query_text FROM cache WHERE query_hash = ?", (query_hash,)
+            ).fetchone()
+            if row is None:
+                row = self._conn.execute(
+                    "SELECT query_text FROM search_log WHERE query_hash = ? "
+                    "ORDER BY ts DESC LIMIT 1",
+                    (query_hash,),
+                ).fetchone()
+        return row[0] if row else None
+
+    def prune_search_log(self, retention_days: int) -> int:
+        cutoff = int(time.time()) - retention_days * 86400
+        with self._lock:
+            cur = self._conn.execute("DELETE FROM search_log WHERE ts < ?", (cutoff,))
             return cur.rowcount
 
     def delete_clicks(self, scope: str) -> int:

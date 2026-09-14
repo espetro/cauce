@@ -1,0 +1,26 @@
+<section class="row-head">
+  <a href="/" class="back">← back to cache</a>
+  <h1>${q_esc}</h1>
+  <dl class="meta">
+    <dt>hash</dt><dd class="hash">${hash}</dd>
+    <dt>hits</dt><dd>${hits}</dd>
+    <dt>results</dt><dd>${n_results}</dd>
+    <dt>cost</dt><dd>${cost}</dd>
+    <dt>size</dt><dd>${size}</dd>
+    <dt>expires</dt><dd>${expires_in} (${expires_at})</dd>
+    <dt>search type</dt><dd>${search_type}</dd>
+    <dt>request id</dt><dd class="hash">${request_id}</dd>
+  </dl>
+  <form method="post" action="/row/${hash}/delete" class="danger" data-confirm="Delete this cached search?">
+    <button type="submit">delete from cache</button>
+  </form>
+</section>
+<section class="results">
+${results_html}
+</section>
+<section class="raw">
+  <details>
+    <summary>raw payload</summary>
+    <pre>${raw}</pre>
+  </details>
+</section>

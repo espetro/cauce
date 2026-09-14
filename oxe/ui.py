@@ -5,9 +5,15 @@ from string import Template
 from typing import Any
 
 from .cache import TTLCache
+from importlib.resources import files as _pkg_files
+
+
+def _tpl(name: str) -> Template:
+    return Template(_pkg_files("oxe.static").joinpath(name).read_text(encoding="utf-8"))
+
 
 PAGE = 50
-ASSET_VERSION = "1"
+ASSET_VERSION = "3"
 
 
 def _fmt_ts(epoch: int | None) -> str:
@@ -37,10 +43,13 @@ def _fmt_remaining(expires_at: int, now: int) -> str:
     return f"{delta // 86400}d {delta % 86400 // 3600}h"
 
 
-def _esc(s: Any) -> str:
+def _esc(s: Any, attr: bool = False) -> str:
     if s is None:
         return ""
-    return html.escape(str(s))
+    out = html.escape(str(s))
+    if attr:
+        out = out.replace("'", "&#39;")
+    return out
 
 
 def _first_preview(text: str | None, n: int = 280) -> str:
@@ -56,156 +65,19 @@ _BASE_CSS = "/static/ui.css?v=" + ASSET_VERSION
 _BASE_JS = "/static/app.js?v=" + ASSET_VERSION
 
 
-_SHELL = Template("""<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${title} · oxe</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='14' cy='14' r='9' fill='none' stroke='%237aa2f7' stroke-width='3'/%3E%3Cline x1='21' y1='21' x2='28' y2='28' stroke='%237aa2f7' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E">
-<link rel="stylesheet" href="${css}">
-</head>
-<body class="${page_class}">
-<header class="top">
-  <a class="brand" href="/">oxe</a>
-  <nav>
-    <a href="/"${nav_search}>search</a>
-    <a href="/history"${nav_history}>history</a>
-    <a href="/cache"${nav_cache}>cache</a>
-    <a href="/health">health</a>
-    <a href="/docs">api</a>
-  </nav>
-  <span class="ver">v${ver}</span>
-</header>
-<main>
-${body}
-</main>
-<script src="${js}" defer></script>
-</body>
-</html>
-""")
+_SHELL = _tpl("shell.html")
 
 
-_INDEX = Template("""<section class="hero">
-  <h1>Cached searches</h1>
-  <p>${stats_line}</p>
-</section>
-<form class="filters" method="get" action="/cache">
-  <input type="search" name="q" placeholder="filter by query text…" value="${q_esc}">
-  <label class="check"><input type="checkbox" name="include_expired" ${exp_check}> include expired</label>
-  <button type="submit">filter</button>
-  ${clear_link}
-</form>
-<table class="rows">
-  <thead>
-    <tr>
-      <th>query</th>
-      <th>hits</th>
-      <th>results</th>
-      <th>size</th>
-      <th>expires in</th>
-      <th>expires at</th>
-      <th>hash</th>
-    </tr>
-  </thead>
-  <tbody>
-${rows_html}
-  </tbody>
-</table>
-<div class="pager">
-  ${pager_html}
-</div>
-""")
+_INDEX = _tpl("index.html")
 
 
-_SEARCH = Template("""<form id="search-form" class="search-bar" autocomplete="off">
-  <input type="search" id="q" name="q" placeholder="search the web…" autofocus
-         value="${q_esc}" required>
-  <input type="number" id="num" name="num" min="1" max="30" value="10" title="numResults">
-  <button type="submit">search</button>
-</form>
-<div id="meta" class="meta-bar"></div>
-<div id="status" class="status" hidden></div>
-<div id="results" class="results"></div>
-<template id="card-tpl">
-  <article class="card" data-result-id="">
-    <h3 class="title"><a class="link" rel="noopener noreferrer" target="_blank"></a></h3>
-    <div class="url"></div>
-    <div class="meta"></div>
-    <p class="text"></p>
-    <details class="hl"><summary>highlights</summary><ul></ul></details>
-  </article>
-</template>
-""")
+_SEARCH = _tpl("search.html")
 
 
-_HISTORY = Template("""<section class="hero">
-  <h1>Click history</h1>
-  <p>${stats_line}</p>
-</section>
-<form class="filters" method="get" action="/history">
-  <input type="search" name="q" placeholder="filter by query text…" value="${q_esc}">
-  <select name="since">
-    <option value="24" ${sel_24}>last 24h</option>
-    <option value="168" ${sel_168}>last week</option>
-    <option value="720" ${sel_720}>last month</option>
-    <option value="" ${sel_all}>all time</option>
-  </select>
-  <button type="submit">filter</button>
-  ${clear_link}
-</form>
-<div class="bulk-actions">
-  <form method="post" action="/history/delete" class="danger" data-confirm="Delete all clicks from the last 24 hours?">
-    <button type="submit" name="scope" value="24h">delete last 24h</button>
-  </form>
-  <form method="post" action="/history/delete" class="danger" data-confirm="Delete ALL click history?">
-    <button type="submit" name="scope" value="all">delete all</button>
-  </form>
-</div>
-<table class="rows">
-  <thead>
-    <tr>
-      <th>clicked</th>
-      <th>query</th>
-      <th>title</th>
-      <th>url</th>
-      <th>source</th>
-    </tr>
-  </thead>
-  <tbody>
-${rows_html}
-  </tbody>
-</table>
-""")
+_HISTORY = _tpl("history.html")
 
 
-_ROW = Template("""<section class="row-head">
-  <a href="/" class="back">← back to cache</a>
-  <h1>${q_esc}</h1>
-  <dl class="meta">
-    <dt>hash</dt><dd class="hash">${hash}</dd>
-    <dt>hits</dt><dd>${hits}</dd>
-    <dt>results</dt><dd>${n_results}</dd>
-    <dt>cost</dt><dd>${cost}</dd>
-    <dt>size</dt><dd>${size}</dd>
-    <dt>expires</dt><dd>${expires_in} (${expires_at})</dd>
-    <dt>search type</dt><dd>${search_type}</dd>
-    <dt>request id</dt><dd class="hash">${request_id}</dd>
-  </dl>
-  <form method="post" action="/row/${hash}/delete" class="danger" data-confirm="Delete this cached search?">
-    <button type="submit">delete from cache</button>
-  </form>
-</section>
-<section class="results">
-${results_html}
-</section>
-<section class="raw">
-  <details>
-    <summary>raw payload</summary>
-    <pre>${raw}</pre>
-  </details>
-</section>
-""")
+_ROW = _tpl("row.html")
 
 
 def _render_index(
@@ -263,9 +135,129 @@ def _render_index(
     return "Cache", body
 
 
-def render_search(initial_query: str = "") -> tuple[str, str]:
-    body = _SEARCH.substitute(q_esc=_esc(initial_query))
+_CARD = _tpl("card.html")
+
+
+def _domain_of(url: str) -> str:
+    try:
+        from urllib.parse import urlsplit
+
+        return urlsplit(url).netloc.removeprefix("www.") or url
+    except Exception:
+        return url
+
+
+def _render_cards(payload: dict) -> tuple[str, str]:
+    """Render search results server-side, mirroring the result markup the JS builds."""
+    results = payload.get("results") or []
+    if not results:
+        return "", ""
+    cards = []
+    qh = payload.get("_q_hash") or ""
+    for r in results:
+        title = r.get("title") or "(untitled)"
+        url = r.get("url") or ""
+        domain = _domain_of(url)
+        snippet = _first_preview(r.get("text"), 200)
+        preview = _esc(((r.get("text") or "").strip())[:400])
+        cards.append(
+            _CARD.substitute(
+                rid=_esc(r.get("id") or url),
+                url=_esc(url),
+                url_attr=_esc(url, True),
+                domain=_esc(domain),
+                fav="https://icons.duckduckgo.com/ip3/" + _esc(domain) + ".ico" if domain else "",
+                title=_esc(title),
+                title_attr=_esc(title, True),
+                rid_attr=_esc(r.get("id") or url, True),
+                qh=_esc(qh, True),
+                snippet_html=f"<p class='snippet'>{_esc(snippet)}</p>" if snippet else "",
+                preview_html=(
+                    f"<details class='preview'><summary>cached page text preview</summary>"
+                    f"<div class='preview-text'>{preview}</div></details>"
+                    if preview
+                    else ""
+                ),
+            )
+        )
+    hits = len(results)
+    bits = [f"{hits} result{'s' if hits != 1 else ''}"]
+    source = payload.get("_source")
+    if source:
+        bits.append(f"from {_esc(source)}")
+    if payload.get("_age"):
+        bits.append(f"{_esc(payload['_age'])} old")
+    if payload.get("_ttl_left"):
+        bits.append(f"ttl {_esc(payload['_ttl_left'])} left")
+    meta = " - ".join(bits)
+    return "\n".join(cards), meta
+
+
+def _fmt_dur(s: int) -> str:
+    if s < 0:
+        return "0s"
+    if s < 60:
+        return f"{s}s"
+    if s < 3600:
+        return f"{s // 60}m"
+    if s < 86400:
+        return f"{s // 3600}h {s % 3600 // 60}m"
+    return f"{s // 86400}d {s % 86400 // 3600}h"
+
+
+def render_search(
+    initial_query: str = "",
+    initial_results: dict | None = None,
+    share: dict | None = None,
+    page: int = 1,
+) -> tuple[str, str]:
+    results_html = ""
+    meta_html = ""
+    if initial_results is not None:
+        results_html, meta_html = _render_cards(initial_results)
+    if share:
+        bits = []
+        if share.get("result_count") is not None:
+            n = share["result_count"]
+            bits.append(f"{n} result{'s' if n != 1 else ''}")
+        if share.get("source"):
+            bits.append(f"from {_esc(share['source'])}")
+        if share.get("age_s"):
+            bits.append(f"{_fmt_dur(share['age_s'])} old")
+        if share.get("ttl_left_s") is not None:
+            bits.append(f"ttl {_fmt_dur(share['ttl_left_s'])} left")
+        meta_html = " - ".join(bits)
+    body = _SEARCH.substitute(
+        q_esc=_esc(initial_query),
+        results_html=results_html,
+        meta_html=meta_html,
+        share_html="",
+        meta_hidden="" if initial_results is not None else "hidden",
+        landing="yes" if not initial_query else "no",
+        autofocus="autofocus" if not initial_query else "",
+        pager_html=_search_pager(initial_query, initial_results, page),
+    )
     return "Search", body
+
+
+def _search_pager(q: str, payload: dict | None, page: int) -> str:
+    if payload is None:
+        return ""
+    n = len(payload.get("results") or [])
+    total = payload.get("_total_pages")
+    if not total:
+        # server returns one page per request; a full page hints at more
+        if n < 10:
+            return ""
+        total = page + 1
+    qp = html.escape(q)
+    parts = []
+    if page > 1:
+        parts.append(f"<a href='/search?q={qp}&amp;p={page - 1}' rel='prev'>previous</a>")
+    parts.append(f"<span class='pg-label'>page {page} of {total}</span>")
+    if page < total:
+        parts.append(f"<a href='/search?q={qp}&amp;p={page + 1}' rel='next'>next &gt;</a>")
+    return " ".join(parts)
 
 
 def render_history(

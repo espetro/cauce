@@ -1,0 +1,33 @@
+<div class="search-wrap landing-${landing}">
+<form id="search-form" class="search-bar" autocomplete="off">
+  <input type="search" id="q" name="q" placeholder="search the web…" ${autofocus}
+         value="${q_esc}" required>
+  <button type="submit">search</button>
+</form>
+</div>
+<div id="ai-stub" class="ai-stub" hidden>
+  <button type="button" id="ai-btn">+ ask ai</button>
+  <span id="ai-note" class="ai-note" hidden>coming post-v0.2</span>
+</div>
+<div id="meta" class="meta-row" hidden>
+  <span id="meta-line" class="meta-line">${meta_html}</span>
+  <span class="sort-label">sort: relevance</span>
+</div>
+<div id="share" class="share-row" hidden>
+  <button type="button" class="share-btn" id="copy-link">copy link</button>
+  <button type="button" class="share-btn" id="copy-json">copy json</button>
+</div>
+<div id="status" class="status" hidden></div>
+<div id="results" class="results">${results_html}</div>
+<div id="pager" class="pager" hidden>${pager_html}</div>
+<template id="card-tpl">
+  <article class="result" data-result-id="">
+    <div class="r-head">
+      <img class="fav" src="" width="16" height="16" loading="lazy" alt="">
+      <span class="domain"></span>
+    </div>
+    <h3 class="r-title"><a class="link" rel="noopener noreferrer" target="_blank"></a></h3>
+    <p class="snippet"></p>
+    <details class="preview"><summary>cached page text preview</summary><div class="preview-text"></div></details>
+  </article>
+</template>
