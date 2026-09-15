@@ -7,7 +7,14 @@ from typing import Callable, Optional
 from urllib.parse import quote
 
 from fastapi import FastAPI, Form, Header, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
+from fastapi.responses import (
+    FileResponse,
+    HTMLResponse,
+    JSONResponse,
+    RedirectResponse,
+    Response,
+    StreamingResponse,
+)
 from mcp.server.transport_security import TransportSecuritySettings
 from pydantic import BaseModel
 from typing import Any
@@ -65,6 +72,40 @@ cache = TTLCache(os.path.join(CACHE_DIR, "cache.db"))
 log.info("cache initialized at %s/cache.db", CACHE_DIR)
 
 _STATIC_DIR = Path(__file__).parent / "static"
+
+
+def _ui_dist_dir() -> Path | None:
+    """Locate the built web UI (Preact SPA), if present.
+
+    Order: $OXE_UI_DIST, ./ui/dist (repo checkout), packaged oxe/ui_dist.
+    """
+    env = os.getenv("OXE_UI_DIST", "").strip()
+    if env:
+        p = Path(env).expanduser()
+        return p if (p / "index.html").is_file() else None
+    repo = Path("ui/dist")
+    if (repo / "index.html").is_file():
+        return repo
+    pkg = Path(__file__).parent / "ui_dist"
+    if (pkg / "index.html").is_file():
+        return pkg
+    return None
+
+
+_MEDIA_TYPES = {
+    ".html": "text/html",
+    ".js": "application/javascript",
+    ".css": "text/css",
+    ".json": "application/json",
+    ".svg": "image/svg+xml",
+    ".png": "image/png",
+    ".ico": "image/x-icon",
+    ".woff": "font/woff",
+    ".woff2": "font/woff2",
+    ".map": "application/json",
+    ".txt": "text/plain",
+    ".webmanifest": "application/manifest+json",
+}
 CLICK_RETENTION_DAYS = int(os.getenv("OXE_CLICK_RETENTION_DAYS", "30"))
 
 
@@ -222,9 +263,24 @@ def make_app(
     @app.get("/", response_class=HTMLResponse)
     def ui_search(q: Optional[str] = Query(default=None)) -> Response:
         if not q or not q.strip():
+            dist = _ui_dist_dir()
+            if dist is not None:
+                return FileResponse(dist / "index.html", media_type="text/html")
             title, body = ui.render_search(initial_query="")
             return HTMLResponse(ui.render_shell(title, body, VERSION, page_class="search"))
         return RedirectResponse(url=f"/search?q={quote(q)}", status_code=302)
+
+    @app.get("/assets/{name}")
+    def ui_assets(name: str) -> Response:
+        """Serve built SPA assets from the UI dist dir (404 when absent)."""
+        if "/" in name or ".." in name:
+            raise HTTPException(status_code=400, detail="bad path")
+        dist = _ui_dist_dir()
+        p = dist / "assets" / name if dist else None
+        if p is None or not p.is_file():
+            raise HTTPException(status_code=404, detail="not found")
+        media = _MEDIA_TYPES.get(p.suffix, "application/octet-stream")
+        return FileResponse(p, media_type=media)
 
     @app.get("/history", response_class=HTMLResponse)
     def ui_history(
@@ -285,6 +341,28 @@ def make_app(
 
         return StreamingResponse(_stream(), media_type="text/event-stream")
 
+    def _run_async(coro_fn):
+        """Run an async SDK call from a sync route handler (worker-thread safe).
+
+        ``coro_fn`` is a zero-arg callable returning an awaitable, so the
+        coroutine is created inside the loop that runs it.
+        """
+        import asyncio
+
+        async def _await_it():
+            return await coro_fn()
+
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            return asyncio.run(_await_it())
+        # A loop is already running in this thread (defensive; sync def routes
+        # run in worker threads). Use a dedicated loop on a clean thread.
+        import concurrent.futures
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
+            return ex.submit(asyncio.run, _await_it()).result()
+
     @app.get("/v1/models")
     def list_models() -> dict:
         """Provider model listing via direct SDK calls; [] when unconfigured."""
@@ -305,9 +383,7 @@ def make_app(
                 from openai import AsyncOpenAI  # lazy
 
                 client = AsyncOpenAI(api_key=api_key, base_url=cfg.base_url)
-                import asyncio
-
-                resp = asyncio.get_event_loop().run_until_complete(client.models.list())
+                resp = _run_async(client.models.list)
                 models = [
                     {"id": m.id, "object": "model", "owned_by": getattr(m, "owned_by", None)}
                     for m in resp.data
@@ -316,9 +392,7 @@ def make_app(
                 from anthropic import AsyncAnthropic  # lazy
 
                 client = AsyncAnthropic(api_key=api_key, base_url=cfg.base_url)
-                import asyncio
-
-                resp = asyncio.get_event_loop().run_until_complete(client.models.list())
+                resp = _run_async(client.models.list)
                 models = [{"id": m.id, "object": "model"} for m in resp.data]
         except ImportError:
             log.warning("/v1/models: provider SDK not installed (pip install oxe[ai])")
@@ -353,7 +427,7 @@ def make_app(
     @app.put("/settings")
     def put_settings(payload: dict) -> dict:
         """Write the [ai] config section. api_key left untouched when omitted."""
-        from .config import VALID_PROVIDERS, AIConfig, config_path, load_config, save_config
+        from .config import VALID_PROVIDERS, AIConfig, load_config, save_config
 
         if not isinstance(payload or {}, dict):
             raise HTTPException(status_code=422, detail="json body required")

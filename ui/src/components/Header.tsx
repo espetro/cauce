@@ -13,14 +13,13 @@ interface NavItem {
 const NAV: NavItem[] = [
   { href: "/", label: "search", exact: true },
   { href: "/history", label: "history" },
-  { href: "/cache", label: "cache" },
-  { href: "/health", label: "health" },
-  { href: "/docs", label: "api" },
+  { href: "/dashboard", label: "dashboard" },
 ];
 
-/** AI-mode availability from GET /v1/models (`ai_available`). */
-export function useAiAvailable(): boolean {
-  const [ai, setAi] = useState(false);
+/** AI-mode availability from GET /v1/models (`ai_available`).
+ * Tri-state: null = still querying (never demote AI mode on null). */
+export function useAiAvailable(): boolean | null {
+  const [ai, setAi] = useState<boolean | null>(null);
   useEffect(() => {
     const ctl = new AbortController();
     listModels(ctl.signal)
@@ -82,10 +81,10 @@ export function ModeToggle({
 }: {
   mode: "traditional" | "ai";
   onChange: (m: "traditional" | "ai") => void;
-  aiAvailable: boolean;
+  aiAvailable: boolean | null;
   size?: "xs" | "sm";
 }) {
-  if (!aiAvailable) return null;
+  if (aiAvailable === false) return null;
   const opts: Array<{ v: "traditional" | "ai"; label: string }> = [
     { v: "traditional", label: "traditional" },
     { v: "ai", label: "AI" },

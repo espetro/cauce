@@ -137,7 +137,6 @@ def _aisuite_client(cfg: AIConfig):
     """Lazy aisuite import; configured per request from the config file."""
     import aisuite as aisuite_mod  # lazy: only with oxe[ai]
 
-    client = aisuite_mod.Client()
     kwargs = {}
     api_key = cfg.resolve_api_key()
     if api_key:
@@ -145,8 +144,7 @@ def _aisuite_client(cfg: AIConfig):
     if cfg.base_url:
         kwargs["base_url"] = cfg.base_url
     provider = cfg.provider
-    if kwargs:
-        client.configure({"default": {"generic": {provider: kwargs}}})
+    client = aisuite_mod.Client({provider: kwargs} if kwargs else {})
     return client, f"{provider}:{cfg.model}"
 
 
@@ -221,13 +219,19 @@ async def stream_answer(
     for _iteration in range(max_iterations):
         collected: list[str] = []
         acc: list[dict] = []
-        stream = await asyncio.to_thread(
-            client.chat.completions.create,
-            model=model_id,
-            messages=messages,
-            tools=TOOLS_SPEC,
-            stream=True,
-        )
+        try:
+            stream = await asyncio.to_thread(
+                client.chat.completions.create,
+                model=model_id,
+                messages=messages,
+                tools=TOOLS_SPEC,
+                stream=True,
+            )
+        except Exception as e:  # noqa: BLE001 - surfaced as an error event
+            yield {"type": "done", "answer": "", "related_questions": [],
+                   "confidence": 0, "model": model_id, "cached": False,
+                   "error": f"provider error: {e}"}
+            return
         # aisuite streaming chunks are openai-shaped; the generator is consumed
         # in a worker thread so the event loop is never blocked on the socket.
         import threading

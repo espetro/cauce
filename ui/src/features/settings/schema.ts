@@ -42,7 +42,8 @@ export async function putSettings(body: SettingsPut): Promise<void> {
   const res = await fetch(`/settings`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
+    // backend expects the [ai] section nested under an "ai" key
+    body: JSON.stringify({ ai: body }),
   });
   if (!res.ok) {
     let detail = `${res.status}`;

@@ -16,7 +16,7 @@ export default function Home() {
   const aiAvailable = useAiAvailable();
 
   useEffect(() => {
-    if (mode === "ai" && !aiAvailable) setMode("traditional");
+    if (mode === "ai" && aiAvailable === false) setMode("traditional");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [aiAvailable]);
 

@@ -43,12 +43,6 @@ export default function SearchRoute() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, urlMode]);
 
-  // demote to traditional when ai turns out unavailable
-  useEffect(() => {
-    if (mode === "ai" && !aiAvailable) setMode("traditional");
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [aiAvailable]);
-
   useEffect(() => {
     if (q && mode === "ai") answer.run(q);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -157,7 +151,7 @@ export default function SearchRoute() {
                 <button type="button" class="btn btn-sm" onClick={() => run(q, page)}>
                   retry
                 </button>
-                {aiAvailable && (
+                {aiAvailable === true && (
                   <button type="button" class="btn btn-ghost btn-sm ml-2" onClick={() => askAi(q)}>
                     ask AI instead
                   </button>
@@ -168,7 +162,7 @@ export default function SearchRoute() {
             {!loading && !error && payload && results.length === 0 && (
               <div class="py-10 text-sm">
                 <p class="opacity-60 mb-3">no results</p>
-                {aiAvailable && (
+                {aiAvailable === true && (
                   <button type="button" class="btn btn-sm" onClick={() => askAi(q)}>
                     ask AI instead
                   </button>
