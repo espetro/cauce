@@ -49,6 +49,7 @@ dependencies = [
 
 [project.optional-dependencies]
 fuzzy = ["rapidfuzz>=3.14.5"]
+ai = ["aisuite[openai,anthropic]~=0.1.14"]
 
 [project.urls]
 Homepage = "https://github.com/espetro/oxe"

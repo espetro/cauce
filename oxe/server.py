@@ -7,7 +7,7 @@ from typing import Callable, Optional
 from urllib.parse import quote
 
 from fastapi import FastAPI, Form, Header, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
 from mcp.server.transport_security import TransportSecuritySettings
 from pydantic import BaseModel
 from typing import Any
@@ -240,6 +240,91 @@ def make_app(
         n = c.delete_clicks(scope)
         log.info("UI: deleted %d clicks (scope=%s)", n, scope)
         return RedirectResponse(url="/history", status_code=303)
+
+    @app.post("/answer")
+    def ai_answer(req: dict) -> Response:
+        """SSE-stream an AI answer for a query. Requires a configured model."""
+        from . import ai as ai_mod
+        from .config import load_config
+
+        query = ((req or {}).get("query") or "").strip() if isinstance(req, dict) else ""
+        if not query:
+            raise HTTPException(status_code=422, detail="query required")
+        try:
+            cfg = load_config()
+        except ValueError as e:
+            raise HTTPException(status_code=500, detail=f"bad config: {e}")
+        if cfg is None:
+            raise HTTPException(status_code=409, detail="ai not configured")
+
+        key = ai_mod.answer_cache_key(query, f"{cfg.provider}:{cfg.model}")
+        cached = c.get_answer(key)
+        if cached is not None:
+            payload = dict(cached)
+            payload["cached"] = True
+            async def _cached_stream():
+                yield ai_mod.sse_format({"type": "done", **payload})
+            return StreamingResponse(
+                _cached_stream(), media_type="text/event-stream"
+            )
+
+        async def _stream():
+            final = None
+            async for event in ai_mod.stream_answer(
+                query, cfg, cache=c, backend=backend, on_result=observer
+            ):
+                if event.get("type") == "done":
+                    final = event
+                yield ai_mod.sse_format(event)
+            if final and final.get("answer") and not final.get("error"):
+                try:
+                    ttl = min(ai_mod.ANSWER_TTL_DEFAULT, ai_mod.ANSWER_TTL_MAX)
+                    c.put_answer(key, query, final, ttl, model=final.get("model") or "")
+                except Exception:
+                    log.exception("failed to cache AI answer")
+
+        return StreamingResponse(_stream(), media_type="text/event-stream")
+
+    @app.get("/v1/models")
+    def list_models() -> dict:
+        """Provider model listing via direct SDK calls; [] when unconfigured."""
+        from .config import load_config
+
+        try:
+            cfg = load_config()
+        except ValueError as e:
+            log.warning("/v1/models: bad config: %s", e)
+            return {"object": "list", "data": [], "ai_available": False}
+        if cfg is None:
+            return {"object": "list", "data": [], "ai_available": False}
+
+        api_key = cfg.resolve_api_key()
+        models: list[dict] = []
+        try:
+            if cfg.provider == "openai":
+                from openai import AsyncOpenAI  # lazy
+
+                client = AsyncOpenAI(api_key=api_key, base_url=cfg.base_url)
+                import asyncio
+
+                resp = asyncio.get_event_loop().run_until_complete(client.models.list())
+                models = [
+                    {"id": m.id, "object": "model", "owned_by": getattr(m, "owned_by", None)}
+                    for m in resp.data
+                ]
+            elif cfg.provider == "anthropic":
+                from anthropic import AsyncAnthropic  # lazy
+
+                client = AsyncAnthropic(api_key=api_key, base_url=cfg.base_url)
+                import asyncio
+
+                resp = asyncio.get_event_loop().run_until_complete(client.models.list())
+                models = [{"id": m.id, "object": "model"} for m in resp.data]
+        except ImportError:
+            log.warning("/v1/models: provider SDK not installed (pip install oxe[ai])")
+        except Exception as e:
+            log.warning("/v1/models: provider listing failed: %s", e)
+        return {"object": "list", "data": models, "ai_available": bool(models)}
 
     @app.post("/click")
     def ui_click(payload: dict) -> dict:

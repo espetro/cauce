@@ -147,6 +147,42 @@ class TTLCache:
     def close(self) -> None:
         self._conn.close()
 
+    # -- answers table (completed AI answers) --------------------------------
+
+    def get_answer(self, key: str) -> dict | None:
+        row = self._q("get_answer")(self._conn, key=key)
+        if row is None or row["expires_at"] < int(time.time()):
+            return None
+        try:
+            payload = gzip.decompress(row["response"])
+        except (OSError, gzip.BadGzipFile):
+            return None
+        self._q("answer_hits_bump")(self._conn, key=key)
+        return json.loads(payload)
+
+    def put_answer(self, key: str, query: str, value: dict, ttl: int, model: str = "") -> None:
+        payload = gzip.compress(json.dumps(value, separators=(",", ":")).encode("utf-8"))
+        now = int(time.time())
+        with self._lock:
+            self._q("put_answer")(
+                self._conn,
+                key=key,
+                text=(query or "")[:200],
+                response=payload,
+                model=model,
+                created_at=now,
+                expires_at=now + ttl,
+            )
+            self._q("prune_answers")(self._conn, now=now)
+
+    def answer_stats(self) -> dict:
+        db_size = os.path.getsize(self.db_path) if os.path.exists(self.db_path) else 0
+        try:
+            n = self._q("count_answers")(self._conn)["c"]
+        except Exception:
+            n = 0
+        return {"rows": n, "db_size_bytes": db_size}
+
     # -- clicks -------------------------------------------------------------
 
     def record_click(

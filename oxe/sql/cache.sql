@@ -40,3 +40,6 @@ SELECT query_text FROM cache WHERE query_hash = :key;
 
 -- name: cache-count-for-hash(key)
 SELECT COUNT(*) FROM cache WHERE query_hash = :key;
+
+-- name: count-answers()
+SELECT COUNT(*) AS c FROM answers;
