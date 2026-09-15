@@ -30,6 +30,18 @@ Scope: everything under `ui/` (Preact + Vite webapp). Repo-wide rules live in th
 - Every screen must work at ≈390px, 768px, and desktop. Mobile-first styling.
 - Before declaring UI work done: screenshot at mobile viewport and compare against the spec's `## Responsive` section.
 
+## Design references
+
+- Any image the owner shares as a design reference MUST be copied to
+  `.agents/docs/screens/references/` (gitignored) with a descriptive filename
+  (e.g. `ddg-dark-pill.png`, `google-ai-mode-morph.png`), then cited from the
+  relevant screen spec in `.agents/docs/screens/<screen>.md`.
+- Before implementing or validating UI work, ALWAYS check that folder first:
+  it accumulates the owner's reference designs (search engines, UI patterns)
+  and is the single place where design references live for every agent,
+  including subagents. Do not rely on paths under /var/folders or ~/Documents
+  surviving between sessions.
+
 ## URL state & QA checkpoints
 
 URL-addressable state is the app's reproducibility contract: every meaningful

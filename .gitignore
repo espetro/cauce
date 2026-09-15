@@ -55,3 +55,4 @@ oxe/ui_dist/
 *.swo
 uv.lock
 .playwright-cli/
+.agents/docs/screens/references/
