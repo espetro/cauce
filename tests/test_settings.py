@@ -111,3 +111,12 @@ def test_load_dotenv(tmp_path, monkeypatch):
     assert os.environ["A"] == "1"
     assert os.environ["B"] == "two"
     assert os.environ["A_EXIST"] == "original"
+
+
+def test_ac_proxy_empty(client):
+    assert client.get("/ac?q=").json() == []
+
+
+def test_suggest_empty(client):
+    body = client.get("/suggest", params={"q": " "}).json()
+    assert body == ["", [], [], []]  # whitespace-only prefix normalized to empty

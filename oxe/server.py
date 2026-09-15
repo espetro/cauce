@@ -253,6 +253,26 @@ def make_app(
             return [prefix, [], [], []]
         return [prefix, c.suggest_queries(prefix, limit=3), [], []]
 
+    @app.get("/ac")
+    def ac(q: str = Query(...)) -> list[str]:
+        """Proxy DuckDuckGo autocomplete (browser CORS blocks direct calls)."""
+        prefix = q.strip()
+        if not prefix:
+            return []
+        try:
+            import json as _json
+            from urllib.request import Request, urlopen
+
+            url = "https://duckduckgo.com/ac/?type=list&q=" + quote(prefix)
+            req = Request(url, headers={"User-Agent": "oxe/autocomplete"})
+            with urlopen(req, timeout=3) as resp:
+                data = _json.loads(resp.read())
+            phrases = data[1] if isinstance(data, list) and len(data) > 1 else []
+            return [str(p) for p in phrases][:6]
+        except Exception as e:
+            log.warning("/ac: ddg autocomplete failed: %s", e)
+            return []
+
     @app.get("/cache/stats")
     def cache_stats() -> dict:
         return c.stats()
