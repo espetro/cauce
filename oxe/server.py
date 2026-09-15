@@ -3,7 +3,7 @@ import os
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Any, Callable, Optional
 from urllib.parse import quote
 
 from fastapi import FastAPI, Form, Header, HTTPException, Query, Request
@@ -17,15 +17,12 @@ from fastapi.responses import (
 )
 from mcp.server.transport_security import TransportSecuritySettings
 from pydantic import BaseModel
-from typing import Any
 
+from . import __version__, exa_compat
 from .cache import TTLCache
-from . import exa_compat
-from .search import do_search
-from . import ui
-from . import __version__
 from .devlog import DEV as _DEV
 from .devlog import event as _dev_event
+from .search import do_search
 
 log = logging.getLogger(__name__)
 
@@ -74,7 +71,18 @@ class ExaRequest(BaseModel):
 cache = TTLCache(os.path.join(CACHE_DIR, "cache.db"))
 log.info("cache initialized at %s/cache.db", CACHE_DIR)
 
-_STATIC_DIR = Path(__file__).parent / "static"
+_NO_UI_PAGE = """<!doctype html><html><head><title>oxe</title></head>
+<body style="font-family:system-ui,sans-serif;max-width:36rem;margin:4rem auto;padding:0 1rem">
+<h1>oxe web UI not built</h1>
+<p>The SPA bundle is not present. Options:</p>
+<ul>
+<li>Dev checkout: run <code>mise run build:ui</code> (builds <code>ui/dist</code>),
+   or set <code>OXE_UI_DIST</code>.</li>
+<li>Installed package: set <code>OXE_UI_DIST</code> to a directory containing
+   <code>index.html</code>.</li>
+</ul>
+<p>The JSON API (<code>POST /search</code>) and MCP (<code>/mcp/</code>) work without the UI.</p>
+</body></html>"""
 
 
 def _ui_dist_dir() -> Path | None:
@@ -215,7 +223,12 @@ def make_app(
         try:
             out = do_search(c, req_dict, backend=backend, on_result=observer)
         except Exception as e:
-            _dev_event("search", q=req_dict.get("query", ""), page=req_dict.get("page", 1), error=str(e)[:200])
+            _dev_event(
+                "search",
+                q=req_dict.get("query", ""),
+                page=req_dict.get("page", 1),
+                error=str(e)[:200],
+            )
             raise
         if _DEV:
             _dev_event(
@@ -255,19 +268,9 @@ def make_app(
         q = q.strip()
         if accept and "application/json" in accept:
             return JSONResponse(_search_payload(q))
-        try:
-            initial_results = _search_payload(q)
-        except Exception as e:
-            log.exception("UI: initial search for %r failed: %s", q, e)
-            initial_results = None
-        share = _share_info(c, q, initial_results)
-        title, body = ui.render_search(
-            initial_query=q,
-            initial_results=initial_results,
-            share=share,
-            page=p,
-        )
-        return HTMLResponse(ui.render_shell(title, body, VERSION, page_class="search"))
+        if accept and "application/json" in accept:
+            return JSONResponse(_search_payload(q))
+        return HTMLResponse(_NO_UI_PAGE)
 
     @app.get("/suggest")
     def suggest(q: str = Query(...)) -> list:
@@ -310,7 +313,9 @@ def make_app(
         authorization: Optional[str] = Header(default=None),
         x_api_key: Optional[str] = Header(default=None, alias="x-api-key"),
     ) -> dict:
-        actor = (authorization or x_api_key or "").split()[-1][:12] if (authorization or x_api_key) else "anonymous"
+        actor = "anonymous"
+        if authorization or x_api_key:
+            actor = (authorization or x_api_key or "").split()[-1][:12]
         log.warning("/cache/invalidate called by %s", actor)
         deleted = c.invalidate()
         return {"deleted": deleted}
@@ -321,8 +326,7 @@ def make_app(
             dist = _ui_dist_dir()
             if dist is not None:
                 return FileResponse(dist / "index.html", media_type="text/html")
-            title, body = ui.render_search(initial_query="")
-            return HTMLResponse(ui.render_shell(title, body, VERSION, page_class="search"))
+            return HTMLResponse(_NO_UI_PAGE)
         return RedirectResponse(url=f"/search?q={quote(q)}", status_code=302)
 
     @app.get("/assets/{name}")
@@ -342,9 +346,7 @@ def make_app(
         q: Optional[str] = Query(default=None),
         since: Optional[str] = Query(default=None),
     ) -> str:
-        since_hours = int(since) if since else None
-        title, body = ui.render_history(c, q=q, since_hours=since_hours)
-        return ui.render_shell(title, body, VERSION, page_class="history")
+        return HTMLResponse(_NO_UI_PAGE)
 
     @app.post("/history/delete")
     def ui_history_delete(scope: str = Form(...)) -> RedirectResponse:
@@ -569,8 +571,7 @@ def make_app(
         include_expired: bool = Query(default=False),
         page: int = Query(default=0, ge=0),
     ) -> str:
-        title, body = ui._render_index(c, q=q, include_expired=include_expired, page=page)
-        return ui.render_shell(title, body, VERSION, page_class="cache")
+        return HTMLResponse(_NO_UI_PAGE)
 
     @app.get("/row/{key}")
     def ui_row(key: str) -> Response:
@@ -587,16 +588,6 @@ def make_app(
                 return Response(status_code=204)
         log.info("UI: deleted cache row %s", key[:12])
         return RedirectResponse(url="/cache", status_code=303)
-
-    @app.get("/static/{name}")
-    def ui_static(name: str) -> Response:
-        if "/" in name or ".." in name:
-            raise HTTPException(status_code=400, detail="bad path")
-        p = _STATIC_DIR / name
-        if not p.is_file():
-            raise HTTPException(status_code=404, detail="not found")
-        media = "text/css" if name.endswith(".css") else "application/javascript" if name.endswith(".js") else "text/plain"
-        return Response(p.read_text(encoding="utf-8"), media_type=media)
 
     return app
 

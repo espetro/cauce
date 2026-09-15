@@ -55,7 +55,10 @@ TOOLS_SPEC = [
                     "source": {
                         "type": "string",
                         "enum": ["web", "history", "cache"],
-                        "description": "web = live search, history = user's clicked URLs, cache = previously cached searches",
+                        "description": (
+                            "web = live search, history = user's clicked URLs,"
+                            " cache = previously cached searches"
+                        ),
                     },
                     "num_results": {"type": "integer", "minimum": 1, "maximum": 10},
                 },
@@ -227,7 +230,7 @@ async def stream_answer(
                 tools=TOOLS_SPEC,
                 stream=True,
             )
-        except Exception as e:  # noqa: BLE001 - surfaced as an error event
+        except Exception as e:
             yield {"type": "done", "answer": "", "related_questions": [],
                    "confidence": 0, "model": model_id, "cached": False,
                    "error": f"provider error: {e}"}
@@ -255,7 +258,7 @@ async def stream_answer(
                         if tc:
                             for part in tc:
                                 _acc_tool_call(_acc, part)
-            except Exception as e:  # noqa: BLE001 - propagate to async side
+            except Exception as e:
                 _err.append(e)
             finally:
                 _done.set()

@@ -6,7 +6,7 @@ Scope: the `oxe/` Python package (server, cache, backends, MCP, templates). Repo
 
 - Keep it lean: `ruff` for lint/format, `pytest` for tests. No other linters or type checkers unless the owner asks.
 - Minimal runtime dependency surface; new runtime deps need justification in the commit.
-- The templates in `oxe/static/` are the no-JS/legacy fallback UI; the primary webapp is the `ui/` build output. Keep both consistent with `.agents/docs/screens/` specs.
+- The web UI is the `ui/` SPA build, served via `OXE_UI_DIST` resolution (`$OXE_UI_DIST` -> `./ui/dist` -> packaged `oxe/ui_dist`). There are no server-rendered templates; when no bundle exists `/` serves a minimal inline notice page.
 
 ## Invariants (break these and something silently regresses)
 

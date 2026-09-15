@@ -1,6 +1,6 @@
 """oxe: Exa-compatible web-search proxy and MCP server backed by DuckDuckGo."""
 
-__version__ = "0.3.1"
+__version__ = "0.4.0"
 
 from .backends import BackendError, FallbackBackend, FanoutBackend, SearchBackend
 from .cache import TTLCache

@@ -60,10 +60,11 @@ def test_assets_served_from_dist(tmp_path, monkeypatch):
     assert client.get("/assets/nope.js").status_code == 404
 
 
-def test_root_falls_back_to_legacy_template(tmp_path, monkeypatch):
+def test_root_minimal_page_without_dist(tmp_path, monkeypatch):
     monkeypatch.delenv("OXE_UI_DIST", raising=False)
     monkeypatch.chdir(tmp_path)  # no dist anywhere
     _, client = _client(tmp_path)
     r = client.get("/")
     assert r.status_code == 200
     assert "<html" in r.text.lower()
+    assert "OXE_UI_DIST" in r.text

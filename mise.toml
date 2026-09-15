@@ -33,6 +33,18 @@ description = "Build static UI into dist/"
 dir = "ui"
 run = "bun run build"
 
+[tasks."build:ui"]
+description = "Build the UI and copy it into oxe/ui_dist for packaging"
+run = """
+#!/usr/bin/env bash
+set -euo pipefail
+cd ui && bun run build
+cd ..
+rm -rf oxe/ui_dist
+cp -R ui/dist oxe/ui_dist
+echo "copied ui/dist -> oxe/ui_dist ($(find oxe/ui_dist -type f | wc -l | tr -d ' ') files)"
+"""
+
 [tasks.serve]
 description = "Serve production build via the Python server"
 run = "uv run oxe"

@@ -124,4 +124,5 @@ def test_suggest_empty(client):
 
 def test_row_delete_idempotent_for_api_clients(client):
     # non-HTML clients get 204 on missing row (UI refresh flow), HTML still redirects
-    assert client.post("/row/doesnotexist/delete", headers={"accept": "application/json"}).status_code == 204
+    r = client.post("/row/doesnotexist/delete", headers={"accept": "application/json"})
+    assert r.status_code == 204

@@ -1,6 +1,5 @@
 """Tests for oxe.cache TTLCache backed by named SQL queries in oxe/sql/*.sql."""
 
-import time
 
 from oxe.cache import TTLCache
 

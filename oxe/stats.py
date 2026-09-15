@@ -6,7 +6,6 @@ Writes a single self-contained index.html with inline SVG charts, no JS.
 
 import html
 import sqlite3
-import statistics
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -98,7 +97,8 @@ def panel_searches_per_day(rows, days) -> str:
         f'<text x="{pad_l}" y="{H - 6}" class="axis">{_day_keys(days)[0][5:]}</text>'
     )
     parts.append(
-        f'<text x="{W - 8}" y="{H - 6}" class="axis" text-anchor="end">{_day_keys(days)[-1][5:]}</text>'
+        f'<text x="{W - 8}" y="{H - 6}" class="axis"'
+        f' text-anchor="end">{_day_keys(days)[-1][5:]}</text>'
     )
     parts.append(
         f'<rect x="{pad_l}" y="{pad_t - 2}" width="10" height="10" class="bar-cache"/>'
@@ -134,7 +134,10 @@ def panel_hit_rate(rows, days) -> str:
             f'class="line-p50" fill="none"/>'
         )
     big = f'<div class="bignum">{rate}%</div>'
-    return f'{big}<svg viewBox="0 0 {W} {H}" role="img" aria-label="cache hit rate trend">{spark}</svg>'
+    return (
+        f'{big}<svg viewBox="0 0 {W} {H}" role="img" aria-label="cache hit rate trend">'
+        f'{spark}</svg>'
+    )
 
 
 def _percentile(sorted_vals, p):
@@ -182,10 +185,10 @@ def panel_latency(rows, days) -> str:
         f'<text x="{pad}" y="{pad + 8}" class="axis">{ymax:.0f} ms</text>'
     )
     legend = (
-        '<line x1="' + f"{pad}" + '" y1="' + f"{pad}" + '" x2="' + f"{pad + 24}" + '" y2="' + f"{pad}" + '" class="line-p50"/>'
-        '<text x="' + f"{pad + 30}" + '" y="' + f"{pad + 4}" + '" class="axis">p50</text>'
-        '<line x1="' + f"{pad + 80}" + '" y1="' + f"{pad}" + '" x2="' + f"{pad + 104}" + '" y2="' + f"{pad}" + '" class="line-p95"/>'
-        '<text x="' + f"{pad + 110}" + '" y="' + f"{pad + 4}" + '" class="axis">p95</text>'
+        f'<line x1="{pad}" y1="{pad}" x2="{pad + 24}" y2="{pad}" class="line-p50"/>'
+        f'<text x="{pad + 30}" y="{pad + 4}" class="axis">p50</text>'
+        f'<line x1="{pad + 80}" y1="{pad}" x2="{pad + 104}" y2="{pad}" class="line-p95"/>'
+        f'<text x="{pad + 110}" y="{pad + 4}" class="axis">p95</text>'
     )
     return (
         f'<svg viewBox="0 0 {W} {H}" role="img" aria-label="network latency">'
@@ -204,7 +207,10 @@ def _fetch_top_queries(conn, days, limit=20):
 def panel_top_queries(rows) -> str:
     if not rows:
         return '<p class="empty">no data yet</p>'
-    out = ['<table class="ptable"><thead><tr><th>#</th><th>query</th><th>count</th></tr></thead><tbody>']
+    out = [
+        '<table class="ptable"><thead>'
+        '<tr><th>#</th><th>query</th><th>count</th></tr></thead><tbody>'
+    ]
     for i, (text, count) in enumerate(rows, 1):
         out.append(
             f"<tr><td>{i}</td><td>{html.escape(text or '(empty)')}</td><td>{count}</td></tr>"
@@ -259,10 +265,11 @@ svg line.grid { stroke: var(--grid); }
 .ptable { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
 .ptable th { text-align: left; color: var(--muted); font-weight: 500; }
 .ptable th, .ptable td { padding: 0.3rem 0.5rem; border-bottom: 1px solid var(--grid); }
+/* ptable right-align handled by td:last-child */
 .ptable td:last-child, .ptable th:last-child { text-align: right; }
 .hbar-row { display: flex; align-items: center; gap: 0.6rem; margin: 0.5rem 0; }
 .hbar-label { width: 3.5rem; font-size: 0.85rem; }
-.hbar-track { flex: 1; height: 0.9rem; background: var(--grid); border-radius: 4px; overflow: hidden; }
+.hbar-track { flex: 1; height: 0.9rem; background: var(--grid); border-radius: 4px; }
 .hbar-fill { display: block; height: 100%; background: var(--accent); border-radius: 4px; }
 .hbar-pct { width: 3rem; text-align: right; font-size: 0.85rem; color: var(--muted); }
 @media (max-width: 700px) { .grid { grid-template-columns: 1fr; } }
@@ -346,7 +353,8 @@ def panel_client_split_rows(rows) -> str:
         pct = 100 * counts[client] / total
         parts.append(
             f'<div class="hbar-row"><span class="hbar-label">{client}</span>'
-            f'<span class="hbar-track"><span class="hbar-fill" style="width:{pct:.0f}%"></span></span>'
+            f'<span class="hbar-track"><span class="hbar-fill" style="width:{pct:.0f}%">'
+            f'</span></span>'
             f'<span class="hbar-pct">{pct:.0f}%</span></div>'
         )
     return "".join(parts)

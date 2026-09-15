@@ -39,7 +39,9 @@ def do_search(
     response = b.search(req_dict)
     response.setdefault("_backend", getattr(b, "name", "ddg"))
     duration_ms = int((time.monotonic() - started) * 1000)
-    effective_ttl = ttl if ttl is not None else (NEGATIVE_TTL if not response["results"] else TTL_DEFAULT)
+    if ttl is None:
+        ttl = NEGATIVE_TTL if not response["results"] else TTL_DEFAULT
+    effective_ttl = ttl
     effective_ttl = min(effective_ttl, TTL_MAX)
     to_store = dict(response)
     to_store["_q"] = (req_dict.get("query") or "")[:200]

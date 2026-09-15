@@ -10,7 +10,8 @@ from . import sqlload
 
 # Faster-than-LIKE fuzzy matching for history/cache search; optional dep.
 try:
-    from rapidfuzz import fuzz, process as rz_process
+    from rapidfuzz import fuzz
+    from rapidfuzz import process as rz_process
 
     _FUZZ = True
 except ImportError:

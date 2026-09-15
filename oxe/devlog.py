@@ -31,5 +31,5 @@ def event(name: str, **fields) -> None:
     fields["ts"] = round(time.time(), 3)
     try:
         log.debug(json.dumps(fields, ensure_ascii=False, default=str))
-    except Exception:  # noqa: BLE001, S110 - logging must never break the app
+    except Exception:
         pass

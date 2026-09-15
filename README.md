@@ -27,6 +27,9 @@ oxe
 
 ```bash
 uv tool install oxe
+
+# with the AI answer extra (aisuite + provider SDKs)
+uv tool install "oxe[ai]"
 ```
 
 ### Pinned from GitHub
@@ -126,14 +129,21 @@ query in the address bar lands on the rendered results page at
 |---|---|---|
 | `POST` | `/search` | Exa-compatible search (JSON in, JSON out) |
 | `GET` | `/search?q=X` | search results: HTML for browsers, Exa JSON with `Accept: application/json` |
-| `GET` | `/` | server-rendered HTML search UI (`/?q=X` redirects to `/search?q=X`) |
+| `GET` | `/` | SPA web UI from the built bundle (see `OXE_UI_DIST`; `/?q=X` redirects to `/search?q=X`) |
+| `GET` | `/suggest?q=X` | OpenSearch suggestions JSON (own query history + completions) |
+| `GET` | `/ac?q=X` | DuckDuckGo autocomplete proxy (UI suggestions) |
+| `POST` | `/answer` | SSE-streamed AI answer (requires `oxe[ai]` + configured model) |
+| `GET` | `/v1/models` | configured provider's model list (OpenAI-compatible; empty when unconfigured) |
+| `GET` | `/settings` | current `[ai]` config (api_key redacted) |
+| `PUT` | `/settings` | write the `[ai]` config section (api_key preserved when omitted) |
 | `GET` | `/row/{hash}` | redirect to `/search?q=<original query>` for a cache row |
+| `POST` | `/row/{key}/delete` | delete a cache row; 204 idempotent for non-HTML clients, 303 redirect for browsers |
 | `GET` | `/health` | liveness + cache stats |
 | `GET` | `/cache/stats` | cache row count, hits, db size |
 | `POST` | `/cache/invalidate` | wipe all cached rows |
-| `GET` | `/` | server-rendered HTML search UI (`/?q=X` redirects to `/search?q=X`) |
 | `GET` | `/history` | click history |
 | `POST` | `/click` | record a click (called by the UI) |
+| `POST` | `/history/delete` | delete click history (`scope=24h|7d|30d|all`) |
 | `GET` | `/mcp/` | StreamableHTTP MCP transport |
 | `GET` | `/docs` | FastAPI auto-generated OpenAPI |
 
@@ -199,6 +209,56 @@ All optional. Override via env vars:
 | `OXE_SEARCH_LOG_RETENTION_DAYS` | `30` | how long to keep search_log rows (feeds `oxe stats`) |
 | `OXE_BACKENDS` | unset | JSON backend spec, see [Backends](#backends). Unset means DuckDuckGo. |
 | `OXE_LOG_LEVEL` | `INFO` | log level |
+| `OXE_UI_DIST` | unset | directory containing the built web UI (`index.html` + `assets/`). Resolution order: this var, `./ui/dist` (repo checkout), packaged `oxe/ui_dist`. Without any, `/` serves a minimal page explaining how to get the UI; the JSON API and MCP work regardless. |
+| `OXE_CONFIG_DIR` | `~/.config/oxe` | directory holding `config.toml` (AI provider settings, managed via `GET`/`PUT /settings`) |
+| `OXE_DEV` | unset | set to `1` for structured JSON dev observability events on stdout (search, suggest, answer, models) |
+
+## AI answers (oxe[ai])
+
+`POST /answer` streams an SSE answer grounded in a live search. Install the
+extra and configure a provider once (the web UI settings dialog writes the
+same file):
+
+```bash
+uv tool install "oxe[ai]"
+mkdir -p ~/.config/oxe
+cat > ~/.config/oxe/config.toml <<'TOMLEOF'
+[ai]
+provider = "openai"
+model = "gpt-4o-mini"
+api_key = "{env.OPENAI_API_KEY}"   # {env.NAME} interpolation against the environment
+enabled = true
+TOMLEOF
+```
+
+Config file rules:
+
+- Location: `$OXE_CONFIG_DIR/config.toml` (default `~/.config/oxe/config.toml`).
+- String values may reference environment variables with `{env.NAME}`
+  (e.g. `api_key = "{env.MY_KEY}"`); a missing variable is a config error.
+- A `.env` file in the working directory is loaded before interpolation, so
+  keys can live there instead of your shell profile.
+- AI mode is OFF unless both `provider` and `model` are set.
+- Providers: `openai`, `anthropic`, `groq`, `mistral`, `ollama`, `huggingface`.
+
+`GET /settings` returns the current section with `api_key` redacted;
+`PUT /settings` writes it (an omitted `api_key` leaves the stored key
+untouched). `GET /v1/models` lists the configured provider's models in an
+OpenAI-compatible shape and returns `"data": []` when unconfigured.
+
+## Web UI
+
+The primary UI is a Preact SPA in the `ui/` workspace (Vite + daisyUI).
+The Python package no longer ships server-rendered templates. At request
+time the server looks for a built bundle in this order:
+
+1. `$OXE_UI_DIST` (must contain `index.html`)
+2. `./ui/dist` (repo checkouts: `mise run build:ui` builds and copies it)
+3. packaged `oxe/ui_dist` (a UI build copied next to the Python code)
+
+Without a bundle, `GET /` serves a tiny inline page explaining how to get
+the UI; every other endpoint (search JSON, MCP, settings, AI) works
+normally.
 
 ## Backends
 
@@ -258,9 +318,9 @@ and `contents.highlights=true` are requested.
 │  Hermes /  │                    │  │  + ddgs (DuckDuckGo)   │  │
 │  Cursor    │                    │  └────────────────────────┘  │
 └────────────┘                    │                              │
-                                  │  static/app.js (vanilla JS)  │
-┌────────────┐  browser           │  + <template> result cards   │
-│  You, via  │ ─────▶ /  ────────▶│  + sendBeacon /click         │
+                                  │  Preact SPA (ui/dist)        │
+┌────────────┐  browser           │  + sendBeacon /click         │
+│  You, via  │ ─────▶ /  ────────▶│  + SSE /answer streaming     │
 │  browser   │                    └──────────────────────────────┘
 └────────────┘
 ```
@@ -270,11 +330,11 @@ and `contents.highlights=true` are requested.
 - `oxe/search.py` — shared `do_search(cache, req)` used by HTTP and MCP.
 - `oxe/server.py` — FastAPI app, all routes, startup click pruner.
 - `oxe/mcp_server.py` — `MCPServer` with two tools.
-- `oxe/ui.py` + `oxe/static/{app.js,ui.css}` — stdlib-rendered HTML, vanilla JS.
+- `oxe/ui/` workspace (not packaged) — Preact SPA; built bundle served via `OXE_UI_DIST`.
 
 ## Memory & cost
 
-- **RSS**: ~70 MB cold-start, ~27-35 MB steady-state. 200 MB ceiling.
+- **RSS**: ~22 MB without the `ai` extra, ~56 MB with `oxe[ai]` (aisuite imports provider SDKs lazily). 200 MB ceiling.
 - **Disk**: `~/.cache/oxe/cache.db` typically <10 MB. WAL file `<5 MB`.
 - **Network**: one DuckDuckGo HTML request per unique cache miss. Cached responses replay instantly.
 - **Third-party services**: none. No API keys, no telemetry.
@@ -380,7 +440,10 @@ For the LAN case, expose the port with care: `oxe` does **not** require auth tod
 
 The live process exposes `GET /health` (liveness, version, cache row count),
 `GET /cache/stats` (rows, unexpired rows, hits total, db size, oldest/newest)
-and the server-rendered listings at `GET /cache` and `GET /history`.
+`GET /cache` and `GET /history` (JSON), and — with a built UI bundle —
+the SPA dashboard pages. For development, `OXE_DEV=1` emits structured
+JSON events on stdout; under mise, `mise run logs` tails the dev server
+log (`/tmp/oxe-dev.log`).
 
 For trends, every search (HTTP and MCP) writes a row to the `search_log`
 SQLite table: query text + hash, cache vs network, result count, latency in

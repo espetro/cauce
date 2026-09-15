@@ -5,6 +5,25 @@ All notable changes to oxe are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-09-15
+
+### Added
+
+- Web UI rewritten as a Preact SPA in a new `ui/` workspace (Vite + daisyUI), served by the Python server from the built bundle. AI answer mode with SSE streaming (tool steps, sources, related queries), DDG-style pill search bar with segmented Search/AI toggle, letters pager, theme switcher, cache badge with web-refresh, pagination, `?settings=open` URL state.
+- AI answers end to end: `POST /answer` (SSE), `GET /v1/models` (provider model listing via lazy SDK imports), answer caching. `oxe[ai]` optional extra (aisuite with openai/anthropic).
+- `GET /settings` / `PUT /settings`: read and write the `[ai]` section of `config.toml` (api_key redacted on read, preserved on write when omitted). `{env.NAME}` interpolation in config string values and `.env` loading from the working directory (`oxe.config`).
+- `GET /ac`: DuckDuckGo autocomplete proxy for UI suggestions; `GET /suggest`: OpenSearch suggestions over own query history.
+- Search pagination end to end (`page` in the cache key and DDGS page kwarg); `_cached_at` on cached payloads and a `_refresh` flag to force network refresh.
+- Dev observability: `OXE_DEV=1` emits structured JSON events (search, suggest, ac, answer, models); `mise run logs` tails the dev server log.
+- `POST /row/{key}/delete` is idempotent: 204 for non-HTML clients on an already-deleted row (UI refresh flow), 303 redirect for browsers.
+
+### Changed
+
+- The server serves the SPA from a built bundle resolved as `$OXE_UI_DIST`, `./ui/dist` (repo checkout), then packaged `oxe/ui_dist`. When no bundle exists, `/` serves a minimal inline page explaining how to get the UI; the JSON API and MCP work regardless.
+- The legacy server-rendered UI was removed: `oxe/ui.py` and `oxe/static/` are gone. Content negotiation on `/search` is unchanged (HTML browsers get the SPA or the no-UI page, `Accept: application/json` clients get Exa JSON).
+- `mise run build:ui` builds `ui/dist` and copies it to `oxe/ui_dist` for packaging; package-data ships `ui_dist` when present.
+- Ruff configuration now lives in `pyproject.toml` (select E,F,W,I,B,SIM,RUF,C4,UP,BLE,TRY with pragmatic ignores); `mise run lint:py` is clean.
+
 ## [0.3.1] - 2026-09-15
 
 ### Added

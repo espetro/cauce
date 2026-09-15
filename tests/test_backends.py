@@ -117,7 +117,9 @@ def test_resolve_json_specs():
     b = resolve(spec)
     assert isinstance(b, FallbackBackend)
     assert b.name == "fb:ddg"
-    nested = json.loads('{"mode":"fanout","backends":[{"mode":"fallback","backends":["ddg"]},"ddg"]}')
+    nested = json.loads(
+        '{"mode":"fanout","backends":[{"mode":"fallback","backends":["ddg"]},"ddg"]}'
+    )
     fo = resolve(nested)
     assert isinstance(fo, FanoutBackend)
     assert fo.name == "fo:fb:ddg,ddg"

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "oxe"
-version = "0.3.1"
+version = "0.4.0"
 description = "Local web-search proxy and cache for AI agents. Exa-compatible HTTP API + MCP, DuckDuckGo backend, SQLite TTL."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -64,4 +64,30 @@ where = ["."]
 include = ["oxe*"]
 
 [tool.setuptools.package-data]
-oxe = ["static/*", "sql/*.sql"]
+oxe = ["sql/*.sql", "ui_dist/*", "ui_dist/assets/*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "SIM", "RUF", "C4", "UP", "BLE", "TRY"]
+ignore = [
+    "UP045", # Optional[X] -> X | None churn in pre-existing code
+    "UP035",
+    "BLE001", # broad except at API boundaries is intentional
+    "TRY003", # long exception messages in HTTP handlers are fine here
+    "TRY401",
+    "B904",
+    "C408",
+    "RUF012",
+    "RUF022",
+    "SIM102",
+    "SIM105",
+    "SIM108",
+    "E741",
+    "B905",
+    "TRY300",
+    "C416",
+    "E402",
+]
