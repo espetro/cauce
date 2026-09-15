@@ -379,6 +379,10 @@ def make_app(
             payload["cached"] = True
 
             async def _cached_stream():
+                if payload.get("sources"):
+                    yield ai_mod.sse_format(
+                        {"type": "sources", "sources": payload["sources"]}
+                    )
                 yield ai_mod.sse_format({"type": "done", **payload})
 
             if _DEV:
@@ -387,6 +391,7 @@ def make_app(
 
         async def _stream():
             _t0 = time.monotonic()
+            _sources: list = []
             _steps = 0
             _err = None
             final = None
@@ -395,6 +400,8 @@ def make_app(
             ):
                 if event.get("type") == "step":
                     _steps += 1
+                if event.get("type") == "sources":
+                    _sources = event.get("sources") or []
                 if event.get("type") == "done":
                     final = event
                     _err = event.get("error")
@@ -416,6 +423,7 @@ def make_app(
             ):
                 try:
                     ttl = min(ai_mod.ANSWER_TTL_DEFAULT, ai_mod.ANSWER_TTL_MAX)
+                    final["sources"] = _sources
                     c.put_answer(key, query, final, ttl, model=final.get("model") or "")
                 except Exception:
                     log.exception("failed to cache AI answer")

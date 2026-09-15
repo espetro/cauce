@@ -402,3 +402,17 @@ def test_stream_answer_greeting_sets_done_error(monkeypatch):
     assert done["confidence"] == 0
     assert done["error"] == "model did not answer the query - try a different model"
     assert done["answer"]  # text still streamed/kept
+
+
+def test_cached_answer_replays_sources(tmp_path, monkeypatch):
+    """put_answer stores sources; cached stream replays sources + done."""
+    from oxe.cache import TTLCache
+
+    c = TTLCache(str(tmp_path / "db"))
+    done = {
+        "type": "done", "answer": "a", "related_questions": [], "confidence": 9,
+        "model": "m", "cached": False, "sources": [{"title": "t", "url": "u"}],
+    }
+    c.put_answer("k", "q", done, 60, model="m")
+    got = c.get_answer("k")
+    assert got is not None and got.get("sources") == [{"title": "t", "url": "u"}]
