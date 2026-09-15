@@ -155,7 +155,7 @@ def test_loop_confidence_stop_and_event_sequence(monkeypatch):
         ['Here is', ' the answer.\n{"confidence": 9, "related_questions": ["q1"]}'],
         None,
     )])
-    monkeypatch.setattr(ai_mod, "_aisuite_client", lambda cfg: (client, "openai:gpt-test"))
+    monkeypatch.setattr(ai_mod, "_sdk_client", lambda cfg: (client, "openai:gpt-test", "openai"))
     events = _run(_collect(ai_mod.stream_answer("q", CFG)))
     types = [e["type"] for e in events]
     assert types == ["delta", "sources", "done"]
@@ -178,7 +178,7 @@ def test_loop_tool_execution_and_max_iterations(monkeypatch):
     tool_call = [{"id": "t1", "name": "web_search", "arguments": '{"query": "q"}'}]
     never_confident = (["thinking..."], tool_call)
     client = _fake_client([never_confident] * 5)
-    monkeypatch.setattr(ai_mod, "_aisuite_client", lambda cfg: (client, "openai:gpt-test"))
+    monkeypatch.setattr(ai_mod, "_sdk_client", lambda cfg: (client, "openai:gpt-test", "openai"))
     monkeypatch.setattr(ai_mod, "build_toolset", lambda *a: {"web_search": web_search})
     events = _run(_collect(ai_mod.stream_answer("q", CFG, max_iterations=5)))
     # one step event per search across 5 iterations, then exhausted done
@@ -197,7 +197,7 @@ def test_loop_unknown_tool_and_bad_args(monkeypatch):
         ([".."], tool_call),
         (['done.\n{"confidence": 8, "related_questions": []}'], None),
     ])
-    monkeypatch.setattr(ai_mod, "_aisuite_client", lambda cfg: (client, "openai:gpt-test"))
+    monkeypatch.setattr(ai_mod, "_sdk_client", lambda cfg: (client, "openai:gpt-test", "openai"))
     events = _run(_collect(ai_mod.stream_answer("q", CFG)))
     done = events[-1]
     assert done["confidence"] == 8
@@ -216,7 +216,7 @@ def test_sources_collected_from_tool_results(monkeypatch):
         return {"results": [{"title": "T", "url": "https://example.com/a", "text": "x"},
                             {"title": "T", "url": "https://example.com/a", "text": "dup"}]}
 
-    monkeypatch.setattr(ai_mod, "_aisuite_client", lambda cfg: (client, "openai:gpt-test"))
+    monkeypatch.setattr(ai_mod, "_sdk_client", lambda cfg: (client, "openai:gpt-test", "openai"))
     monkeypatch.setattr(ai_mod, "build_toolset", lambda *a: {"web_search": web_search})
     events = _run(_collect(ai_mod.stream_answer("q", CFG)))
     sources_ev = next(e for e in events if e["type"] == "sources")

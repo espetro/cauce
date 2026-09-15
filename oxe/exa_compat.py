@@ -1,6 +1,7 @@
 import hashlib
 import logging
 import re
+import time
 import uuid
 from typing import Any
 from urllib.parse import urlparse
@@ -12,6 +13,8 @@ log = logging.getLogger(__name__)
 _SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+")
 _NUM_CLAMP = (1, 30)
 _FAVICON = "https://www.google.com/s2/favicons?domain={netloc}&sz=32"
+# Pause before the single page-fetch retry (DDG html rate limiting).
+_PAGE_RETRY_DELAY_S = 1.5
 
 
 def cache_key(req: dict) -> str:
@@ -109,6 +112,7 @@ def search(req: dict, engine: str | None = None) -> dict:
         backends_to_try = [engine]
     else:
         backends_to_try = ["duckduckgo", "auto"]
+
     raw: list[dict[str, Any]] = []
     last_err: Exception | None = None
     for backend in backends_to_try:
@@ -125,7 +129,17 @@ def search(req: dict, engine: str | None = None) -> dict:
                 kwargs["timelimit"] = timelimit
             if page > 1:
                 kwargs["page"] = page
-            raw = list(DDGS().text(**kwargs))
+            try:
+                raw = list(DDGS().text(**kwargs))
+            except Exception as e:
+                # DDG html paging is aggressively rate limited; a single
+                # immediate retry recovers most transient "No results found."
+                log.warning(
+                    "exa_compat: backend %s page %s failed (%s), retrying once",
+                    backend, page, e,
+                )
+                time.sleep(_PAGE_RETRY_DELAY_S)
+                raw = list(DDGS().text(**kwargs))
             if raw:
                 break
         except Exception as e:

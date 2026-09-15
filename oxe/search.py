@@ -12,6 +12,8 @@ log = logging.getLogger(__name__)
 TTL_DEFAULT = int(os.getenv("OXE_TTL_DEFAULT", "3600"))
 TTL_MAX = int(os.getenv("OXE_TTL_MAX", "86400"))
 NEGATIVE_TTL = int(os.getenv("OXE_NEGATIVE_TTL", "300"))
+# Shorter cache TTL for deep pages (page > 1): DDG paged fetches are flaky.
+_PAGE_TTL = 300
 
 def do_search(
     cache: TTLCache,
@@ -40,7 +42,11 @@ def do_search(
     response.setdefault("_backend", getattr(b, "name", "ddg"))
     duration_ms = int((time.monotonic() - started) * 1000)
     if ttl is None:
-        ttl = NEGATIVE_TTL if not response["results"] else TTL_DEFAULT
+        # Deep pages: cache briefly so a flaky paged fetch doesn't stick long.
+        if int(req_dict.get("page") or 1) > 1:
+            ttl = _PAGE_TTL
+        else:
+            ttl = NEGATIVE_TTL if not response["results"] else TTL_DEFAULT
     effective_ttl = ttl
     effective_ttl = min(effective_ttl, TTL_MAX)
     to_store = dict(response)

@@ -1,12 +1,14 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import * as v from "valibot";
-import { listModels } from "../../lib/ai";
+import { listModels, testConnection } from "../../lib/ai";
 import { bumpModels, ModelPicker } from "../../components/ModelPicker";
 import { getTheme, setTheme, THEMES, type ThemeChoice } from "../../lib/theme";
 import { getSettings, putSettings, PROVIDERS, SettingsSchema, type SettingsValues } from "./schema";
 
 /** Settings dialog: reads/writes the backend [ai] config via GET/PUT /settings.
- * Uncontrolled form, parse-on-submit via valibot. */
+ * Uncontrolled form, parse-on-submit via valibot. Saved values are hydrated
+ * from GET /settings on mount (provider, model, base_url, enabled); api_key
+ * is redacted server-side so it stays blank ("unchanged if blank"). */
 export function SettingsDialog({ onClose }: { onClose: () => void }) {
   const [models, setModels] = useState<string[]>([]);
   const [modelsError, setModelsError] = useState<string | null>(null);
@@ -15,21 +17,44 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<keyof SettingsValues, string>>>({});
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<{ ok: boolean; detail: string } | null>(null);
   const formRef = useRef<HTMLFormElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
   const [model, setModel] = useState("");
+  const [provider, setProvider] = useState<string>("openai");
   const [theme, setThemeState] = useState<ThemeChoice>(getTheme);
 
+  // hydrate saved config (provider/model drive the controlled pickers)
   useEffect(() => {
     const ctl = new AbortController();
-    getSettings().catch((e: unknown) => setLoadError((e as Error)?.message ?? "load failed"));
+    const setField = (name: string, value: string) => {
+      const el = formRef.current?.elements?.namedItem(name);
+      if (el instanceof HTMLInputElement || el instanceof HTMLSelectElement) {
+        el.value = value;
+      }
+    };
+    getSettings(ctl.signal)
+      .then((s) => {
+        const ai = s.ai;
+        if (!ai) return;
+        if (PROVIDERS.includes(ai.provider as (typeof PROVIDERS)[number])) {
+          setProvider(ai.provider);
+          setField("provider", ai.provider);
+        }
+        if (ai.model) setModel(ai.model);
+        if (ai.base_url) setField("base_url", ai.base_url);
+        const enabled = formRef.current?.elements?.namedItem("enabled");
+        if (enabled instanceof HTMLInputElement) enabled.checked = ai.enabled;
+      })
+      .catch((e: unknown) => {
+        if ((e as Error)?.name !== "AbortError")
+          setLoadError((e as Error)?.message ?? "load failed");
+      });
     listModels(ctl.signal)
       .then((m) => {
         setModels(m.data.map((d) => d.id));
         setModelsError(m.error ?? null);
-        getSettings()
-          .then((s) => s.ai?.model && setModel(s.ai.model))
-          .catch(() => undefined);
       })
       .catch(() => setModels([]));
     return () => ctl.abort();
@@ -48,6 +73,7 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
     e.preventDefault();
     setSaveError(null);
     setSaved(false);
+    setTestResult(null);
     const fd = new FormData(formRef.current!);
     const raw = {
       provider: String(fd.get("provider") ?? "") as SettingsValues["provider"],
@@ -79,12 +105,39 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
         setSaving(false);
         setSaved(true);
         bumpModels();
-        setTimeout(onClose, 400);
       })
       .catch((err: unknown) => {
         setSaving(false);
         setSaveError((err as Error)?.message ?? "save failed");
       });
+  };
+
+  /** Verify the form's provider/model/key/base_url with POST /settings/test. */
+  const runTest = () => {
+    if (testing) return;
+    setTestResult(null);
+    setSaveError(null);
+    const fd = new FormData(formRef.current!);
+    const provider = String(fd.get("provider") ?? "");
+    const modelTrimmed = model.trim();
+    const baseUrl = String(fd.get("base_url") ?? "").trim();
+    const apiKey = String(fd.get("api_key") ?? "").trim();
+    if (!modelTrimmed) {
+      setTestResult({ ok: false, detail: "pick a model first" });
+      return;
+    }
+    setTesting(true);
+    testConnection({
+      provider,
+      model: modelTrimmed,
+      base_url: baseUrl || undefined,
+      api_key: apiKey || undefined,
+    })
+      .then((r) => setTestResult({ ok: Boolean(r.ok), detail: r.detail }))
+      .catch((err: unknown) =>
+        setTestResult({ ok: false, detail: (err as Error)?.message ?? "test failed" }),
+      )
+      .finally(() => setTesting(false));
   };
 
   const err = (k: keyof SettingsValues) =>
@@ -123,7 +176,8 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
                 id="set-provider"
                 name="provider"
                 class="select select-sm w-full"
-                defaultValue="openai"
+                value={provider}
+                onInput={(e) => setProvider((e.target as HTMLSelectElement).value)}
               >
                 {PROVIDERS.map((p) => (
                   <option key={p} value={p}>
@@ -176,6 +230,29 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
                 autocomplete="off"
               />
               {err("base_url")}
+
+              <div class="flex items-center gap-2 mt-1">
+                <button
+                  type="button"
+                  class="btn btn-outline btn-sm"
+                  disabled={testing}
+                  onClick={runTest}
+                >
+                  {testing ? (
+                    <span class="loading loading-spinner loading-xs" />
+                  ) : (
+                    "Test connection"
+                  )}
+                </button>
+                {testResult && (
+                  <span
+                    class={`text-xs ${testResult.ok ? "text-success" : "text-error"}`}
+                    role="status"
+                  >
+                    {testResult.detail}
+                  </span>
+                )}
+              </div>
 
               <label class="label cursor-pointer gap-2 text-xs justify-start">
                 <input type="checkbox" name="enabled" class="toggle toggle-sm" defaultChecked />

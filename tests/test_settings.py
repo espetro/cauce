@@ -3,6 +3,8 @@
 import pytest
 from fastapi.testclient import TestClient
 
+from oxe import ai as ai_mod
+
 from oxe.config import AIConfig
 from oxe.server import make_app
 
@@ -126,3 +128,133 @@ def test_row_delete_idempotent_for_api_clients(client):
     # non-HTML clients get 204 on missing row (UI refresh flow), HTML still redirects
     r = client.post("/row/doesnotexist/delete", headers={"accept": "application/json"})
     assert r.status_code == 204
+
+
+# -- POST /settings/test -------------------------------------------------------
+
+from unittest.mock import MagicMock, patch
+
+
+def _put_cfg(client):
+    client.put("/settings", json={"ai": {
+        "provider": "openai", "model": "gpt-4o-mini", "api_key": "sk-test",
+    }})
+
+
+def test_settings_test_requires_provider_and_model(client):
+    assert client.post("/settings/test", json={"ai": {}}).status_code == 422
+    assert client.post("/settings/test", json={"ai": {"provider": "openai"}}).status_code == 422
+    assert client.post("/settings/test", json={}).status_code == 422
+
+
+def _patch_openai(completion=None, listing=None):
+    """Patch oxe.ai's lazy `from openai import OpenAI` with a fake client."""
+    fake_mod = MagicMock()
+    client_inst = fake_mod.OpenAI.return_value
+    if completion is not None:
+        client_inst.chat.completions.create = completion
+    if listing is not None:
+        client_inst.models.list = listing
+    return patch.dict("sys.modules", {"openai": fake_mod})
+
+
+def test_settings_test_ok_completion(client):
+    _put_cfg(client)
+    with _patch_openai(completion=lambda **kw: MagicMock()):
+        res = client.post("/settings/test", json={"ai": {"provider": "openai", "model": "gpt-4o-mini"}})
+    assert res.status_code == 200
+    body = res.json()
+    assert body["ok"] is True
+    assert "completion succeeded" in body["detail"]
+
+
+def test_settings_test_bad_model_list_ok(client):
+    """Completion 404 + successful listing -> ok=False with a model hint."""
+    _put_cfg(client)
+
+    def completion_fail(**kw):
+        err = Exception("Error code: 404 - model 'openrouter/free' not found")
+        raise err
+
+    listing = MagicMock(return_value=MagicMock(data=[MagicMock()]))
+    with _patch_openai(completion=completion_fail, listing=listing):
+        res = client.post("/settings/test", json={"ai": {"provider": "openai", "model": "nope"}})
+    body = res.json()
+    assert body["ok"] is False
+    assert "not found" in body["detail"]
+
+
+def test_settings_test_bad_key_fails_both(client):
+    _put_cfg(client)
+
+    def fail401(**kw):
+        raise Exception("Error code: 401 - invalid api key")
+
+    def list_fail():
+        raise Exception("Error code: 401 - invalid api key")
+
+    with _patch_openai(completion=fail401, listing=list_fail):
+        res = client.post("/settings/test", json={"ai": {"provider": "openai", "model": "m"}})
+    body = res.json()
+    assert body["ok"] is False
+    assert "401" in body["detail"]
+
+
+def test_settings_test_no_key(client):
+    res = client.post("/settings/test", json={"ai": {"provider": "openai", "model": "m"}})
+    body = res.json()
+    assert body["ok"] is False
+    assert "api key" in body["detail"]
+
+
+# -- text-embedded tool calls (openrouter-style) --------------------------------
+
+CFG2 = AIConfig(provider="openai", model="gpt-test", api_key="sk-test")
+
+
+def _run(coro):
+    import asyncio
+
+    return asyncio.run(coro)
+
+
+async def _collect(gen):
+    return [e async for e in gen]
+
+
+def _fake_client_one(text):
+    """Fake aisuite client streaming one text-only turn."""
+    from types import SimpleNamespace
+    chunks = [SimpleNamespace(choices=[SimpleNamespace(delta=SimpleNamespace(content=c, tool_calls=None))]) for c in text]
+
+    class S:
+        def __iter__(self):
+            return iter(chunks)
+
+    create = lambda **kw: S()
+    return SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+
+
+def test_stream_answer_text_tool_calls_surfaces_model_error(monkeypatch):
+    """A model that emits <tool_call> tags as text gets a clear model error."""
+    client = _fake_client_one(
+        ["<tool_call>web_search\n<arg_key>query</arg_key>\n<arg_value>q</arg_value></tool_call>"]
+    )
+    monkeypatch.setattr(ai_mod, "_sdk_client", lambda cfg: (client, "openai:badmodel", "openai"))
+    events = _run(_collect(ai_mod.stream_answer("q", CFG2)))
+    done = events[-1]
+    assert done["type"] == "done"
+    assert done["confidence"] == 0
+    assert "does not support tool calling" in done["error"]
+    # raw tool-call text is never streamed as the answer
+    assert all("<tool_call>" not in (e.get("text") or "") for e in events)
+
+
+def test_friendly_provider_error_mapping():
+    from oxe.ai import _friendly_provider_error
+
+    assert "401" in _friendly_provider_error(Exception("Error code: 401 - no auth"), CFG2)
+    assert "not found" in _friendly_provider_error(Exception("404 model missing"), CFG2)
+    assert "rate limited" in _friendly_provider_error(Exception("429 too many"), CFG2)
+    assert "credits" in _friendly_provider_error(Exception("402 insufficient credits"), CFG2)
+    assert "provider error" in _friendly_provider_error(Exception("weird"), CFG2)

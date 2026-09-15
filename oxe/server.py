@@ -267,9 +267,10 @@ def make_app(
             return RedirectResponse(url="/", status_code=302)
         q = q.strip()
         if accept and "application/json" in accept:
-            return JSONResponse(_search_payload(q))
-        if accept and "application/json" in accept:
-            return JSONResponse(_search_payload(q))
+            return JSONResponse(_search_payload(q, page=p))
+        dist = _ui_dist_dir()
+        if dist is not None:
+            return FileResponse(dist / "index.html", media_type="text/html")
         return HTMLResponse(_NO_UI_PAGE)
 
     @app.get("/suggest")
@@ -345,7 +346,10 @@ def make_app(
     def ui_history(
         q: Optional[str] = Query(default=None),
         since: Optional[str] = Query(default=None),
-    ) -> str:
+    ) -> Response:
+        dist = _ui_dist_dir()
+        if dist is not None:
+            return FileResponse(dist / "index.html", media_type="text/html")
         return HTMLResponse(_NO_UI_PAGE)
 
     @app.post("/history/delete")
@@ -552,6 +556,48 @@ def make_app(
         log.info("UI: config saved to %s", path)
         return {"ok": True, "config_path": str(path)}
 
+
+    @app.post("/settings/test")
+    def test_settings(payload: dict) -> dict:
+        """Verify provider + api_key + base_url + model with a minimal call.
+
+        Body: {"ai": {provider, model, base_url?, api_key?}}; blank/omitted
+        api_key falls back to the stored key (same as PUT /settings).
+        Returns {ok: bool, detail: str}. Lazy imports, ~10s timeout.
+        """
+        from . import ai as ai_mod
+        from .config import AIConfig, load_config
+
+        ai = (payload or {}).get("ai")
+        if not isinstance(ai, dict):
+            raise HTTPException(status_code=422, detail="ai object required")
+        provider = (ai.get("provider") or "").strip()
+        model = (ai.get("model") or "").strip()
+        if not provider or not model:
+            raise HTTPException(status_code=422, detail="provider and model required")
+        api_key = ai.get("api_key")
+        api_key = str(api_key).strip() if api_key else None
+        base_url = (ai.get("base_url") or "").strip() or None
+        if api_key is None or base_url is None:
+            try:
+                existing = load_config()
+            except ValueError:
+                existing = None
+            if existing is not None:
+                base_url = base_url or existing.base_url
+                api_key = api_key if api_key is not None else existing.api_key
+        cfg = AIConfig(provider=provider, model=model, api_key=api_key, base_url=base_url)
+        try:
+            result = _run_async(lambda: ai_mod.test_provider_connection(cfg))
+            result = {"ok": bool(result["ok"]), "detail": str(result["detail"])}
+        except Exception as e:  # pragma: no cover - defensive
+            raise HTTPException(status_code=500, detail=f"test failed: {e}")
+        _dev_event(
+            "settings_test",
+            q=f"{provider}:{model}",
+            error=None if result["ok"] else result["detail"][:80],
+        )
+        return result
 
     @app.post("/click")
     def ui_click(payload: dict) -> dict:

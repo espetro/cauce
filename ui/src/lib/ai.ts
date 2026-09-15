@@ -29,6 +29,35 @@ export type AnswerEvent =
       error?: string;
     };
 
+/** Verify AI config with POST /settings/test (provider + key + model). */
+export interface TestConnectionBody {
+  provider: string;
+  model: string;
+  base_url?: string;
+  api_key?: string;
+}
+
+export async function testConnection(
+  body: TestConnectionBody,
+): Promise<{ ok: boolean; detail: string }> {
+  const res = await fetch(`/settings/test`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ai: body }),
+  });
+  if (!res.ok) {
+    let detail = `HTTP ${res.status}`;
+    try {
+      const j = (await res.json()) as { detail?: string };
+      if (j?.detail) detail = j.detail;
+    } catch {
+      // non-json error
+    }
+    return { ok: false, detail };
+  }
+  return (await res.json()) as { ok: boolean; detail: string };
+}
+
 export async function listModels(signal?: AbortSignal): Promise<ModelsResponse> {
   const res = await fetch(`/v1/models`, { signal });
   if (!res.ok)
