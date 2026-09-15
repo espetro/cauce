@@ -20,6 +20,7 @@ from pydantic import BaseModel
 from typing import Any
 
 from .cache import TTLCache
+from . import exa_compat
 from .search import do_search
 from . import ui
 from . import __version__
@@ -198,6 +199,12 @@ def make_app(
         req_dict = req.model_dump(exclude_none=True)
         if req_dict.get("numResults") is None:
             req_dict["numResults"] = 10
+        refresh = bool(req_dict.pop("_refresh", False))
+        if refresh:
+            key = exa_compat.cache_key(
+                req_dict | {"_backend": getattr(backend, "name", "ddg")}
+            )
+            c.delete(key)
         return do_search(c, req_dict, backend=backend, on_result=observer)
 
     def _search_payload(q: str, num_results: int = 10) -> dict:

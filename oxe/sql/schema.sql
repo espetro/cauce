@@ -9,10 +9,10 @@ CREATE TABLE IF NOT EXISTS cache (
   query_text  TEXT NOT NULL,
   response    BLOB NOT NULL,
   expires_at  INTEGER NOT NULL,
-  hits        INTEGER NOT NULL DEFAULT 0
+  hits        INTEGER NOT NULL DEFAULT 0,
+  created_at  INTEGER
 ) WITHOUT ROWID;
 CREATE INDEX IF NOT EXISTS expires_idx ON cache(expires_at);
-
 CREATE TABLE IF NOT EXISTS clicks (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   query_hash TEXT    NOT NULL,

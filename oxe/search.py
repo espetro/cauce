@@ -22,11 +22,14 @@ def do_search(
     with_duration: bool = False,
 ) -> dict | tuple[dict, int | None]:
     key = exa_compat.cache_key(req_dict | {"_backend": getattr(backend, "name", "ddg")})
-    cached = cache.get(key)
-    if cached is not None:
+    hit = cache.get_with_meta(key)
+    if hit is not None:
+        cached, created_at = hit
         out = dict(cached)
         out["_source"] = "cache"
         out["_q_hash"] = key
+        if created_at:
+            out["_cached_at"] = created_at
         if on_result is not None:
             _notify(on_result, out, req_dict, key, "cache", None)
         return (out, None) if with_duration else out

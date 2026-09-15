@@ -27,6 +27,10 @@ class TTLCache:
         self._conn = sqlite3.connect(self.db_path, check_same_thread=False, isolation_level=None)
         self._conn.row_factory = sqlite3.Row
         self._conn.executescript(sqlload.schema_sql())
+        try:
+            self._conn.execute("ALTER TABLE cache ADD COLUMN created_at INTEGER")
+        except sqlite3.OperationalError:
+            pass  # column already exists
         self._conn.execute("PRAGMA optimize;")
         self._all_queries: list[str] | None = None
 
@@ -56,8 +60,21 @@ class TTLCache:
                 text=value.get("_q", ""),
                 response=payload,
                 expires_at=expires_at,
+                created_at=int(time.time()),
             )
             self._conn.execute("DELETE FROM cache WHERE expires_at < ?", (expires_at - ttl - 1,))
+
+    def get_with_meta(self, key: str) -> tuple[dict, int | None] | None:
+        """Like get() but returns (payload, created_at). No hits bump avoided: counts too."""
+        row = self._q("get_cache")(self._conn, key=key)
+        if row is None or row["expires_at"] < int(time.time()):
+            return None
+        try:
+            payload = gzip.decompress(row["response"])
+        except (OSError, gzip.BadGzipFile):
+            return None
+        self._q("hits_bump")(self._conn, key=key)
+        return json.loads(payload), row["created_at"]
 
     def invalidate(self) -> int:
         with self._lock:
