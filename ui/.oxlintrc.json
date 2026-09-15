@@ -1,0 +1,19 @@
+{
+  "rules": {
+    "no-restricted-imports": [
+      "error",
+      {
+        "patterns": [
+          {
+            "group": [
+              "**/features/suggests/useSuggests.ts",
+              "**/features/answer/useAnswer.ts",
+              "**/features/search/useSearch.ts"
+            ],
+            "message": "Import from the feature's public surface only (index/module exports), not internal hooks."
+          }
+        ]
+      }
+    ]
+  }
+}

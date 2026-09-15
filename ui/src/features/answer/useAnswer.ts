@@ -47,7 +47,8 @@ export function applyAnswerEvent(state: AnswerState, ev: AnswerEvent): AnswerSta
       error: ev.error ?? null,
     };
   }
-  return state;
+  const _exhaustive: never = ev;
+  return _exhaustive;
 }
 
 /** Owns the SSE answer stream lifecycle for one query run. */

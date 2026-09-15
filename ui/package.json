@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "lint": "oxlint src scripts && oxfmt --check src scripts",
+    "lint": "oxlint --config .oxlintrc.json src scripts && oxfmt --check src scripts",
     "fmt": "oxfmt src scripts",
     "check": "tsc -b && vite build && bun scripts/size-budget.ts",
     "test": "bun test src"
