@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "preact/hooks";
 import * as v from "valibot";
 import { listModels, testConnection } from "../../lib/ai";
 import { bumpModels, ModelPicker } from "../../components/ModelPicker";
+import { toast } from "../../components/Toasts";
 import { getTheme, setTheme, THEMES, type ThemeChoice } from "../../lib/theme";
 import { getSettings, putSettings, PROVIDERS, SettingsSchema, type SettingsValues } from "./schema";
 
@@ -106,11 +107,14 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
       .then(() => {
         setSaving(false);
         bumpModels();
+        toast("success", "settings saved");
         dialogRef.current?.close();
       })
       .catch((err: unknown) => {
         setSaving(false);
-        setSaveError((err as Error)?.message ?? "save failed");
+        const msg = (err as Error).message ?? "save failed";
+        setSaveError(msg);
+        toast("error", `settings save failed: ${msg}`);
       });
   };
 
@@ -135,10 +139,18 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
       base_url: baseUrl || undefined,
       api_key: apiKey || undefined,
     })
-      .then((r) => setTestResult({ ok: Boolean(r.ok), detail: r.detail }))
-      .catch((err: unknown) =>
-        setTestResult({ ok: false, detail: (err as Error)?.message ?? "test failed" }),
-      )
+      .then((r) => {
+        setTestResult({ ok: Boolean(r.ok), detail: r.detail });
+        toast(
+          r.ok ? "success" : "error",
+          r.detail || (r.ok ? "connection ok" : "connection failed"),
+        );
+      })
+      .catch((err: unknown) => {
+        const detail = (err as Error).message ?? "test failed";
+        setTestResult({ ok: false, detail });
+        toast("error", detail);
+      })
       .finally(() => setTesting(false));
   };
 
@@ -147,7 +159,7 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
 
   return (
     <dialog ref={dialogRef} class="modal" aria-label="settings">
-      <div class="modal-box w-full max-w-md">
+      <div class="modal-box w-full max-w-md animate-in fade-in zoom-in-95 duration-150">
         <h2 class="text-base font-semibold mb-3">settings</h2>
         {loadError && (
           <div role="alert" class="alert alert-error text-sm mb-3">

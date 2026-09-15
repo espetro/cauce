@@ -14,12 +14,14 @@ interface Props {
 
 /** AI mode surface: answer, tool steps, sources row, related questions. */
 export function AnswerView({ query, state, onStop, onRetry, onAskRelated, onViewClassic }: Props) {
-  const { text, steps, sources, done, cached, error, stopped, relatedQuestions } = state;
-  const streaming = !done;
+  const { text, steps, sources, status, cached, error, relatedQuestions } = state;
+  const streaming = status === "idle" || status === "streaming";
+  const done = status === "done" || status === "stopped" || status === "error";
+  const stopped = status === "stopped";
   const emptySources = done && !error && sources.length === 0 && !text;
 
   return (
-    <div class="pt-2 flex flex-col gap-5">
+    <div class="pt-2 flex flex-col gap-5 animate-in fade-in slide-in-from-bottom-2 duration-300">
       <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
         <h2 class="text-xs font-semibold tracking-widest uppercase opacity-60">answer</h2>
         {cached && <span class="badge badge-ghost badge-xs">from cache</span>}
@@ -41,7 +43,10 @@ export function AnswerView({ query, state, onStop, onRetry, onAskRelated, onView
       {steps.length > 0 && (
         <ul class="text-[13px] opacity-70 space-y-1" aria-live="polite">
           {steps.map((s, i) => (
-            <li key={i} class="flex items-center gap-2">
+            <li
+              key={i}
+              class="flex items-center gap-2 animate-in fade-in slide-in-from-bottom-2 duration-300"
+            >
               {!done || i < steps.length - 1 ? (
                 <span class="loading loading-spinner loading-xs" />
               ) : (
@@ -60,7 +65,7 @@ export function AnswerView({ query, state, onStop, onRetry, onAskRelated, onView
               <MarkdownLite text={text} />
             </div>
           )}
-          <div role="alert" class="alert alert-error">
+          <div role="alert" class="alert alert-error animate-in fade-in zoom-in-95 duration-300">
             <span>stream interrupted - {error}</span>
           </div>
           <div class="flex gap-2">
@@ -73,7 +78,7 @@ export function AnswerView({ query, state, onStop, onRetry, onAskRelated, onView
           </div>
         </div>
       ) : emptySources ? (
-        <div class="text-sm">
+        <div class="text-sm animate-in fade-in zoom-in-95 duration-300">
           <p class="opacity-60 mb-2">no sources found for this query - try fewer words, or</p>
           <button type="button" class="btn btn-sm" onClick={onViewClassic}>
             switch to classic results
@@ -90,7 +95,7 @@ export function AnswerView({ query, state, onStop, onRetry, onAskRelated, onView
           {stopped && <p class="text-xs opacity-50 mt-1">stopped</p>}
         </div>
       ) : streaming && steps.length === 0 ? (
-        <div class="flex flex-col gap-3" aria-busy="true">
+        <div class="flex flex-col gap-3 skeleton-shimmer" aria-busy="true">
           <div class="skeleton h-4 w-11/12" />
           <div class="skeleton h-4 w-full" />
           <div class="skeleton h-4 w-3/4" />
@@ -107,14 +112,20 @@ export function AnswerView({ query, state, onStop, onRetry, onAskRelated, onView
           <h2 class="text-xs font-semibold tracking-widest uppercase opacity-60 mb-2">sources</h2>
           <div class="flex gap-2 overflow-x-auto pb-2 snap-x -mx-4 px-4">
             {sources.map((s, i) => (
-              <SourceCard key={s.url} source={s} n={i + 1} queryHash={query} />
+              <div
+                key={s.url}
+                class="animate-in fade-in slide-in-from-bottom-2 duration-300"
+                style={{ animationDelay: `${i * 40}ms` }}
+              >
+                <SourceCard source={s} n={i + 1} queryHash={query} />
+              </div>
             ))}
           </div>
         </div>
       )}
 
       {done && !error && relatedQuestions.length > 0 && (
-        <div>
+        <div class="animate-in fade-in duration-300">
           <h2 class="text-xs font-semibold tracking-widest uppercase opacity-60 mb-2">related</h2>
           <ul class="space-y-1.5">
             {relatedQuestions.map((rq) => (

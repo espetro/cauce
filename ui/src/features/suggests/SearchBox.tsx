@@ -171,7 +171,7 @@ export function SearchBox({
             {submitBtn}
           </div>
           {mode === "ai" && (
-            <div class="oxe-ai-row border-t border-base-200 mt-1.5 pt-1.5">
+            <div class="ai-row-in border-t border-base-200 mt-1.5 pt-1.5">
               <AiControls
                 available={aiAvailable ?? null}
                 models={models}

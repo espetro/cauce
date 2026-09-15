@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { metaLine } from "./useSearch";
+import { metaLine, nextStatus } from "./useSearch";
 import type { SearchResponse } from "../../lib/api";
 import { cachedAgeOf, isCacheHit, pagerLetters } from "./useSearch";
 
@@ -52,5 +52,14 @@ describe("pagerLetters", () => {
   });
   test("zero pages when no results", () => {
     expect(pagerLetters(0)).toEqual([]);
+  });
+});
+
+describe("nextStatus", () => {
+  test("empty result list -> empty", () => {
+    expect(nextStatus([])).toBe("empty");
+  });
+  test("non-empty -> success", () => {
+    expect(nextStatus([{ url: "https://example.com" }])).toBe("success");
   });
 });

@@ -2,9 +2,12 @@ import { useRef, useState } from "preact/hooks";
 import type { SearchResponse, SearchResult } from "../../lib/api";
 import { deleteCacheRow, search } from "../../lib/api";
 
+export type SearchStatus = "idle" | "loading" | "success" | "empty" | "error" | "refreshing";
+
 export interface SearchState {
   payload: SearchResponse | null;
-  loading: boolean;
+  status: SearchStatus;
+  loading: boolean; // derived: status loading|refreshing
   error: string | null;
 }
 
@@ -36,20 +39,38 @@ export function useSearch(): {
   run: (q: string, p?: number) => void;
   refresh: (q: string) => void;
 } {
-  const [state, setState] = useState<SearchState>({ payload: null, loading: false, error: null });
+  const [state, setState] = useState<SearchState>({
+    payload: null,
+    status: "idle",
+    loading: false,
+    error: null,
+  });
   const abortRef = useRef<AbortController | null>(null);
 
-  const execute = (q: string, p = 1) => {
+  const execute = (q: string, p = 1, refreshing = false) => {
     abortRef.current?.abort();
     const ctl = new AbortController();
     abortRef.current = ctl;
-    setState((s: SearchState) => ({ ...s, loading: true, error: null }));
+    setState((s: SearchState) => ({
+      ...s,
+      status: refreshing ? "refreshing" : "loading",
+      loading: true,
+      error: null,
+    }));
     search({ query: q, numResults: PAGE_SIZE, page: p }, ctl.signal)
-      .then((payload: SearchResponse) => setState({ payload, loading: false, error: null }))
+      .then((payload: SearchResponse) =>
+        setState({
+          payload,
+          status: nextStatus(payload.results),
+          loading: false,
+          error: null,
+        }),
+      )
       .catch((e: unknown) => {
         if ((e as Error)?.name === "AbortError") return;
         setState((s: SearchState) => ({
           ...s,
+          status: "error",
           loading: false,
           error: (e as Error)?.message ?? "search failed",
         }));
@@ -68,9 +89,9 @@ export function useSearch(): {
     if (key) {
       deleteCacheRow(key)
         .catch(() => undefined)
-        .finally(() => execute(q));
+        .finally(() => execute(q, 1, true));
     } else {
-      execute(q);
+      execute(q, 1, true);
     }
   };
 
@@ -90,6 +111,11 @@ export function metaLine(payload: SearchResponse | null): string {
   if (!payload) return "";
   const n = payload.results.length;
   return `${n} result${n === 1 ? "" : "s"}`;
+}
+
+/** Terminal status derived from a successful search response. */
+export function nextStatus(results: Array<{ url: string }>): "success" | "empty" {
+  return results.length === 0 ? "empty" : "success";
 }
 
 export type { SearchResult };

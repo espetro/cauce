@@ -50,17 +50,115 @@ body {
     0 1px 6px color-mix(in oklab, var(--color-base-content) 12%, transparent);
 }
 
-/* AI morphism: second action row reveals inside the pill */
-.oxe-ai-row {
-  animation: oxe-ai-row-in 180ms ease-out;
-}
-@keyframes oxe-ai-row-in {
+/* AI morphism: second action row reveals inside the pill.
+ * Folded into the generic system: uses the enter keyframe with the
+ * small-up modifier values below. */
+@keyframes oxe-enter {
   from {
-    opacity: 0;
-    transform: translateY(-2px);
+    opacity: var(--enter-opacity, 1);
+    transform: translate3d(var(--enter-translate-x, 0), var(--enter-translate-y, 0), 0)
+      scale(var(--enter-scale, 1));
   }
+}
+@keyframes oxe-exit {
   to {
-    opacity: 1;
-    transform: none;
+    opacity: var(--exit-opacity, 1);
+    transform: translate3d(var(--exit-translate-x, 0), var(--exit-translate-y, 0), 0)
+      scale(var(--exit-scale, 1));
+  }
+}
+
+/* morphic-style composables: modifiers below set the keyframe parameters */
+@utility animate-in {
+  animation: oxe-enter 150ms ease-out both;
+}
+@utility animate-out {
+  animation: oxe-exit 150ms ease-in both;
+}
+@utility fade-in {
+  --enter-opacity: 0;
+}
+@utility fade-in-0 {
+  --enter-opacity: 0;
+}
+@utility zoom-in-95 {
+  --enter-scale: 0.95;
+}
+@utility slide-in-from-bottom-2 {
+  --enter-translate-y: calc(var(--spacing, 0.25rem) * -2);
+}
+@utility slide-in-from-bottom-4 {
+  --enter-translate-y: calc(var(--spacing, 0.25rem) * -4);
+}
+@utility slide-in-from-right {
+  --enter-translate-x: calc(var(--spacing, 0.25rem) * 4);
+}
+/* duration helpers: replace the core ones so they also drive animations */
+@utility duration-150 {
+  transition-duration: 150ms;
+  animation-duration: 150ms;
+}
+@utility duration-300 {
+  transition-duration: 300ms;
+  animation-duration: 300ms;
+}
+/* AI pill second-row reveal (was oxe-ai-row-in) */
+@utility ai-row-in {
+  animation: oxe-enter 180ms ease-out both;
+  --enter-opacity: 0;
+  --enter-translate-y: -2px;
+}
+
+/* ghost sweep over daisyUI skeletons (voy pattern) */
+.skeleton {
+  position: relative;
+  overflow: hidden;
+}
+.skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in oklab, var(--color-base-100) 40%, transparent),
+    transparent
+  );
+  animation: oxe-shimmer 1.8s infinite;
+}
+@keyframes oxe-shimmer {
+  to {
+    transform: translateX(100%);
+  }
+}
+
+/* theme switch: crossfade page background (View Transitions deferred) */
+html {
+  transition:
+    background-color 300ms ease,
+    color 300ms ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  @keyframes oxe-enter {
+    from {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  @keyframes oxe-exit {
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  @keyframes oxe-shimmer {
+    to {
+      transform: translateX(-100%);
+    }
+  }
+  html {
+    transition: none;
   }
 }

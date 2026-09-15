@@ -4,6 +4,7 @@ import { useAiAvailable, usePageTitle } from "../components/Header";
 import { Layout } from "../components/Layout";
 import { useModels } from "../components/ModeSegments";
 import { recordClick } from "../lib/api";
+import { toast } from "../components/Toasts";
 import { ResultCard } from "../features/search/ResultCard";
 import {
   cachedAgeOf,
@@ -106,7 +107,11 @@ export default function SearchRoute() {
           value={input}
           onInput={setInput}
           onSubmit={submit}
-          busy={effectiveMode === "ai" ? !answer.state.done : loading}
+          busy={
+            effectiveMode === "ai"
+              ? answer.state.status === "idle" || answer.state.status === "streaming"
+              : loading
+          }
           size="md"
           mode={mode}
           onModeChange={setMode}
@@ -128,7 +133,10 @@ export default function SearchRoute() {
                   type="button"
                   class="badge badge-sm badge-ghost cursor-pointer"
                   aria-label="cached result: click to refresh from the web"
-                  onClick={() => refresh(q)}
+                  onClick={() => {
+                    refresh(q);
+                    toast("success", "refreshed from the web");
+                  }}
                 >
                   cached
                   {(() => {
@@ -196,8 +204,11 @@ export default function SearchRoute() {
           )}
 
           {!loading && error && (
-            <div class="py-6 flex flex-col gap-3">
-              <div role="alert" class="alert alert-error text-sm">
+            <div class="py-6 flex flex-col gap-3 animate-in fade-in zoom-in-95 duration-300">
+              <div
+                role="alert"
+                class="alert alert-error text-sm animate-in fade-in zoom-in-95 duration-300"
+              >
                 <span>error: {error}</span>
               </div>
               <div class="flex gap-2">
@@ -214,7 +225,7 @@ export default function SearchRoute() {
           )}
 
           {!loading && !error && payload && results.length === 0 && (
-            <div class="py-10 text-sm">
+            <div class="py-10 text-sm animate-in fade-in zoom-in-95 duration-300">
               <p class="opacity-60 mb-3">no results</p>
               {aiAvailable === true && (
                 <button type="button" class="btn btn-sm" onClick={() => askAi(q)}>
@@ -226,20 +237,25 @@ export default function SearchRoute() {
 
           {!loading && results.length > 0 && (
             <div class="divide-y divide-base-300">
-              {results.map((r) => (
-                <ResultCard
+              {results.map((r, i) => (
+                <div
                   key={r.id || r.url}
-                  result={r}
-                  queryHash={qHash}
-                  onOpen={(res) =>
-                    recordClick({
-                      query_hash: qHash,
-                      result_id: res.id || res.url,
-                      url: res.url,
-                      title: res.title,
-                    })
-                  }
-                />
+                  class="animate-in fade-in slide-in-from-bottom-2 duration-300"
+                  style={{ "--i": i, animationDelay: `calc(var(--i) * 40ms)` }}
+                >
+                  <ResultCard
+                    result={r}
+                    queryHash={qHash}
+                    onOpen={(res) =>
+                      recordClick({
+                        query_hash: qHash,
+                        result_id: res.id || res.url,
+                        url: res.url,
+                        title: res.title,
+                      })
+                    }
+                  />
+                </div>
               ))}
             </div>
           )}

@@ -11,11 +11,11 @@ describe("applyAnswerEvent", () => {
     expect(s.steps).toEqual(["searching", "reading"]);
   });
 
-  test("deltas concatenate text", () => {
-    let s = applyAnswerEvent(INITIAL, { type: "delta", text: "hello " });
+  test("deltas concatenate text and mark streaming", () => {
+    let s: AnswerState = applyAnswerEvent(INITIAL, { type: "delta", text: "hello " });
     s = applyAnswerEvent(s, { type: "delta", text: "world" });
     expect(s.text).toBe("hello world");
-    expect(s.done).toBe(false);
+    expect(s.status).toBe("streaming");
   });
 
   test("sources replace the list", () => {
@@ -34,11 +34,29 @@ describe("applyAnswerEvent", () => {
       confidence: 0.9,
       cached: true,
     });
-    expect(s.done).toBe(true);
+    expect(s.status).toBe("done");
     expect(s.text).toBe("final");
     expect(s.cached).toBe(true);
     expect(s.confidence).toBe(0.9);
     expect(s.relatedQuestions).toEqual(["q2"]);
+  });
+
+  test("done with error sets status error", () => {
+    const s = applyAnswerEvent(INITIAL, {
+      type: "done",
+      answer: "",
+      related_questions: [],
+      confidence: 0,
+      cached: false,
+      error: "boom",
+    });
+    expect(s.status).toBe("error");
+    expect(s.error).toBe("boom");
+  });
+
+  test("steps transition idle to streaming", () => {
+    const s = applyAnswerEvent(INITIAL, step("searching"));
+    expect(s.status).toBe("streaming");
   });
 
   test("done keeps streamed text when answer empty", () => {
