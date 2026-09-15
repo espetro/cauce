@@ -326,6 +326,76 @@ def make_app(
             log.warning("/v1/models: provider listing failed: %s", e)
         return {"object": "list", "data": models, "ai_available": bool(models)}
 
+    @app.get("/settings")
+    def get_settings() -> dict:
+        """Current [ai] config for the settings dialog; api_key redacted."""
+        from .config import config_path, load_config
+
+        try:
+            cfg = load_config()
+        except ValueError as e:
+            raise HTTPException(status_code=500, detail=f"bad config: {e}")
+        if cfg is None:
+            return {"configured": False, "config_path": str(config_path())}
+        return {
+            "configured": True,
+            "config_path": str(config_path()),
+            "ai": {
+                "provider": cfg.provider,
+                "model": cfg.model,
+                "api_key_set": bool(cfg.api_key or cfg.api_key_env),
+                "api_key_env": cfg.api_key_env,
+                "base_url": cfg.base_url,
+                "enabled": cfg.enabled,
+            },
+        }
+
+    @app.put("/settings")
+    def put_settings(payload: dict) -> dict:
+        """Write the [ai] config section. api_key left untouched when omitted."""
+        from .config import VALID_PROVIDERS, AIConfig, config_path, load_config, save_config
+
+        if not isinstance(payload or {}, dict):
+            raise HTTPException(status_code=422, detail="json body required")
+        ai = (payload or {}).get("ai")
+        if not isinstance(ai, dict):
+            raise HTTPException(status_code=422, detail="ai object required")
+        try:
+            existing = load_config()
+        except ValueError as e:
+            raise HTTPException(status_code=500, detail=f"bad config: {e}")
+
+        provider = (ai.get("provider") or "").strip()
+        model = (ai.get("model") or "").strip()
+        if not provider or not model:
+            raise HTTPException(status_code=422, detail="provider and model required")
+        api_key = ai.get("api_key")
+        api_key_env = (ai.get("api_key_env") or "").strip() or None
+        if api_key is not None and not str(api_key).strip():
+            api_key = None
+        if api_key is None and existing is not None and not api_key_env:
+            api_key = existing.api_key  # keep stored key when dialog omits it
+        cfg = AIConfig(
+            provider=provider,
+            model=model,
+            api_key=str(api_key).strip() if api_key else None,
+            api_key_env=api_key_env,
+            base_url=(ai.get("base_url") or "").strip() or None,
+            enabled=bool(ai.get("enabled", True)),
+        )
+        if cfg.provider not in VALID_PROVIDERS:
+            raise HTTPException(
+                status_code=422,
+                detail=f"provider must be one of {', '.join(sorted(VALID_PROVIDERS))}",
+            )
+        try:
+            path = save_config(cfg)
+        except OSError as e:
+            raise HTTPException(status_code=500, detail=f"cannot write config: {e}")
+        log.info("UI: config saved to %s", path)
+        return {"ok": True, "config_path": str(path)}
+
+
     @app.post("/click")
     def ui_click(payload: dict) -> dict:
         qh = (payload.get("query_hash") or "").strip()

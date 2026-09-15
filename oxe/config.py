@@ -47,6 +47,26 @@ class AIConfig:
             return os.environ.get(self.api_key_env)
         return None
 
+    def to_toml(self) -> str:
+        """Serialize back to a config.toml [ai] section."""
+        lines = ["[ai]", f'provider = "{self.provider}"', f'model = "{self.model}"']
+        if self.api_key:
+            lines.append(f'api_key = "{self.api_key}"')
+        if self.api_key_env:
+            lines.append(f'api_key_env = "{self.api_key_env}"')
+        if self.base_url:
+            lines.append(f'base_url = "{self.base_url}"')
+        lines.append(f"enabled = {str(self.enabled).lower()}")
+        return "\n".join(lines) + "\n"
+
+
+def save_config(cfg: AIConfig, path: Path | None = None) -> Path:
+    """Write [ai] section to config.toml, creating the dir if needed."""
+    p = path or config_path()
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(cfg.to_toml())
+    return p
+
 
 class ConfigError(ValueError):
     """Raised for malformed config files with a user-facing message."""
