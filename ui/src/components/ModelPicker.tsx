@@ -28,6 +28,8 @@ interface Props {
   /** compact (search-bar) vs full (settings) sizing */
   size?: "xs" | "sm";
   label?: string;
+  /** backend error hint from /v1/models; shown in the empty state */
+  modelsError?: string | null;
 }
 
 /** Filterable model combobox (SRP: pick one model from a large list).
@@ -41,6 +43,7 @@ export function ModelPicker({
   id,
   size = "sm",
   label = "AI model",
+  modelsError,
 }: Props) {
   const [open, setOpen] = useState(false);
   const [filter, setFilter] = useState("");
@@ -125,6 +128,20 @@ export function ModelPicker({
           ▾
         </span>
       </div>
+      {open && filtered.length === 0 && (
+        <ul
+          id={listId}
+          role="listbox"
+          aria-label={label}
+          class="absolute left-0 right-0 top-full mt-1 z-50 bg-base-100 border border-base-300 rounded-md shadow-sm py-2 text-xs m-0 list-none p-0"
+        >
+          <li role="option" aria-selected={false} aria-disabled="true" class="px-3 opacity-60">
+            {modelsError
+              ? `model listing failed: ${modelsError}`
+              : "no models - check provider / API key in settings"}
+          </li>
+        </ul>
+      )}
       {open && filtered.length > 0 && (
         <ul
           id={listId}

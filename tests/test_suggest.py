@@ -12,6 +12,17 @@ def _app(tmp_path):
     return c, TestClient(app)
 
 
+def test_suggest_dedup_same_text_different_hash(tmp_path):
+    c, client = _app(tmp_path)
+    # same text twice under different hashes (e.g. different backends):
+    # endpoint must still return the query string once.
+    c.log_search("python tips", "h1", source="http")
+    c.log_search("python tips", "h2", source="mcp")
+    r = client.get("/suggest", params={"q": "py"})
+    assert r.json() == ["py", ["python tips"], [], []]
+    c.close()
+
+
 def test_suggest_empty_log(tmp_path):
     _, client = _app(tmp_path)
     r = client.get("/suggest", params={"q": "py"})

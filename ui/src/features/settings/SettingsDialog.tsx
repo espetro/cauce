@@ -9,6 +9,7 @@ import { getSettings, putSettings, PROVIDERS, SettingsSchema, type SettingsValue
  * Uncontrolled form, parse-on-submit via valibot. */
 export function SettingsDialog({ onClose }: { onClose: () => void }) {
   const [models, setModels] = useState<string[]>([]);
+  const [modelsError, setModelsError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<keyof SettingsValues, string>>>({});
@@ -25,6 +26,7 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
     listModels(ctl.signal)
       .then((m) => {
         setModels(m.data.map((d) => d.id));
+        setModelsError(m.error ?? null);
         getSettings()
           .then((s) => s.ai?.model && setModel(s.ai.model))
           .catch(() => undefined);
@@ -140,8 +142,14 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
                 value={model}
                 onChange={setModel}
                 size="sm"
+                modelsError={modelsError}
               />
               {err("model")}
+              {modelsError && models.length === 0 && (
+                <p class="text-warning text-xs mt-1" role="note">
+                  model listing failed: {modelsError}
+                </p>
+              )}
 
               <label class="label text-xs" for="set-api-key">
                 api key

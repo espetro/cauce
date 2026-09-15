@@ -7,9 +7,14 @@ export type Mode = "traditional" | "ai";
 /** Models + AI availability from GET /v1/models.
  * Refetches when settings saves bump the models version (bumpModels()).
  * `available` is tri-state: null = still querying (never demote AI on null). */
-export function useModels(): { available: boolean | null; models: string[] } {
+export function useModels(): {
+  available: boolean | null;
+  models: string[];
+  error: string | null;
+} {
   const [available, setAvailable] = useState<boolean | null>(null);
   const [models, setModels] = useState<string[]>([]);
+  const [error, setError] = useState<string | null>(null);
   const [version, setVersion] = useState(currentModelsVersion);
   useEffect(() => onModelsBump(() => setVersion(currentModelsVersion())), []);
   useEffect(() => {
@@ -18,11 +23,12 @@ export function useModels(): { available: boolean | null; models: string[] } {
       .then((m: ModelsResponse) => {
         setAvailable(Boolean(m.ai_available));
         setModels(m.data.map((d) => d.id));
+        setError(m.error ?? null);
       })
       .catch(() => setAvailable(false));
     return () => ctl.abort();
   }, [version]);
-  return { available, models };
+  return { available, models, error };
 }
 
 const SEGMENTS: Array<{ v: Mode; label: string }> = [
@@ -130,7 +136,15 @@ const REASONING_KEY = "oxe-ai-reasoning";
 
 /** AI second-row controls: model picker + reasoning toggle chip.
  * Pure UI state (localStorage); request wiring is a backend concern. */
-export function AiControls({ available, models }: { available: boolean | null; models: string[] }) {
+export function AiControls({
+  available,
+  models,
+  modelsError,
+}: {
+  available: boolean | null;
+  models: string[];
+  modelsError?: string | null;
+}) {
   const [model, setModel] = useState(() => localStorage.getItem(STORE_KEY) ?? "");
   const [reasoning, setReasoning] = useState(() => localStorage.getItem(REASONING_KEY) === "1");
 
@@ -157,6 +171,7 @@ export function AiControls({ available, models }: { available: boolean | null; m
           onChange={setModel}
           disabled={available === false || models.length === 0}
           size="xs"
+          modelsError={modelsError}
         />
       </div>
       <button

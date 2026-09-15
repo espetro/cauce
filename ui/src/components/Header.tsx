@@ -3,6 +3,7 @@ import { useEffect, useState } from "preact/hooks";
 import { useLocation } from "preact-iso";
 import { listModels, type ModelsResponse } from "../lib/ai";
 import { SettingsDialog } from "../features/settings/SettingsDialog";
+import { AboutHint } from "./AboutHint";
 
 interface NavItem {
   href: string;
@@ -67,6 +68,7 @@ export function Header({ path }: { path: string }) {
         ))}
       </nav>
       <span class="ml-auto flex items-center gap-1">
+        <AboutHint />
         <button
           type="button"
           class="btn btn-ghost btn-xs"
@@ -150,7 +152,11 @@ export function ModeToggle({
 
 export function Center({ children, vh = false }: { children: ComponentChildren; vh?: boolean }) {
   return (
-    <div class={`flex flex-col items-center ${vh ? "justify-center min-h-[75vh]" : ""}`}>
+    <div
+      class={`flex w-full flex-col items-center ${
+        vh ? "justify-center min-h-[75vh] -mt-[30vh]" : ""
+      }`}
+    >
       {children as JSX.Element}
     </div>
   );

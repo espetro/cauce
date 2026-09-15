@@ -17,6 +17,8 @@ interface Props {
   onModeChange?: (m: Mode) => void;
   aiAvailable?: boolean | null;
   models?: string[];
+  /** /v1/models failure hint, surfaced in the model picker empty state */
+  modelsError?: string | null;
 }
 
 /** DDG-style pill search bar: rounded-full container, inline segmented
@@ -36,6 +38,7 @@ export function SearchBox({
   onModeChange,
   aiAvailable,
   models = [],
+  modelsError,
 }: Props) {
   const [open, setOpen] = useState(false);
   const [focused, setFocused] = useState(false);
@@ -144,7 +147,7 @@ export function SearchBox({
   );
 
   return (
-    <div class="relative w-full min-w-0 max-w-[min(560px,calc(100vw-56px))]" ref={boxRef}>
+    <div class="relative w-full min-w-0 max-w-[min(672px,calc(100vw-48px))]" ref={boxRef}>
       <form
         role="search"
         onSubmit={(e) => {
@@ -169,7 +172,11 @@ export function SearchBox({
           </div>
           {mode === "ai" && (
             <div class="oxe-ai-row border-t border-base-200 mt-1.5 pt-1.5">
-              <AiControls available={aiAvailable ?? null} models={models} />
+              <AiControls
+                available={aiAvailable ?? null}
+                models={models}
+                modelsError={modelsError}
+              />
             </div>
           )}
         </div>

@@ -30,7 +30,7 @@ export default function SearchRoute() {
   usePageTitle(q || "search");
 
   const aiAvailable = useAiAvailable();
-  const { models } = useModels();
+  const { models, error: modelsError } = useModels();
   const [input, setInput] = useState(q);
   const [mode, setMode] = useState<Mode>(urlMode);
   const { state, run, refresh } = useSearch();
@@ -113,6 +113,7 @@ export default function SearchRoute() {
             onModeChange={setMode}
             aiAvailable={aiAvailable}
             models={models}
+            modelsError={modelsError}
           />
           {aiModeBlocked && (
             <p class="text-xs opacity-60 mt-1" role="note">

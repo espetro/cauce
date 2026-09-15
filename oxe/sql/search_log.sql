@@ -30,7 +30,7 @@ GROUP BY query_hash ORDER BY MAX(ts) DESC LIMIT :limit;
 SELECT query_text, MAX(ts) AS last_ts, COUNT(*) AS freq
 FROM search_log
 WHERE query_text LIKE :prefix ESCAPE '\'
-GROUP BY query_hash
+GROUP BY lower(query_text)
 ORDER BY last_ts DESC, freq DESC, query_text
 LIMIT :limit;
 

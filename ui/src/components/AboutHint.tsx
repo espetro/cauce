@@ -1,16 +1,12 @@
 import { useState } from "preact/hooks";
 
-/** (?) about affordance: shows a small panel on hover/focus with what
- * oxe is + mode explanations. Keeps the inline-next-to-pill placement
- * (works at both widths without extra layout code). */
+/** (?) about affordance in the navbar: shows a small right-aligned panel
+ * on hover/focus with what oxe is + mode explanations. dropdown-end-style
+ * anchoring keeps the panel inside the viewport down to ≈390px. */
 export function AboutHint() {
   const [open, setOpen] = useState(false);
   return (
-    <div
-      class="relative mt-2.5"
-      onMouseEnter={() => setOpen(true)}
-      onMouseLeave={() => setOpen(false)}
-    >
+    <div class="relative" onMouseEnter={() => setOpen(true)} onMouseLeave={() => setOpen(false)}>
       <button
         type="button"
         class="btn btn-ghost btn-xs btn-circle opacity-40 hover:opacity-80"
@@ -24,7 +20,7 @@ export function AboutHint() {
       </button>
       {open && (
         <div
-          class="absolute left-1/2 -translate-x-1/2 mt-1 w-72 max-w-[80vw] bg-base-100 border border-base-300 rounded-md shadow-sm p-3 text-xs z-50"
+          class="absolute right-0 mt-1 w-72 max-w-[min(288px,68vw)] bg-base-100 border border-base-300 rounded-md shadow-sm p-3 text-xs z-50"
           role="note"
         >
           <p class="mb-1.5">

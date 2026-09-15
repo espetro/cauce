@@ -4,6 +4,8 @@ export interface ModelsResponse {
   object: "list";
   data: Array<{ id: string; object: "model"; owned_by?: string | null }>;
   ai_available: boolean;
+  /** Backend hint when model listing failed (auth, base_url, ...). */
+  error?: string | null;
 }
 
 export interface AiSource {
@@ -28,7 +30,8 @@ export type AnswerEvent =
 
 export async function listModels(signal?: AbortSignal): Promise<ModelsResponse> {
   const res = await fetch(`/v1/models`, { signal });
-  if (!res.ok) return { object: "list", data: [], ai_available: false };
+  if (!res.ok)
+    return { object: "list", data: [], ai_available: false, error: `HTTP ${res.status}` };
   return (await res.json()) as ModelsResponse;
 }
 

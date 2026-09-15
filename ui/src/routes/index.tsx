@@ -1,7 +1,6 @@
 import { useEffect, useState } from "preact/hooks";
 import { useLocation } from "preact-iso";
 import { Center, Header, usePageTitle } from "../components/Header";
-import { AboutHint } from "../components/AboutHint";
 import { useModels, type Mode } from "../components/ModeSegments";
 import { SearchBox } from "../features/suggests/SearchBox";
 
@@ -14,7 +13,7 @@ export default function Home() {
   const [mode, setMode] = useState<Mode>(() =>
     localStorage.getItem(MODE_KEY) === "ai" ? "ai" : "traditional",
   );
-  const { available: aiAvailable, models } = useModels();
+  const { available: aiAvailable, models, error: modelsError } = useModels();
 
   useEffect(() => {
     if (mode === "ai" && aiAvailable === false) setMode("traditional");
@@ -40,9 +39,9 @@ export default function Home() {
       <Header path={path} />
       <main class="flex-1 flex items-center justify-center">
         <Center vh>
-          <h1 class="text-4xl font-semibold tracking-tight mb-2">oxe</h1>
-          <p class="opacity-50 text-sm">your local web intel layer</p>
-          <div class="flex items-start justify-center gap-1.5 mb-8 max-w-full px-3 min-w-0">
+          <h1 class="text-5xl font-semibold tracking-tight mb-4">oxe</h1>
+          <p class="opacity-50 text-sm mb-6 max-md:mb-4 md:mb-10">your local web intel layer</p>
+          <div class="self-stretch flex justify-center px-3 min-w-0 mb-8">
             <SearchBox
               value={q}
               onInput={setQ}
@@ -53,8 +52,8 @@ export default function Home() {
               onModeChange={setMode}
               aiAvailable={aiAvailable}
               models={models}
+              modelsError={modelsError}
             />
-            <AboutHint />
           </div>
         </Center>
       </main>

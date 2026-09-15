@@ -114,8 +114,12 @@ def _http_search_logger(c: TTLCache) -> Callable[[dict], None]:
     """Default observer for make_app: writes search_log rows, client='http'."""
 
     def _log(payload: dict) -> None:
+        q = (payload.get("_q") or "").strip()
+        if not q:
+            # network rows miss _q; backfill from the same hash's cache/log text
+            q = c.lookup_query_text(payload.get("_q_hash") or "") or ""
         c.log_search(
-            query_text=(payload.get("_q") or "")[:200],
+            query_text=q[:200],
             query_hash=payload.get("_q_hash") or "",
             source=payload.get("_source") or "network",
             backend=payload.get("_backend", "ddg"),
@@ -395,11 +399,15 @@ def make_app(
         """Provider model listing via direct SDK calls; [] when unconfigured."""
         from .config import load_config
 
+        def _err(e: Exception) -> dict:
+            hint = str(e)[:120]
+            return {"object": "list", "data": [], "ai_available": False, "error": hint}
+
         try:
             cfg = load_config()
         except ValueError as e:
             log.warning("/v1/models: bad config: %s", e)
-            return {"object": "list", "data": [], "ai_available": False}
+            return _err(e)
         if cfg is None:
             return {"object": "list", "data": [], "ai_available": False}
 
@@ -425,6 +433,7 @@ def make_app(
             log.warning("/v1/models: provider SDK not installed (pip install oxe[ai])")
         except Exception as e:
             log.warning("/v1/models: provider listing failed: %s", e)
+            return _err(e)
         return {"object": "list", "data": models, "ai_available": bool(models)}
 
     @app.get("/settings")
