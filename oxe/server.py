@@ -580,9 +580,11 @@ def make_app(
         return RedirectResponse(url=f"/search?q={quote(qtext)}", status_code=302)
 
     @app.post("/row/{key}/delete")
-    def ui_row_delete(key: str) -> RedirectResponse:
+    def ui_row_delete(key: str, request: Request) -> Response:
         if not c.delete(key):
-            raise HTTPException(status_code=404, detail="cache row not found")
+            # already gone: treat as success so idempotent UI refreshes stay clean
+            if "text/html" not in request.headers.get("accept", "text/html"):
+                return Response(status_code=204)
         log.info("UI: deleted cache row %s", key[:12])
         return RedirectResponse(url="/cache", status_code=303)
 

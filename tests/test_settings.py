@@ -120,3 +120,8 @@ def test_ac_proxy_empty(client):
 def test_suggest_empty(client):
     body = client.get("/suggest", params={"q": " "}).json()
     assert body == ["", [], [], []]  # whitespace-only prefix normalized to empty
+
+
+def test_row_delete_idempotent_for_api_clients(client):
+    # non-HTML clients get 204 on missing row (UI refresh flow), HTML still redirects
+    assert client.post("/row/doesnotexist/delete", headers={"accept": "application/json"}).status_code == 204
