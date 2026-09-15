@@ -10,6 +10,8 @@ import statistics
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from . import sqlload
+
 PANEL_COUNT = 6
 
 
@@ -20,9 +22,9 @@ def _connect(db_path: str) -> sqlite3.Connection:
     return conn
 
 
-def _query(conn: sqlite3.Connection, sql: str, params=()):
+def _run(fn, conn, **kwargs):
     try:
-        return conn.execute(sql, params).fetchall()
+        return fn(conn, **kwargs)
     except sqlite3.OperationalError as exc:
         if "database is locked" not in str(exc):
             raise
@@ -30,15 +32,11 @@ def _query(conn: sqlite3.Connection, sql: str, params=()):
     import time
 
     time.sleep(0.5)
-    return conn.execute(sql, params).fetchall()
+    return fn(conn, **kwargs)
 
 
 def _has_search_log(conn: sqlite3.Connection) -> bool:
-    rows = _query(
-        conn,
-        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='search_log'",
-    )
-    return bool(rows)
+    return bool(_run(sqlload.queries().has_search_log, conn))
 
 
 def _since_clause(days: int):
@@ -56,12 +54,7 @@ def _ts_day(ts: int) -> str:
 
 
 def _fetch_daily(conn, days):
-    cutoff = _since_clause(days)
-    return _query(
-        conn,
-        "SELECT ts, source, duration_ms FROM search_log WHERE ts >= ? ORDER BY ts",
-        (cutoff,),
-    )
+    return list(_run(sqlload.queries().stat_daily, conn, cutoff=_since_clause(days)))
 
 
 def panel_searches_per_day(rows, days) -> str:
@@ -203,12 +196,8 @@ def panel_latency(rows, days) -> str:
 
 
 def _fetch_top_queries(conn, days, limit=20):
-    cutoff = _since_clause(days)
-    return _query(
-        conn,
-        "SELECT query_text, COUNT(*) c FROM search_log WHERE ts >= ? "
-        "GROUP BY query_hash ORDER BY c DESC, query_text LIMIT ?",
-        (cutoff, limit),
+    return list(
+        _run(sqlload.queries().stat_top_queries, conn, cutoff=_since_clause(days), limit=limit)
     )
 
 
@@ -225,12 +214,8 @@ def panel_top_queries(rows) -> str:
 
 
 def _fetch_zero_result(conn, days, limit=50):
-    cutoff = _since_clause(days)
-    return _query(
-        conn,
-        "SELECT query_text, MAX(ts) FROM search_log WHERE ts >= ? AND result_count = 0 "
-        "GROUP BY query_hash ORDER BY MAX(ts) DESC LIMIT ?",
-        (cutoff, limit),
+    return list(
+        _run(sqlload.queries().stat_zero_result, conn, cutoff=_since_clause(days), limit=limit)
     )
 
 
@@ -346,12 +331,7 @@ def build(db_path: str, out_dir: str, days: int = 30) -> str:
 
 
 def _fetch_client_split(conn, days):
-    cutoff = _since_clause(days)
-    return _query(
-        conn,
-        "SELECT client, COUNT(*) FROM search_log WHERE ts >= ? GROUP BY client",
-        (cutoff,),
-    )
+    return list(_run(sqlload.queries().stat_client_split, conn, cutoff=_since_clause(days)))
 
 
 def panel_client_split_rows(rows) -> str:

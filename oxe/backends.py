@@ -67,6 +67,7 @@ class DdgsBackend:
     # registry name -> ddgs backend kwarg
     _DDGS_ENGINE = {
         "ddg": "duckduckgo",
+        "auto": "auto",
         "google": "google",
         "bing": "bing",
         "brave": "brave",

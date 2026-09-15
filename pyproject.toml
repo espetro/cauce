@@ -44,6 +44,8 @@ dependencies = [
     "uvicorn>=0.27",
     "pydantic>=2.0",
     "mcp>=2.0",
+    "aiosql>=15.0",
+    "rapidfuzz>=3.14.5",
 ]
 
 [project.urls]
@@ -59,4 +61,4 @@ where = ["."]
 include = ["oxe*"]
 
 [tool.setuptools.package-data]
-oxe = ["static/*"]
+oxe = ["static/*", "sql/*.sql"]
