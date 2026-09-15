@@ -1,6 +1,7 @@
 import { useEffect, useState } from "preact/hooks";
 import { useLocation } from "preact-iso";
-import { Center, Header, usePageTitle } from "../components/Header";
+import { Center, usePageTitle } from "../components/Header";
+import { Layout } from "../components/Layout";
 import { useModels, type Mode } from "../components/ModeSegments";
 import { SearchBox } from "../features/suggests/SearchBox";
 
@@ -8,7 +9,7 @@ const MODE_KEY = "oxe-mode";
 
 export default function Home() {
   usePageTitle("");
-  const { path, route } = useLocation();
+  const { route } = useLocation();
   const [q, setQ] = useState("");
   const [mode, setMode] = useState<Mode>(() =>
     localStorage.getItem(MODE_KEY) === "ai" ? "ai" : "traditional",
@@ -35,28 +36,25 @@ export default function Home() {
   };
 
   return (
-    <div class="min-h-screen flex flex-col">
-      <Header path={path} />
-      <main class="flex-1 flex items-center justify-center">
-        <Center vh>
-          <h1 class="text-5xl font-semibold tracking-tight mb-4">oxe</h1>
-          <p class="opacity-50 text-sm mb-6 max-md:mb-4 md:mb-10">your local web intel layer</p>
-          <div class="self-stretch flex justify-center px-3 min-w-0 mb-8">
-            <SearchBox
-              value={q}
-              onInput={setQ}
-              onSubmit={submit}
-              autoFocus
-              size="lg"
-              mode={mode}
-              onModeChange={setMode}
-              aiAvailable={aiAvailable}
-              models={models}
-              modelsError={modelsError}
-            />
-          </div>
-        </Center>
-      </main>
-    </div>
+    <Layout variant="home">
+      <Center vh>
+        <h1 class="text-5xl font-semibold tracking-tight mb-4">oxe</h1>
+        <p class="opacity-50 text-sm mb-6 max-md:mb-4 md:mb-10">your local web intel layer</p>
+        <div class="self-stretch flex justify-center px-3 min-w-0 mb-8">
+          <SearchBox
+            value={q}
+            onInput={setQ}
+            onSubmit={submit}
+            autoFocus
+            size="lg"
+            mode={mode}
+            onModeChange={setMode}
+            aiAvailable={aiAvailable}
+            models={models}
+            modelsError={modelsError}
+          />
+        </div>
+      </Center>
+    </Layout>
   );
 }

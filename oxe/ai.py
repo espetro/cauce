@@ -24,6 +24,11 @@ MAX_ITERATIONS = 5
 CONFIDENCE_THRESHOLD = 8
 ANSWER_TTL_DEFAULT = 86400
 ANSWER_TTL_MAX = 7 * 86400
+# Answers below this confidence are streamed to the user but never cached
+# (low-confidence / greeting replies poisoning the cache for 24h).
+CACHE_MIN_CONFIDENCE = 4
+# Generic assistant greetings that mean the model ignored the query.
+_GREETING_SUBSTRINGS = ("how can i help", "what can i help", "what's on your mind")
 
 CONFIDENCE_RE = re.compile(r'"confidence"\s*:\s*(\d+)')
 
@@ -206,6 +211,16 @@ def parse_final_answer(text: str) -> tuple[str, int, list[str]]:
     return body, max(0, min(10, conf)), related
 
 
+def _greeting_error(answer: str, confidence: int) -> str | None:
+    """Flag a generic greeting that the model emitted instead of an answer."""
+    if confidence > 0 or not answer:
+        return None
+    low = answer.lower()
+    if len(low) <= 200 and any(s in low for s in _GREETING_SUBSTRINGS):
+        return "model did not answer the query - try a different model"
+    return None
+
+
 def _sources_from_messages(messages: list[dict]) -> list[dict]:
     """Collect deduplicated sources from tool results in the transcript."""
     seen: set[str] = set()
@@ -289,9 +304,7 @@ async def stream_answer(
         done = threading.Event()
         error: list[Exception] = []
 
-        def _consume(
-            _stream=stream, _acc=acc, _chunks=collected, _err=error, _done=done
-        ):
+        def _consume(_stream=stream, _acc=acc, _chunks=collected, _err=error, _done=done):
             try:
                 for chunk in _stream:
                     for choice in chunk.choices or []:
@@ -356,6 +369,7 @@ async def stream_answer(
                 "confidence": confidence,
                 "model": model_id,
                 "cached": False,
+                "error": _greeting_error(answer, confidence),
             }
             return
 
@@ -594,9 +608,7 @@ def _anthropic_stream(client, model, system, messages, tools):
                                 SimpleNamespace(
                                     id=block.id,
                                     index=current_block["index"],
-                                    function=SimpleNamespace(
-                                        name=block.name, arguments=""
-                                    ),
+                                    function=SimpleNamespace(name=block.name, arguments=""),
                                 )
                             ],
                         )

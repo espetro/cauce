@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "preact/hooks";
-import { useLocation } from "preact-iso";
-import { Header, usePageTitle } from "../components/Header";
+import { usePageTitle } from "../components/Header";
+import { Layout } from "../components/Layout";
 import { cacheStats } from "../lib/api";
 import { fmtBytes, fmtTs } from "../lib/format";
 
@@ -10,7 +10,6 @@ import { fmtBytes, fmtTs } from "../lib/format";
  * stats plus a "no search log data" note for the log-derived panels. */
 export default function DashboardRoute() {
   usePageTitle("dashboard");
-  const { path } = useLocation();
   const [stats, setStats] = useState<Awaited<ReturnType<typeof cacheStats>> | null>(null);
   const [error, setError] = useState<string | null>(null);
   const seq = useRef(0);
@@ -72,20 +71,17 @@ export default function DashboardRoute() {
   ];
 
   return (
-    <div class="min-h-screen flex flex-col">
-      <Header path={path} />
-      <main class="w-full max-w-[960px] mx-auto px-4 pb-16">
-        <h1 class="text-xl font-semibold mt-6 mb-1">oxe stats</h1>
-        <p class="text-[13px] opacity-60 mb-4">window: last 30 days</p>
-        <div class="grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(20rem,1fr))]">
-          {panels.map((p) => (
-            <section key={p.title} class="border border-base-300 rounded-lg p-4 min-w-0">
-              <h2 class="text-sm font-medium mb-3">{p.title}</h2>
-              {p.body}
-            </section>
-          ))}
-        </div>
-      </main>
-    </div>
+    <Layout class="w-full max-w-[960px] mx-auto px-4 pb-16">
+      <h1 class="text-xl font-semibold mt-6 mb-1">oxe stats</h1>
+      <p class="text-[13px] opacity-60 mb-4">window: last 30 days</p>
+      <div class="grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(20rem,1fr))]">
+        {panels.map((p) => (
+          <section key={p.title} class="border border-base-300 rounded-lg p-4 min-w-0">
+            <h2 class="text-sm font-medium mb-3">{p.title}</h2>
+            {p.body}
+          </section>
+        ))}
+      </div>
+    </Layout>
   );
 }

@@ -79,8 +79,9 @@ class TTLCache:
 
     def invalidate(self) -> int:
         with self._lock:
-            cur = self._conn.execute("DELETE FROM cache")
-            return cur.rowcount
+            n = self._conn.execute("DELETE FROM cache").rowcount
+            n += self._conn.execute("DELETE FROM answers").rowcount
+            return n
 
     def _fuzzy_query_ids(self, q: str) -> list[str]:
         """Hashes of queries close to q; rapidfuzz when available, difflib otherwise."""
@@ -195,10 +196,7 @@ class TTLCache:
 
     def answer_stats(self) -> dict:
         db_size = os.path.getsize(self.db_path) if os.path.exists(self.db_path) else 0
-        try:
-            n = self._q("count_answers")(self._conn)["c"]
-        except Exception:
-            n = 0
+        n = self._conn.execute("SELECT COUNT(*) FROM answers").fetchone()[0]
         return {"rows": n, "db_size_bytes": db_size}
 
     # -- clicks -------------------------------------------------------------
@@ -230,9 +228,7 @@ class TTLCache:
         limit: int = 50,
         since_hours: int | None = None,
     ) -> list[dict]:
-        since = (
-            0 if since_hours is None else int(time.time()) - int(since_hours) * 3600
-        )
+        since = 0 if since_hours is None else int(time.time()) - int(since_hours) * 3600
         like = f"%{query_text}%" if query_text else None
         rows = self._q("get_clicks")(
             self._conn,
@@ -297,13 +293,7 @@ class TTLCache:
 
     def suggest_queries(self, prefix: str, limit: int = 3) -> list[str]:
         """Recency-then-frequency ranked unique queries starting with prefix."""
-        esc = (
-            (prefix or "")
-            .replace("\\", "\\\\")
-            .replace("%", "\\%")
-            .replace("_", "\\_")
-            .lower()
-        )
+        esc = (prefix or "").replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_").lower()
         rows = self._q("suggest_queries")(self._conn, prefix=f"{esc}%", limit=limit)
         return [r["query_text"] for r in rows]
 
@@ -343,9 +333,7 @@ class TTLCache:
             if scope == "all":
                 cur = self._q("delete_clicks_all")(self._conn)
             elif scope == "24h":
-                cur = self._q("delete_clicks_since")(
-                    self._conn, since=int(time.time()) - 86400
-                )
+                cur = self._q("delete_clicks_since")(self._conn, since=int(time.time()) - 86400)
             else:
                 return 0
             return cur

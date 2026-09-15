@@ -95,36 +95,40 @@ export function ModeSegments({
         const disabled = s.v === "ai" && aiDisabled;
         const active = mode === s.v;
         return (
-          <button
+          <span
             key={s.v}
-            type="button"
-            role="radio"
-            aria-checked={active}
-            aria-disabled={disabled || undefined}
-            disabled={disabled}
-            tabIndex={active ? 0 : -1}
-            title={disabled ? "configure a model in settings" : undefined}
-            class={`btn join-item btn-xs rounded-full border-0 ${
-              active
-                ? "bg-base-100 shadow-sm font-medium"
-                : "bg-transparent opacity-60 hover:opacity-100"
-            } ${disabled ? "btn-disabled opacity-30" : ""}`}
-            onClick={() => {
-              if (!disabled) onChange(s.v);
-            }}
-            onKeyDown={(e) => {
-              if (e.key === "ArrowRight" || e.key === "ArrowDown") {
-                e.preventDefault();
-                move(1);
-              } else if (e.key === "ArrowLeft" || e.key === "ArrowUp") {
-                e.preventDefault();
-                move(-1);
-              }
-            }}
+            class="tooltip tooltip-bottom"
+            data-tip={disabled ? "configure a model in settings" : undefined}
           >
-            {s.v === "traditional" ? <Magnifier /> : <Sparkle />}
-            {s.label}
-          </button>
+            <button
+              type="button"
+              role="radio"
+              aria-checked={active}
+              aria-disabled={disabled || undefined}
+              disabled={disabled}
+              tabIndex={active ? 0 : -1}
+              class={`btn join-item btn-xs rounded-full border-0 ${
+                active
+                  ? "bg-base-100 shadow-sm font-medium"
+                  : "bg-transparent opacity-60 hover:opacity-100"
+              } ${disabled ? "btn-disabled opacity-30" : ""}`}
+              onClick={() => {
+                if (!disabled) onChange(s.v);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "ArrowRight" || e.key === "ArrowDown") {
+                  e.preventDefault();
+                  move(1);
+                } else if (e.key === "ArrowLeft" || e.key === "ArrowUp") {
+                  e.preventDefault();
+                  move(-1);
+                }
+              }}
+            >
+              {s.v === "traditional" ? <Magnifier /> : <Sparkle />}
+              {s.label}
+            </button>
+          </span>
         );
       })}
     </div>

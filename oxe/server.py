@@ -215,9 +215,7 @@ def make_app(
             req_dict["numResults"] = 10
         refresh = bool(req_dict.pop("_refresh", False))
         if refresh:
-            key = exa_compat.cache_key(
-                req_dict | {"_backend": getattr(backend, "name", "ddg")}
-            )
+            key = exa_compat.cache_key(req_dict | {"_backend": getattr(backend, "name", "ddg")})
             c.delete(key)
         _t0 = time.monotonic() if _DEV else None
         try:
@@ -379,13 +377,13 @@ def make_app(
         if cached is not None:
             payload = dict(cached)
             payload["cached"] = True
+
             async def _cached_stream():
                 yield ai_mod.sse_format({"type": "done", **payload})
+
             if _DEV:
                 _dev_event("answer", query=query, cached=True, steps=0)
-            return StreamingResponse(
-                _cached_stream(), media_type="text/event-stream"
-            )
+            return StreamingResponse(_cached_stream(), media_type="text/event-stream")
 
         async def _stream():
             _t0 = time.monotonic()
@@ -410,7 +408,12 @@ def make_app(
                     duration_ms=int((time.monotonic() - _t0) * 1000),
                     error=_err,
                 )
-            if final and final.get("answer") and not final.get("error"):
+            if (
+                final
+                and final.get("answer")
+                and not final.get("error")
+                and final.get("confidence", 0) >= ai_mod.CACHE_MIN_CONFIDENCE
+            ):
                 try:
                     ttl = min(ai_mod.ANSWER_TTL_DEFAULT, ai_mod.ANSWER_TTL_MAX)
                     c.put_answer(key, query, final, ttl, model=final.get("model") or "")
@@ -530,19 +533,45 @@ def make_app(
         model = (ai.get("model") or "").strip()
         if not provider or not model:
             raise HTTPException(status_code=422, detail="provider and model required")
+        # {env.*} templates from the loaded config; a field keeps its template
+        # (so the secret is never flattened to plaintext) unless the PUT
+        # explicitly provides a new literal value for it.
+        templates = dict(existing.env_templates) if existing is not None else {}
         api_key = ai.get("api_key")
         api_key_env = (ai.get("api_key_env") or "").strip() or None
         if api_key is not None and not str(api_key).strip():
             api_key = None
-        if api_key is None and existing is not None and not api_key_env:
-            api_key = existing.api_key  # keep stored key when dialog omits it
+        if api_key is None:
+            templates.pop("api_key", None)
+            if existing is not None and not api_key_env:
+                api_key = existing.api_key  # keep stored key when dialog omits it
+                if existing.env_templates.get("api_key"):
+                    templates["api_key"] = existing.env_templates["api_key"]
+        else:
+            templates.pop("api_key", None)
+        if api_key_env is None:
+            templates.pop("api_key_env", None)
+            if existing is not None and existing.env_templates.get("api_key_env"):
+                api_key_env = existing.api_key_env
+                templates["api_key_env"] = existing.env_templates["api_key_env"]
+        else:
+            templates.pop("api_key_env", None)
+        base_url = (ai.get("base_url") or "").strip() or None
+        if base_url is None:
+            templates.pop("base_url", None)
+            if existing is not None and existing.env_templates.get("base_url"):
+                base_url = existing.base_url
+                templates["base_url"] = existing.env_templates["base_url"]
+        else:
+            templates.pop("base_url", None)
         cfg = AIConfig(
             provider=provider,
             model=model,
             api_key=str(api_key).strip() if api_key else None,
             api_key_env=api_key_env,
-            base_url=(ai.get("base_url") or "").strip() or None,
+            base_url=base_url,
             enabled=bool(ai.get("enabled", True)),
+            env_templates=templates,
         )
         if cfg.provider not in VALID_PROVIDERS:
             raise HTTPException(
@@ -555,7 +584,6 @@ def make_app(
             raise HTTPException(status_code=500, detail=f"cannot write config: {e}")
         log.info("UI: config saved to %s", path)
         return {"ok": True, "config_path": str(path)}
-
 
     @app.post("/settings/test")
     def test_settings(payload: dict) -> dict:

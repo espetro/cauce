@@ -4,7 +4,6 @@ import pytest
 from fastapi.testclient import TestClient
 
 from oxe import ai as ai_mod
-
 from oxe.config import AIConfig
 from oxe.server import make_app
 
@@ -27,9 +26,16 @@ def test_settings_unconfigured(client):
 
 
 def test_settings_roundtrip(client):
-    res = client.put("/settings", json={"ai": {
-        "provider": "openai", "model": "gpt-4o-mini", "api_key": "sk-test",
-    }})
+    res = client.put(
+        "/settings",
+        json={
+            "ai": {
+                "provider": "openai",
+                "model": "gpt-4o-mini",
+                "api_key": "sk-test",
+            }
+        },
+    )
     assert res.status_code == 200
     assert res.json()["ok"] is True
 
@@ -43,11 +49,19 @@ def test_settings_roundtrip(client):
 
 
 def test_settings_put_key_omitted_keeps_stored(client):
-    client.put("/settings", json={"ai": {
-        "provider": "openai", "model": "m1", "api_key": "sk-keep",
-    }})
+    client.put(
+        "/settings",
+        json={
+            "ai": {
+                "provider": "openai",
+                "model": "m1",
+                "api_key": "sk-keep",
+            }
+        },
+    )
     client.put("/settings", json={"ai": {"provider": "openai", "model": "m2"}})
     from oxe.config import load_config
+
     cfg = load_config()
     assert cfg.model == "m2"
     assert cfg.api_key == "sk-keep"
@@ -56,9 +70,18 @@ def test_settings_put_key_omitted_keeps_stored(client):
 def test_settings_put_validation(client):
     assert client.put("/settings", json={"ai": {"provider": "openai"}}).status_code == 422
     assert client.put("/settings", json={}).status_code == 422
-    assert client.put("/settings", json={"ai": {
-        "provider": "nope", "model": "m",
-    }}).status_code == 422  # unknown provider
+    assert (
+        client.put(
+            "/settings",
+            json={
+                "ai": {
+                    "provider": "nope",
+                    "model": "m",
+                }
+            },
+        ).status_code
+        == 422
+    )  # unknown provider
 
 
 def test_settings_bad_config_returns_500(client, tmp_path):
@@ -69,12 +92,18 @@ def test_settings_bad_config_returns_500(client, tmp_path):
 def test_save_config_toml_roundtrip(tmp_path):
     from oxe.config import load_config, save_config
 
-    cfg = AIConfig(provider="anthropic", model="claude", api_key_env="ANTHROPIC_API_KEY",
-                   base_url="https://x", enabled=False)
+    cfg = AIConfig(
+        provider="anthropic",
+        model="claude",
+        api_key_env="ANTHROPIC_API_KEY",
+        base_url="https://x",
+        enabled=False,
+    )
     p = save_config(cfg, tmp_path / "config.toml")
     loaded = load_config(p)  # enabled=False -> None
     assert loaded is None
     import tomllib
+
     data = tomllib.loads(p.read_text())
     assert data["ai"]["provider"] == "anthropic"
     assert data["ai"]["enabled"] is False
@@ -110,6 +139,7 @@ def test_load_dotenv(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     load_dotenv()
     import os
+
     assert os.environ["A"] == "1"
     assert os.environ["B"] == "two"
     assert os.environ["A_EXIST"] == "original"
@@ -136,9 +166,16 @@ from unittest.mock import MagicMock, patch
 
 
 def _put_cfg(client):
-    client.put("/settings", json={"ai": {
-        "provider": "openai", "model": "gpt-4o-mini", "api_key": "sk-test",
-    }})
+    client.put(
+        "/settings",
+        json={
+            "ai": {
+                "provider": "openai",
+                "model": "gpt-4o-mini",
+                "api_key": "sk-test",
+            }
+        },
+    )
 
 
 def test_settings_test_requires_provider_and_model(client):
@@ -161,7 +198,9 @@ def _patch_openai(completion=None, listing=None):
 def test_settings_test_ok_completion(client):
     _put_cfg(client)
     with _patch_openai(completion=lambda **kw: MagicMock()):
-        res = client.post("/settings/test", json={"ai": {"provider": "openai", "model": "gpt-4o-mini"}})
+        res = client.post(
+            "/settings/test", json={"ai": {"provider": "openai", "model": "gpt-4o-mini"}}
+        )
     assert res.status_code == 200
     body = res.json()
     assert body["ok"] is True
@@ -184,14 +223,18 @@ def test_settings_test_bad_model_list_ok(client):
     assert "not found" in body["detail"]
 
 
+class _FakeErr(Exception):
+    pass
+
+
 def test_settings_test_bad_key_fails_both(client):
     _put_cfg(client)
 
     def fail401(**kw):
-        raise Exception("Error code: 401 - invalid api key")
+        raise _FakeErr("Error code: 401 - invalid api key")
 
     def list_fail():
-        raise Exception("Error code: 401 - invalid api key")
+        raise _FakeErr("Error code: 401 - invalid api key")
 
     with _patch_openai(completion=fail401, listing=list_fail):
         res = client.post("/settings/test", json={"ai": {"provider": "openai", "model": "m"}})
@@ -225,13 +268,21 @@ async def _collect(gen):
 def _fake_client_one(text):
     """Fake aisuite client streaming one text-only turn."""
     from types import SimpleNamespace
-    chunks = [SimpleNamespace(choices=[SimpleNamespace(delta=SimpleNamespace(content=c, tool_calls=None))]) for c in text]
+
+    chunks = [
+        SimpleNamespace(
+            choices=[SimpleNamespace(delta=SimpleNamespace(content=c, tool_calls=None))]
+        )
+        for c in text
+    ]
 
     class S:
         def __iter__(self):
             return iter(chunks)
 
-    create = lambda **kw: S()
+    def create(**kw):
+        return S()
+
     return SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
 
 
@@ -258,3 +309,62 @@ def test_friendly_provider_error_mapping():
     assert "rate limited" in _friendly_provider_error(Exception("429 too many"), CFG2)
     assert "credits" in _friendly_provider_error(Exception("402 insufficient credits"), CFG2)
     assert "provider error" in _friendly_provider_error(Exception("weird"), CFG2)
+
+
+def test_load_dotenv_from_config_dir(tmp_path, monkeypatch):
+    from oxe.config import load_dotenv
+
+    conf_dir = tmp_path / "conf"
+    conf_dir.mkdir()
+    (conf_dir / ".env").write_text("FROM_CONF=yes\n")
+    monkeypatch.setenv("OXE_CONFIG_DIR", str(conf_dir))
+    monkeypatch.chdir(tmp_path)  # no .env in cwd
+    load_dotenv()
+    import os
+
+    assert os.environ["FROM_CONF"] == "yes"
+
+
+def test_interpolated_key_survives_settings_roundtrip(client, monkeypatch):
+    from oxe.config import load_config
+
+    monkeypatch.setenv("MY_SECRET", "sk-hidden")
+    from pathlib import Path
+
+    import oxe.config as cfg_mod
+
+    p = Path(client.app.state.__dict__.get("_cfg_path", cfg_mod.config_path()))
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text('[ai]\nprovider = "openai"\nmodel = "m"\napi_key = "{env.MY_SECRET}"\n')
+    # PUT without touching the key: template must survive, not plaintext
+    r = client.put("/settings", json={"ai": {"provider": "openai", "model": "m2"}})
+    assert r.status_code == 200
+    toml = p.read_text()
+    assert "{env.MY_SECRET}" in toml
+    assert "sk-hidden" not in toml
+    cfg = load_config(p)
+    assert cfg.model == "m2"
+    assert cfg.api_key == "sk-hidden"
+
+
+def test_changed_literal_key_saved_as_literal(client, monkeypatch):
+    import oxe.config as cfg_mod
+
+    monkeypatch.setenv("MY_SECRET2", "sk-old")
+    p = cfg_mod.config_path()
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text('[ai]\nprovider = "openai"\nmodel = "m"\napi_key = "{env.MY_SECRET2}"\n')
+    r = client.put(
+        "/settings",
+        json={
+            "ai": {
+                "provider": "openai",
+                "model": "m",
+                "api_key": "sk-literal",
+            }
+        },
+    )
+    assert r.status_code == 200
+    toml = p.read_text()
+    assert "sk-literal" in toml
+    assert "{env." not in toml

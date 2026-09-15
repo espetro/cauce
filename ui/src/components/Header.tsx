@@ -38,8 +38,8 @@ const GitHubIcon = () => (
   </svg>
 );
 
-export function Header({ path }: { path: string }) {
-  const { query, route } = useLocation();
+export function Header() {
+  const { path, query, route } = useLocation();
   // ?settings=open is addressable on any route; strip on close.
   const settingsOpen = query?.settings === "open";
   const closeSettings = () => {
@@ -83,7 +83,7 @@ export function Header({ path }: { path: string }) {
           rel="noopener noreferrer"
           class="btn btn-ghost btn-sm btn-circle"
           aria-label="GitHub repository"
-          title="GitHub repository"
+          tabIndex={0}
         >
           <GitHubIcon />
         </a>
@@ -122,29 +122,32 @@ export function ModeToggle({
       v: "ai",
       label: "AI",
       disabled: aiAvailable === false,
-      title: aiAvailable === false ? "configure a model in settings to enable AI mode" : undefined,
     },
   ];
   return (
     <div role="radiogroup" aria-label="search mode" class="join">
       {opts.map((o) => (
-        <button
+        <span
           key={o.v}
-          type="button"
-          role="radio"
-          aria-checked={mode === o.v}
-          aria-disabled={o.disabled || undefined}
-          disabled={o.disabled}
-          title={o.title}
-          class={`btn join-item ${size === "xs" ? "btn-xs" : "btn-sm"} ${
-            mode === o.v ? "btn-primary" : "btn-ghost"
-          } ${o.disabled ? "btn-disabled opacity-40" : ""}`}
-          onClick={() => {
-            if (!o.disabled) onChange(o.v);
-          }}
+          class="tooltip tooltip-bottom"
+          data-tip={o.disabled ? "configure a model in settings to enable AI mode" : undefined}
         >
-          {mode === o.v ? o.label.toUpperCase() : o.label}
-        </button>
+          <button
+            type="button"
+            role="radio"
+            aria-checked={mode === o.v}
+            aria-disabled={o.disabled || undefined}
+            disabled={o.disabled}
+            class={`btn join-item ${size === "xs" ? "btn-xs" : "btn-sm"} ${
+              mode === o.v ? "btn-primary" : "btn-ghost"
+            } ${o.disabled ? "btn-disabled opacity-40" : ""}`}
+            onClick={() => {
+              if (!o.disabled) onChange(o.v);
+            }}
+          >
+            {mode === o.v ? o.label.toUpperCase() : o.label}
+          </button>
+        </span>
       ))}
     </div>
   );

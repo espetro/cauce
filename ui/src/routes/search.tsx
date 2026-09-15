@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "preact/hooks";
 import { useLocation } from "preact-iso";
-import { Header, useAiAvailable, usePageTitle } from "../components/Header";
+import { useAiAvailable, usePageTitle } from "../components/Header";
+import { Layout } from "../components/Layout";
 import { useModels } from "../components/ModeSegments";
 import { recordClick } from "../lib/api";
 import { ResultCard } from "../features/search/ResultCard";
@@ -23,7 +24,7 @@ const MODE_KEY = "oxe-mode";
 type Mode = "traditional" | "ai";
 
 export default function SearchRoute() {
-  const { path, query, route } = useLocation();
+  const { query, route } = useLocation();
   const q = String(query?.q ?? "");
   const page = Math.max(1, Number(query?.p ?? 1) || 1);
   const urlMode = query?.mode === "ai" ? "ai" : "traditional";
@@ -99,146 +100,154 @@ export default function SearchRoute() {
   const qHash = payload?._q_hash ?? "";
 
   return (
-    <div class="min-h-screen flex flex-col">
-      <Header path={path} />
-      <main class="w-full max-w-[652px] mx-auto px-4 pb-16">
-        <div class="pt-4 flex flex-col gap-3">
-          <SearchBox
-            value={input}
-            onInput={setInput}
-            onSubmit={submit}
-            busy={effectiveMode === "ai" ? !answer.state.done : loading}
-            size="md"
-            mode={mode}
-            onModeChange={setMode}
-            aiAvailable={aiAvailable}
-            models={models}
-            modelsError={modelsError}
-          />
-          {aiModeBlocked && (
-            <p class="text-xs opacity-60 mt-1" role="note">
-              AI mode is not configured - set a model in settings
-            </p>
-          )}
-          {effectiveMode === "traditional" && (results.length > 0 || payload) && (
-            <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px]">
-              <span class="opacity-60">{metaLine(payload) || (loading ? "searching…" : "")}</span>
-              {isCacheHit(payload) && (
-                <span
-                  class="tooltip"
-                  data-tip="Actually search the web (refreshes this cache entry)"
+    <Layout class="w-full max-w-[652px] mx-auto px-4 pb-16">
+      <div class="pt-4 flex flex-col gap-3">
+        <SearchBox
+          value={input}
+          onInput={setInput}
+          onSubmit={submit}
+          busy={effectiveMode === "ai" ? !answer.state.done : loading}
+          size="md"
+          mode={mode}
+          onModeChange={setMode}
+          aiAvailable={aiAvailable}
+          models={models}
+          modelsError={modelsError}
+        />
+        {aiModeBlocked && (
+          <p class="text-xs opacity-60 mt-1" role="note">
+            AI mode is not configured - set a model in settings
+          </p>
+        )}
+        {effectiveMode === "traditional" && (results.length > 0 || payload) && (
+          <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px]">
+            <span class="opacity-60">{metaLine(payload) || (loading ? "searching…" : "")}</span>
+            {isCacheHit(payload) && (
+              <span class="tooltip" data-tip="Actually search the web (refreshes this cache entry)">
+                <button
+                  type="button"
+                  class="badge badge-sm badge-ghost cursor-pointer"
+                  aria-label="cached result: click to refresh from the web"
+                  onClick={() => refresh(q)}
                 >
-                  <button
-                    type="button"
-                    class="badge badge-sm badge-ghost cursor-pointer"
-                    aria-label="cached result: click to refresh from the web"
-                    onClick={() => refresh(q)}
-                  >
-                    cached
-                    {(() => {
-                      const age = cachedAgeOf(payload);
-                      return age != null ? ` · ${fmtDur(age)} old` : "";
-                    })()}
-                  </button>
-                </span>
-              )}
-              {payload && (
-                <span class="flex gap-2 ml-auto">
-                  <button
-                    type="button"
-                    class="btn btn-ghost btn-xs"
-                    onClick={() => navigator.clipboard?.writeText(window.location.href)}
-                  >
-                    copy link
-                  </button>
-                  <button
-                    type="button"
-                    class="btn btn-ghost btn-xs"
-                    onClick={() =>
-                      navigator.clipboard?.writeText(
-                        JSON.stringify({
-                          requestId: payload.requestId,
-                          results: payload.results,
-                          costDollars: payload.costDollars,
-                        }),
-                      )
-                    }
-                  >
-                    copy json
-                  </button>
-                </span>
-              )}
+                  cached
+                  {(() => {
+                    const age = cachedAgeOf(payload);
+                    return age != null ? ` · ${fmtDur(age)} old` : "";
+                  })()}
+                </button>
+              </span>
+            )}
+            {payload && (
+              <span class="flex gap-2 ml-auto">
+                <button
+                  type="button"
+                  class="btn btn-ghost btn-xs"
+                  onClick={() => navigator.clipboard?.writeText(window.location.href)}
+                >
+                  copy link
+                </button>
+                <button
+                  type="button"
+                  class="btn btn-ghost btn-xs"
+                  onClick={() =>
+                    navigator.clipboard?.writeText(
+                      JSON.stringify({
+                        requestId: payload.requestId,
+                        results: payload.results,
+                        costDollars: payload.costDollars,
+                      }),
+                    )
+                  }
+                >
+                  copy json
+                </button>
+              </span>
+            )}
+          </div>
+        )}
+      </div>
+
+      {effectiveMode === "ai" ? (
+        <AnswerView
+          query={q}
+          state={answer.state}
+          onStop={answer.stop}
+          onRetry={() => answer.run(q)}
+          onAskRelated={askAi}
+          onViewClassic={viewClassic}
+        />
+      ) : (
+        <>
+          {loading && (
+            <div class="py-6 flex flex-col divide-y divide-base-300" aria-busy="true">
+              {[0, 1, 2, 3].map((i) => (
+                <div key={i} class="py-3 flex flex-col gap-1.5">
+                  <div class="flex items-center gap-2">
+                    <div class="skeleton size-4 rounded-sm" />
+                    <div class="skeleton h-3 w-28" />
+                  </div>
+                  <div class="skeleton h-5 w-2/3" />
+                  <div class="skeleton h-3.5 w-full" />
+                  <div class="skeleton h-3.5 w-11/12" />
+                </div>
+              ))}
             </div>
           )}
-        </div>
 
-        {effectiveMode === "ai" ? (
-          <AnswerView
-            query={q}
-            state={answer.state}
-            onStop={answer.stop}
-            onRetry={() => answer.run(q)}
-            onAskRelated={askAi}
-            onViewClassic={viewClassic}
-          />
-        ) : (
-          <>
-            {loading && (
-              <div class="py-10 flex justify-center" aria-busy="true">
-                <span class="loading loading-dots loading-md" />
+          {!loading && error && (
+            <div class="py-6 flex flex-col gap-3">
+              <div role="alert" class="alert alert-error text-sm">
+                <span>error: {error}</span>
               </div>
-            )}
-
-            {!loading && error && (
-              <div class="py-10 text-sm">
-                <p class="text-error mb-3">error: {error}</p>
+              <div class="flex gap-2">
                 <button type="button" class="btn btn-sm" onClick={() => run(q, page)}>
                   retry
                 </button>
                 {aiAvailable === true && (
-                  <button type="button" class="btn btn-ghost btn-sm ml-2" onClick={() => askAi(q)}>
+                  <button type="button" class="btn btn-ghost btn-sm" onClick={() => askAi(q)}>
                     ask AI instead
                   </button>
                 )}
               </div>
-            )}
+            </div>
+          )}
 
-            {!loading && !error && payload && results.length === 0 && (
-              <div class="py-10 text-sm">
-                <p class="opacity-60 mb-3">no results</p>
-                {aiAvailable === true && (
-                  <button type="button" class="btn btn-sm" onClick={() => askAi(q)}>
-                    ask AI instead
-                  </button>
-                )}
-              </div>
-            )}
+          {!loading && !error && payload && results.length === 0 && (
+            <div class="py-10 text-sm">
+              <p class="opacity-60 mb-3">no results</p>
+              {aiAvailable === true && (
+                <button type="button" class="btn btn-sm" onClick={() => askAi(q)}>
+                  ask AI instead
+                </button>
+              )}
+            </div>
+          )}
 
-            {!loading && results.length > 0 && (
-              <div class="divide-y divide-base-300">
-                {results.map((r) => (
-                  <ResultCard
-                    key={r.id || r.url}
-                    result={r}
-                    queryHash={qHash}
-                    onOpen={(res) =>
-                      recordClick({
-                        query_hash: qHash,
-                        result_id: res.id || res.url,
-                        url: res.url,
-                        title: res.title,
-                      })
-                    }
-                  />
-                ))}
-              </div>
-            )}
+          {!loading && results.length > 0 && (
+            <div class="divide-y divide-base-300">
+              {results.map((r) => (
+                <ResultCard
+                  key={r.id || r.url}
+                  result={r}
+                  queryHash={qHash}
+                  onOpen={(res) =>
+                    recordClick({
+                      query_hash: qHash,
+                      result_id: res.id || res.url,
+                      url: res.url,
+                      title: res.title,
+                    })
+                  }
+                />
+              ))}
+            </div>
+          )}
 
-            {!loading && results.length > 0 && <Pager q={q} page={page} goPage={goPage} />}
-          </>
-        )}
-      </main>
-    </div>
+          {!loading && results.length > 0 && <Pager q={q} page={page} goPage={goPage} />}
+        </>
+      )}
+    </Layout>
   );
 }
 

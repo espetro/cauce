@@ -54,13 +54,15 @@ export function AnswerView({ query, state, onStop, onRetry, onAskRelated, onView
       )}
 
       {error ? (
-        <div class="text-sm">
+        <div class="text-sm flex flex-col gap-2">
           {text && (
-            <div class="mb-3 opacity-80">
+            <div class="mb-1 opacity-80">
               <MarkdownLite text={text} />
             </div>
           )}
-          <p class="text-error mb-2">stream interrupted - {error}</p>
+          <div role="alert" class="alert alert-error">
+            <span>stream interrupted - {error}</span>
+          </div>
           <div class="flex gap-2">
             <button type="button" class="btn btn-sm" onClick={onRetry}>
               retry
@@ -88,8 +90,15 @@ export function AnswerView({ query, state, onStop, onRetry, onAskRelated, onView
           {stopped && <p class="text-xs opacity-50 mt-1">stopped</p>}
         </div>
       ) : streaming && steps.length === 0 ? (
-        <div class="py-6 flex justify-center" aria-busy="true">
-          <span class="loading loading-dots loading-md" />
+        <div class="flex flex-col gap-3" aria-busy="true">
+          <div class="skeleton h-4 w-11/12" />
+          <div class="skeleton h-4 w-full" />
+          <div class="skeleton h-4 w-3/4" />
+          <div class="flex gap-2 overflow-hidden">
+            {[0, 1, 2].map((i) => (
+              <div key={i} class="skeleton h-16 w-44 shrink-0" />
+            ))}
+          </div>
         </div>
       ) : null}
 

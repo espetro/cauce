@@ -5,10 +5,12 @@ import { bumpModels, ModelPicker } from "../../components/ModelPicker";
 import { getTheme, setTheme, THEMES, type ThemeChoice } from "../../lib/theme";
 import { getSettings, putSettings, PROVIDERS, SettingsSchema, type SettingsValues } from "./schema";
 
-/** Settings dialog: reads/writes the backend [ai] config via GET/PUT /settings.
- * Uncontrolled form, parse-on-submit via valibot. Saved values are hydrated
- * from GET /settings on mount (provider, model, base_url, enabled); api_key
- * is redacted server-side so it stays blank ("unchanged if blank"). */
+/** Settings dialog: native <dialog class="modal"> + <form method="dialog">.
+ * Reads/writes the backend [ai] config via GET/PUT /settings; parse-on-submit
+ * via valibot (save PUTs then closes the dialog). api_key is redacted
+ * server-side so it stays blank ("unchanged if blank"). Esc and backdrop
+ * clicks close the native dialog for free; the close event notifies the
+ * parent so it strips the ?settings param. */
 export function SettingsDialog({ onClose }: { onClose: () => void }) {
   const [models, setModels] = useState<string[]>([]);
   const [modelsError, setModelsError] = useState<string | null>(null);
@@ -16,11 +18,10 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<keyof SettingsValues, string>>>({});
   const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ ok: boolean; detail: string } | null>(null);
   const formRef = useRef<HTMLFormElement>(null);
-  const dialogRef = useRef<HTMLDivElement>(null);
+  const dialogRef = useRef<HTMLDialogElement>(null);
   const [model, setModel] = useState("");
   const [provider, setProvider] = useState<string>("openai");
   const [theme, setThemeState] = useState<ThemeChoice>(getTheme);
@@ -60,19 +61,20 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
     return () => ctl.abort();
   }, []);
 
+  // open + focus management; the close event (Esc, backdrop, cancel button,
+  // save) bubbles to the parent which strips the ?settings param.
   useEffect(() => {
-    dialogRef.current?.querySelector<HTMLInputElement>("select, input")?.focus();
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
+    const dlg = dialogRef.current;
+    if (!dlg) return;
+    dlg.showModal();
+    dlg.addEventListener("close", onClose);
+    dlg.querySelector<HTMLInputElement>("select, input")?.focus();
+    return () => dlg.removeEventListener("close", onClose);
   }, [onClose]);
 
   const submit = (e: Event) => {
     e.preventDefault();
     setSaveError(null);
-    setSaved(false);
     setTestResult(null);
     const fd = new FormData(formRef.current!);
     const raw = {
@@ -103,8 +105,8 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
     })
       .then(() => {
         setSaving(false);
-        setSaved(true);
         bumpModels();
+        dialogRef.current?.close();
       })
       .catch((err: unknown) => {
         setSaving(false);
@@ -144,166 +146,154 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
     fieldErrors[k] ? <p class="text-error text-xs mt-1">{fieldErrors[k]}</p> : null;
 
   return (
-    <div
-      class="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-    >
-      <div
-        ref={dialogRef}
-        role="dialog"
-        aria-modal="true"
-        aria-label="settings"
-        class="card bg-base-100 border border-base-300 w-full max-w-md"
-      >
-        <div class="card-body gap-3">
-          <h2 class="card-title text-base">settings</h2>
-          {loadError && (
-            <p class="text-error text-sm">
-              backend settings endpoints not available ({loadError}) - the server needs GET/PUT
-              /settings support
-            </p>
-          )}
-          <form ref={formRef} onSubmit={submit} noValidate>
-            <fieldset class="fieldset gap-2.5">
-              <legend class="fieldset-legend text-sm">ai</legend>
+    <dialog ref={dialogRef} class="modal" aria-label="settings">
+      <div class="modal-box w-full max-w-md">
+        <h2 class="text-base font-semibold mb-3">settings</h2>
+        {loadError && (
+          <div role="alert" class="alert alert-error text-sm mb-3">
+            backend settings endpoints not available ({loadError}) - the server needs GET/PUT
+            /settings support
+          </div>
+        )}
+        <form ref={formRef} onSubmit={submit} noValidate>
+          <fieldset class="fieldset gap-2.5">
+            <legend class="fieldset-legend text-sm">ai</legend>
 
-              <label class="label text-xs" for="set-provider">
-                provider
-              </label>
-              <select
-                id="set-provider"
-                name="provider"
-                class="select select-sm w-full"
-                value={provider}
-                onInput={(e) => setProvider((e.target as HTMLSelectElement).value)}
+            <label class="label text-xs" for="set-provider">
+              provider
+            </label>
+            <select
+              id="set-provider"
+              name="provider"
+              class="select select-sm w-full"
+              value={provider}
+              onInput={(e) => setProvider((e.target as HTMLSelectElement).value)}
+            >
+              {PROVIDERS.map((p) => (
+                <option key={p} value={p}>
+                  {p}
+                </option>
+              ))}
+            </select>
+            {err("provider")}
+
+            <label class="label text-xs" for="set-model">
+              model
+            </label>
+            <ModelPicker
+              id="set-model"
+              models={models}
+              value={model}
+              onChange={setModel}
+              size="sm"
+              modelsError={modelsError}
+            />
+            {err("model")}
+            {modelsError && models.length === 0 && (
+              <p class="text-warning text-xs mt-1" role="note">
+                model listing failed: {modelsError}
+              </p>
+            )}
+
+            <label class="label text-xs" for="set-api-key">
+              api key
+            </label>
+            <input
+              id="set-api-key"
+              name="api_key"
+              type="password"
+              class="input input-sm w-full"
+              placeholder="(unchanged if blank)"
+              autocomplete="off"
+            />
+            {err("api_key")}
+
+            <label class="label text-xs" for="set-base-url">
+              base url
+            </label>
+            <input
+              id="set-base-url"
+              name="base_url"
+              type="url"
+              class="input input-sm w-full"
+              placeholder="https://api.openai.com/v1"
+              autocomplete="off"
+            />
+            {err("base_url")}
+
+            <div class="flex items-center gap-2 mt-1">
+              <button
+                type="button"
+                class="btn btn-outline btn-sm"
+                disabled={testing}
+                onClick={runTest}
               >
-                {PROVIDERS.map((p) => (
-                  <option key={p} value={p}>
-                    {p}
-                  </option>
-                ))}
-              </select>
-              {err("provider")}
-
-              <label class="label text-xs" for="set-model">
-                model
-              </label>
-              <ModelPicker
-                id="set-model"
-                models={models}
-                value={model}
-                onChange={setModel}
-                size="sm"
-                modelsError={modelsError}
-              />
-              {err("model")}
-              {modelsError && models.length === 0 && (
-                <p class="text-warning text-xs mt-1" role="note">
-                  model listing failed: {modelsError}
-                </p>
-              )}
-
-              <label class="label text-xs" for="set-api-key">
-                api key
-              </label>
-              <input
-                id="set-api-key"
-                name="api_key"
-                type="password"
-                class="input input-sm w-full"
-                placeholder="(unchanged if blank)"
-                autocomplete="off"
-              />
-              {err("api_key")}
-
-              <label class="label text-xs" for="set-base-url">
-                base url
-              </label>
-              <input
-                id="set-base-url"
-                name="base_url"
-                type="url"
-                class="input input-sm w-full"
-                placeholder="https://api.openai.com/v1"
-                autocomplete="off"
-              />
-              {err("base_url")}
-
-              <div class="flex items-center gap-2 mt-1">
-                <button
-                  type="button"
-                  class="btn btn-outline btn-sm"
-                  disabled={testing}
-                  onClick={runTest}
+                {testing ? <span class="loading loading-spinner loading-xs" /> : "Test connection"}
+              </button>
+              {testResult && (
+                <span
+                  class={`text-xs ${testResult.ok ? "text-success" : "text-error"}`}
+                  role="status"
                 >
-                  {testing ? (
-                    <span class="loading loading-spinner loading-xs" />
-                  ) : (
-                    "Test connection"
-                  )}
-                </button>
-                {testResult && (
-                  <span
-                    class={`text-xs ${testResult.ok ? "text-success" : "text-error"}`}
-                    role="status"
-                  >
-                    {testResult.detail}
-                  </span>
-                )}
-              </div>
-
-              <label class="label cursor-pointer gap-2 text-xs justify-start">
-                <input type="checkbox" name="enabled" class="toggle toggle-sm" defaultChecked />
-                enabled
-              </label>
-            </fieldset>
-
-            <fieldset class="fieldset gap-2.5 mt-2">
-              <legend class="fieldset-legend text-sm">theme</legend>
-              <div role="radiogroup" aria-label="theme" class="join">
-                {THEMES.map((t) => (
-                  <button
-                    key={t}
-                    type="button"
-                    role="radio"
-                    aria-checked={theme === t}
-                    tabIndex={theme === t ? 0 : -1}
-                    class={`btn join-item btn-sm ${theme === t ? "btn-primary" : "btn-ghost"}`}
-                    onClick={() => {
-                      setThemeState(t);
-                      setTheme(t);
-                    }}
-                  >
-                    {t === "system" ? "System" : t === "light" ? "Light" : "Dark"}
-                  </button>
-                ))}
-              </div>
-              {theme === "system" && (
-                <p class="text-xs opacity-50">follows your OS light/dark preference</p>
+                  {testResult.detail}
+                </span>
               )}
-            </fieldset>
-
-            {saveError && <p class="text-error text-xs mt-2">{saveError}</p>}
-
-            <div class="card-actions justify-end mt-3">
-              <button type="button" class="btn btn-ghost btn-sm" onClick={onClose}>
-                cancel
-              </button>
-              <button type="submit" class="btn btn-primary btn-sm" disabled={saving}>
-                {saving ? (
-                  <span class="loading loading-dots loading-xs" />
-                ) : saved ? (
-                  "saved"
-                ) : (
-                  "save"
-                )}
-              </button>
             </div>
-          </form>
-        </div>
+
+            <label class="label cursor-pointer gap-2 text-xs justify-start">
+              <input type="checkbox" name="enabled" class="toggle toggle-sm" defaultChecked />
+              enabled
+            </label>
+          </fieldset>
+
+          <fieldset class="fieldset gap-2.5 mt-2">
+            <legend class="fieldset-legend text-sm">theme</legend>
+            <div role="radiogroup" aria-label="theme" class="join">
+              {THEMES.map((t) => (
+                <button
+                  key={t}
+                  type="button"
+                  role="radio"
+                  aria-checked={theme === t}
+                  tabIndex={theme === t ? 0 : -1}
+                  class={`btn join-item btn-sm ${theme === t ? "btn-primary" : "btn-ghost"}`}
+                  onClick={() => {
+                    setThemeState(t);
+                    setTheme(t);
+                  }}
+                >
+                  {t === "system" ? "System" : t === "light" ? "Light" : "Dark"}
+                </button>
+              ))}
+            </div>
+            {theme === "system" && (
+              <p class="text-xs opacity-50">follows your OS light/dark preference</p>
+            )}
+          </fieldset>
+
+          {saveError && (
+            <div role="alert" class="alert alert-error text-xs mt-2">
+              <span>{saveError}</span>
+            </div>
+          )}
+
+          <div class="modal-action">
+            <button
+              type="button"
+              class="btn btn-ghost btn-sm"
+              onClick={() => dialogRef.current?.close()}
+            >
+              cancel
+            </button>
+            <button type="submit" class="btn btn-primary btn-sm" disabled={saving}>
+              {saving ? <span class="loading loading-dots loading-xs" /> : "save"}
+            </button>
+          </div>
+        </form>
       </div>
-    </div>
+      <form method="dialog" class="modal-backdrop">
+        <button aria-label="close settings">close</button>
+      </form>
+    </dialog>
   );
 }
