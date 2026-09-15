@@ -197,6 +197,14 @@ def make_app(
         )
         return HTMLResponse(ui.render_shell(title, body, VERSION, page_class="search"))
 
+    @app.get("/suggest")
+    def suggest(q: str = Query(...)) -> list:
+        """OpenSearch Suggestions JSON: ["prefix", ["s1", "s2"], ...]."""
+        prefix = q.strip()
+        if not prefix:
+            return [prefix, [], [], []]
+        return [prefix, c.suggest_queries(prefix, limit=3), [], []]
+
     @app.get("/cache/stats")
     def cache_stats() -> dict:
         return c.stats()

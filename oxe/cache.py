@@ -241,6 +241,18 @@ class TTLCache:
             )
             return cur or 0
 
+    def suggest_queries(self, prefix: str, limit: int = 3) -> list[str]:
+        """Recency-then-frequency ranked unique queries starting with prefix."""
+        esc = (
+            (prefix or "")
+            .replace("\\", "\\\\")
+            .replace("%", "\\%")
+            .replace("_", "\\_")
+            .lower()
+        )
+        rows = self._q("suggest_queries")(self._conn, prefix=f"{esc}%", limit=limit)
+        return [r["query_text"] for r in rows]
+
     def get_search_log(self, limit: int = 100) -> list[dict]:
         rows = self._q("get_search_log")(self._conn, limit=limit)
         return [

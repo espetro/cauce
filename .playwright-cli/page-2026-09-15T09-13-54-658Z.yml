@@ -1,0 +1,22 @@
+- generic [ref=e1]:
+  - banner [ref=e2]:
+    - generic [ref=e3]: oxe
+    - navigation [ref=e4]:
+      - link "search" [ref=e5] [cursor=pointer]:
+        - /url: "#"
+      - link "history" [ref=e6] [cursor=pointer]:
+        - /url: "#"
+      - link "cache" [ref=e7] [cursor=pointer]:
+        - /url: "#"
+      - link "api" [ref=e8] [cursor=pointer]:
+        - /url: "#"
+    - generic [ref=e9]: v0.3.1
+  - main [ref=e10]:
+    - generic [ref=e11]:
+      - heading "search." [level=1] [ref=e12]
+      - generic [ref=e13]:
+        - searchbox "search query" [active] [ref=e14]
+        - button "search" [ref=e15] [cursor=pointer]
+      - paragraph [ref=e16]:
+        - text: same url serves html to browsers, exa json to
+        - code [ref=e17]: "Accept: application/json"

@@ -26,5 +26,13 @@ GROUP BY query_hash ORDER BY c DESC, query_text LIMIT :limit;
 SELECT query_text, MAX(ts) FROM search_log WHERE ts >= :cutoff AND result_count = 0
 GROUP BY query_hash ORDER BY MAX(ts) DESC LIMIT :limit;
 
+-- name: suggest-queries(prefix, limit)
+SELECT query_text, MAX(ts) AS last_ts, COUNT(*) AS freq
+FROM search_log
+WHERE query_text LIKE :prefix ESCAPE '\'
+GROUP BY query_hash
+ORDER BY last_ts DESC, freq DESC, query_text
+LIMIT :limit;
+
 -- name: stat-client-split(cutoff)
 SELECT client, COUNT(*) FROM search_log WHERE ts >= :cutoff GROUP BY client;

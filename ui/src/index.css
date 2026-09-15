@@ -1,0 +1,10 @@
+@import "tailwindcss";
+@plugin "daisyui" {
+  prefersdark: true;
+}
+
+@import "@fontsource-variable/geist";
+
+:root {
+  color-scheme: light dark;
+}

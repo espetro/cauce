@@ -1,0 +1,52 @@
+[tools]
+python = "3.12"
+bun = "1.2"
+uv = "latest"
+
+[tasks.dev]
+description = "Run backend server + UI dev server"
+depends = ["dev:server", "dev:ui"]
+
+[tasks."dev:server"]
+description = "Run the oxe backend (uv run oxe)"
+run = "uv run oxe"
+
+[tasks."dev:ui"]
+description = "Run the Vite dev server (ui/)"
+dir = "ui"
+run = "bun run dev"
+
+[tasks.build]
+description = "Build static UI into dist/"
+dir = "ui"
+run = "bun run build"
+
+[tasks.serve]
+description = "Serve production build via the Python server"
+run = "uv run oxe"
+
+[tasks.check]
+description = "Typecheck + build + size budgets"
+dir = "ui"
+run = "bun run check"
+
+[tasks.lint]
+description = "Lint everything (python + ui)"
+depends = ["lint:py", "lint:ui"]
+
+[tasks."lint:py"]
+description = "Lint the Python package"
+run = "uv run --with ruff ruff check oxe"
+
+[tasks."lint:ui"]
+description = "Lint the UI workspace (oxlint + oxfmt)"
+dir = "ui"
+run = "bun run lint"
+
+[tasks.test]
+description = "Run all tests"
+depends = ["test:py"]
+
+[tasks."test:py"]
+description = "Run Python tests"
+run = "uv run --with pytest pytest"
