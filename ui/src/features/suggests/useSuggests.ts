@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "preact/hooks";
-import { suggest } from "../../lib/api";
+import { ddgAc, suggest } from "../../lib/api";
 
 export const AC_KEY = "oxe-ac";
 
@@ -8,11 +8,9 @@ export interface Suggestion {
   group: "history" | "web";
 }
 
-/** History-first suggestions from the local GET /suggest endpoint.
- * The DDG ac group is disabled: ac.duckduckgo.com blocks browser-direct
- * calls (CORS) and oxe has no server-side /ac proxy yet. When the
- * backend ships one, route ddgAc() through it and reintroduce the
- * "web suggestions" group behind the oxe-ac localStorage toggle. */
+/** History-first suggestions from the local GET /suggest endpoint,
+ * followed by DDG web suggestions via the backend GET /ac proxy
+ * (gated by the oxe-ac localStorage toggle). */
 export function useSuggests(
   query: string,
   open: boolean,
@@ -22,7 +20,8 @@ export function useSuggests(
   setAcOn: (v: boolean) => void;
 } {
   const [history, setHistory] = useState<string[]>([]);
-  const [acOn] = useState(() => localStorage.getItem(AC_KEY) !== "off");
+  const [web, setWeb] = useState<string[]>([]);
+  const [acOn, setAcOnState] = useState(() => localStorage.getItem(AC_KEY) !== "off");
 
   useEffect(() => {
     const v = query.trim().toLowerCase();
@@ -37,11 +36,32 @@ export function useSuggests(
     return () => ctl.abort();
   }, [query, open]);
 
-  const setAcOn = (_v: boolean) => {
-    // no-op while the DDG ac group is disabled (no backend proxy yet)
+  useEffect(() => {
+    const v = query.trim().toLowerCase();
+    if (!open || v.length < 2 || !acOn) {
+      setWeb([]);
+      return;
+    }
+    const ctlRef = { current: null as AbortController | null };
+    const t = setTimeout(() => {
+      const ctl = new AbortController();
+      ctlRef.current = ctl;
+      ddgAc(v, ctl.signal)
+        .then(setWeb)
+        .catch(() => {});
+    }, 300);
+    return () => {
+      clearTimeout(t);
+      ctlRef.current?.abort();
+    };
+  }, [query, open, acOn]);
+
+  const setAcOn = (v: boolean) => {
+    setAcOnState(v);
+    localStorage.setItem(AC_KEY, v ? "on" : "off");
   };
 
-  const items = mergeSuggests(history);
+  const items = mergeSuggests(history, web);
   return { items, acOn, setAcOn };
 }
 

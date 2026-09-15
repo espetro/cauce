@@ -6,11 +6,13 @@ interface Props {
   activeIndex: number | null;
   onPick: (text: string) => void;
   onHover: (i: number | null) => void;
+  acOn?: boolean;
+  setAcOn?: (v: boolean) => void;
 }
 
 /** Zero-weight suggestions dropdown: canvas background, hairline border,
  * muted caps group labels (not options). Does not submit. */
-export function SuggestionsDropdown({ items, activeIndex, onPick, onHover }: Props) {
+export function SuggestionsDropdown({ items, activeIndex, onPick, onHover, acOn, setAcOn }: Props) {
   if (!items.length) return null;
   let idx = -1;
   let lastGroup: Suggestion["group"] | null = null;
@@ -50,6 +52,23 @@ export function SuggestionsDropdown({ items, activeIndex, onPick, onHover }: Pro
           </li>
         );
       })}
+      {setAcOn && (
+        <li role="none" class="border-t border-base-300 mt-1">
+          <label
+            class="flex items-center justify-between gap-2 px-3 py-1.5 text-[11px] uppercase tracking-wide opacity-60 cursor-pointer select-none"
+            role="presentation"
+          >
+            web suggestions
+            <input
+              type="checkbox"
+              class="toggle toggle-xs"
+              checked={acOn !== false}
+              onChange={(e) => setAcOn((e.target as HTMLInputElement).checked)}
+              aria-label="toggle web suggestions"
+            />
+          </label>
+        </li>
+      )}
     </ul>
   );
 }

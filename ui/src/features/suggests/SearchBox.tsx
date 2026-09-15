@@ -48,7 +48,7 @@ export function SearchBox({
   const ph = placeholder ?? (aiMode ? "Ask anything privately" : "Search privately");
 
   // suggestions are optional in AI mode; suppress them there (less noise)
-  const { items } = useSuggests(aiMode ? "" : value, open);
+  const { items, acOn, setAcOn } = useSuggests(aiMode ? "" : value, open);
   const { activeIndex, handleKey, setActiveIndex } = useListNav(
     items.length,
     (i) => {
@@ -186,6 +186,8 @@ export function SearchBox({
               onSubmit(text);
             }}
             onHover={(i) => setActiveIndex(i)}
+            acOn={acOn}
+            setAcOn={setAcOn}
           />
         </div>
       )}

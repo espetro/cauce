@@ -17,7 +17,7 @@ _FAVICON = "https://www.google.com/s2/favicons?domain={netloc}&sz=32"
 def cache_key(req: dict) -> str:
     contents = req.get("contents") or {}
     backend = req.get("_backend") or "ddg"
-    norm = (
+    norm = [
         backend,
         (req.get("query") or "").lower().strip(),
         max(_NUM_CLAMP[0], min(_NUM_CLAMP[1], int(req.get("numResults") or 10))),
@@ -26,8 +26,13 @@ def cache_key(req: dict) -> str:
         tuple(sorted(req.get("excludeDomains") or [])),
         bool(contents.get("highlights")),
         bool(contents.get("text")),
-    )
-    return hashlib.sha256(repr(norm).encode("utf-8")).hexdigest()
+    ]
+    # Page is part of cache identity only when it differs from the default, so
+    # existing keys (page absent or 1) stay valid.
+    page = int(req.get("page") or 1)
+    if page > 1:
+        norm.append(("page", page))
+    return hashlib.sha256(repr(tuple(norm)).encode("utf-8")).hexdigest()
 
 
 def build_query(req: dict) -> str:
@@ -92,6 +97,7 @@ def search(req: dict, engine: str | None = None) -> dict:
     contents_text = bool(contents.get("text"))
 
     num_results = max(_NUM_CLAMP[0], min(_NUM_CLAMP[1], int(req.get("numResults") or 10)))
+    page = max(1, int(req.get("page") or 1))
     query = build_query(req)
     search_type = req.get("type") or "auto"
 
@@ -117,6 +123,8 @@ def search(req: dict, engine: str | None = None) -> dict:
                 kwargs["region"] = region
             if timelimit:
                 kwargs["timelimit"] = timelimit
+            if page > 1:
+                kwargs["page"] = page
             raw = list(DDGS().text(**kwargs))
             if raw:
                 break
@@ -133,5 +141,6 @@ def search(req: dict, engine: str | None = None) -> dict:
         "requestId": str(uuid.uuid4()),
         "searchType": search_type,
         "results": results,
+        "_page": page,
         "costDollars": {"total": 0.0},
     }

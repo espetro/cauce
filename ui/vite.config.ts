@@ -20,6 +20,7 @@ export default defineConfig({
         },
       },
       "/suggest": "http://127.0.0.1:4480",
+      "/ac": "http://127.0.0.1:4480",
       "/history": {
         target: "http://127.0.0.1:4480",
         // direct SPA navigation to /history serves index.html instead
