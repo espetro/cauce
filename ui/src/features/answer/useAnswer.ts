@@ -13,7 +13,7 @@ export interface AnswerState {
   stopped: boolean;
 }
 
-const INITIAL: AnswerState = {
+export const INITIAL: AnswerState = {
   text: "",
   steps: [],
   sources: [],
@@ -24,6 +24,31 @@ const INITIAL: AnswerState = {
   error: null,
   stopped: false,
 };
+
+/** Pure SSE event reducer so event handling is testable without a stream. */
+export function applyAnswerEvent(state: AnswerState, ev: AnswerEvent): AnswerState {
+  if (ev.type === "step") {
+    return { ...state, steps: [...state.steps, ev.label] };
+  }
+  if (ev.type === "delta") {
+    return { ...state, text: state.text + ev.text };
+  }
+  if (ev.type === "sources") {
+    return { ...state, sources: ev.sources };
+  }
+  if (ev.type === "done") {
+    return {
+      ...state,
+      text: ev.answer || state.text,
+      done: true,
+      cached: ev.cached,
+      confidence: ev.confidence,
+      relatedQuestions: ev.related_questions ?? [],
+      error: ev.error ?? null,
+    };
+  }
+  return state;
+}
 
 /** Owns the SSE answer stream lifecycle for one query run. */
 export function useAnswer() {
@@ -41,23 +66,7 @@ export function useAnswer() {
     setState(INITIAL);
 
     const on = (ev: AnswerEvent) => {
-      if (ev.type === "step") {
-        setState((s) => ({ ...s, steps: [...s.steps, ev.label] }));
-      } else if (ev.type === "delta") {
-        setState((s) => ({ ...s, text: s.text + ev.text }));
-      } else if (ev.type === "sources") {
-        setState((s) => ({ ...s, sources: ev.sources }));
-      } else if (ev.type === "done") {
-        setState((s) => ({
-          ...s,
-          text: ev.answer || s.text,
-          done: true,
-          cached: ev.cached,
-          confidence: ev.confidence,
-          relatedQuestions: ev.related_questions ?? [],
-          error: ev.error ?? null,
-        }));
-      }
+      setState((s) => applyAnswerEvent(s, ev));
     };
 
     streamAnswer(query, on, ctl.signal).catch((e: unknown) => {

@@ -84,10 +84,19 @@ export function ModeToggle({
   aiAvailable: boolean | null;
   size?: "xs" | "sm";
 }) {
-  if (aiAvailable === false) return null;
-  const opts: Array<{ v: "traditional" | "ai"; label: string }> = [
-    { v: "traditional", label: "traditional" },
-    { v: "ai", label: "AI" },
+  const opts: Array<{
+    v: "traditional" | "ai";
+    label: string;
+    disabled: boolean;
+    title?: string;
+  }> = [
+    { v: "traditional", label: "traditional", disabled: false },
+    {
+      v: "ai",
+      label: "AI",
+      disabled: aiAvailable === false,
+      title: aiAvailable === false ? "configure a model in settings to enable AI mode" : undefined,
+    },
   ];
   return (
     <div role="radiogroup" aria-label="search mode" class="join">
@@ -97,8 +106,15 @@ export function ModeToggle({
           type="button"
           role="radio"
           aria-checked={mode === o.v}
-          class={`btn join-item ${size === "xs" ? "btn-xs" : "btn-sm"} ${mode === o.v ? "btn-primary" : "btn-ghost"}`}
-          onClick={() => onChange(o.v)}
+          aria-disabled={o.disabled || undefined}
+          disabled={o.disabled}
+          title={o.title}
+          class={`btn join-item ${size === "xs" ? "btn-xs" : "btn-sm"} ${
+            mode === o.v ? "btn-primary" : "btn-ghost"
+          } ${o.disabled ? "btn-disabled opacity-40" : ""}`}
+          onClick={() => {
+            if (!o.disabled) onChange(o.v);
+          }}
         >
           {mode === o.v ? o.label.toUpperCase() : o.label}
         </button>

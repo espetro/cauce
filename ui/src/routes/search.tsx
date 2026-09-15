@@ -3,7 +3,8 @@ import { useLocation } from "preact-iso";
 import { Header, ModeToggle, useAiAvailable, usePageTitle } from "../components/Header";
 import { recordClick } from "../lib/api";
 import { ResultCard } from "../features/search/ResultCard";
-import { metaLine, useSearch } from "../features/search/useSearch";
+import { cachedAgeOf, isCacheHit, metaLine, useSearch } from "../features/search/useSearch";
+import { fmtDur } from "../lib/format";
 import { AnswerView } from "../features/answer/AnswerView";
 import { useAnswer } from "../features/answer/useAnswer";
 import { SearchBox } from "../features/suggests/SearchBox";
@@ -21,16 +22,21 @@ export default function SearchRoute() {
   const aiAvailable = useAiAvailable();
   const [input, setInput] = useState(q);
   const [mode, setMode] = useState<Mode>(urlMode);
-  const { state, run } = useSearch();
+  const { state, run, refresh } = useSearch();
   const answer = useAnswer();
 
   useEffect(() => {
     localStorage.setItem(MODE_KEY, mode);
   }, [mode]);
 
+  // AI mode is unavailable: ?mode=ai URLs stay on classic results (no redirect)
+  // with a small inline notice; the disabled toggle communicates why.
+  const aiModeBlocked = mode === "ai" && aiAvailable === false;
+  const effectiveMode: Mode = aiModeBlocked ? "traditional" : mode;
+
   useEffect(() => {
     setInput(q);
-    if (q && mode === "traditional") run(q, page);
+    if (q && effectiveMode === "traditional") run(q, page);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [q, page]);
 
@@ -44,9 +50,9 @@ export default function SearchRoute() {
   }, [mode, urlMode]);
 
   useEffect(() => {
-    if (q && mode === "ai") answer.run(q);
+    if (q && effectiveMode === "ai") answer.run(q);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [q, mode]);
+  }, [q, effectiveMode]);
 
   const submit = (query: string) => {
     const t = query.trim();
@@ -83,7 +89,7 @@ export default function SearchRoute() {
               value={input}
               onInput={setInput}
               onSubmit={submit}
-              busy={mode === "ai" ? !answer.state.done : loading}
+              busy={effectiveMode === "ai" ? !answer.state.done : loading}
               size="md"
             />
             <ModeToggle
@@ -93,10 +99,44 @@ export default function SearchRoute() {
               size="xs"
             />
           </div>
-          {mode === "traditional" && (results.length > 0 || payload) && (
+          {aiModeBlocked && (
+            <p class="text-xs opacity-60 mt-1" role="note">
+              AI mode is not configured - set a model in settings
+            </p>
+          )}
+          {effectiveMode === "traditional" && (results.length > 0 || payload) && (
             <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px]">
-              <span class="opacity-60">
-                {metaLine(payload, null, null) || (loading ? "searching…" : "")}
+              <span class="opacity-60">{metaLine(payload) || (loading ? "searching…" : "")}</span>
+              {isCacheHit(payload) && (
+                <span
+                  class="tooltip"
+                  data-tip="Actually search the web (refreshes this cache entry)"
+                >
+                  <button
+                    type="button"
+                    class="badge badge-sm badge-ghost cursor-pointer"
+                    aria-label="cached result: click to refresh from the web"
+                    onClick={() => refresh(q)}
+                  >
+                    cached
+                    {(() => {
+                      const age = cachedAgeOf(payload);
+                      return age != null ? ` · ${fmtDur(age)} old` : "";
+                    })()}
+                  </button>
+                </span>
+              )}
+              <span
+                class="tooltip"
+                data-tip="results are served from a local cache; this badge explains the source and age"
+              >
+                <button
+                  type="button"
+                  class="btn btn-ghost btn-xs px-1"
+                  aria-label="about cache metadata"
+                >
+                  (?)
+                </button>
               </span>
               {payload && (
                 <span class="flex gap-2 ml-auto">
@@ -128,7 +168,7 @@ export default function SearchRoute() {
           )}
         </div>
 
-        {mode === "ai" ? (
+        {effectiveMode === "ai" ? (
           <AnswerView
             query={q}
             state={answer.state}

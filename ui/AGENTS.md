@@ -30,6 +30,36 @@ Scope: everything under `ui/` (Preact + Vite webapp). Repo-wide rules live in th
 - Every screen must work at ≈390px, 768px, and desktop. Mobile-first styling.
 - Before declaring UI work done: screenshot at mobile viewport and compare against the spec's `## Responsive` section.
 
+## URL state & QA checkpoints
+
+URL-addressable state is the app's reproducibility contract: every meaningful
+UI state should be deep-linkable. Full checkpoint list, status, and rationale
+lives in `.agents/docs/screens/userflow-checkpoints.md`.
+
+Param contract:
+
+| Param | Values | Screen/state |
+|---|---|---|
+| `q` | query text | `/search?q=` classic results (works today) |
+| `p` | page number | classic results page N |
+| `mode` | `ai` (absent = traditional) | AI answer view (works today) |
+| `since` | `24`/`168`/`720`/`all` | history time filter (planned) |
+| `qf` | substring | history query-text filter (planned) |
+| `settings` | `1` | settings dialog open (planned) |
+| `suggest` | `1` (+`q`) | suggestions dropdown open, QA-only (planned) |
+| `force` | `error`/`ai-off`/`empty` | stub error/notice/empty states, QA-only (planned) |
+
+State library: custom hooks on top of preact-iso's `useLocation()` /
+`route()` (pattern: `routes/search.tsx` mode handling). No new state
+dependencies (`qss`, signals, nanostores are all unnecessary at this size);
+JS budget stays 40KB gz.
+
+QA agent convention: (a) drive states via URL deep links, not
+click-throughs, whenever a URL recipe exists; (b) when you find a new key
+checkpoint, make it reproducible via URL state (propose/implement the param),
+then update the table above and the checkpoint doc. `force=*` and `suggest=1`
+are QA/dev-only and inert in normal flows.
+
 ## Quality loop
 
 - `mise run lint` (oxlint + oxfmt) and `mise run check` (size budgets) must pass.

@@ -40,14 +40,17 @@ export default function Home() {
       <main class="flex-1 flex items-center justify-center">
         <Center vh>
           <h1 class="text-4xl font-semibold tracking-tight mb-2">oxe</h1>
-          <p class="opacity-50 text-sm mb-8">search the web, locally cached</p>
+          <p class="opacity-50 text-sm">your local web intel layer</p>
+          <p class="opacity-40 text-[13px] mb-8">
+            search once, share with your agents - cached, MCP-ready · REST + MCP API on :4479
+          </p>
           <SearchBox value={q} onInput={setQ} onSubmit={submit} autoFocus size="lg" />
           <div class="mt-6 flex flex-col items-center gap-2">
             <ModeToggle mode={mode} onChange={setMode} aiAvailable={aiAvailable} />
             <p class="text-[13px] opacity-50 text-center px-4">
               {mode === "ai"
                 ? "AI: streaming answer with cited sources"
-                : "traditional: classic link results, cache metadata"}
+                : "classic link results with cache metadata"}
             </p>
           </div>
         </Center>
