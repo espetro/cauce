@@ -8,8 +8,20 @@ description = "Run backend server + UI dev server"
 depends = ["dev:server", "dev:ui"]
 
 [tasks."dev:server"]
-description = "Run the oxe backend (uv run oxe); port must match the vite proxy target in ui/vite.config.ts (127.0.0.1:4480)"
-run = "OXE_PORT=4480 uv run oxe"
+description = "Run the oxe backend (uv run oxe); port must match the vite proxy target in ui/vite.config.ts (127.0.0.1:4480). Writes to /tmp/oxe-dev.log (tail with: mise run logs)"
+run = """
+#!/usr/bin/env bash
+set -euo pipefail
+mkdir -p /tmp
+export OXE_PORT=4480
+export OXE_DEV=1
+echo "=== oxe dev server starting $(date) ===" >> /tmp/oxe-dev.log
+exec uv run oxe 2>&1 | tee -a /tmp/oxe-dev.log
+"""
+
+[tasks.logs]
+description = "Tail the dev backend log (/tmp/oxe-dev.log) with structured JSON events"
+run = "tail -f /tmp/oxe-dev.log"
 
 [tasks."dev:ui"]
 description = "Run the Vite dev server (ui/)"

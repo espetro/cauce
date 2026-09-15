@@ -1,4 +1,5 @@
 /** AI-mode client types + endpoint clients: /v1/models, /answer (SSE). */
+import { devLog } from "./devlog";
 
 export interface ModelsResponse {
   object: "list";
@@ -61,6 +62,14 @@ export async function streamAnswer(
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buf = "";
+  const DEV = import.meta.env.DEV;
+  // dev-only event counters (type counts, never payloads)
+  const counts: Record<string, number> = {};
+  const t0 = DEV ? performance.now() : 0;
+  const tick = (type: string) => {
+    if (!DEV) return;
+    counts[type] = (counts[type] ?? 0) + 1;
+  };
   for (;;) {
     const { done, value } = await reader.read();
     if (done) break;
@@ -72,11 +81,20 @@ export async function streamAnswer(
       for (const line of frame.split("\n")) {
         if (!line.startsWith("data: ")) continue;
         try {
-          on(JSON.parse(line.slice(6)) as AnswerEvent);
+          const ev = JSON.parse(line.slice(6)) as AnswerEvent;
+          tick(ev.type);
+          on(ev);
         } catch {
           // skip malformed frames
         }
       }
     }
+  }
+  if (DEV) {
+    devLog("answer.sse", {
+      q: query,
+      events: counts,
+      duration_ms: Math.round(performance.now() - t0),
+    });
   }
 }

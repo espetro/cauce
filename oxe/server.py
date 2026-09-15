@@ -24,6 +24,8 @@ from . import exa_compat
 from .search import do_search
 from . import ui
 from . import __version__
+from .devlog import DEV as _DEV
+from .devlog import event as _dev_event
 
 log = logging.getLogger(__name__)
 
@@ -209,14 +211,32 @@ def make_app(
                 req_dict | {"_backend": getattr(backend, "name", "ddg")}
             )
             c.delete(key)
-        return do_search(c, req_dict, backend=backend, on_result=observer)
+        _t0 = time.monotonic() if _DEV else None
+        try:
+            out = do_search(c, req_dict, backend=backend, on_result=observer)
+        except Exception as e:
+            _dev_event("search", q=req_dict.get("query", ""), page=req_dict.get("page", 1), error=str(e)[:200])
+            raise
+        if _DEV:
+            _dev_event(
+                "search",
+                q=req_dict.get("query", ""),
+                page=req_dict.get("page", 1),
+                source=out.get("_source"),
+                duration_ms=out.get("_duration_ms")
+                if out.get("_duration_ms") is not None
+                else int((time.monotonic() - _t0) * 1000),
+                results=len(out.get("results") or []),
+            )
+        return out
 
-    def _search_payload(q: str, num_results: int = 10) -> dict:
+    def _search_payload(q: str, num_results: int = 10, page: int = 1) -> dict:
         return do_search(
             c,
             {
                 "query": q,
                 "numResults": num_results,
+                "page": page,
                 "contents": {"text": True, "highlights": True},
             },
             backend=backend,
@@ -255,7 +275,9 @@ def make_app(
         prefix = q.strip()
         if not prefix:
             return [prefix, [], [], []]
-        return [prefix, c.suggest_queries(prefix, limit=3), [], []]
+        out = [prefix, c.suggest_queries(prefix, limit=3), [], []]
+        _dev_event("suggest", q=prefix, results=len(out[1]))
+        return out
 
     @app.get("/ac")
     def ac(q: str = Query(...)) -> list[str]:
@@ -272,7 +294,9 @@ def make_app(
             with urlopen(req, timeout=3) as resp:
                 data = _json.loads(resp.read())
             phrases = data[1] if isinstance(data, list) and len(data) > 1 else []
-            return [str(p) for p in phrases][:6]
+            out = [str(p) for p in phrases][:6]
+            _dev_event("ac", q=prefix, results=len(out))
+            return out
         except Exception as e:
             log.warning("/ac: ddg autocomplete failed: %s", e)
             return []
@@ -351,18 +375,35 @@ def make_app(
             payload["cached"] = True
             async def _cached_stream():
                 yield ai_mod.sse_format({"type": "done", **payload})
+            if _DEV:
+                _dev_event("answer", query=query, cached=True, steps=0)
             return StreamingResponse(
                 _cached_stream(), media_type="text/event-stream"
             )
 
         async def _stream():
+            _t0 = time.monotonic()
+            _steps = 0
+            _err = None
             final = None
             async for event in ai_mod.stream_answer(
                 query, cfg, cache=c, backend=backend, on_result=observer
             ):
+                if event.get("type") == "step":
+                    _steps += 1
                 if event.get("type") == "done":
                     final = event
+                    _err = event.get("error")
                 yield ai_mod.sse_format(event)
+            if _DEV:
+                _dev_event(
+                    "answer",
+                    query=query,
+                    cached=False,
+                    steps=_steps,
+                    duration_ms=int((time.monotonic() - _t0) * 1000),
+                    error=_err,
+                )
             if final and final.get("answer") and not final.get("error"):
                 try:
                     ttl = min(ai_mod.ANSWER_TTL_DEFAULT, ai_mod.ANSWER_TTL_MAX)
@@ -409,6 +450,7 @@ def make_app(
             log.warning("/v1/models: bad config: %s", e)
             return _err(e)
         if cfg is None:
+            _dev_event("models", results=0, error="not configured")
             return {"object": "list", "data": [], "ai_available": False}
 
         api_key = cfg.resolve_api_key()
@@ -431,9 +473,12 @@ def make_app(
                 models = [{"id": m.id, "object": "model"} for m in resp.data]
         except ImportError:
             log.warning("/v1/models: provider SDK not installed (pip install oxe[ai])")
+            _dev_event("models", results=0, error="sdk not installed")
         except Exception as e:
             log.warning("/v1/models: provider listing failed: %s", e)
+            _dev_event("models", results=0, error=str(e)[:200])
             return _err(e)
+        _dev_event("models", results=len(models), error=None)
         return {"object": "list", "data": models, "ai_available": bool(models)}
 
     @app.get("/settings")

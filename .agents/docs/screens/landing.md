@@ -1,60 +1,56 @@
 # Screen: Landing (`/`, no query)
 
-The entry state: a quiet, centered hero with an oversized search input and
-a two-mode toggle hint (traditional / AI). This is also the browser search
-engine entry point (`https://search.localhost/?q=%s` renders the same
-page straight into results). No cards, no marketing copy, one accent
-surface. The mode toggle is the only new control versus the previous
-landing; it defaults to traditional (the current behavior) and persists
-the choice in `localStorage`.
+The entry state: a quiet, centered hero — small wordmark, one-line
+tagline (`your local web intel layer`), and a single oversized pill
+search bar (max 672px) with the Search / AI segmented toggle built into
+its right end. This is also the browser search engine entry point
+(`https://search.localhost/?q=%s` renders the same page straight into
+results). No cards, no marketing copy, no hint line: mode explanations
+live in the navbar (?) about panel. Mode persists in `localStorage`
+(`oxe-mode`); when AI is unavailable the AI segment stays visible but
+disabled.
 
 ## ASCII mockup
 
-State 1: landing, traditional mode (default).
+State 1: landing, Search mode (default).
 
 ```
 +------------------------------------------------------------------+
-| oxe   [search]  history  cache  health  api              v0.3.x  |
+| oxe   [search]  history  dashboard        (?)  settings  [gh] v0.4.0 |
 +------------------------------------------------------------------+
-|                                                                  |
 |                                                                  |
 |                                                                  |
 |                              oxe                                 |
-|                 search the web, locally cached                   |
+|                 your local web intel layer                       |
 |                                                                  |
-|              +------------------------------------+              |
-|              |  search the web...                 |              |
-|              +------------------------------------+              |
-|                                                                  |
-| [ TRADITIONAL | ai ]      <- mode toggle (caps = active)         |
-|                    ^ active side is the filled/caps side         |
-|                                                                  |
-|        hint under toggle:                                        |
-|        traditional: classic link results, cache metadata         |
-|        AI: streaming answer with cited sources                   |
+|        +--------------------------------------------+            |
+|        |  search the web...        ( Search|AI ) () |            |
+|        +--------------------------------------------+            |
 |                                                                  |
 +------------------------------------------------------------------+
+^ generous vertical rhythm: wordmark -> tagline -> pill, each with
+  clear breathing room; the pill block sits around 42-45% viewport
+  height. The segmented toggle (Search = magnifier, AI = sparkle)
+  lives inside the pill at the right end; the round button is submit.
 ```
 
-State 2: AI mode selected (toggle flips, hint swaps, focus stays in input).
+State 2: AI mode selected. The pill morphs: a hairline divider reveals
+a second action row inside the pill with model picker + reasoning chip.
 
 ```
-|                                                                  |
-|              [ traditional | AI ]                                |
-|                            ^ caps marks the active side          |
-|                  AI: streaming answer with cited sources         |
-|                                                                  |
-+------------------------------------------------------------------+
+|        +--------------------------------------------+            |
+|        |  ask anything privately   ( Search|AI ) () |            |
+|        |  ---------------------------------------- |            |
+|        |  model [pick a model v]      (reasoning)   |            |
+|        +--------------------------------------------+            |
 ```
 
-State 3: submitting (enter pressed, traditional mode).
+State 3: submitting (enter pressed, Search mode).
 
 ```
-|              +------------------------------------+              |
-|              |  python asyncio               [..] |              |
-|              +------------------------------------+              |
-|              ^ busy dots replace the [search] glyph;             |
-|                url bar already shows /search?q=...               |
+|        |  python asyncio              ( .. ) |                  |
+|        ^ busy dots replace the submit glyph;                     |
+|          url bar already shows /search?q=...                     |
 ```
 
 Empty/error states do not exist on landing (the input cannot be "empty
@@ -62,38 +58,31 @@ result"); a submit with an empty input is a no-op. A backend failure
 routes to the error state of the results view in the active mode
 (owned by search.md's Mockup C; landing only forwards there).
 
-State 4: submitting in AI mode. Busy input glyph plus a pending-stream
-hint instead of the traditional busy dots:
-
-```
-|              +------------------------------------+              |
-|              |  python asyncio               [..] |              |
-|              +------------------------------------+              |
-|              ^ connecting: answer will stream in below           |
-```
+State 4: submitting in AI mode. Busy glyph on submit while the answer
+stream connects; the answer renders on the search route.
 
 State 5: suggestions dropdown open (typing, input focused, >=2 chars).
 
 ```
-|              +------------------------------------+              |
-|              |  python asyn|                       |              |
-|              +----------------+-------------------+              |
-|              |  y o u r  h i s t o r y            |              |
-|              |  python asyncio grep               |              |
-|              |  python async generators           |              |
-|              |  web suggestions                   |              |
-|              |  python asyncio tutorial           |              |
-|              |  python asyncio vs threading       |              |
-|              +------------------------------------+              |
-|              ^ dropdown floats over the hint line;  first row    |
-|                of each group is its muted caps label, not an      |
-|                option. 'web suggestions' group only appears when  |
-|                network completion is enabled.                     |
+|        +--------------------------------------------+            |
+|        |  python asyn|             ( Search|AI ) () |            |
+|        +----------------+---------------------------+            |
+|        |  YOUR HISTORY                               |            |
+|        |  python asyncio grep                        |            |
+|        |  python async generators                    |            |
+|        |  WEB SUGGESTIONS                            |            |
+|        |  python asyncio tutorial                    |            |
+|        |  python asyncio vs threading                |            |
+|        |  ----------------------------------------  |            |
+|        |  web suggestions          [toggle on]       |            |
+|        +--------------------------------------------+            |
+|        ^ first row of each group is a muted caps label, not an   |
+|          option; the footer row toggles network completion.      |
 ```
 
 ## Behavior
 
-- Suggestions (autocomplete): a dropdown under the landing input,
+- Suggestions (autocomplete): a dropdown under the landing pill,
   fed by two sources in order. (1) `your history`: prefix/substring
   matches from local `search_log`, including queries MCP agents ran
   for this user (the `exa_user_history` idea surfaces at typing time,
@@ -115,45 +104,52 @@ State 5: suggestions dropdown open (typing, input focused, >=2 chars).
   skipped), enter selects and submits immediately, tab or right-arrow
   fills the input without submitting (escape hatch for edits),
   escape closes and restores the typed text. `aria-autocomplete`,
-  `role="listbox"`/`option`, active-descendant managed by app.js.
-- Zero visual weight: borderless, same width as the input, canvas
-  background with a hairline border, selected row tinted; no icons,
-  no counters. Hides on blur, scroll, or when input has < 2 chars.
+  `role="listbox"`/`option` semantics; active index managed in the
+  component.
+- Zero visual weight: same width as the pill, canvas background with a
+  hairline border, selected row tinted; no icons, no counters. Hides
+  on blur or when input has < 2 chars.
 - No-JS: no dropdown at all; the plain `GET` form from the no-JS
   fallback is untouched.
-- The same dropdown attaches to the results-header input (search.md
-  Mockup A), anchored identically, since both inputs share the
-  `data-suggest` wiring in app.js.
-- Single oversized input, centered vertically around 35-40% of the
-  viewport height. Autofocus on load. Enter submits; clicking the toggle
-  does not submit.
-- Mode toggle: segmented control, two options, `role="radiogroup"`.
-  Default `traditional`. Persisted in `localStorage` key `oxe-mode`.
-  In AI mode the submit targets `/search?q=...&mode=ai`; traditional
-  targets `/search?q=...` (mode param absent keeps existing urls
-  shareable and byte-identical for agents).
-- Toggle active state convention: in ASCII mockups, caps marks the
-  active side (`[ TRADITIONAL | ai ]` = traditional active); in the UI
-  the active segment is filled. Same bracket convention as the header
-  nav elsewhere: brackets mark the active link (`[history]`).
-- The hint line under the toggle swaps per mode and never exceeds one
-  line. It is muted gray, 13px; the toggle itself is the only filled
-  element on the page.
-- No-JS: the form is a plain `GET` to `/search` with a hidden `mode`
-  field; toggle is two submit-adjacent radio inputs. JS progressively
-  pushes the url and swaps to fetch-render.
-- Header nav matches the rest of the app; on landing the `search` link
-  is marked active (current page).
+- The same dropdown attaches to the results-header pill (search.md
+  Mockup A), anchored identically; both share `<SearchBox>`.
+- Hero layout: pill max-width 672px, centered column; wordmark (5xl,
+  semibold), muted small tagline, then the pill, each separated with
+  generous vertical rhythm. Autofocus on load. Enter submits; clicking
+  the toggle does not submit.
+- Mode toggle: segmented control inside the pill at the right end,
+  light track with the active segment as a raised white pill, two
+  options labeled **Search** (magnifier icon) and **AI** (sparkle
+  icon), `role="radiogroup"`, arrow keys switch segments. Default
+  Search. Persisted in `localStorage` key `oxe-mode`. In AI mode the
+  submit targets `/search?q=...&mode=ai`; Search targets
+  `/search?q=...` (mode param absent keeps existing urls shareable).
+- AI unavailable (`/v1/models` says so): the AI segment stays visible
+  but disabled (dimmed, tooltip "configure a model in settings");
+  arrow-key navigation skips it. It never hides.
+- AI second row: selecting AI morphs the pill open with a hairline
+  divider and a second action row: a filterable model combobox (see
+  ModelPicker in search.md Behavior) plus a small `reasoning` toggle
+  chip. Both persist in `localStorage` (`oxe-ai-model`,
+  `oxe-ai-reasoning`); model falls back to the first listed model.
+- Placeholder swaps with mode: `Search privately` vs
+  `Ask anything privately`.
+- Header nav matches the rest of the app (search / history /
+  dashboard); on landing the `search` link is marked active with
+  brackets (`[search]`). Right side: (?) about hint, settings,
+  GitHub icon, version.
 - Server-side, `GET /?q=...` from a browser search engine skips landing
   and renders the results view directly in the mode encoded in the url
-  (no `mode` param = traditional).
+  (no `mode` param = Search mode).
 
 ## Responsive
 
-- Input width: `min(560px, 88vw)`; centered column, nothing else.
-- Toggle stays under the input, same center; on very narrow screens the
-  hint line may wrap to two lines.
-- Header collapses as on other screens: brand left, links wrap.
+- Pill width: `min(672px, 100vw - 48px)`; centered column, nothing
+  else on the canvas.
+- The AI second row stacks its model picker and reasoning chip on
+  narrow screens.
+- Header collapses as on other screens: brand left, links wrap; the
+  version label hides below ~640px.
 
 ## Notes
 
@@ -180,7 +176,7 @@ entry (landing) -> choose mode -> type query (>=2 chars opens
    suggestions: history first, then DDG ac when enabled; down/enter
    selects+submits, tab fills without submitting) -> submit
    -> /search?q=...&mode=ai|<none> (loading state in that mode's view)
-   -> results (traditional) or streamed answer (AI)
+   -> results (Search mode) or streamed answer (AI)
    -> follow-up: edit query in the results header input, or
       toggle mode on the results page (same query re-runs in new mode)
    -> click a result / source card -> recorded in /history

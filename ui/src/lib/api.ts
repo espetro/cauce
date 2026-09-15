@@ -6,6 +6,8 @@
 
 const BASE = "";
 
+import { devLog, devTimed } from "./devlog";
+
 export interface SearchRequest {
   query: string;
   numResults?: number;
@@ -59,19 +61,28 @@ export interface ClickPayload {
 }
 
 export async function search(req: SearchRequest, signal?: AbortSignal): Promise<SearchResponse> {
-  const res = await fetch(`${BASE}/search`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Accept: "application/json" },
-    body: JSON.stringify({
-      numResults: 10,
-      contents: { text: true, highlights: true },
-      ...req,
-      ...(req.page != null && req.page > 1 ? { page: req.page } : {}),
-    }),
-    signal,
-  });
+  const fetchIt = () =>
+    fetch(`${BASE}/search`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({
+        numResults: 10,
+        contents: { text: true, highlights: true },
+        ...req,
+        ...(req.page != null && req.page > 1 ? { page: req.page } : {}),
+      }),
+      signal,
+    });
+  const res = await devTimed("search", { q: req.query, page: req.page ?? 1 }, fetchIt);
   if (!res.ok) throw new Error(`search failed: ${res.status}`);
-  return (await res.json()) as SearchResponse;
+  const out = (await res.json()) as SearchResponse;
+  devLog("search.response", {
+    q: req.query,
+    source: out._source,
+    results: out.results?.length ?? 0,
+    server_ms: out._duration_ms,
+  });
+  return out;
 }
 
 export async function recordClick(payload: ClickPayload): Promise<void> {
@@ -94,18 +105,26 @@ export async function recordClick(payload: ClickPayload): Promise<void> {
 
 /** DDG autocomplete via the backend proxy: JSON array of phrases, max 6. */
 export async function ddgAc(q: string, signal?: AbortSignal): Promise<string[]> {
-  const res = await fetch(`${BASE}/ac?q=${encodeURIComponent(q)}`, { signal });
+  const res = await devTimed("ac", { q }, () =>
+    fetch(`${BASE}/ac?q=${encodeURIComponent(q)}`, { signal }),
+  );
   if (!res.ok) return [];
   const data = await res.json();
-  return Array.isArray(data) ? (data as string[]) : [];
+  const out = Array.isArray(data) ? (data as string[]) : [];
+  devLog("ac", { q, results: out.length });
+  return out;
 }
 
 /** OpenSearch suggestions: ["prefix", ["s1", ...], [], []] */
 export async function suggest(q: string, signal?: AbortSignal): Promise<string[]> {
-  const res = await fetch(`${BASE}/suggest?q=${encodeURIComponent(q)}`, { signal });
+  const res = await devTimed("suggest", { q }, () =>
+    fetch(`${BASE}/suggest?q=${encodeURIComponent(q)}`, { signal }),
+  );
   if (!res.ok) return [];
   const data = await res.json();
-  return (data?.[1] ?? []) as string[];
+  const out = (data?.[1] ?? []) as string[];
+  devLog("suggest", { q, results: out.length });
+  return out;
 }
 
 /** Delete a single cache row by its query hash (POST /row/{key}/delete).
