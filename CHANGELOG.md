@@ -5,6 +5,20 @@ All notable changes to oxe are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.1] - 2026-09-15
+
+### Added
+
+- `auto` as a named backend in `OXE_BACKENDS` (maps to ddgs's `backend="auto"` multi-engine sweep).
+- Fuzzy query matching for `/cache` and `/history` search: rapidfuzz when installed, stdlib `difflib` fallback otherwise. Typos like "pyton" still find "python" rows.
+- `rapidfuzz` is now an optional dependency; without it the SQL layer still works fully (fuzzy degrades to difflib).
+
+### Changed
+
+- All SQL moved from inline strings in `oxe/cache.py` and `oxe/stats.py` to `oxe/sql/*.sql` files, loaded via [aiosql](https://github.com/nackjicholson/aiosql). Queries are named, documented, and validated at import time.
+- `sqlite3.Row` row access throughout the cache layer; positional tuple unpacking removed.
+- Optional cache/history filters use a static null-or-filter pattern instead of dynamic WHERE building.
+
 ## [0.3.0] - 2026-09-14
 
 ### Added

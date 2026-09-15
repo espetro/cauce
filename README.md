@@ -414,7 +414,9 @@ oxe stats --db ~/.cache/oxe/cache.db --out ./dist/dashboard --days 30
 
 ## Dependencies
 
-Runtime: `ddgs`, `fastapi`, `uvicorn`, `pydantic`, `mcp`. All pulled by `uv tool install oxe` automatically. No system-level dependencies.
+Runtime: `ddgs`, `fastapi`, `uvicorn`, `pydantic`, `mcp`, `aiosql`. All pulled by `uv tool install oxe` automatically. No system-level dependencies.
+
+Optional: `rapidfuzz` for higher-quality fuzzy matching in `/cache` and `/history` search (`uv tool install "oxe[fuzzy]"`). Without it, fuzzy search falls back to stdlib `difflib`.
 
 Optional host tools (not required): [`portless`](https://portless.sh) for `https://*.localhost/` URLs (recommended for browser + TLS), `oxmgr` / `systemd` / `launchd` for supervision.
 
