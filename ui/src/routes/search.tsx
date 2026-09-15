@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "preact/hooks";
 import { useLocation } from "preact-iso";
-import { Header, ModeToggle, useAiAvailable, usePageTitle } from "../components/Header";
+import { Header, useAiAvailable, usePageTitle } from "../components/Header";
+import { useModels } from "../components/ModeSegments";
 import { recordClick } from "../lib/api";
 import { ResultCard } from "../features/search/ResultCard";
 import { cachedAgeOf, isCacheHit, metaLine, useSearch } from "../features/search/useSearch";
@@ -20,6 +21,7 @@ export default function SearchRoute() {
   usePageTitle(q || "search");
 
   const aiAvailable = useAiAvailable();
+  const { models } = useModels();
   const [input, setInput] = useState(q);
   const [mode, setMode] = useState<Mode>(urlMode);
   const { state, run, refresh } = useSearch();
@@ -84,21 +86,17 @@ export default function SearchRoute() {
       <Header path={path} />
       <main class="w-full max-w-[652px] mx-auto px-4 pb-16">
         <div class="pt-4 flex flex-col gap-3">
-          <div class="flex flex-col sm:flex-row sm:items-center gap-3">
-            <SearchBox
-              value={input}
-              onInput={setInput}
-              onSubmit={submit}
-              busy={effectiveMode === "ai" ? !answer.state.done : loading}
-              size="md"
-            />
-            <ModeToggle
-              mode={mode}
-              onChange={(m) => setMode(m)}
-              aiAvailable={aiAvailable}
-              size="xs"
-            />
-          </div>
+          <SearchBox
+            value={input}
+            onInput={setInput}
+            onSubmit={submit}
+            busy={effectiveMode === "ai" ? !answer.state.done : loading}
+            size="md"
+            mode={mode}
+            onModeChange={setMode}
+            aiAvailable={aiAvailable}
+            models={models}
+          />
           {aiModeBlocked && (
             <p class="text-xs opacity-60 mt-1" role="note">
               AI mode is not configured - set a model in settings
@@ -126,18 +124,6 @@ export default function SearchRoute() {
                   </button>
                 </span>
               )}
-              <span
-                class="tooltip"
-                data-tip="results are served from a local cache; this badge explains the source and age"
-              >
-                <button
-                  type="button"
-                  class="btn btn-ghost btn-xs px-1"
-                  aria-label="about cache metadata"
-                >
-                  (?)
-                </button>
-              </span>
               {payload && (
                 <span class="flex gap-2 ml-auto">
                   <button

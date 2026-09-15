@@ -1,0 +1,175 @@
+import { useEffect, useState } from "preact/hooks";
+import { listModels, type ModelsResponse } from "../lib/ai";
+
+export type Mode = "traditional" | "ai";
+
+/** Models + AI availability from GET /v1/models.
+ * `available` is tri-state: null = still querying (never demote AI on null). */
+export function useModels(): { available: boolean | null; models: string[] } {
+  const [available, setAvailable] = useState<boolean | null>(null);
+  const [models, setModels] = useState<string[]>([]);
+  useEffect(() => {
+    const ctl = new AbortController();
+    listModels(ctl.signal)
+      .then((m: ModelsResponse) => {
+        setAvailable(Boolean(m.ai_available));
+        setModels(m.data.map((d) => d.id));
+      })
+      .catch(() => setAvailable(false));
+    return () => ctl.abort();
+  }, []);
+  return { available, models };
+}
+
+const SEGMENTS: Array<{ v: Mode; label: string }> = [
+  { v: "traditional", label: "Search" },
+  { v: "ai", label: "AI" },
+];
+
+const Magnifier = () => (
+  <svg
+    width="13"
+    height="13"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="2"
+    stroke-linecap="round"
+    aria-hidden="true"
+  >
+    <circle cx="11" cy="11" r="7" />
+    <path d="m20 20-3.5-3.5" />
+  </svg>
+);
+
+const Sparkle = () => (
+  <svg
+    width="13"
+    height="13"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="2"
+    stroke-linejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3z" />
+  </svg>
+);
+
+/** DDG-style inline segmented mode toggle at the right end of the pill:
+ * light track, active segment is a white pill with a small shadow.
+ * radiogroup semantics, arrow keys switch segments. */
+export function ModeSegments({
+  mode,
+  onChange,
+  aiAvailable,
+}: {
+  mode: Mode;
+  onChange: (m: Mode) => void;
+  aiAvailable: boolean | null;
+}) {
+  const aiDisabled = aiAvailable === false;
+  const move = (dir: 1 | -1) => {
+    const i = SEGMENTS.findIndex((s) => s.v === mode);
+    const next = SEGMENTS[(i + dir + SEGMENTS.length) % SEGMENTS.length];
+    if (!(next.v === "ai" && aiDisabled)) onChange(next.v);
+  };
+  return (
+    <div
+      role="radiogroup"
+      aria-label="search mode"
+      class="join bg-base-200 rounded-full p-0.5 shrink-0"
+    >
+      {SEGMENTS.map((s) => {
+        const disabled = s.v === "ai" && aiDisabled;
+        const active = mode === s.v;
+        return (
+          <button
+            key={s.v}
+            type="button"
+            role="radio"
+            aria-checked={active}
+            aria-disabled={disabled || undefined}
+            disabled={disabled}
+            tabIndex={active ? 0 : -1}
+            title={disabled ? "configure a model in settings" : undefined}
+            class={`btn join-item btn-xs rounded-full border-0 ${
+              active
+                ? "bg-base-100 shadow-sm font-medium"
+                : "bg-transparent opacity-60 hover:opacity-100"
+            } ${disabled ? "btn-disabled opacity-30" : ""}`}
+            onClick={() => {
+              if (!disabled) onChange(s.v);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "ArrowRight" || e.key === "ArrowDown") {
+                e.preventDefault();
+                move(1);
+              } else if (e.key === "ArrowLeft" || e.key === "ArrowUp") {
+                e.preventDefault();
+                move(-1);
+              }
+            }}
+          >
+            {s.v === "traditional" ? <Magnifier /> : <Sparkle />}
+            {s.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+const STORE_KEY = "oxe-ai-model";
+const REASONING_KEY = "oxe-ai-reasoning";
+
+/** AI second-row controls: model picker + reasoning toggle chip.
+ * Pure UI state (localStorage); request wiring is a backend concern. */
+export function AiControls({ available, models }: { available: boolean | null; models: string[] }) {
+  const [model, setModel] = useState(() => localStorage.getItem(STORE_KEY) ?? models[0] ?? "");
+  const [reasoning, setReasoning] = useState(() => localStorage.getItem(REASONING_KEY) === "1");
+
+  useEffect(() => {
+    localStorage.setItem(STORE_KEY, model);
+  }, [model]);
+  useEffect(() => {
+    localStorage.setItem(REASONING_KEY, reasoning ? "1" : "0");
+  }, [reasoning]);
+
+  // resolve empty stored model once the model list arrives
+  useEffect(() => {
+    if (!model && models.length > 0) setModel(models[0]);
+  }, [models, model]);
+
+  return (
+    <div class="flex items-center justify-between gap-2 w-full text-xs">
+      <label class="flex items-center gap-1.5 opacity-70 min-w-0">
+        <span class="shrink-0">model</span>
+        <select
+          class="select select-xs w-auto max-w-[180px] min-w-0"
+          value={model}
+          disabled={available === false || models.length === 0}
+          onChange={(e) => setModel((e.target as HTMLSelectElement).value)}
+          aria-label="AI model"
+        >
+          {models.length === 0 && <option value="">none</option>}
+          {models.map((m) => (
+            <option key={m} value={m}>
+              {m}
+            </option>
+          ))}
+        </select>
+      </label>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={reasoning}
+        class={`btn btn-xs rounded-full ${reasoning ? "btn-primary btn-soft" : "btn-ghost"}`}
+        onClick={() => setReasoning((r) => !r)}
+      >
+        reasoning
+      </button>
+    </div>
+  );
+}
