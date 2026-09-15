@@ -76,3 +76,38 @@ def test_save_config_toml_roundtrip(tmp_path):
     data = tomllib.loads(p.read_text())
     assert data["ai"]["provider"] == "anthropic"
     assert data["ai"]["enabled"] is False
+
+
+def test_env_interpolation(tmp_path, monkeypatch):
+    from oxe.config import load_config
+
+    monkeypatch.setenv("MY_KEY", "sk-from-env")
+    (tmp_path / "config.toml").write_text(
+        '[ai]\nprovider = "openai"\nmodel = "m"\napi_key = "{env.MY_KEY}"\n'
+    )
+    cfg = load_config(tmp_path / "config.toml")
+    assert cfg.api_key == "sk-from-env"
+
+
+def test_env_interpolation_missing_var(tmp_path, monkeypatch):
+    from oxe.config import ConfigError, load_config
+
+    monkeypatch.delenv("NOPE_VAR", raising=False)
+    (tmp_path / "config.toml").write_text(
+        '[ai]\nprovider = "openai"\nmodel = "m"\nbase_url = "{env.NOPE_VAR}"\n'
+    )
+    with pytest.raises(ConfigError, match="NOPE_VAR"):
+        load_config(tmp_path / "config.toml")
+
+
+def test_load_dotenv(tmp_path, monkeypatch):
+    from oxe.config import load_dotenv
+
+    (tmp_path / ".env").write_text("A=1\n# c\nB = two \n\nA_EXIST=kept\n")
+    monkeypatch.setenv("A_EXIST", "original")
+    monkeypatch.chdir(tmp_path)
+    load_dotenv()
+    import os
+    assert os.environ["A"] == "1"
+    assert os.environ["B"] == "two"
+    assert os.environ["A_EXIST"] == "original"

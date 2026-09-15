@@ -17,6 +17,7 @@ AI mode is OFF unless both provider and model are configured.
 
 import logging
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -72,6 +73,40 @@ class ConfigError(ValueError):
     """Raised for malformed config files with a user-facing message."""
 
 
+_ENV_RE = re.compile(r"^\{env\.([A-Za-z_][A-Za-z0-9_]*)\}$")
+
+
+def load_dotenv(path: Path | None = None) -> None:
+    """Load KEY=VALUE pairs from a .env file (cwd default) into os.environ.
+
+    Existing environment variables win. No quoting gymnastics: values are
+    taken verbatim after the first '='.
+    """
+    p = path or Path(".env")
+    if not p.is_file():
+        return
+    for line in p.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key, value = key.strip(), value.strip()
+        if key and key not in os.environ:
+            os.environ[key] = value
+
+
+def _resolve_env(value: str, path: Path, key: str) -> str:
+    """Resolve '{env.NAME}' interpolation against os.environ."""
+    m = _ENV_RE.match(value.strip())
+    if not m:
+        return value
+    name = m.group(1)
+    resolved = os.environ.get(name)
+    if resolved is None:
+        raise ConfigError(f"{path}: [ai] {key}: environment variable {name!r} is not set")
+    return resolved
+
+
 def config_dir() -> Path:
     d = os.getenv("OXE_CONFIG_DIR", os.path.expanduser("~/.config/oxe"))
     return Path(d)
@@ -84,9 +119,15 @@ def config_path() -> Path:
 def load_config(path: Path | None = None) -> AIConfig | None:
     """Load [ai] section from config.toml. None means AI mode is OFF.
 
+    String values may reference environment variables with ``{env.NAME}``
+    (e.g. ``api_key = "{env.OXE_AI_API_KEY}"``); a missing variable is a
+    ConfigError. A .env file in the working directory is loaded first
+    (existing environment variables win).
+
     Raises ConfigError with a clear message for malformed files; a missing
     file is not an error (AI simply unconfigured).
     """
+    load_dotenv()
     p = path or config_path()
     if not p.is_file():
         return None
@@ -128,6 +169,8 @@ def load_config(path: Path | None = None) -> AIConfig | None:
         v = ai.get(key)
         if v is not None and not isinstance(v, str):
             raise ConfigError(f"{p}: [ai] {key} must be a string")
+        if isinstance(v, str):
+            ai[key] = _resolve_env(v, p, key)
     enabled = ai.get("enabled", True)
     if not isinstance(enabled, bool):
         raise ConfigError(f"{p}: [ai] enabled must be a boolean")
