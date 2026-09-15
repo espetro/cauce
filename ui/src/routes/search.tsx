@@ -1,9 +1,11 @@
-import { useEffect, useState } from "preact/hooks";
+import { useCallback, useEffect, useState } from "preact/hooks";
 import { useLocation } from "preact-iso";
-import { Header, ModeToggle, usePageTitle } from "../components/Header";
+import { Header, ModeToggle, useAiAvailable, usePageTitle } from "../components/Header";
 import { recordClick } from "../lib/api";
 import { ResultCard } from "../features/search/ResultCard";
 import { metaLine, useSearch } from "../features/search/useSearch";
+import { AnswerView } from "../features/answer/AnswerView";
+import { useAnswer } from "../features/answer/useAnswer";
 import { SearchBox } from "../features/suggests/SearchBox";
 
 const MODE_KEY = "oxe-mode";
@@ -13,13 +15,14 @@ export default function SearchRoute() {
   const { path, query, route } = useLocation();
   const q = String(query?.q ?? "");
   const page = Math.max(1, Number(query?.p ?? 1) || 1);
+  const urlMode = query?.mode === "ai" ? "ai" : "traditional";
   usePageTitle(q || "search");
 
+  const aiAvailable = useAiAvailable();
   const [input, setInput] = useState(q);
-  const [mode, setMode] = useState<Mode>(() =>
-    localStorage.getItem(MODE_KEY) === "ai" ? "ai" : "traditional",
-  );
+  const [mode, setMode] = useState<Mode>(urlMode);
   const { state, run } = useSearch();
+  const answer = useAnswer();
 
   useEffect(() => {
     localStorage.setItem(MODE_KEY, mode);
@@ -27,21 +30,48 @@ export default function SearchRoute() {
 
   useEffect(() => {
     setInput(q);
-    if (q) run(q, page);
+    if (q && mode === "traditional") run(q, page);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [q, page]);
 
+  // canonical url: ai mode is expressed via &mode=ai
   useEffect(() => {
-    if (q && mode === "ai") {
-      // AI surface ships later; keep the url canonical until then.
-      route(`/search?q=${encodeURIComponent(q)}`, true);
+    if (urlMode !== mode) {
+      const suffix = mode === "ai" ? "&mode=ai" : "";
+      route(`/search?q=${encodeURIComponent(q)}${suffix}`, true);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, urlMode]);
+
+  // demote to traditional when ai turns out unavailable
+  useEffect(() => {
+    if (mode === "ai" && !aiAvailable) setMode("traditional");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [aiAvailable]);
+
+  useEffect(() => {
+    if (q && mode === "ai") answer.run(q);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [q, mode]);
 
   const submit = (query: string) => {
     const t = query.trim();
     if (!t) return;
-    route(`/search?q=${encodeURIComponent(t)}`);
+    route(`/search?q=${encodeURIComponent(t)}${mode === "ai" ? "&mode=ai" : ""}`);
   };
+
+  const askAi = useCallback(
+    (query: string) => {
+      setMode("ai");
+      route(`/search?q=${encodeURIComponent(query)}&mode=ai`);
+    },
+    [route],
+  );
+
+  const viewClassic = useCallback(() => {
+    setMode("traditional");
+    route(`/search?q=${encodeURIComponent(q)}`);
+  }, [route, q]);
 
   const goPage = (p: number) => route(`/search?q=${encodeURIComponent(q)}&p=${p}`);
 
@@ -59,12 +89,17 @@ export default function SearchRoute() {
               value={input}
               onInput={setInput}
               onSubmit={submit}
-              busy={loading}
+              busy={mode === "ai" ? !answer.state.done : loading}
               size="md"
             />
-            <ModeToggle mode={mode} onChange={(m) => setMode(m)} size="xs" />
+            <ModeToggle
+              mode={mode}
+              onChange={(m) => setMode(m)}
+              aiAvailable={aiAvailable}
+              size="xs"
+            />
           </div>
-          {(results.length > 0 || payload) && (
+          {mode === "traditional" && (results.length > 0 || payload) && (
             <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px]">
               <span class="opacity-60">
                 {metaLine(payload, null, null) || (loading ? "searching…" : "")}
@@ -99,73 +134,99 @@ export default function SearchRoute() {
           )}
         </div>
 
-        {loading && (
-          <div class="py-10 flex justify-center" aria-busy="true">
-            <span class="loading loading-dots loading-md" />
-          </div>
-        )}
-
-        {!loading && error && (
-          <div class="py-10 text-sm">
-            <p class="text-error mb-3">error: {error}</p>
-            <button type="button" class="btn btn-sm" onClick={() => run(q, page)}>
-              retry
-            </button>
-          </div>
-        )}
-
-        {!loading && !error && payload && results.length === 0 && (
-          <div class="py-10 text-sm">
-            <p class="opacity-60 mb-3">no results</p>
-          </div>
-        )}
-
-        {!loading && results.length > 0 && (
-          <div class="divide-y divide-base-300">
-            {results.map((r) => (
-              <ResultCard
-                key={r.id || r.url}
-                result={r}
-                queryHash={qHash}
-                onOpen={(res) =>
-                  recordClick({
-                    query_hash: qHash,
-                    result_id: res.id || res.url,
-                    url: res.url,
-                    title: res.title,
-                  })
-                }
-              />
-            ))}
-          </div>
-        )}
-
-        {!loading && results.length >= 10 && (
-          <nav class="flex items-center justify-center gap-4 py-6 text-sm" aria-label="pagination">
-            {page > 1 && (
-              <a
-                href={`/search?q=${encodeURIComponent(q)}&p=${page - 1}`}
-                onClick={(e) => {
-                  e.preventDefault();
-                  goPage(page - 1);
-                }}
-                rel="prev"
-              >
-                &lt; previous
-              </a>
+        {mode === "ai" ? (
+          <AnswerView
+            query={q}
+            state={answer.state}
+            onStop={answer.stop}
+            onRetry={() => answer.run(q)}
+            onAskRelated={askAi}
+            onViewClassic={viewClassic}
+          />
+        ) : (
+          <>
+            {loading && (
+              <div class="py-10 flex justify-center" aria-busy="true">
+                <span class="loading loading-dots loading-md" />
+              </div>
             )}
-            <span class="opacity-60">page {page}</span>
-            <a
-              href={`/search?q=${encodeURIComponent(q)}&p=${page + 1}`}
-              onClick={(e) => {
-                e.preventDefault();
-                goPage(page + 1);
-              }}
-              rel="next"
-            >
-              next &gt;
-            </a>
-          </nav>
+
+            {!loading && error && (
+              <div class="py-10 text-sm">
+                <p class="text-error mb-3">error: {error}</p>
+                <button type="button" class="btn btn-sm" onClick={() => run(q, page)}>
+                  retry
+                </button>
+                {aiAvailable && (
+                  <button type="button" class="btn btn-ghost btn-sm ml-2" onClick={() => askAi(q)}>
+                    ask AI instead
+                  </button>
+                )}
+              </div>
+            )}
+
+            {!loading && !error && payload && results.length === 0 && (
+              <div class="py-10 text-sm">
+                <p class="opacity-60 mb-3">no results</p>
+                {aiAvailable && (
+                  <button type="button" class="btn btn-sm" onClick={() => askAi(q)}>
+                    ask AI instead
+                  </button>
+                )}
+              </div>
+            )}
+
+            {!loading && results.length > 0 && (
+              <div class="divide-y divide-base-300">
+                {results.map((r) => (
+                  <ResultCard
+                    key={r.id || r.url}
+                    result={r}
+                    queryHash={qHash}
+                    onOpen={(res) =>
+                      recordClick({
+                        query_hash: qHash,
+                        result_id: res.id || res.url,
+                        url: res.url,
+                        title: res.title,
+                      })
+                    }
+                  />
+                ))}
+              </div>
+            )}
+
+            {!loading && results.length >= 10 && (
+              <nav
+                class="flex items-center justify-center gap-4 py-6 text-sm"
+                aria-label="pagination"
+              >
+                {page > 1 && (
+                  <a
+                    href={`/search?q=${encodeURIComponent(q)}&p=${page - 1}`}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      goPage(page - 1);
+                    }}
+                    rel="prev"
+                  >
+                    &lt; previous
+                  </a>
+                )}
+                <span class="opacity-60">page {page}</span>
+                <a
+                  href={`/search?q=${encodeURIComponent(q)}&p=${page + 1}`}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    goPage(page + 1);
+                  }}
+                  rel="next"
+                >
+                  next &gt;
+                </a>
+              </nav>
+            )}
+          </>
         )}
       </main>
     </div>

@@ -12,25 +12,28 @@ export default defineConfig({
   server: {
     proxy: {
       "/search": {
-        target: "http://127.0.0.1:4479",
+        target: "http://127.0.0.1:4480",
         // POST /search from the app is JSON; a GET document hit should
         // render the SPA instead of the backend's HTML page.
         bypass: (req) => {
           if (isDocument(req)) return "/index.html";
         },
       },
-      "/suggest": "http://127.0.0.1:4479",
+      "/suggest": "http://127.0.0.1:4480",
       "/history": {
-        target: "http://127.0.0.1:4479",
+        target: "http://127.0.0.1:4480",
         // direct SPA navigation to /history serves index.html instead
         bypass: (req) => {
           if (isDocument(req)) return "/index.html";
         },
       },
-      "/click": "http://127.0.0.1:4479",
-      "/cache/stats": "http://127.0.0.1:4479",
-      "/row": "http://127.0.0.1:4479",
-      "/mcp": "http://127.0.0.1:4479",
+      "/click": "http://127.0.0.1:4480",
+      "/v1/models": "http://127.0.0.1:4480",
+      "/answer": "http://127.0.0.1:4480",
+      "/settings": "http://127.0.0.1:4480",
+      "/cache/stats": "http://127.0.0.1:4480",
+      "/row": "http://127.0.0.1:4480",
+      "/mcp": "http://127.0.0.1:4480",
     },
   },
 });

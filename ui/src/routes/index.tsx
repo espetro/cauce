@@ -1,6 +1,6 @@
 import { useEffect, useState } from "preact/hooks";
 import { useLocation } from "preact-iso";
-import { Center, Header, ModeToggle, usePageTitle } from "../components/Header";
+import { Center, Header, ModeToggle, useAiAvailable, usePageTitle } from "../components/Header";
 import { SearchBox } from "../features/suggests/SearchBox";
 
 const MODE_KEY = "oxe-mode";
@@ -13,6 +13,12 @@ export default function Home() {
   const [mode, setMode] = useState<Mode>(() =>
     localStorage.getItem(MODE_KEY) === "ai" ? "ai" : "traditional",
   );
+  const aiAvailable = useAiAvailable();
+
+  useEffect(() => {
+    if (mode === "ai" && !aiAvailable) setMode("traditional");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [aiAvailable]);
 
   useEffect(() => {
     localStorage.setItem(MODE_KEY, mode);
@@ -37,7 +43,7 @@ export default function Home() {
           <p class="opacity-50 text-sm mb-8">search the web, locally cached</p>
           <SearchBox value={q} onInput={setQ} onSubmit={submit} autoFocus size="lg" />
           <div class="mt-6 flex flex-col items-center gap-2">
-            <ModeToggle mode={mode} onChange={setMode} />
+            <ModeToggle mode={mode} onChange={setMode} aiAvailable={aiAvailable} />
             <p class="text-[13px] opacity-50 text-center px-4">
               {mode === "ai"
                 ? "AI: streaming answer with cited sources"

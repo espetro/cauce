@@ -1,5 +1,7 @@
 import { toChildArray, type ComponentChildren, type JSX } from "preact";
-import { useEffect } from "preact/hooks";
+import { useEffect, useState } from "preact/hooks";
+import { listModels, type ModelsResponse } from "../lib/ai";
+import { SettingsDialog } from "../features/settings/SettingsDialog";
 
 interface NavItem {
   href: string;
@@ -16,7 +18,21 @@ const NAV: NavItem[] = [
   { href: "/docs", label: "api" },
 ];
 
+/** AI-mode availability from GET /v1/models (`ai_available`). */
+export function useAiAvailable(): boolean {
+  const [ai, setAi] = useState(false);
+  useEffect(() => {
+    const ctl = new AbortController();
+    listModels(ctl.signal)
+      .then((m: ModelsResponse) => setAi(Boolean(m.ai_available)))
+      .catch(() => setAi(false));
+    return () => ctl.abort();
+  }, []);
+  return ai;
+}
+
 export function Header({ path }: { path: string }) {
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const isActive = (item: NavItem) =>
     item.exact ? path === item.href : path === item.href || path.startsWith(`${item.href}/`);
   return (
@@ -36,7 +52,18 @@ export function Header({ path }: { path: string }) {
           </a>
         ))}
       </nav>
-      <span class="ml-auto text-xs opacity-50 hidden sm:inline">v0.4.0</span>
+      <span class="ml-auto flex items-center gap-1">
+        <button
+          type="button"
+          class="btn btn-ghost btn-xs"
+          aria-label="settings"
+          onClick={() => setSettingsOpen(true)}
+        >
+          settings
+        </button>
+        <span class="text-xs opacity-50 hidden sm:inline">v0.4.0</span>
+      </span>
+      {settingsOpen && <SettingsDialog onClose={() => setSettingsOpen(false)} />}
     </header>
   );
 }
@@ -47,19 +74,18 @@ export function usePageTitle(title: string) {
   }, [title]);
 }
 
-/** Feature seam: AI mode surface ships in a later stage. */
-export const AI_MODE_ENABLED = false;
-
 export function ModeToggle({
   mode,
   onChange,
+  aiAvailable,
   size,
 }: {
   mode: "traditional" | "ai";
   onChange: (m: "traditional" | "ai") => void;
+  aiAvailable: boolean;
   size?: "xs" | "sm";
 }) {
-  if (!AI_MODE_ENABLED) return null;
+  if (!aiAvailable) return null;
   const opts: Array<{ v: "traditional" | "ai"; label: string }> = [
     { v: "traditional", label: "traditional" },
     { v: "ai", label: "AI" },
