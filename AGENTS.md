@@ -7,6 +7,22 @@ HTTP API and an MCP server. Built so AI agents (Claude Code, Cursor,
 Hermes, etc.) can search the web without burning third-party API
 quotas. Single Python process, ~70 MB RSS, SQLite TTL cache.
 
+## Repository layout
+
+```
+oxe/        Python backend package (ships to PyPI) — see oxe/AGENTS.md
+ui/         Web UI workspace (not shipped to PyPI) — see ui/AGENTS.md
+tests/      Python tests
+.agents/    Agent memory, plans, drafts, screen specs (.agents/docs/screens/ = behavioral source of truth)
+```
+
+## Tooling
+
+- All lifecycle through mise tasks: `mise run dev` / `build` / `serve` / `check` / `lint` / `test`. Tool versions pinned in `mise.toml`.
+- Plans go to `.agents/plans/<date>-<purpose>.md` before implementation.
+- Conventional commits, atomic. No co-authors.
+- After substantive sessions, write dated findings to `.agents/MEMORY.md`.
+
 ## Install
 
 ```bash

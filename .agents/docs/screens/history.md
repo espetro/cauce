@@ -8,7 +8,7 @@ the user and their agents can see what was already read for a query.
 
 ```
 +------------------------------------------------------------------+
-| oxe   search   [history]  cache   health   api           v0.1.x  |
+| oxe   search   [history]  cache   health   api           v0.3.x  |
 +------------------------------------------------------------------+
 | 12 clicks in last 24h - 340 total - 2026-09-01 08:12:33 (oldest) |
 |                                                                  |
@@ -33,7 +33,7 @@ Empty state:
 
 ```
 +------------------------------------------------------------------+
-| oxe   search   [history]  cache   health   api           v0.1.x  |
+| oxe   search   [history]  cache   health   api           v0.3.x  |
 +------------------------------------------------------------------+
 | 0 clicks in last 24h - 0 total - - (oldest)                      |
 |                                                                  |
