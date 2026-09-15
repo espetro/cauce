@@ -50,3 +50,4 @@ uv.lock
 *.swp
 *.swo
 uv.lock
+.playwright-cli/
