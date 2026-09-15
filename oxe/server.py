@@ -567,9 +567,13 @@ def make_app(
         base_url = (ai.get("base_url") or "").strip() or None
         if base_url is None:
             templates.pop("base_url", None)
-            if existing is not None and existing.env_templates.get("base_url"):
+            if existing is not None and (
+                existing.env_templates.get("base_url") or existing.base_url
+            ):
+                # keep the stored base_url when the PUT omits it (same as api_key)
                 base_url = existing.base_url
-                templates["base_url"] = existing.env_templates["base_url"]
+                if existing.env_templates.get("base_url"):
+                    templates["base_url"] = existing.env_templates["base_url"]
         else:
             templates.pop("base_url", None)
         cfg = AIConfig(

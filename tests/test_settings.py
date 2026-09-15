@@ -368,3 +368,13 @@ def test_changed_literal_key_saved_as_literal(client, monkeypatch):
     toml = p.read_text()
     assert "sk-literal" in toml
     assert "{env." not in toml
+
+
+def test_settings_put_omitted_base_url_kept(client):
+    client.put("/settings", json={"ai": {
+        "provider": "openai", "model": "m1",
+        "api_key": "sk-x", "base_url": "https://gw.example/v1",
+    }})
+    client.put("/settings", json={"ai": {"provider": "openai", "model": "m2"}})
+    body = client.get("/settings").json()
+    assert body["ai"]["base_url"] == "https://gw.example/v1"
