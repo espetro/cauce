@@ -48,7 +48,7 @@ export function SearchBox({
   const ph = placeholder ?? (aiMode ? "Ask anything privately" : "Search privately");
 
   // suggestions are optional in AI mode; suppress them there (less noise)
-  const { items, acOn, setAcOn } = useSuggests(aiMode ? "" : value, open);
+  const { items } = useSuggests(aiMode ? "" : value, open);
   const { activeIndex, handleKey, setActiveIndex } = useListNav(
     items.length,
     (i) => {
@@ -144,10 +144,7 @@ export function SearchBox({
   );
 
   return (
-    <div
-      class={`relative w-full ${size === "lg" ? "max-w-[560px]" : "max-w-[560px]"}`}
-      ref={boxRef}
-    >
+    <div class="relative w-full min-w-0 max-w-[min(560px,calc(100vw-56px))]" ref={boxRef}>
       <form
         role="search"
         onSubmit={(e) => {
@@ -189,8 +186,6 @@ export function SearchBox({
               onSubmit(text);
             }}
             onHover={(i) => setActiveIndex(i)}
-            acOn={acOn}
-            onToggleAc={setAcOn}
           />
         </div>
       )}

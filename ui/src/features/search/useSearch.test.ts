@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { metaLine } from "./useSearch";
 import type { SearchResponse } from "../../lib/api";
-import { cachedAgeOf, isCacheHit } from "./useSearch";
+import { cachedAgeOf, isCacheHit, pagerLetters } from "./useSearch";
 
 const payload = (over: Partial<SearchResponse>): SearchResponse => ({
   requestId: "r1",
@@ -40,5 +40,17 @@ describe("metaLine", () => {
   });
   test("empty payload renders nothing", () => {
     expect(metaLine(null)).toBe("");
+  });
+});
+
+describe("pagerLetters", () => {
+  test("cycles o,x,e letters", () => {
+    expect(pagerLetters(5)).toEqual(["o", "x", "e", "o", "x"]);
+  });
+  test("caps at 10 pages", () => {
+    expect(pagerLetters(50)).toHaveLength(10);
+  });
+  test("zero pages when no results", () => {
+    expect(pagerLetters(0)).toEqual([]);
   });
 });

@@ -1,5 +1,6 @@
 import { render } from "preact";
 import { LocationProvider, Route, Router } from "preact-iso";
+import { initTheme } from "./lib/theme";
 import "./index.css";
 import Home from "./routes/index";
 import Search from "./routes/search";
@@ -20,3 +21,4 @@ export function App() {
 }
 
 render(<App />, document.getElementById("app")!);
+initTheme();

@@ -39,12 +39,12 @@ export function useSearch(): {
   const [state, setState] = useState<SearchState>({ payload: null, loading: false, error: null });
   const abortRef = useRef<AbortController | null>(null);
 
-  const execute = (q: string) => {
+  const execute = (q: string, p = 1) => {
     abortRef.current?.abort();
     const ctl = new AbortController();
     abortRef.current = ctl;
     setState((s: SearchState) => ({ ...s, loading: true, error: null }));
-    search({ query: q, numResults: PAGE_SIZE }, ctl.signal)
+    search({ query: q, numResults: PAGE_SIZE, page: p }, ctl.signal)
       .then((payload: SearchResponse) => setState({ payload, loading: false, error: null }))
       .catch((e: unknown) => {
         if ((e as Error)?.name === "AbortError") return;
@@ -56,8 +56,8 @@ export function useSearch(): {
       });
   };
 
-  const run = (q: string) => {
-    execute(q);
+  const run = (q: string, p?: number) => {
+    execute(q, p);
   };
 
   const refresh = (q: string) => {
@@ -75,6 +75,15 @@ export function useSearch(): {
   };
 
   return { state, run, refresh };
+}
+
+/** Google-letters pager: the word "oxe" where each letter after the
+ * first is a page link. Returns pages (1..total, capped 10) with their
+ * letter: page 1 -> "o", page 2 -> "x", page 3 -> "e", then "o" again. */
+export function pagerLetters(total: number, cap = 10): string[] {
+  const word = "oxe";
+  const n = Math.max(0, Math.min(total, cap));
+  return Array.from({ length: n }, (_, i) => word[i % word.length]);
 }
 
 export function metaLine(payload: SearchResponse | null): string {

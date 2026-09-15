@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import * as v from "valibot";
 import { listModels } from "../../lib/ai";
+import { bumpModels, ModelPicker } from "../../components/ModelPicker";
+import { getTheme, setTheme, THEMES, type ThemeChoice } from "../../lib/theme";
 import { getSettings, putSettings, PROVIDERS, SettingsSchema, type SettingsValues } from "./schema";
 
 /** Settings dialog: reads/writes the backend [ai] config via GET/PUT /settings.
@@ -14,12 +16,19 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
   const [saved, setSaved] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
+  const [model, setModel] = useState("");
+  const [theme, setThemeState] = useState<ThemeChoice>(getTheme);
 
   useEffect(() => {
     const ctl = new AbortController();
     getSettings().catch((e: unknown) => setLoadError((e as Error)?.message ?? "load failed"));
     listModels(ctl.signal)
-      .then((m) => setModels(m.data.map((d) => d.id)))
+      .then((m) => {
+        setModels(m.data.map((d) => d.id));
+        getSettings()
+          .then((s) => s.ai?.model && setModel(s.ai.model))
+          .catch(() => undefined);
+      })
       .catch(() => setModels([]));
     return () => ctl.abort();
   }, []);
@@ -40,7 +49,7 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
     const fd = new FormData(formRef.current!);
     const raw = {
       provider: String(fd.get("provider") ?? "") as SettingsValues["provider"],
-      model: String(fd.get("model") ?? "").trim(),
+      model: model.trim(),
       api_key: String(fd.get("api_key") ?? "").trim() || undefined,
       base_url: String(fd.get("base_url") ?? "").trim() || undefined,
       enabled: fd.get("enabled") === "on",
@@ -67,6 +76,7 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
       .then(() => {
         setSaving(false);
         setSaved(true);
+        bumpModels();
         setTimeout(onClose, 400);
       })
       .catch((err: unknown) => {
@@ -124,31 +134,13 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
               <label class="label text-xs" for="set-model">
                 model
               </label>
-              {models.length > 0 ? (
-                <>
-                  <input
-                    id="set-model"
-                    name="model"
-                    class="input input-sm w-full"
-                    list="model-options"
-                    placeholder="gpt-4o-mini"
-                    autocomplete="off"
-                  />
-                  <datalist id="model-options">
-                    {models.map((m) => (
-                      <option key={m} value={m} />
-                    ))}
-                  </datalist>
-                </>
-              ) : (
-                <input
-                  id="set-model"
-                  name="model"
-                  class="input input-sm w-full"
-                  placeholder="gpt-4o-mini"
-                  autocomplete="off"
-                />
-              )}
+              <ModelPicker
+                id="set-model"
+                models={models}
+                value={model}
+                onChange={setModel}
+                size="sm"
+              />
               {err("model")}
 
               <label class="label text-xs" for="set-api-key">
@@ -181,6 +173,31 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
                 <input type="checkbox" name="enabled" class="toggle toggle-sm" defaultChecked />
                 enabled
               </label>
+            </fieldset>
+
+            <fieldset class="fieldset gap-2.5 mt-2">
+              <legend class="fieldset-legend text-sm">theme</legend>
+              <div role="radiogroup" aria-label="theme" class="join">
+                {THEMES.map((t) => (
+                  <button
+                    key={t}
+                    type="button"
+                    role="radio"
+                    aria-checked={theme === t}
+                    tabIndex={theme === t ? 0 : -1}
+                    class={`btn join-item btn-sm ${theme === t ? "btn-primary" : "btn-ghost"}`}
+                    onClick={() => {
+                      setThemeState(t);
+                      setTheme(t);
+                    }}
+                  >
+                    {t === "system" ? "System" : t === "light" ? "Light" : "Dark"}
+                  </button>
+                ))}
+              </div>
+              {theme === "system" && (
+                <p class="text-xs opacity-50">follows your OS light/dark preference</p>
+              )}
             </fieldset>
 
             {saveError && <p class="text-error text-xs mt-2">{saveError}</p>}

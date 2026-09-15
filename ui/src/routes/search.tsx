@@ -4,7 +4,16 @@ import { Header, useAiAvailable, usePageTitle } from "../components/Header";
 import { useModels } from "../components/ModeSegments";
 import { recordClick } from "../lib/api";
 import { ResultCard } from "../features/search/ResultCard";
-import { cachedAgeOf, isCacheHit, metaLine, useSearch } from "../features/search/useSearch";
+import {
+  cachedAgeOf,
+  isCacheHit,
+  metaLine,
+  pagerLetters,
+  useSearch,
+} from "../features/search/useSearch";
+import { searchUrl } from "../features/search/pager";
+
+const MAX_PAGES = 10;
 import { fmtDur } from "../lib/format";
 import { AnswerView } from "../features/answer/AnswerView";
 import { useAnswer } from "../features/answer/useAnswer";
@@ -42,11 +51,12 @@ export default function SearchRoute() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [q, page]);
 
-  // canonical url: ai mode is expressed via &mode=ai
+  // canonical url: ai mode is expressed via &mode=ai; preserve other params
   useEffect(() => {
     if (urlMode !== mode) {
-      const suffix = mode === "ai" ? "&mode=ai" : "";
-      route(`/search?q=${encodeURIComponent(q)}${suffix}`, true);
+      const extra: Record<string, string> = {};
+      if (typeof query?.settings === "string") extra.settings = query.settings;
+      route(searchUrl({ q, page, mode, extra }), true);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, urlMode]);
@@ -56,10 +66,12 @@ export default function SearchRoute() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [q, effectiveMode]);
 
-  const submit = (query: string) => {
-    const t = query.trim();
+  const submit = (raw: string) => {
+    const t = raw.trim();
     if (!t) return;
-    route(`/search?q=${encodeURIComponent(t)}${mode === "ai" ? "&mode=ai" : ""}`);
+    const extra: Record<string, string> = {};
+    if (typeof query?.settings === "string") extra.settings = query.settings;
+    route(searchUrl({ q: t, mode, extra }));
   };
 
   const askAi = useCallback(
@@ -75,7 +87,12 @@ export default function SearchRoute() {
     route(`/search?q=${encodeURIComponent(q)}`);
   }, [route, q]);
 
-  const goPage = (p: number) => route(`/search?q=${encodeURIComponent(q)}&p=${p}`);
+  const goPage = (p: number) => {
+    const extra: Record<string, string> = {};
+    if (typeof query?.settings === "string") extra.settings = query.settings;
+    if (query?.mode === "ai") extra.mode = "ai";
+    route(searchUrl({ q, page: p, extra }));
+  };
 
   const { payload, loading, error } = state;
   const results = payload?.results ?? [];
@@ -216,39 +233,82 @@ export default function SearchRoute() {
               </div>
             )}
 
-            {!loading && results.length >= 10 && (
-              <nav
-                class="flex items-center justify-center gap-4 py-6 text-sm"
-                aria-label="pagination"
-              >
-                {page > 1 && (
-                  <a
-                    href={`/search?q=${encodeURIComponent(q)}&p=${page - 1}`}
-                    onClick={(e) => {
-                      e.preventDefault();
-                      goPage(page - 1);
-                    }}
-                    rel="prev"
-                  >
-                    &lt; previous
-                  </a>
-                )}
-                <span class="opacity-60">page {page}</span>
-                <a
-                  href={`/search?q=${encodeURIComponent(q)}&p=${page + 1}`}
-                  onClick={(e) => {
-                    e.preventDefault();
-                    goPage(page + 1);
-                  }}
-                  rel="next"
-                >
-                  next &gt;
-                </a>
-              </nav>
-            )}
+            {!loading && results.length > 0 && <Pager q={q} page={page} goPage={goPage} />}
           </>
         )}
       </main>
     </div>
+  );
+}
+
+/** Google-letters-style pager: the word "oxe" where each letter after
+ * the first is a page link; current page is darker/bold. Subtle, token
+ * styled. Prev/next arrows at the edges. */
+export function Pager({
+  q,
+  page,
+  goPage,
+}: {
+  q: string;
+  page: number;
+  goPage: (p: number) => void;
+}) {
+  const total = Math.min(page + 1, MAX_PAGES); // next presence is signal enough
+  const letters = pagerLetters(total);
+  return (
+    <nav class="flex items-center justify-center gap-3 py-6 text-sm" aria-label="pagination">
+      {page > 1 && (
+        <a
+          href={searchUrl({ q, page: page - 1 })}
+          onClick={(e) => {
+            e.preventDefault();
+            goPage(page - 1);
+          }}
+          rel="prev"
+          aria-label="previous page"
+          class="opacity-50 hover:opacity-100"
+        >
+          &larr;
+        </a>
+      )}
+      <span class="flex items-baseline gap-1.5 font-mono">
+        {letters.map((letter, i) => {
+          const p = i + 1;
+          const active = p === page;
+          return active ? (
+            <span key={p} class="font-semibold opacity-90" aria-current="page">
+              {letter}
+            </span>
+          ) : (
+            <a
+              key={p}
+              href={searchUrl({ q, page: p })}
+              onClick={(e) => {
+                e.preventDefault();
+                goPage(p);
+              }}
+              class="opacity-40 hover:opacity-90"
+              aria-label={`page ${p}`}
+            >
+              {letter}
+            </a>
+          );
+        })}
+      </span>
+      {page < MAX_PAGES && (
+        <a
+          href={searchUrl({ q, page: page + 1 })}
+          onClick={(e) => {
+            e.preventDefault();
+            goPage(page + 1);
+          }}
+          rel="next"
+          aria-label="next page"
+          class="opacity-50 hover:opacity-100"
+        >
+          &rarr;
+        </a>
+      )}
+    </nav>
   );
 }

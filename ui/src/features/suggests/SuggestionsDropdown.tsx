@@ -6,20 +6,11 @@ interface Props {
   activeIndex: number | null;
   onPick: (text: string) => void;
   onHover: (i: number | null) => void;
-  acOn: boolean;
-  onToggleAc: (v: boolean) => void;
 }
 
 /** Zero-weight suggestions dropdown: canvas background, hairline border,
  * muted caps group labels (not options). Does not submit. */
-export function SuggestionsDropdown({
-  items,
-  activeIndex,
-  onPick,
-  onHover,
-  acOn,
-  onToggleAc,
-}: Props) {
+export function SuggestionsDropdown({ items, activeIndex, onPick, onHover }: Props) {
   if (!items.length) return null;
   let idx = -1;
   let lastGroup: Suggestion["group"] | null = null;
@@ -59,17 +50,6 @@ export function SuggestionsDropdown({
           </li>
         );
       })}
-      <li role="none" class="border-t border-base-300 mt-1 pt-1 px-3 pb-1">
-        <label class="flex items-center gap-2 text-xs opacity-60 cursor-pointer">
-          <input
-            type="checkbox"
-            class="toggle toggle-xs"
-            checked={acOn}
-            onChange={(e) => onToggleAc((e.target as HTMLInputElement).checked)}
-          />
-          ac
-        </label>
-      </li>
     </ul>
   );
 }

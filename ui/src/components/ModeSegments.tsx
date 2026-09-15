@@ -1,13 +1,17 @@
 import { useEffect, useState } from "preact/hooks";
 import { listModels, type ModelsResponse } from "../lib/ai";
+import { currentModelsVersion, ModelPicker, onModelsBump } from "./ModelPicker";
 
 export type Mode = "traditional" | "ai";
 
 /** Models + AI availability from GET /v1/models.
+ * Refetches when settings saves bump the models version (bumpModels()).
  * `available` is tri-state: null = still querying (never demote AI on null). */
 export function useModels(): { available: boolean | null; models: string[] } {
   const [available, setAvailable] = useState<boolean | null>(null);
   const [models, setModels] = useState<string[]>([]);
+  const [version, setVersion] = useState(currentModelsVersion);
+  useEffect(() => onModelsBump(() => setVersion(currentModelsVersion())), []);
   useEffect(() => {
     const ctl = new AbortController();
     listModels(ctl.signal)
@@ -17,7 +21,7 @@ export function useModels(): { available: boolean | null; models: string[] } {
       })
       .catch(() => setAvailable(false));
     return () => ctl.abort();
-  }, []);
+  }, [version]);
   return { available, models };
 }
 
@@ -127,7 +131,7 @@ const REASONING_KEY = "oxe-ai-reasoning";
 /** AI second-row controls: model picker + reasoning toggle chip.
  * Pure UI state (localStorage); request wiring is a backend concern. */
 export function AiControls({ available, models }: { available: boolean | null; models: string[] }) {
-  const [model, setModel] = useState(() => localStorage.getItem(STORE_KEY) ?? models[0] ?? "");
+  const [model, setModel] = useState(() => localStorage.getItem(STORE_KEY) ?? "");
   const [reasoning, setReasoning] = useState(() => localStorage.getItem(REASONING_KEY) === "1");
 
   useEffect(() => {
@@ -137,35 +141,29 @@ export function AiControls({ available, models }: { available: boolean | null; m
     localStorage.setItem(REASONING_KEY, reasoning ? "1" : "0");
   }, [reasoning]);
 
-  // resolve empty stored model once the model list arrives
+  // fall back to the first model when empty or a ghost (stale) stored value
   useEffect(() => {
-    if (!model && models.length > 0) setModel(models[0]);
+    if (models.length === 0) return;
+    if (!model || !models.includes(model)) setModel(models[0]);
   }, [models, model]);
 
   return (
-    <div class="flex items-center justify-between gap-2 w-full text-xs">
-      <label class="flex items-center gap-1.5 opacity-70 min-w-0">
-        <span class="shrink-0">model</span>
-        <select
-          class="select select-xs w-auto max-w-[180px] min-w-0"
+    <div class="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-2 w-full text-xs min-w-0">
+      <div class="flex items-center gap-1.5 min-w-0 flex-1">
+        <span class="shrink-0 opacity-70">model</span>
+        <ModelPicker
+          models={models}
           value={model}
+          onChange={setModel}
           disabled={available === false || models.length === 0}
-          onChange={(e) => setModel((e.target as HTMLSelectElement).value)}
-          aria-label="AI model"
-        >
-          {models.length === 0 && <option value="">none</option>}
-          {models.map((m) => (
-            <option key={m} value={m}>
-              {m}
-            </option>
-          ))}
-        </select>
-      </label>
+          size="xs"
+        />
+      </div>
       <button
         type="button"
         role="switch"
         aria-checked={reasoning}
-        class={`btn btn-xs rounded-full ${reasoning ? "btn-primary btn-soft" : "btn-ghost"}`}
+        class={`btn btn-xs rounded-full shrink-0 self-start sm:self-auto ${reasoning ? "btn-primary btn-soft" : "btn-ghost"}`}
         onClick={() => setReasoning((r) => !r)}
       >
         reasoning

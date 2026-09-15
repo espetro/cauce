@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "preact/hooks";
-import { ddgAc, suggest } from "../../lib/api";
+import { suggest } from "../../lib/api";
 
 export const AC_KEY = "oxe-ac";
 
@@ -8,7 +8,11 @@ export interface Suggestion {
   group: "history" | "web";
 }
 
-/** History-first suggestions: local /suggest always, DDG ac when enabled. */
+/** History-first suggestions from the local GET /suggest endpoint.
+ * The DDG ac group is disabled: ac.duckduckgo.com blocks browser-direct
+ * calls (CORS) and oxe has no server-side /ac proxy yet. When the
+ * backend ships one, route ddgAc() through it and reintroduce the
+ * "web suggestions" group behind the oxe-ac localStorage toggle. */
 export function useSuggests(
   query: string,
   open: boolean,
@@ -18,8 +22,7 @@ export function useSuggests(
   setAcOn: (v: boolean) => void;
 } {
   const [history, setHistory] = useState<string[]>([]);
-  const [web, setWeb] = useState<string[]>([]);
-  const [acOn, setAcOnState] = useState(() => localStorage.getItem(AC_KEY) !== "off");
+  const [acOn] = useState(() => localStorage.getItem(AC_KEY) !== "off");
 
   useEffect(() => {
     const v = query.trim().toLowerCase();
@@ -34,46 +37,11 @@ export function useSuggests(
     return () => ctl.abort();
   }, [query, open]);
 
-  useEffect(() => {
-    const v = query.trim().toLowerCase();
-    if (!open || v.length < 2 || !acOn) {
-      setWeb([]);
-      return;
-    }
-    const ctl = new AbortController();
-    const t = setTimeout(() => {
-      ddgAc(v, ctl.signal)
-        .then(setWeb)
-        .catch(() => {});
-    }, 300);
-    return () => {
-      clearTimeout(t);
-      ctl.abort();
-    };
-  }, [query, open, acOn]);
-
-  const setAcOn = (v: boolean) => {
-    setAcOnState(v);
-    localStorage.setItem(AC_KEY, v ? "on" : "off");
-    if (!v) setWeb([]);
+  const setAcOn = (_v: boolean) => {
+    // no-op while the DDG ac group is disabled (no backend proxy yet)
   };
 
-  const seen = new Set<string>();
-  const items: Suggestion[] = [];
-  for (const text of history.slice(0, 3)) {
-    const k = text.toLowerCase();
-    if (k && !seen.has(k)) {
-      seen.add(k);
-      items.push({ text, group: "history" });
-    }
-  }
-  for (const text of web.slice(0, 4)) {
-    const k = text.toLowerCase();
-    if (k && !seen.has(k)) {
-      seen.add(k);
-      items.push({ text, group: "web" });
-    }
-  }
+  const items = mergeSuggests(history);
   return { items, acOn, setAcOn };
 }
 
@@ -81,6 +49,27 @@ export const GROUP_LABEL: Record<Suggestion["group"], string> = {
   history: "your history",
   web: "web suggestions",
 };
+
+/** Merge history entries, dedup case-insensitively, most recent first. */
+export function mergeSuggests(history: string[], web: string[] = []): Suggestion[] {
+  const seen = new Set<string>();
+  const items: Suggestion[] = [];
+  for (const text of history.slice(0, 3)) {
+    const k = text.trim().toLowerCase();
+    if (k && !seen.has(k)) {
+      seen.add(k);
+      items.push({ text, group: "history" });
+    }
+  }
+  for (const text of web.slice(0, 4)) {
+    const k = text.trim().toLowerCase();
+    if (k && !seen.has(k)) {
+      seen.add(k);
+      items.push({ text, group: "web" });
+    }
+  }
+  return items;
+}
 
 export interface DropdownHandle {
   activeIndex: number | null;

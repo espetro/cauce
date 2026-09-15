@@ -1,6 +1,7 @@
 import { useEffect, useState } from "preact/hooks";
 import { useLocation } from "preact-iso";
 import { Center, Header, usePageTitle } from "../components/Header";
+import { AboutHint } from "../components/AboutHint";
 import { useModels, type Mode } from "../components/ModeSegments";
 import { SearchBox } from "../features/suggests/SearchBox";
 
@@ -41,7 +42,7 @@ export default function Home() {
         <Center vh>
           <h1 class="text-4xl font-semibold tracking-tight mb-2">oxe</h1>
           <p class="opacity-50 text-sm">your local web intel layer</p>
-          <div class="flex items-start justify-center gap-1.5 mb-8">
+          <div class="flex items-start justify-center gap-1.5 mb-8 max-w-full px-3 min-w-0">
             <SearchBox
               value={q}
               onInput={setQ}
@@ -53,18 +54,7 @@ export default function Home() {
               aiAvailable={aiAvailable}
               models={models}
             />
-            <span
-              class="tooltip mt-2.5"
-              data-tip="search once, share with your agents - cached, MCP-ready · REST + MCP API on :4479. Search: classic link results with cache metadata. AI: streaming answer with cited sources."
-            >
-              <button
-                type="button"
-                class="btn btn-ghost btn-xs btn-circle opacity-40 hover:opacity-80"
-                aria-label="about oxe: caching, MCP API, search modes"
-              >
-                (?)
-              </button>
-            </span>
+            <AboutHint />
           </div>
         </Center>
       </main>
