@@ -20,7 +20,7 @@ Scope: everything under `ui/` (Preact + Vite webapp). Repo-wide rules live in th
 
 ## Hard constraints (from the stack decision)
 
-- No-JS is not required; keep client payload small (budget: 40KB gz JS / 30KB gz CSS, enforced by `mise run check`).
+- No-JS is not required; keep client payload small (budget: 45KB gz JS / 35KB gz CSS, kept ~5-10KB above current usage for feature headroom, enforced by `mise run check`).
 - Content negotiation is backend behavior; the UI always speaks HTML/routes.
 - Dark mode via token theme (`color-scheme: light dark`); fonts: Plus Jakarta Sans Variable (body), Apfel Grotesk (logotype, self-hosted), system fallbacks. No Geist.
 - Streaming: the answer view consumes chunked fetch; citation markers `[n]` render as superscript links targeting `<SourceCard>` ids.
@@ -71,7 +71,7 @@ in `localStorage` (`oxe-theme`, `oxe-mode`), deliberately not URLs.
 State library: custom hooks on top of preact-iso's `useLocation()` /
 `route()` (pattern: `routes/search.tsx` mode handling, `components/Header.tsx`
 settings handling). No new state dependencies (`qss`, signals, nanostores
-are all unnecessary at this size); JS budget stays 40KB gz.
+are all unnecessary at this size); JS budget stays 45KB gz.
 
 QA agent convention: (a) drive states via URL deep links, not
 click-throughs, whenever a URL recipe exists; (b) when you find a new key
