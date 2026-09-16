@@ -74,3 +74,56 @@ depends = ["test:py"]
 [tasks."test:py"]
 description = "Run Python tests"
 run = "uv run --with pytest pytest"
+
+# ---- fast validation gate ----
+# validate: ~20s layered gate (ruff, pytest -x, ui lint, tsc, bun test)
+# validate:full: full ui build incl. prerender + size budgets
+
+[tasks.validate]
+description = "Fast validation gate: ruff + pytest -x + ui lint + tsc + bun test (~20s)"
+run = """
+#!/usr/bin/env bash
+set -uo pipefail
+start=$(date +%s)
+fail=0
+
+step() { # label, then command...
+  local label="$1" t0 ts; shift
+  t0=$(date +%s)
+  if "$@" > /tmp/oxe-validate-step.log 2>&1; then
+    ts=$(( $(date +%s) - t0 ))
+    echo "OK $label (${ts}s)"
+  else
+    echo "FAIL $label"
+    cat /tmp/oxe-validate-step.log
+    fail=1
+  fi
+}
+
+step ruff       uv run --with ruff ruff check oxe tests
+step pytest     uv run --with pytest pytest -x -q
+step ui-lint    bash -c 'cd ui && bun run lint'
+step tsc        bash -c 'cd ui && bunx tsc -b'
+step bun-test   bash -c 'cd ui && bun test src'
+
+total=$(( $(date +%s) - start ))
+if [ "$fail" -eq 0 ]; then
+  echo "total ${total}s"
+else
+  echo "FAIL total ${total}s"
+  exit 1
+fi
+"""
+
+[tasks."validate:full"]
+description = "Full validation: validate gate + complete ui build (tsc, vite, prerender, size budgets)"
+run = """
+#!/usr/bin/env bash
+set -euo pipefail
+mise run validate
+start=$(date +%s)
+cd ui && bun run check
+echo "OK ui-build ($(( $(date +%s) - start ))s, prerendered dist + size budgets)"
+test -s dist/index.html && [ "$(wc -c < dist/index.html)" -gt 2048 ] \\
+  || { echo "FAIL prerendered dist/index.html missing or too small"; exit 1; }
+"""
