@@ -35,6 +35,23 @@ export async function listModels(signal?: AbortSignal): Promise<ModelsResponse> 
   return request("/v1/models", ModelsResponseSchema, { signal });
 }
 
+/** Disposable wrapper so `await using` cancels the reader on any exit path. */
+class StreamReader {
+  private readonly reader: ReadableStreamDefaultReader<Uint8Array>;
+
+  constructor(reader: ReadableStreamDefaultReader<Uint8Array>) {
+    this.reader = reader;
+  }
+
+  read() {
+    return this.reader.read();
+  }
+
+  async [Symbol.asyncDispose](): Promise<void> {
+    await this.reader.cancel();
+  }
+}
+
 /** Consume the /answer SSE stream via chunked fetch. Calls `on` per event.
  * Malformed frames are skipped (try/catch), well-formed frames are
  * type-narrowed through AnswerEventSchema. */
@@ -65,7 +82,7 @@ export async function streamAnswer(
     throw new ApiError(code, detail, res.status);
   }
 
-  const reader = res.body.getReader();
+  await using reader = new StreamReader(res.body.getReader());
   const decoder = new TextDecoder();
   let buf = "";
   const DEV = import.meta.env.DEV;
