@@ -38,8 +38,8 @@ Canonical base URLs are `/search` (results), `/history`, `/dashboard`, `/`.
 | `p` | page number, 1-based | (none) | **deprecated**: continuous scroll replaced the pager. Deep links with `p` are accepted but ignored (stripped from the url); generated links never carry it. Pagination is no longer URL-addressable |
 | `mode` | `ai` (absent = Search) | AI streaming / AI done / AI unavailable | **works today**; canonical url rewrite keeps the param in sync with the in-pill toggle. Unavailable AI + `mode=ai` stays on Search results with an inline notice (no redirect) |
 | `settings` | `open` \| `close` (absent = closed) | settings dialog open on any route | **works today**: header reads `?settings=open`; close/save strips the param |
-| `since` | `24` \| `168` \| `720` \| `all` | history time-filtered | **planned**: filter is client state only (`routes/history.tsx`), URL params ignored on load |
-| `qf` | query-text filter substring | history text-filtered | **planned**: same |
+| `since` | `24` \| `168` \| `720` \| `all` | history time-filtered | **works today**: `/history?since=24` etc.; `all` (default) is stripped from the url |
+| `qf` | query-text filter substring | history text-filtered | **works today**: `/history?qf=<substring>`; server-side substring filter on `GET /api/history` |
 | `suggest` | `1` (+ required `q`) | suggestions dropdown open | **planned, QA-only**: dropdown open state is internal (`SearchBox.tsx`) |
 | `force` | `error` \| `ai-off` \| `empty` | backend-error state, AI-unavailable notice, empty results | **planned, QA-only**: stubs the fetch layer; without it error states are only reachable by killing the backend |
 
@@ -158,17 +158,17 @@ Non-param checkpoints (no URL state needed or possible):
   rows + empty state when 0 clicks.
 
 ### 16. History, time-filtered
-- Reach: select "last 24h" in the filter select.
-- URL today: none (client state; `since=24` in URL is ignored on load).
-  **Planned contract: `/history?since=24`** (also `168`=week,
-  `720`=month, `all`=all time). Implementation: initialize `since` state
-  from `useLocation().query`, write back on change (same pattern as mode
-  in `search.tsx`).
+- Reach: select "last 24h" in the filter select, or deep-link.
+- URL: **`/history?since=24`** — **works today** (also `168`=week,
+  `720`=month; `all`=default, stripped from the url). Implemented in
+  `routes/history.tsx` against `GET /api/history`; the select writes
+  back via `route()` (same pattern as mode in `search.tsx`).
 
 ### 17. History, query-text filtered
-- Reach: type in the query-filter input.
-- URL: **planned `/history?qf=<substring>`** (`q` is taken by the backend's
-  history endpoint semantics; `qf` keeps UI-filter distinct).
+- Reach: type in the query-filter input, or deep-link.
+- URL: **`/history?qf=<substring>`** — **works today** (`q` is taken by
+  the backend's history endpoint semantics; `qf` keeps the UI filter
+  distinct and maps to the server-side `q` substring param).
 
 ### 18. Settings dialog open
 - Reach: click `settings` in the header (any route).

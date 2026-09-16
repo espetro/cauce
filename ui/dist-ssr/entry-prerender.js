@@ -789,7 +789,7 @@ function Center({ children, vh = false }) {
 		children
 	});
 }
-function Empty({ children }) {
+function Empty$1({ children }) {
 	return /* @__PURE__ */ jsx("p", {
 		class: "opacity-60 text-sm py-8 text-center",
 		children: toChildArray(children)
@@ -1046,13 +1046,34 @@ async function deleteCacheRow(key) {
 		return false;
 	}
 }
-function cacheStats(signal) {
-	return fetchJson(`${BASE}/cache/stats`, signal);
-}
 async function fetchJson(url, signal) {
 	const res = await fetch(url, { signal });
 	if (!res.ok) throw new Error(`GET ${url} failed: ${res.status}`);
 	return await res.json();
+}
+async function fetchApiHistory(since, qText, signal) {
+	const p = new URLSearchParams({ since });
+	if (qText) p.set("q", qText);
+	const res = await fetch(`${BASE}/api/history?${p.toString()}`, { signal });
+	if (!res.ok) throw new Error(`history failed: ${res.status}`);
+	return await res.json();
+}
+/** POST /history/delete: prune click history by scope.
+* Backend replies {"ok": true, "deleted": n} for JSON clients. */
+async function deleteHistory(scope) {
+	const res = await fetch(`${BASE}/history/delete`, {
+		method: "POST",
+		headers: {
+			"Content-Type": "application/json",
+			Accept: "application/json"
+		},
+		body: JSON.stringify({ scope })
+	});
+	if (!res.ok) throw new Error(`delete failed: ${res.status}`);
+	return (await res.json()).deleted;
+}
+function apiStats(signal) {
+	return fetchJson(`${BASE}/api/stats`, signal);
 }
 var BASE;
 var init_api = __esmMin((() => {
@@ -1095,10 +1116,64 @@ var init_format = __esmMin((() => {}));
 //#endregion
 //#region src/routes/dashboard.tsx
 var dashboard_exports = /* @__PURE__ */ __exportAll({ default: () => DashboardRoute });
-/** GET /history is HTML-only; the search_log dataset is exposed the same
-* way (embedded JSON payload when the renderer provides it). Until the
-* backend ships a stats JSON endpoint, the dashboard renders live cache
-* stats plus a "no search log data" note for the log-derived panels. */
+function Panel(props) {
+	return /* @__PURE__ */ jsxs("section", {
+		class: `border border-base-300 rounded-lg p-4 min-w-0 ${props.wide ? "md:col-span-2" : ""}`,
+		children: [/* @__PURE__ */ jsx("h2", {
+			class: "text-sm font-medium mb-3",
+			children: props.title
+		}), props.children]
+	});
+}
+function Empty() {
+	return /* @__PURE__ */ jsx("p", {
+		class: "opacity-50 text-sm",
+		children: "no data yet"
+	});
+}
+/** Token-based inline SVG sparkline: total searches per day. */
+function Sparkline({ days }) {
+	const data = days.slice(-30);
+	const max = Math.max(...data.map((d) => d.total), 1);
+	const W = 240;
+	const H = 48;
+	const step = data.length > 1 ? W / (data.length - 1) : W;
+	const pts = data.map((d, i) => `${(i * step).toFixed(1)},${(H - d.total / max * 44 - 2).toFixed(1)}`);
+	return /* @__PURE__ */ jsx("svg", {
+		viewBox: `0 0 ${W} ${H}`,
+		class: "w-full h-12",
+		role: "img",
+		"aria-label": "searches per day",
+		children: /* @__PURE__ */ jsx("polyline", {
+			points: pts.join(" "),
+			fill: "none",
+			stroke: "currentColor",
+			"stroke-width": "1.5",
+			class: "text-primary"
+		})
+	});
+}
+function Bar({ value, max, label }) {
+	const pct = max > 0 ? Math.round(value / max * 100) : 0;
+	return /* @__PURE__ */ jsxs("div", {
+		class: "mb-1",
+		children: [/* @__PURE__ */ jsxs("div", {
+			class: "flex justify-between text-[13px]",
+			children: [/* @__PURE__ */ jsx("span", {
+				class: "truncate max-w-[70%]",
+				children: label
+			}), /* @__PURE__ */ jsx("span", {
+				class: "opacity-60",
+				children: value
+			})]
+		}), /* @__PURE__ */ jsx("progress", {
+			class: "progress progress-primary h-1",
+			value: pct,
+			max: 100,
+			"aria-label": `${label}: ${value}`
+		})]
+	});
+}
 function DashboardRoute() {
 	usePageTitle("dashboard");
 	const [stats, setStats] = useState(null);
@@ -1106,83 +1181,8 @@ function DashboardRoute() {
 	const seq = useRef(0);
 	useEffect(() => {
 		const id = ++seq.current;
-		cacheStats().then((s) => seq.current === id && setStats(s)).catch((e) => seq.current === id && setError(e.message));
+		apiStats().then((s) => seq.current === id && (setStats(s), setError(null))).catch((e) => seq.current === id && setError(e.message));
 	}, []);
-	const panels = [
-		{
-			title: "searches per day",
-			body: /* @__PURE__ */ jsx("p", {
-				class: "opacity-50 text-sm",
-				children: "no search log data yet"
-			})
-		},
-		{
-			title: "cache hit rate",
-			body: stats ? /* @__PURE__ */ jsxs("div", { children: [/* @__PURE__ */ jsxs("div", {
-				class: "text-3xl font-bold",
-				children: [stats.total_hits ? Math.round(100 * stats.unexpired_rows / Math.max(stats.rows, 1)) : 0, "%"]
-			}), /* @__PURE__ */ jsxs("p", {
-				class: "text-[13px] opacity-60",
-				children: [stats.total_hits, " total hits"]
-			})] }) : /* @__PURE__ */ jsx("p", {
-				class: "opacity-50 text-sm",
-				children: "no data yet"
-			})
-		},
-		{
-			title: "network latency",
-			body: /* @__PURE__ */ jsx("p", {
-				class: "opacity-50 text-sm",
-				children: "no data yet"
-			})
-		},
-		{
-			title: "client split",
-			body: /* @__PURE__ */ jsx("p", {
-				class: "opacity-50 text-sm",
-				children: "no data yet"
-			})
-		},
-		{
-			title: "cache",
-			body: stats ? /* @__PURE__ */ jsx("table", {
-				class: "table table-sm text-[13px]",
-				children: /* @__PURE__ */ jsxs("tbody", { children: [
-					/* @__PURE__ */ jsxs("tr", { children: [/* @__PURE__ */ jsx("td", {
-						class: "opacity-60",
-						children: "rows"
-					}), /* @__PURE__ */ jsx("td", {
-						class: "text-right",
-						children: stats.rows
-					})] }),
-					/* @__PURE__ */ jsxs("tr", { children: [/* @__PURE__ */ jsx("td", {
-						class: "opacity-60",
-						children: "unexpired"
-					}), /* @__PURE__ */ jsx("td", {
-						class: "text-right",
-						children: stats.unexpired_rows
-					})] }),
-					/* @__PURE__ */ jsxs("tr", { children: [/* @__PURE__ */ jsx("td", {
-						class: "opacity-60",
-						children: "db size"
-					}), /* @__PURE__ */ jsx("td", {
-						class: "text-right",
-						children: fmtBytes(stats.db_size_bytes)
-					})] }),
-					/* @__PURE__ */ jsxs("tr", { children: [/* @__PURE__ */ jsx("td", {
-						class: "opacity-60",
-						children: "newest"
-					}), /* @__PURE__ */ jsx("td", {
-						class: "text-right",
-						children: fmtTs(stats.newest)
-					})] })
-				] })
-			}) : /* @__PURE__ */ jsx("p", {
-				class: "opacity-50 text-sm",
-				children: error ?? "no data yet"
-			})
-		}
-	];
 	return /* @__PURE__ */ jsxs("div", {
 		class: "w-full max-w-[960px] mx-auto px-4 pb-16",
 		children: [
@@ -1190,19 +1190,166 @@ function DashboardRoute() {
 				class: "text-xl font-semibold mt-6 mb-1",
 				children: "oxe stats"
 			}),
-			/* @__PURE__ */ jsx("p", {
+			/* @__PURE__ */ jsxs("p", {
 				class: "text-[13px] opacity-60 mb-4",
-				children: "window: last 30 days"
+				children: [
+					"window: last ",
+					stats?.days ?? 14,
+					" days"
+				]
 			}),
-			/* @__PURE__ */ jsx("div", {
-				class: "grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(20rem,1fr))]",
-				children: panels.map((p) => /* @__PURE__ */ jsxs("section", {
-					class: "border border-base-300 rounded-lg p-4 min-w-0",
-					children: [/* @__PURE__ */ jsx("h2", {
-						class: "text-sm font-medium mb-3",
-						children: p.title
-					}), p.body]
-				}, p.title))
+			error && /* @__PURE__ */ jsxs("p", {
+				class: "text-error py-6 text-sm",
+				children: ["error: ", error]
+			}),
+			!stats && !error && /* @__PURE__ */ jsx("div", {
+				class: "py-10 flex justify-center",
+				"aria-busy": "true",
+				children: /* @__PURE__ */ jsx("span", { class: "loading loading-dots loading-md" })
+			}),
+			stats && /* @__PURE__ */ jsxs("div", {
+				class: "grid gap-4 md:grid-cols-2",
+				children: [
+					/* @__PURE__ */ jsx(Panel, {
+						title: "searches per day",
+						children: stats.searches_per_day.some((d) => d.total > 0) ? /* @__PURE__ */ jsxs(Fragment, { children: [/* @__PURE__ */ jsx(Sparkline, { days: stats.searches_per_day }), /* @__PURE__ */ jsxs("p", {
+							class: "text-[13px] opacity-60 mt-1",
+							children: [stats.searches_per_day.reduce((a, d) => a + d.total, 0), " searches in window"]
+						})] }) : /* @__PURE__ */ jsx(Empty, {})
+					}),
+					/* @__PURE__ */ jsx(Panel, {
+						title: "cache hit rate",
+						children: stats.hit_rate.rate != null ? /* @__PURE__ */ jsxs(Fragment, { children: [/* @__PURE__ */ jsxs("div", {
+							class: "text-3xl font-bold",
+							children: [stats.hit_rate.rate, "%"]
+						}), /* @__PURE__ */ jsxs("p", {
+							class: "text-[13px] opacity-60",
+							children: [
+								stats.hit_rate.cache_hits,
+								" of ",
+								stats.hit_rate.total,
+								" served from cache"
+							]
+						})] }) : /* @__PURE__ */ jsx(Empty, {})
+					}),
+					/* @__PURE__ */ jsx(Panel, {
+						title: "network latency",
+						children: stats.latency_ms.p50 != null ? /* @__PURE__ */ jsx("div", {
+							class: "grid grid-cols-3 gap-2 text-center",
+							children: [
+								"p50",
+								"p90",
+								"p99"
+							].map((p) => /* @__PURE__ */ jsxs("div", { children: [/* @__PURE__ */ jsx("div", {
+								class: "text-xl font-semibold",
+								children: Math.round(stats.latency_ms[p] ?? 0)
+							}), /* @__PURE__ */ jsxs("div", {
+								class: "text-[13px] opacity-60",
+								children: [p, " ms"]
+							})] }, p))
+						}) : /* @__PURE__ */ jsx(Empty, {})
+					}),
+					/* @__PURE__ */ jsx(Panel, {
+						title: "client split",
+						children: stats.client_split.length > 0 ? /* @__PURE__ */ jsx("div", { children: stats.client_split.map((c) => /* @__PURE__ */ jsx(Bar, {
+							value: c.count,
+							label: c.client,
+							max: Math.max(...stats.client_split.map((x) => x.count))
+						}, c.client)) }) : /* @__PURE__ */ jsx(Empty, {})
+					}),
+					/* @__PURE__ */ jsx(Panel, {
+						title: "top queries",
+						wide: true,
+						children: stats.top_queries.length > 0 ? /* @__PURE__ */ jsx("div", { children: stats.top_queries.slice(0, 10).map((q) => /* @__PURE__ */ jsx(Bar, {
+							value: q.count,
+							label: q.query,
+							max: Math.max(...stats.top_queries.slice(0, 10).map((x) => x.count))
+						}, q.query)) }) : /* @__PURE__ */ jsx(Empty, {})
+					}),
+					/* @__PURE__ */ jsx(Panel, {
+						title: "zero-result queries",
+						wide: true,
+						children: stats.zero_result_queries.length > 0 ? /* @__PURE__ */ jsx("ul", {
+							class: "text-[13px] space-y-1",
+							children: stats.zero_result_queries.slice(0, 10).map((q) => /* @__PURE__ */ jsxs("li", {
+								class: "flex justify-between gap-4",
+								children: [/* @__PURE__ */ jsx("span", {
+									class: "truncate",
+									children: q.query
+								}), /* @__PURE__ */ jsx("span", {
+									class: "opacity-60 whitespace-nowrap",
+									children: fmtTs(q.last_seen)
+								})]
+							}, q.query))
+						}) : /* @__PURE__ */ jsx("p", {
+							class: "opacity-50 text-sm",
+							children: "none 🎉"
+						})
+					}),
+					/* @__PURE__ */ jsx(Panel, {
+						title: "cache",
+						wide: true,
+						children: /* @__PURE__ */ jsx("table", {
+							class: "table table-sm text-[13px]",
+							children: /* @__PURE__ */ jsxs("tbody", { children: [
+								/* @__PURE__ */ jsxs("tr", { children: [
+									/* @__PURE__ */ jsx("td", {
+										class: "opacity-60",
+										children: "rows"
+									}),
+									/* @__PURE__ */ jsx("td", {
+										class: "text-right",
+										children: stats.cache.rows
+									}),
+									/* @__PURE__ */ jsx("td", {
+										class: "opacity-60",
+										children: "unexpired"
+									}),
+									/* @__PURE__ */ jsx("td", {
+										class: "text-right",
+										children: stats.cache.unexpired_rows
+									})
+								] }),
+								/* @__PURE__ */ jsxs("tr", { children: [
+									/* @__PURE__ */ jsx("td", {
+										class: "opacity-60",
+										children: "db size"
+									}),
+									/* @__PURE__ */ jsx("td", {
+										class: "text-right",
+										children: fmtBytes(stats.cache.db_size_bytes)
+									}),
+									/* @__PURE__ */ jsx("td", {
+										class: "opacity-60",
+										children: "total hits"
+									}),
+									/* @__PURE__ */ jsx("td", {
+										class: "text-right",
+										children: stats.cache.total_hits
+									})
+								] }),
+								/* @__PURE__ */ jsxs("tr", { children: [
+									/* @__PURE__ */ jsx("td", {
+										class: "opacity-60",
+										children: "newest"
+									}),
+									/* @__PURE__ */ jsx("td", {
+										class: "text-right",
+										children: fmtTs(stats.cache.newest)
+									}),
+									/* @__PURE__ */ jsx("td", {
+										class: "opacity-60",
+										children: "oldest"
+									}),
+									/* @__PURE__ */ jsx("td", {
+										class: "text-right",
+										children: fmtTs(stats.cache.oldest_unexpired)
+									})
+								] })
+							] })
+						})
+					})
+				]
 			})
 		]
 	});
@@ -1215,51 +1362,8 @@ var init_dashboard = __esmMin((() => {
 //#endregion
 //#region src/routes/history.tsx
 var history_exports = /* @__PURE__ */ __exportAll({ default: () => HistoryRoute });
-/** GET /history is HTML-only on the backend, so the route fetches the
-* page and extracts the embedded JSON payload (rendered into
-* <script type="application/json" id="oxe-history">). */
-async function fetchHistory(sinceHours, qText) {
-	const p = new URLSearchParams();
-	if (sinceHours != null) p.set("since", String(sinceHours));
-	if (qText) p.set("q", qText);
-	const res = await fetch(`/history?${p.toString()}`);
-	if (!res.ok) throw new Error(`history failed: ${res.status}`);
-	const html = await res.text();
-	const doc = new DOMParser().parseFromString(html, "text/html");
-	const data = doc.querySelector("script[type=\"application/json\"]#oxe-history")?.textContent;
-	if (data) {
-		const parsed = JSON.parse(data);
-		return {
-			rows: parsed.rows ?? [],
-			stats: parsed.stats ?? {
-				total: 0,
-				last_24h: 0,
-				oldest: null
-			}
-		};
-	}
-	const rows = Array.from(doc.querySelectorAll("table.rows tbody tr")).map((tr) => {
-		const td = tr.querySelectorAll("td");
-		return {
-			id: 0,
-			query_hash: (td[1]?.querySelector("a")?.getAttribute("href") ?? "").replace("/row/", ""),
-			query: td[1]?.textContent ?? "",
-			result_id: "",
-			url: td[3]?.querySelector("a")?.getAttribute("href") ?? "",
-			title: td[2]?.textContent ?? "",
-			clicked_at: Date.parse(td[0]?.textContent ?? "") / 1e3 || 0,
-			source: td[4]?.textContent ?? ""
-		};
-	});
-	const m = doc.querySelector("section.hero p")?.textContent ?? "";
-	return {
-		rows,
-		stats: {
-			total: Number(m.match(/(\d+) total/)?.[1] ?? 0),
-			last_24h: Number(m.match(/(\d+) clicks/)?.[1] ?? 0),
-			oldest: null
-		}
-	};
+function parseSince(v) {
+	return SINCE_VALUES.includes(v) ? v : "all";
 }
 function fmtLocal(epoch) {
 	if (!epoch) return "—";
@@ -1267,46 +1371,114 @@ function fmtLocal(epoch) {
 	const p = (n) => String(n).padStart(2, "0");
 	return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
+/** Two-step delete: pick a scope, then confirm. `all` requires a second
+* click on the same button (double-click confirm). */
+function DeleteControls({ onDeleted, onError }) {
+	const [scope, setScope] = useState("24h");
+	const [armed, setArmed] = useState(false);
+	const [busy, setBusy] = useState(false);
+	const run = () => {
+		setBusy(true);
+		deleteHistory(scope).then(() => {
+			setArmed(false);
+			onDeleted();
+		}).catch((e) => onError(e.message)).finally(() => setBusy(false));
+	};
+	return /* @__PURE__ */ jsxs("div", {
+		class: "flex items-center gap-2",
+		children: [/* @__PURE__ */ jsxs("select", {
+			class: "select select-sm w-40",
+			value: scope,
+			onChange: (e) => {
+				setScope(e.target.value);
+				setArmed(false);
+			},
+			"aria-label": "delete scope",
+			children: [
+				/* @__PURE__ */ jsx("option", {
+					value: "24h",
+					children: "older than 24h"
+				}),
+				/* @__PURE__ */ jsx("option", {
+					value: "7d",
+					children: "older than 7d"
+				}),
+				/* @__PURE__ */ jsx("option", {
+					value: "30d",
+					children: "older than 30d"
+				}),
+				/* @__PURE__ */ jsx("option", {
+					value: "all",
+					children: "all history"
+				})
+			]
+		}), /* @__PURE__ */ jsx("button", {
+			type: "button",
+			class: `btn btn-sm ${armed ? "btn-error" : "btn-ghost text-error"}`,
+			disabled: busy,
+			onClick: () => armed ? run() : setArmed(true),
+			onBlur: () => setArmed(false),
+			children: armed ? scope === "all" ? "really delete all?" : "confirm delete" : "delete…"
+		})]
+	});
+}
 function HistoryRoute() {
 	usePageTitle("history");
-	const [since, setSince] = useState(null);
-	const [qText, setQText] = useState("");
-	const [rows, setRows] = useState([]);
-	const [stats, setStats] = useState({
-		total: 0,
-		last_24h: 0,
-		oldest: null
+	const { query, route } = useLocation();
+	const since = parseSince(query?.since);
+	const qf = String(query?.qf ?? "");
+	const [items, setItems] = useState([]);
+	const [counts, setCounts] = useState({
+		clicks: 0,
+		cache_rows: 0
 	});
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState(null);
 	const seq = useRef(0);
-	useEffect(() => {
+	const load = (s, q) => {
 		const id = ++seq.current;
 		setLoading(true);
-		fetchHistory(since, qText).then((r) => {
+		fetchApiHistory(s, q).then((r) => {
 			if (seq.current !== id) return;
-			setRows(r.rows);
-			setStats(r.stats);
+			setItems(r.items);
+			setCounts({
+				clicks: r.clicks,
+				cache_rows: r.cache_rows
+			});
 			setError(null);
 		}).catch((e) => seq.current === id && setError(e.message)).finally(() => seq.current === id && setLoading(false));
-	}, [since, qText]);
-	const filtered = qText ? rows.filter((r) => (r.query || "").toLowerCase().includes(qText.toLowerCase())) : rows;
+	};
+	useEffect(() => {
+		load(since, qf);
+	}, [since, qf]);
+	const setParam = (key, value) => {
+		const sp = new URLSearchParams(window.location.search);
+		if (value && !(key === "since" && value === "all")) sp.set(key, value);
+		else sp.delete(key);
+		const qs = sp.toString();
+		route(`${window.location.pathname}${qs ? `?${qs}` : ""}`, true);
+	};
+	const clearFilters = () => {
+		const sp = new URLSearchParams(window.location.search);
+		sp.delete("since");
+		sp.delete("qf");
+		const qs = sp.toString();
+		route(`${window.location.pathname}${qs ? `?${qs}` : ""}`, true);
+	};
 	return /* @__PURE__ */ jsxs("div", {
 		class: "w-full max-w-[960px] mx-auto px-4 pb-16",
 		children: [
 			/* @__PURE__ */ jsx("h1", {
 				class: "text-xl font-semibold mt-6 mb-1",
-				children: "Click history"
+				children: "History"
 			}),
 			/* @__PURE__ */ jsxs("p", {
 				class: "text-[13px] opacity-60 mb-4",
 				children: [
-					stats.last_24h,
-					" clicks in last 24h · ",
-					stats.total,
-					" total ·",
-					" ",
-					stats.oldest ? `${fmtLocal(stats.oldest)} (oldest)` : "—"
+					counts.clicks,
+					" clicks · ",
+					counts.cache_rows,
+					" cached searches · newest first"
 				]
 			}),
 			/* @__PURE__ */ jsxs("div", {
@@ -1314,15 +1486,12 @@ function HistoryRoute() {
 				children: [
 					/* @__PURE__ */ jsxs("select", {
 						class: "select select-sm w-32",
-						value: since ?? "",
-						onChange: (e) => {
-							const v = e.target.value;
-							setSince(v === "" ? null : Number(v));
-						},
+						value: since,
+						onChange: (e) => setParam("since", e.target.value),
 						"aria-label": "time filter",
 						children: [
 							/* @__PURE__ */ jsx("option", {
-								value: "",
+								value: "all",
 								children: "all time"
 							}),
 							/* @__PURE__ */ jsx("option", {
@@ -1343,18 +1512,22 @@ function HistoryRoute() {
 						type: "search",
 						class: "input input-sm w-56",
 						placeholder: "filter by query text…",
-						value: qText,
-						onInput: (e) => setQText(e.target.value),
+						value: qf,
+						onInput: (e) => setParam("qf", e.target.value),
 						"aria-label": "query filter"
 					}),
-					(since != null || qText) && /* @__PURE__ */ jsx("button", {
+					(since !== "all" || qf) && /* @__PURE__ */ jsx("button", {
 						type: "button",
 						class: "btn btn-ghost btn-sm",
-						onClick: () => {
-							setSince(null);
-							setQText("");
-						},
+						onClick: clearFilters,
 						children: "clear"
+					}),
+					/* @__PURE__ */ jsx("div", {
+						class: "ml-auto",
+						children: /* @__PURE__ */ jsx(DeleteControls, {
+							onDeleted: () => load(since, qf),
+							onError: setError
+						})
 					})
 				]
 			}),
@@ -1367,10 +1540,10 @@ function HistoryRoute() {
 				class: "text-error py-6 text-sm",
 				children: ["error: ", error]
 			}),
-			!loading && !error && filtered.length === 0 && /* @__PURE__ */ jsxs("p", {
+			!loading && !error && items.length === 0 && /* @__PURE__ */ jsxs("p", {
 				class: "opacity-60 py-8 text-sm",
 				children: [
-					"no clicks yet — open a result from the",
+					"nothing here yet — open a result from the",
 					" ",
 					/* @__PURE__ */ jsx("a", {
 						href: "/",
@@ -1381,29 +1554,35 @@ function HistoryRoute() {
 					"page."
 				]
 			}),
-			!loading && filtered.length > 0 && /* @__PURE__ */ jsx("div", {
+			!loading && items.length > 0 && /* @__PURE__ */ jsx("div", {
 				class: "overflow-x-auto",
 				children: /* @__PURE__ */ jsxs("table", {
 					class: "table table-sm",
 					children: [/* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsxs("tr", {
 						class: "text-[13px] opacity-60",
 						children: [
-							/* @__PURE__ */ jsx("th", { children: "clicked" }),
+							/* @__PURE__ */ jsx("th", { children: "when" }),
+							/* @__PURE__ */ jsx("th", { children: "kind" }),
 							/* @__PURE__ */ jsx("th", { children: "query" }),
-							/* @__PURE__ */ jsx("th", { children: "title" }),
 							/* @__PURE__ */ jsx("th", {
 								class: "hidden md:table-cell",
-								children: "url"
+								children: "detail"
 							}),
-							/* @__PURE__ */ jsx("th", { children: "source" }),
 							/* @__PURE__ */ jsx("th", {})
 						]
-					}) }), /* @__PURE__ */ jsx("tbody", { children: filtered.map((r) => /* @__PURE__ */ jsxs("tr", {
+					}) }), /* @__PURE__ */ jsx("tbody", { children: items.map((r) => /* @__PURE__ */ jsxs("tr", {
 						class: "align-top",
 						children: [
 							/* @__PURE__ */ jsx("td", {
 								class: "whitespace-nowrap text-[13px]",
-								children: fmtLocal(r.clicked_at)
+								children: fmtLocal(r.sort_at)
+							}),
+							/* @__PURE__ */ jsx("td", {
+								class: "text-[13px]",
+								children: /* @__PURE__ */ jsx("span", {
+									class: `badge badge-sm ${r.kind === "click" ? "badge-primary" : "badge-ghost"}`,
+									children: r.kind === "click" ? `click · ${r.source ?? "web"}` : "search"
+								})
 							}),
 							/* @__PURE__ */ jsx("td", {
 								class: "text-[13px]",
@@ -1414,39 +1593,43 @@ function HistoryRoute() {
 								})
 							}),
 							/* @__PURE__ */ jsx("td", {
-								class: "text-[13px] max-w-[220px] truncate",
-								children: r.title
-							}),
-							/* @__PURE__ */ jsx("td", {
-								class: "hidden md:table-cell text-[13px] opacity-60 max-w-[260px] truncate",
-								children: /* @__PURE__ */ jsx("a", {
+								class: "hidden md:table-cell text-[13px] opacity-60 max-w-[300px] truncate",
+								children: r.kind === "click" ? /* @__PURE__ */ jsx("a", {
 									href: r.url,
 									target: "_blank",
 									rel: "noopener noreferrer",
 									class: "link link-hover",
-									children: truncate(r.url, 80)
-								})
+									children: truncate(r.url ?? "", 80)
+								}) : /* @__PURE__ */ jsxs(Fragment, { children: [
+									r.hits ?? 0,
+									" hits · expires ",
+									fmtLocal(r.expires_at ?? 0)
+								] })
 							}),
-							/* @__PURE__ */ jsx("td", {
-								class: "text-[13px] opacity-70",
-								children: r.source
-							}),
-							/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx("button", {
+							/* @__PURE__ */ jsx("td", { children: r.kind === "click" && /* @__PURE__ */ jsx("button", {
 								type: "button",
 								class: "btn btn-ghost btn-xs",
 								onClick: () => fetch(`/search?q=${encodeURIComponent(r.query || "")}`, { headers: { Accept: "application/json" } }).then((res) => res.text()).then((t) => navigator.clipboard?.writeText(t)),
 								children: "copy json"
 							}) })
 						]
-					}, `${r.id}-${r.url}`)) })]
+					}, `${r.kind}-${r.query_hash}-${r.sort_at}`)) })]
 				})
 			})
 		]
 	});
 }
+var SINCE_VALUES;
 var init_history = __esmMin((() => {
 	init_Header();
+	init_api();
 	init_format();
+	SINCE_VALUES = [
+		"24",
+		"168",
+		"720",
+		"all"
+	];
 }));
 //#endregion
 //#region src/components/ModeSegments.tsx
@@ -2508,7 +2691,7 @@ function AnswerView({ query, state, onStop, onRetry, onAskRelated, onViewClassic
 					}) }, rq))
 				})]
 			}),
-			!text && !error && !emptySources && done && /* @__PURE__ */ jsx(Empty, { children: "no answer produced" })
+			!text && !error && !emptySources && done && /* @__PURE__ */ jsx(Empty$1, { children: "no answer produced" })
 		]
 	});
 }

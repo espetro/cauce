@@ -56,14 +56,16 @@ Param contract:
 | `p` | page number; **absent = page 1** | **deprecated** (continuous scroll): deep links with `p` are ignored/stripped; generated links never carry it |
 | `mode` | `ai` (absent = Search) | AI answer view (works today); unavailable AI stays on Search results with an inline notice |
 | `settings` | `open` / `close` (absent = closed) | settings dialog, valid on any route (works today; stripped on close/save) |
-| `since` | `24`/`168`/`720`/`all` | history time filter (planned) |
-| `qf` | substring | history query-text filter (planned) |
+| `since` | `24`/`168`/`720`/`all` | history time filter (works today) |
+| `qf` | substring | history query-text filter (works today) |
 | `suggest` | `1` (+`q`) | suggestions dropdown open, QA-only (planned) |
 | `force` | `error`/`ai-off`/`empty` | stub error/notice/empty states, QA-only (planned) |
 
-`since`, `qf`, `suggest=1`, and `force=*` are planned/questionable: they
-are listed so QA agents know the intended contract, but they do not work
-yet and must not be relied on until implemented. Theme and mode persist
+`suggest=1` and `force=*` are planned/questionable: they are listed so QA
+agents know the intended contract, but they do not work yet and must not
+be relied on until implemented. `since` and `qf` work today
+(`routes/history.tsx`); `all` (absent param) is the default and is
+stripped from the url. Theme and mode persist
 in `localStorage` (`oxe-theme`, `oxe-mode`), deliberately not URLs.
 
 State library: custom hooks on top of preact-iso's `useLocation()` /

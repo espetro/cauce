@@ -1,8 +1,6 @@
 /** Typed fetch client for the oxe backend.
- * Endpoints: POST /search, POST /click, GET /suggest, GET /ac.
- * History rows are not exposed as JSON (GET /history is HTML-only);
- * the history screen fetches through the same HTML endpoint's data via
- * the dedicated /history JSON shape below. */
+ * Endpoints: POST /search, POST /click, GET /suggest, GET /ac,
+ * GET /api/history, POST /history/delete, GET /api/stats, GET /cache/stats. */
 
 const BASE = "";
 
@@ -161,4 +159,89 @@ async function fetchJson<T>(url: string, signal?: AbortSignal): Promise<T> {
   const res = await fetch(url, { signal });
   if (!res.ok) throw new Error(`GET ${url} failed: ${res.status}`);
   return (await res.json()) as T;
+}
+
+/** GET /api/history: merged clicks + cache-rows feed, newest first.
+ * Params: since (hours or "all"), q (substring), limit (1-200), kind. */
+export type HistoryScope = "24" | "168" | "720" | "all";
+
+/** URL-contract since values map to the backend's vocabulary (24h|7d|30d|all). */
+const SINCE_TO_BACKEND: Record<HistoryScope, string> = {
+  "24": "24h",
+  "168": "7d",
+  "720": "30d",
+  all: "all",
+};
+export type DeleteScope = "24h" | "7d" | "30d" | "all";
+
+export interface HistoryItem {
+  kind: "click" | "cache";
+  query_hash: string;
+  query: string;
+  /** epoch seconds: clicked_at for clicks, created_at for cache rows */
+  sort_at: number;
+  url?: string;
+  title?: string;
+  source?: string;
+  result_id?: string;
+  created_at?: number;
+  expires_at?: number;
+  hits?: number;
+  size_bytes?: number;
+}
+
+export interface HistoryResponse {
+  items: HistoryItem[];
+  clicks: number;
+  cache_rows: number;
+  limit: number;
+  since: string;
+}
+
+export async function fetchApiHistory(
+  since: HistoryScope,
+  qText: string,
+  signal?: AbortSignal,
+): Promise<HistoryResponse> {
+  const p = new URLSearchParams({ since: SINCE_TO_BACKEND[since] });
+  if (qText) p.set("q", qText);
+  const res = await fetch(`${BASE}/api/history?${p.toString()}`, { signal });
+  if (!res.ok) throw new Error(`history failed: ${res.status}`);
+  return (await res.json()) as HistoryResponse;
+}
+
+/** POST /history/delete: prune click history by scope.
+ * Backend replies {"ok": true, "deleted": n} for JSON clients. */
+export async function deleteHistory(scope: DeleteScope): Promise<number> {
+  const res = await fetch(`${BASE}/history/delete`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({ scope }),
+  });
+  if (!res.ok) throw new Error(`delete failed: ${res.status}`);
+  return ((await res.json()) as { deleted: number }).deleted;
+}
+
+/** GET /api/stats: search-log aggregates for the dashboard plus cache
+ * stats. Params: days=1..90 (default 14). */
+export interface DaySearches {
+  day: string;
+  cache: number;
+  network: number;
+  total: number;
+}
+
+export interface ApiStats {
+  days: number;
+  searches_per_day: DaySearches[];
+  hit_rate: { total: number; cache_hits: number; rate: number | null };
+  latency_ms: { p50: number | null; p90: number | null; p99: number | null };
+  top_queries: { query: string; count: number }[];
+  zero_result_queries: { query: string; last_seen: number }[];
+  client_split: { client: string; count: number }[];
+  cache: CacheStats;
+}
+
+export function apiStats(signal?: AbortSignal): Promise<ApiStats> {
+  return fetchJson<ApiStats>(`${BASE}/api/stats`, signal);
 }
