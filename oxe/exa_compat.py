@@ -7,6 +7,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 from ddgs import DDGS
+from ddgs.exceptions import RatelimitException, TimeoutException
 
 log = logging.getLogger(__name__)
 
@@ -147,14 +148,22 @@ def search(req: dict, engine: str | None = None) -> dict:
             log.warning("exa_compat: backend %s failed: %s", backend, e)
             continue
 
-    if not raw and last_err is not None:
-        log.error("exa_compat: all backends failed, last error: %s", last_err)
-
     results = [_dgr_to_exa(r, contents_highlights, contents_text) for r in raw]
-    return {
+    payload = {
         "requestId": str(uuid.uuid4()),
         "searchType": search_type,
         "results": results,
         "_page": page,
         "costDollars": {"total": 0.0},
     }
+    if not raw and last_err is not None:
+        log.error("exa_compat: all backends failed, last error: %s", last_err)
+        if isinstance(last_err, RatelimitException):
+            kind = "rate_limited"
+        elif isinstance(last_err, TimeoutException):
+            kind = "timeout"
+        else:
+            kind = "backend_error"
+        payload["_error"] = str(last_err)
+        payload["_error_kind"] = kind
+    return payload

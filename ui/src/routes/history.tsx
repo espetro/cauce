@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import { usePageTitle } from "../components/Header";
-import { Layout } from "../components/Layout";
 import { truncate } from "../lib/format";
 
 interface ClickRow {
@@ -98,7 +97,7 @@ export default function HistoryRoute() {
     : rows;
 
   return (
-    <Layout class="w-full max-w-[960px] mx-auto px-4 pb-16">
+    <div class="w-full max-w-[960px] mx-auto px-4 pb-16">
       <h1 class="text-xl font-semibold mt-6 mb-1">Click history</h1>
       <p class="text-[13px] opacity-60 mb-4">
         {stats.last_24h} clicks in last 24h · {stats.total} total ·{" "}
@@ -213,6 +212,6 @@ export default function HistoryRoute() {
           </table>
         </div>
       )}
-    </Layout>
+    </div>
   );
 }

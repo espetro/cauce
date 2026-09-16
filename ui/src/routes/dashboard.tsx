@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import { usePageTitle } from "../components/Header";
-import { Layout } from "../components/Layout";
 import { cacheStats } from "../lib/api";
 import { fmtBytes, fmtTs } from "../lib/format";
 
@@ -71,7 +70,7 @@ export default function DashboardRoute() {
   ];
 
   return (
-    <Layout class="w-full max-w-[960px] mx-auto px-4 pb-16">
+    <div class="w-full max-w-[960px] mx-auto px-4 pb-16">
       <h1 class="text-xl font-semibold mt-6 mb-1">oxe stats</h1>
       <p class="text-[13px] opacity-60 mb-4">window: last 30 days</p>
       <div class="grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(20rem,1fr))]">
@@ -82,6 +81,6 @@ export default function DashboardRoute() {
           </section>
         ))}
       </div>
-    </Layout>
+    </div>
   );
 }

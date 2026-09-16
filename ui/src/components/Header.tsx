@@ -3,7 +3,6 @@ import { useEffect, useState } from "preact/hooks";
 import { useLocation } from "preact-iso";
 import { listModels, type ModelsResponse } from "../lib/ai";
 import { SettingsDialog } from "../features/settings/SettingsDialog";
-import { AboutHint } from "./AboutHint";
 
 interface NavItem {
   href: string;
@@ -68,7 +67,6 @@ export function Header() {
         ))}
       </nav>
       <span class="ml-auto flex items-center gap-1">
-        <AboutHint />
         <button
           type="button"
           class="btn btn-ghost btn-xs"

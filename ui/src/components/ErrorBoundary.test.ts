@@ -4,7 +4,7 @@ import { ErrorBoundary } from "./ErrorBoundary";
 
 // No DOM (bun test) / no @testing-library here, so we assert on the vnode
 // tree instead of a rendered document: getDerivedStateFromError drives the
-// boundary into its fallback branch, then we walk the hero fallback's vnodes.
+// boundary into its fallback branch, then we walk the fallback's div vnodes.
 
 function classNames(vnode: VNode): string[] {
   const out: string[] = [];
@@ -19,7 +19,7 @@ function classNames(vnode: VNode): string[] {
   return out;
 }
 
-function texts(vnode: VNode): string[] {
+function collectTexts(vnode: VNode): string[] {
   const out: string[] = [];
   const walk = (v: unknown) => {
     if (typeof v === "string") out.push(v);
@@ -41,16 +41,17 @@ describe("ErrorBoundary", () => {
     expect(ErrorBoundary.getDerivedStateFromError(err)).toEqual({ error: err });
   });
 
-  test("render error state shows daisyUI hero fallback", () => {
+  test("render error state shows 500-ish fallback", () => {
     const err = new Error("kaboom-message");
     const b = new ErrorBoundary({ children: "never" }, {});
     b.state = ErrorBoundary.getDerivedStateFromError(err);
     const v = b.render() as VNode;
 
     const classes = classNames(v).join(" ");
-    expect(classes).toContain("hero");
-    expect(classes).toContain("hero-content");
-    expect(texts(v)).toContain("kaboom-message");
-    expect(texts(v)).toContain("reload");
+    expect(classes).toContain("min-h-[60vh]");
+    const all = collectTexts(v);
+    expect(all).toContain("kaboom-message");
+    expect(all).toContain("try again");
+    expect(all).toContain("500");
   });
 });

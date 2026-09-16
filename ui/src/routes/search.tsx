@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from "preact/hooks";
 import { useLocation } from "preact-iso";
 import { useAiAvailable, usePageTitle } from "../components/Header";
-import { Layout } from "../components/Layout";
 import { useModels } from "../components/ModeSegments";
 import { recordClick } from "../lib/api";
 import { toast } from "../components/Toasts";
@@ -101,7 +100,7 @@ export default function SearchRoute() {
   const qHash = payload?._q_hash ?? "";
 
   return (
-    <Layout class="w-full max-w-[652px] mx-auto px-4 pb-16">
+    <div class="w-full max-w-[652px] mx-auto px-4 pb-16">
       <div class="pt-4 flex flex-col gap-3">
         <SearchBox
           value={input}
@@ -263,7 +262,7 @@ export default function SearchRoute() {
           {!loading && results.length > 0 && <Pager q={q} page={page} goPage={goPage} />}
         </>
       )}
-    </Layout>
+    </div>
   );
 }
 

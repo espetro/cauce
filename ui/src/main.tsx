@@ -1,34 +1,59 @@
 import { render } from "preact";
-import { LocationProvider, Route, Router } from "preact-iso";
+import { LocationProvider, Route, Router, lazy } from "preact-iso";
 import { initTheme } from "./lib/theme";
 import "./index.css";
-import { Header } from "./components/Header";
-import { ErrorBoundary } from "./components/ErrorBoundary";
-import { Toasts } from "./components/Toasts";
-import Home from "./routes/index";
-import Search from "./routes/search";
-import History from "./routes/history";
-import Dashboard from "./routes/dashboard";
-import NotFound from "./routes/notfound";
+
+// File-based routing: ui/src/routes/* maps to URLs (index.tsx -> "/", 404.tsx
+// -> default fallback). Each route is wrapped by routes/_layout.tsx (found
+// via the layout glob below); _-prefixed files never become routes.
+const pages = import.meta.glob<{ default: any }>("./routes/!(_)*.tsx");
+const layouts = import.meta.glob<{ default: any }>("./routes/**/_layout.tsx", {
+  eager: true,
+});
+
+const RootLayout = layouts["./routes/_layout.tsx"].default;
+
+function routePath(file: string): string {
+  return (
+    file
+      .replace("./routes", "")
+      .replace(/\.tsx$/, "")
+      .replace(/\/index$/, "") || "/"
+  );
+}
+
+const pageRoutes = Object.entries(pages).map(([file, load]) => ({
+  path: routePath(file),
+  Component: lazy(async () => {
+    const Page = (await load()).default;
+    const Wrapped = (props: object) => (
+      <RootLayout>
+        <Page {...props} />
+      </RootLayout>
+    );
+    return { default: Wrapped };
+  }),
+}));
+
+const NotFound = lazy(async () => {
+  const Page = (await import("./routes/404")).default;
+  const Wrapped = (props: object) => (
+    <RootLayout>
+      <Page {...props} />
+    </RootLayout>
+  );
+  return { default: Wrapped };
+});
 
 export function App() {
   return (
     <LocationProvider>
-      <div class="min-h-screen flex flex-col">
-        {/* Hoisted: persists across routes (one /v1/models fetch) and owns
-            the global settings dialog mount (?settings=open on any route). */}
-        <Header />
-        <ErrorBoundary>
-          <Router>
-            <Route path="/" component={Home} />
-            <Route path="/search" component={Search} />
-            <Route path="/history" component={History} />
-            <Route path="/dashboard" component={Dashboard} />
-            <Route default component={NotFound} />
-          </Router>
-        </ErrorBoundary>
-        <Toasts />
-      </div>
+      <Router>
+        {pageRoutes.map(({ path, Component }) => (
+          <Route key={path} path={path} component={Component} />
+        ))}
+        <Route default component={NotFound} />
+      </Router>
     </LocationProvider>
   );
 }

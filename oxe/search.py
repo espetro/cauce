@@ -41,6 +41,7 @@ def do_search(
     response = b.search(req_dict)
     response.setdefault("_backend", getattr(b, "name", "ddg"))
     duration_ms = int((time.monotonic() - started) * 1000)
+    failed = response.get("_error") is not None
     if ttl is None:
         # Deep pages: cache briefly so a flaky paged fetch doesn't stick long.
         if int(req_dict.get("page") or 1) > 1:
@@ -49,12 +50,18 @@ def do_search(
             ttl = NEGATIVE_TTL if not response["results"] else TTL_DEFAULT
     effective_ttl = ttl
     effective_ttl = min(effective_ttl, TTL_MAX)
-    to_store = dict(response)
-    to_store["_q"] = (req_dict.get("query") or "")[:200]
-    cache.set(key, to_store, effective_ttl)
+    if not failed:
+        to_store = dict(response)
+        to_store["_q"] = (req_dict.get("query") or "")[:200]
+        cache.set(key, to_store, effective_ttl)
     out = dict(response)
     out["_source"] = "network"
     out["_q_hash"] = key
+    if failed:
+        log.warning(
+            "do_search: backend failed for %r (%s), not caching",
+            req_dict.get("query"), response.get("_error_kind"),
+        )
     if on_result is not None:
         _notify(on_result, out, req_dict, key, "network", duration_ms)
     return (out, duration_ms) if with_duration else out

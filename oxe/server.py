@@ -240,7 +240,10 @@ def make_app(
                 else int((time.monotonic() - _t0) * 1000),
                 results=len(out.get("results") or []),
             )
-        return out
+        return JSONResponse(out, headers=_xcache_headers(out))
+
+    def _xcache_headers(payload: dict) -> dict:
+        return {"X-Cache": "HIT" if payload.get("_source") == "cache" else "MISS"}
 
     def _search_payload(q: str, num_results: int = 10, page: int = 1) -> dict:
         return do_search(
@@ -266,11 +269,17 @@ def make_app(
             return RedirectResponse(url="/", status_code=302)
         q = q.strip()
         if accept and "application/json" in accept:
-            return JSONResponse(_search_payload(q, page=p))
+            payload = _search_payload(q, page=p)
+            return JSONResponse(payload, headers=_xcache_headers(payload))
+        payload = _search_payload(q, page=p)
         dist = _ui_dist_dir()
         if dist is not None:
-            return FileResponse(dist / "index.html", media_type="text/html")
-        return HTMLResponse(_NO_UI_PAGE)
+            return FileResponse(
+                dist / "index.html",
+                media_type="text/html",
+                headers=_xcache_headers(payload),
+            )
+        return HTMLResponse(_NO_UI_PAGE, headers=_xcache_headers(payload))
 
     @app.get("/suggest")
     def suggest(q: str = Query(...)) -> list:
