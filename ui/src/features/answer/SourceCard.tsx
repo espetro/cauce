@@ -28,7 +28,7 @@ export function SourceCard({
           query_hash: queryHash,
           result_id: `src-${n}`,
           url: source.url,
-          title: source.title,
+          title: source.title ?? "",
         })
       }
       class="card card-compact bg-base-200 border border-base-300 w-[150px] shrink-0 snap-start hover:opacity-90 transition-opacity"

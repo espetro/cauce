@@ -1,10 +1,86 @@
 /** Typed fetch client for the oxe backend.
  * Endpoints: POST /search, POST /click, GET /suggest, GET /ac,
- * GET /api/history, POST /history/delete, GET /api/stats, GET /cache/stats. */
+ * GET /api/history, POST /history/delete, GET /api/stats, GET /cache/stats.
+ *
+ * One seam: every JSON call goes through `request()`, which parses the
+ * backend error envelope {error: {code, message}} into `ApiError` and
+ * validates success payloads with valibot schemas bound to the generated
+ * OpenAPI types (see ../generated/types.gen.ts + ./schemas.ts). */
 
 const BASE = "";
 
+import * as v from "valibot";
 import { devLog, devTimed } from "./devlog";
+import {
+  ApiStatsSchema,
+  CacheStatsSchema,
+  HistoryResponseSchema,
+  SearchResponseSchema,
+  type ApiStats,
+  type CacheStats,
+  type HistoryResponse,
+  type SearchResponse,
+} from "./schemas";
+
+/** Typed error from the backend's unified envelope (and network/parse
+ * failures): {code, message, status}. Render `message`; branch on `code`
+ * (never status numbers). */
+export class ApiError extends Error {
+  code: string;
+  status: number;
+  constructor(code: string, message: string, status: number) {
+    super(message);
+    this.name = "ApiError";
+    this.code = code;
+    this.status = status;
+  }
+}
+
+const ErrorEnvelopeSchema = v.object({
+  error: v.object({ code: v.string(), message: v.string() }),
+});
+
+export interface RequestOptions {
+  method?: string;
+  body?: unknown;
+  signal?: AbortSignal;
+  accept?: string;
+}
+
+export async function request<S extends v.GenericSchema>(
+  url: string,
+  schema: S,
+  opts: RequestOptions = {},
+): Promise<v.InferOutput<S>> {
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}${url}`, {
+      method: opts.method ?? "GET",
+      headers: {
+        ...(opts.body !== undefined ? { "Content-Type": "application/json" } : {}),
+        Accept: opts.accept ?? "application/json",
+      },
+      ...(opts.body !== undefined ? { body: JSON.stringify(opts.body) } : {}),
+      signal: opts.signal,
+    });
+  } catch (e) {
+    if ((e as Error)?.name === "AbortError") throw e;
+    throw new ApiError("network_error", (e as Error)?.message ?? "network error", 0);
+  }
+  if (!res.ok) {
+    let code = "http_error";
+    let message = `HTTP ${res.status}`;
+    try {
+      const envelope = v.parse(ErrorEnvelopeSchema, await res.json());
+      code = envelope.error.code;
+      message = envelope.error.message;
+    } catch {
+      // non-JSON or legacy error body: keep fallbacks
+    }
+    throw new ApiError(code, message, res.status);
+  }
+  return v.parse(schema, await res.json());
+}
 
 export interface SearchRequest {
   query: string;
@@ -18,41 +94,6 @@ export interface SearchRequest {
   contents?: { text?: boolean; highlights?: boolean };
 }
 
-export interface SearchResult {
-  title: string;
-  url: string;
-  id?: string;
-  text?: string;
-  highlights?: string[];
-  favicon?: string | null;
-  publishedDate?: string | null;
-  author?: string | null;
-  image?: string | null;
-}
-
-export interface SearchResponse {
-  requestId: string;
-  searchType?: string;
-  results: SearchResult[];
-  costDollars?: { total: number };
-  /** server-injected cache transparency fields */
-  _source?: "cache" | "network";
-  _q_hash?: string;
-  _q?: string;
-  _backend?: string;
-  _duration_ms?: number | null;
-  /** epoch seconds when the entry was cached (cache hits) */
-  _cached_at?: number;
-  /** backend-side failure surfaced in a 200 payload (empty results) */
-  _error?: string;
-  _error_kind?: "rate_limited" | "timeout" | "backend_error";
-}
-
-export interface SearchPageState {
-  query: string;
-  page: number;
-}
-
 export interface ClickPayload {
   query_hash: string;
   result_id: string;
@@ -62,21 +103,18 @@ export interface ClickPayload {
 }
 
 export async function search(req: SearchRequest, signal?: AbortSignal): Promise<SearchResponse> {
-  const fetchIt = () =>
-    fetch(`${BASE}/search`, {
+  const out = await devTimed("search", { q: req.query, page: req.page ?? 1 }, () =>
+    request("/search", SearchResponseSchema, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Accept: "application/json" },
-      body: JSON.stringify({
+      body: {
         numResults: 10,
         contents: { text: true, highlights: true },
         ...req,
         ...(req.page != null && req.page > 1 ? { page: req.page } : {}),
-      }),
+      },
       signal,
-    });
-  const res = await devTimed("search", { q: req.query, page: req.page ?? 1 }, fetchIt);
-  if (!res.ok) throw new Error(`search failed: ${res.status}`);
-  const out = (await res.json()) as SearchResponse;
+    }),
+  );
   devLog("search.response", {
     q: req.query,
     source: out._source,
@@ -110,10 +148,10 @@ export async function ddgAc(q: string, signal?: AbortSignal): Promise<string[]> 
     fetch(`${BASE}/ac?q=${encodeURIComponent(q)}`, { signal }),
   );
   if (!res.ok) return [];
-  const data = await res.json();
-  const out = Array.isArray(data) ? (data as string[]) : [];
-  devLog("ac", { q, results: out.length });
-  return out;
+  const out = (await res.json().catch(() => [])) as string[];
+  const items = Array.isArray(out) ? out : [];
+  devLog("ac", { q, results: items.length });
+  return items;
 }
 
 /** OpenSearch suggestions: ["prefix", ["s1", ...], [], []] */
@@ -122,8 +160,8 @@ export async function suggest(q: string, signal?: AbortSignal): Promise<string[]
     fetch(`${BASE}/suggest?q=${encodeURIComponent(q)}`, { signal }),
   );
   if (!res.ok) return [];
-  const data = await res.json();
-  const out = (data?.[1] ?? []) as string[];
+  const data = (await res.json().catch(() => null)) as [string, string[]?] | null;
+  const out = data?.[1] ?? [];
   devLog("suggest", { q, results: out.length });
   return out;
 }
@@ -142,23 +180,9 @@ export async function deleteCacheRow(key: string): Promise<boolean> {
   }
 }
 
+/** GET /cache/stats (unvalidated: dashboard garnish, budget wins). */
 export function cacheStats(signal?: AbortSignal): Promise<CacheStats> {
-  return fetchJson<CacheStats>(`${BASE}/cache/stats`, signal);
-}
-
-export interface CacheStats {
-  rows: number;
-  unexpired_rows: number;
-  db_size_bytes: number;
-  total_hits: number;
-  oldest_unexpired: number | null;
-  newest: number | null;
-}
-
-async function fetchJson<T>(url: string, signal?: AbortSignal): Promise<T> {
-  const res = await fetch(url, { signal });
-  if (!res.ok) throw new Error(`GET ${url} failed: ${res.status}`);
-  return (await res.json()) as T;
+  return request("/cache/stats", CacheStatsSchema, { signal });
 }
 
 /** GET /api/history: merged clicks + cache-rows feed, newest first.
@@ -174,30 +198,6 @@ const SINCE_TO_BACKEND: Record<HistoryScope, string> = {
 };
 export type DeleteScope = "24h" | "7d" | "30d" | "all";
 
-export interface HistoryItem {
-  kind: "click" | "cache";
-  query_hash: string;
-  query: string;
-  /** epoch seconds: clicked_at for clicks, created_at for cache rows */
-  sort_at: number;
-  url?: string;
-  title?: string;
-  source?: string;
-  result_id?: string;
-  created_at?: number;
-  expires_at?: number;
-  hits?: number;
-  size_bytes?: number;
-}
-
-export interface HistoryResponse {
-  items: HistoryItem[];
-  clicks: number;
-  cache_rows: number;
-  limit: number;
-  since: string;
-}
-
 export async function fetchApiHistory(
   since: HistoryScope,
   qText: string,
@@ -205,43 +205,22 @@ export async function fetchApiHistory(
 ): Promise<HistoryResponse> {
   const p = new URLSearchParams({ since: SINCE_TO_BACKEND[since] });
   if (qText) p.set("q", qText);
-  const res = await fetch(`${BASE}/api/history?${p.toString()}`, { signal });
-  if (!res.ok) throw new Error(`history failed: ${res.status}`);
-  return (await res.json()) as HistoryResponse;
+  return request(`/api/history?${p.toString()}`, HistoryResponseSchema, { signal });
 }
 
 /** POST /history/delete: prune click history by scope.
  * Backend replies {"ok": true, "deleted": n} for JSON clients. */
 export async function deleteHistory(scope: DeleteScope): Promise<number> {
-  const res = await fetch(`${BASE}/history/delete`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Accept: "application/json" },
-    body: JSON.stringify({ scope }),
-  });
-  if (!res.ok) throw new Error(`delete failed: ${res.status}`);
-  return ((await res.json()) as { deleted: number }).deleted;
+  const out = await request(
+    "/history/delete",
+    v.object({ ok: v.optional(v.boolean()), deleted: v.number() }),
+    { method: "POST", body: { scope } },
+  );
+  return out.deleted;
 }
 
 /** GET /api/stats: search-log aggregates for the dashboard plus cache
  * stats. Params: days=1..90 (default 14). */
-export interface DaySearches {
-  day: string;
-  cache: number;
-  network: number;
-  total: number;
-}
-
-export interface ApiStats {
-  days: number;
-  searches_per_day: DaySearches[];
-  hit_rate: { total: number; cache_hits: number; rate: number | null };
-  latency_ms: { p50: number | null; p90: number | null; p99: number | null };
-  top_queries: { query: string; count: number }[];
-  zero_result_queries: { query: string; last_seen: number }[];
-  client_split: { client: string; count: number }[];
-  cache: CacheStats;
-}
-
 export function apiStats(signal?: AbortSignal): Promise<ApiStats> {
-  return fetchJson<ApiStats>(`${BASE}/api/stats`, signal);
+  return request("/api/stats", ApiStatsSchema, { signal });
 }

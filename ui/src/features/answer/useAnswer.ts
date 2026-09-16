@@ -43,7 +43,7 @@ export function applyAnswerEvent(state: AnswerState, ev: AnswerEvent): AnswerSta
       ...state,
       text: ev.answer || state.text,
       status: state.status === "stopped" ? "stopped" : ev.error ? "error" : "done",
-      cached: ev.cached,
+      cached: ev.cached ?? false,
       confidence: ev.confidence,
       relatedQuestions: ev.related_questions ?? [],
       error: ev.error ?? null,

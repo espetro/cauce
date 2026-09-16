@@ -28,39 +28,344 @@ var __exportAll = (all, no_symbols) => {
 async function devTimed(event, extra, fn) {
 	return fn();
 }
-var init_devlog = __esmMin((() => {}));
+var init_devlog = __esmMin((() => {})), str, num, nullishStr, nullishNum, SearchResultSchema, SearchResponseSchema, HistoryItemSchema, HistoryResponseSchema, CacheStatsSchema, ModelsResponseSchema, SettingsGetSchema, ApiStatsSchema, SettingsTestSchema, SettingsPutSchema, AiSourceSchema, AnswerEventSchema;
+var init_schemas = __esmMin((() => {
+	str = v.string();
+	num = v.number();
+	nullishStr = v.nullish(str);
+	nullishNum = v.nullish(num);
+	SearchResultSchema = v.object({
+		title: v.nullish(str),
+		url: v.nullish(str),
+		id: v.nullish(str),
+		text: v.nullish(str),
+		highlights: v.nullish(v.array(v.unknown())),
+		favicon: v.nullish(str),
+		publishedDate: v.nullish(str),
+		author: v.nullish(str),
+		image: v.nullish(str)
+	});
+	SearchResponseSchema = v.object({
+		requestId: v.nullish(str),
+		searchType: v.nullish(str),
+		results: v.array(SearchResultSchema),
+		costDollars: v.nullish(v.object({ total: v.optional(num) })),
+		_source: nullishStr,
+		_q_hash: nullishStr,
+		_q: nullishStr,
+		_backend: nullishStr,
+		_duration_ms: nullishNum,
+		_cached_at: nullishNum,
+		_error: nullishStr,
+		_error_kind: nullishStr
+	});
+	HistoryItemSchema = v.variant("kind", [v.object({
+		kind: v.literal("click"),
+		clicked_at: num,
+		query_hash: str,
+		query: str,
+		result_id: str,
+		url: str,
+		title: str,
+		source: str
+	}), v.object({
+		kind: v.literal("cache"),
+		created_at: num,
+		expires_at: num,
+		query_hash: str,
+		query: str,
+		hits: num,
+		size_bytes: num
+	})]);
+	HistoryResponseSchema = v.object({
+		items: v.array(HistoryItemSchema),
+		clicks: num,
+		cache_rows: num,
+		limit: num,
+		since: str
+	});
+	CacheStatsSchema = v.object({
+		rows: num,
+		unexpired_rows: num,
+		db_size_bytes: num,
+		total_hits: num,
+		oldest_unexpired: nullishNum,
+		newest: nullishNum
+	});
+	v.object({
+		status: str,
+		service: str,
+		cache_size: num,
+		version: str,
+		pid: num
+	});
+	ModelsResponseSchema = v.object({
+		object: str,
+		data: v.array(v.object({ id: str })),
+		ai_available: v.boolean(),
+		error: nullishStr
+	});
+	SettingsGetSchema = v.object({
+		configured: v.boolean(),
+		config_path: str,
+		ai: v.nullish(v.object({
+			provider: str,
+			model: str,
+			base_url: nullishStr,
+			enabled: v.boolean(),
+			api_key_set: v.boolean(),
+			api_key_env: nullishStr
+		}))
+	});
+	ApiStatsSchema = v.object({
+		days: num,
+		searches_per_day: v.optional(v.array(v.object({
+			day: str,
+			cache: num,
+			network: num,
+			total: num
+		})), []),
+		hit_rate: v.optional(v.object({
+			total: num,
+			cache_hits: num,
+			rate: nullishNum
+		}), {
+			total: 0,
+			cache_hits: 0,
+			rate: null
+		}),
+		latency_ms: v.optional(v.object({
+			p50: nullishNum,
+			p90: nullishNum,
+			p99: nullishNum
+		}), {
+			p50: null,
+			p90: null,
+			p99: null
+		}),
+		top_queries: v.optional(v.array(v.object({
+			query: str,
+			count: num
+		})), []),
+		zero_result_queries: v.optional(v.array(v.object({
+			query: str,
+			last_seen: num
+		})), []),
+		client_split: v.optional(v.array(v.object({
+			client: str,
+			count: num
+		})), []),
+		cache: v.optional(CacheStatsSchema, {
+			rows: 0,
+			unexpired_rows: 0,
+			db_size_bytes: 0,
+			total_hits: 0,
+			oldest_unexpired: null,
+			newest: null
+		})
+	});
+	SettingsTestSchema = v.object({
+		ok: v.boolean(),
+		detail: str
+	});
+	SettingsPutSchema = v.object({
+		ok: v.boolean(),
+		config_path: str
+	});
+	AiSourceSchema = v.object({
+		title: v.nullish(str),
+		url: str,
+		favicon: nullishStr
+	});
+	AnswerEventSchema = v.variant("type", [
+		v.object({
+			type: v.literal("step"),
+			tool: str,
+			query: str,
+			label: str
+		}),
+		v.object({
+			type: v.literal("delta"),
+			text: str
+		}),
+		v.object({
+			type: v.literal("sources"),
+			sources: v.array(AiSourceSchema)
+		}),
+		v.object({
+			type: v.literal("done"),
+			answer: str,
+			related_questions: v.array(str),
+			confidence: num,
+			model: v.optional(str),
+			cached: v.optional(v.boolean()),
+			error: v.optional(str),
+			sources: v.optional(v.array(AiSourceSchema))
+		})
+	]);
+}));
+//#endregion
+//#region src/lib/api.ts
+async function request(url, schema, opts = {}) {
+	let res;
+	try {
+		res = await fetch(`${BASE}${url}`, {
+			method: opts.method ?? "GET",
+			headers: {
+				...opts.body !== void 0 ? { "Content-Type": "application/json" } : {},
+				Accept: opts.accept ?? "application/json"
+			},
+			...opts.body !== void 0 ? { body: JSON.stringify(opts.body) } : {},
+			signal: opts.signal
+		});
+	} catch (e) {
+		if (e?.name === "AbortError") throw e;
+		throw new ApiError("network_error", e?.message ?? "network error", 0);
+	}
+	if (!res.ok) {
+		let code = "http_error";
+		let message = `HTTP ${res.status}`;
+		try {
+			const envelope = v.parse(ErrorEnvelopeSchema, await res.json());
+			code = envelope.error.code;
+			message = envelope.error.message;
+		} catch {}
+		throw new ApiError(code, message, res.status);
+	}
+	return v.parse(schema, await res.json());
+}
+async function search(req, signal) {
+	const out = await devTimed("search", {
+		q: req.query,
+		page: req.page ?? 1
+	}, () => request("/search", SearchResponseSchema, {
+		method: "POST",
+		body: {
+			numResults: 10,
+			contents: {
+				text: true,
+				highlights: true
+			},
+			...req,
+			...req.page != null && req.page > 1 ? { page: req.page } : {}
+		},
+		signal
+	}));
+	req.query, out._source, out.results?.length, out._duration_ms;
+	return out;
+}
+async function recordClick(payload) {
+	try {
+		const body = JSON.stringify({
+			source: "web-ui",
+			...payload
+		});
+		if (navigator.sendBeacon) {
+			navigator.sendBeacon(`${BASE}/click`, new Blob([body], { type: "application/json" }));
+			return;
+		}
+		await fetch(`${BASE}/click`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body,
+			keepalive: true
+		});
+	} catch {}
+}
+/** DDG autocomplete via the backend proxy: JSON array of phrases, max 6. */
+async function ddgAc(q, signal) {
+	const res = await devTimed("ac", { q }, () => fetch(`${BASE}/ac?q=${encodeURIComponent(q)}`, { signal }));
+	if (!res.ok) return [];
+	const out = await res.json().catch(() => []);
+	const items = Array.isArray(out) ? out : [];
+	items.length;
+	return items;
+}
+/** OpenSearch suggestions: ["prefix", ["s1", ...], [], []] */
+async function suggest(q, signal) {
+	const res = await devTimed("suggest", { q }, () => fetch(`${BASE}/suggest?q=${encodeURIComponent(q)}`, { signal }));
+	if (!res.ok) return [];
+	const out = (await res.json().catch(() => null))?.[1] ?? [];
+	out.length;
+	return out;
+}
+/** Delete a single cache row by its query hash (POST /row/{key}/delete).
+* Note: the backend route redirects (303) on success; we only check status. */
+async function deleteCacheRow(key) {
+	try {
+		return (await fetch(`${BASE}/row/${encodeURIComponent(key)}/delete`, {
+			method: "POST",
+			headers: { Accept: "application/json" }
+		})).ok;
+	} catch {
+		return false;
+	}
+}
+async function fetchApiHistory(since, qText, signal) {
+	const p = new URLSearchParams({ since: SINCE_TO_BACKEND[since] });
+	if (qText) p.set("q", qText);
+	return request(`/api/history?${p.toString()}`, HistoryResponseSchema, { signal });
+}
+/** POST /history/delete: prune click history by scope.
+* Backend replies {"ok": true, "deleted": n} for JSON clients. */
+async function deleteHistory(scope) {
+	return (await request("/history/delete", v.object({
+		ok: v.optional(v.boolean()),
+		deleted: v.number()
+	}), {
+		method: "POST",
+		body: { scope }
+	})).deleted;
+}
+/** GET /api/stats: search-log aggregates for the dashboard plus cache
+* stats. Params: days=1..90 (default 14). */
+function apiStats(signal) {
+	return request("/api/stats", ApiStatsSchema, { signal });
+}
+var BASE, ApiError, ErrorEnvelopeSchema, SINCE_TO_BACKEND;
+var init_api = __esmMin((() => {
+	init_devlog();
+	init_schemas();
+	BASE = "";
+	ApiError = class extends Error {
+		code;
+		status;
+		constructor(code, message, status) {
+			super(message);
+			this.name = "ApiError";
+			this.code = code;
+			this.status = status;
+		}
+	};
+	ErrorEnvelopeSchema = v.object({ error: v.object({
+		code: v.string(),
+		message: v.string()
+	}) });
+	SINCE_TO_BACKEND = {
+		"24": "24h",
+		"168": "7d",
+		"720": "30d",
+		all: "all"
+	};
+}));
 //#endregion
 //#region src/lib/ai.ts
+/** AI-mode endpoint clients: /v1/models, /settings/test, /answer (SSE).
+* Response schemas + AnswerEvent live in ./schemas.ts (bound to the
+* generated OpenAPI types). */
+/** Verify AI config with POST /settings/test (provider + key + model). */
 async function testConnection(body) {
-	const res = await fetch(`/settings/test`, {
+	return request("/settings/test", SettingsTestSchema, {
 		method: "POST",
-		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify({ ai: body })
+		body: { ai: body }
 	});
-	if (!res.ok) {
-		let detail = `HTTP ${res.status}`;
-		try {
-			const j = await res.json();
-			if (j?.detail) detail = j.detail;
-		} catch {}
-		return {
-			ok: false,
-			detail
-		};
-	}
-	return await res.json();
 }
 async function listModels(signal) {
-	const res = await fetch(`/v1/models`, { signal });
-	if (!res.ok) return {
-		object: "list",
-		data: [],
-		ai_available: false,
-		error: `HTTP ${res.status}`
-	};
-	return await res.json();
+	return request("/v1/models", ModelsResponseSchema, { signal });
 }
-/** Consume the /answer SSE stream via chunked fetch. Calls `on` per event. */
+/** Consume the /answer SSE stream via chunked fetch. Calls `on` per event.
+* Malformed frames are skipped (try/catch), well-formed frames are
+* type-narrowed through AnswerEventSchema. */
 async function streamAnswer(query, on, signal) {
 	const res = await fetch(`/answer`, {
 		method: "POST",
@@ -72,12 +377,17 @@ async function streamAnswer(query, on, signal) {
 		signal
 	});
 	if (!res.ok || !res.body) {
-		let detail = `${res.status}`;
+		let code = "http_error";
+		let detail = `HTTP ${res.status}`;
 		try {
-			const j = await res.json();
-			if (j?.detail) detail = j.detail;
+			const envelope = v.parse(v.object({ error: v.object({
+				code: v.string(),
+				message: v.string()
+			}) }), await res.json());
+			code = envelope.error.code;
+			detail = envelope.error.message;
 		} catch {}
-		throw new Error(detail);
+		throw new ApiError(code, detail, res.status);
 	}
 	const reader = res.body.getReader();
 	const decoder = new TextDecoder();
@@ -93,7 +403,7 @@ async function streamAnswer(query, on, signal) {
 			for (const line of frame.split("\n")) {
 				if (!line.startsWith("data: ")) continue;
 				try {
-					const ev = JSON.parse(line.slice(6));
+					const ev = v.parse(AnswerEventSchema, JSON.parse(line.slice(6)));
 					ev.type;
 					on(ev);
 				} catch {}
@@ -101,7 +411,10 @@ async function streamAnswer(query, on, signal) {
 		}
 	}
 }
-var init_ai = __esmMin((() => {}));
+var init_ai = __esmMin((() => {
+	init_api();
+	init_schemas();
+}));
 //#endregion
 //#region src/lib/useMountEffect.ts
 /** Escape hatch for one-time external sync on mount (setup + cleanup).
@@ -338,27 +651,18 @@ var init_theme = __esmMin((() => {
 //#endregion
 //#region src/features/settings/schema.ts
 async function getSettings(signal) {
-	const res = await fetch(`/settings`, { signal });
-	if (!res.ok) throw new Error(`GET /settings failed: ${res.status}`);
-	return await res.json();
+	return request("/settings", SettingsGetSchema, { signal });
 }
 async function putSettings(body) {
-	const res = await fetch(`/settings`, {
+	await request("/settings", SettingsPutSchema, {
 		method: "PUT",
-		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify({ ai: body })
+		body: { ai: body }
 	});
-	if (!res.ok) {
-		let detail = `${res.status}`;
-		try {
-			const j = await res.json();
-			if (j?.detail) detail = j.detail;
-		} catch {}
-		throw new Error(detail);
-	}
 }
 var SettingsSchema, PROVIDERS;
 var init_schema = __esmMin((() => {
+	init_api();
+	init_schemas();
 	SettingsSchema = v.object({
 		provider: v.picklist([
 			"openai",
@@ -971,116 +1275,6 @@ function NotFound() {
 }
 var init__404 = __esmMin((() => {}));
 //#endregion
-//#region src/lib/api.ts
-async function search(req, signal) {
-	const fetchIt = () => fetch(`${BASE}/search`, {
-		method: "POST",
-		headers: {
-			"Content-Type": "application/json",
-			Accept: "application/json"
-		},
-		body: JSON.stringify({
-			numResults: 10,
-			contents: {
-				text: true,
-				highlights: true
-			},
-			...req,
-			...req.page != null && req.page > 1 ? { page: req.page } : {}
-		}),
-		signal
-	});
-	const res = await devTimed("search", {
-		q: req.query,
-		page: req.page ?? 1
-	}, fetchIt);
-	if (!res.ok) throw new Error(`search failed: ${res.status}`);
-	const out = await res.json();
-	req.query, out._source, out.results?.length, out._duration_ms;
-	return out;
-}
-async function recordClick(payload) {
-	try {
-		const body = JSON.stringify({
-			source: "web-ui",
-			...payload
-		});
-		if (navigator.sendBeacon) {
-			navigator.sendBeacon(`${BASE}/click`, new Blob([body], { type: "application/json" }));
-			return;
-		}
-		await fetch(`${BASE}/click`, {
-			method: "POST",
-			headers: { "Content-Type": "application/json" },
-			body,
-			keepalive: true
-		});
-	} catch {}
-}
-/** DDG autocomplete via the backend proxy: JSON array of phrases, max 6. */
-async function ddgAc(q, signal) {
-	const res = await devTimed("ac", { q }, () => fetch(`${BASE}/ac?q=${encodeURIComponent(q)}`, { signal }));
-	if (!res.ok) return [];
-	const data = await res.json();
-	const out = Array.isArray(data) ? data : [];
-	out.length;
-	return out;
-}
-/** OpenSearch suggestions: ["prefix", ["s1", ...], [], []] */
-async function suggest(q, signal) {
-	const res = await devTimed("suggest", { q }, () => fetch(`${BASE}/suggest?q=${encodeURIComponent(q)}`, { signal }));
-	if (!res.ok) return [];
-	const out = (await res.json())?.[1] ?? [];
-	out.length;
-	return out;
-}
-/** Delete a single cache row by its query hash (POST /row/{key}/delete).
-* Note: the backend route redirects (303) on success; we only check status. */
-async function deleteCacheRow(key) {
-	try {
-		return (await fetch(`${BASE}/row/${encodeURIComponent(key)}/delete`, {
-			method: "POST",
-			headers: { Accept: "application/json" }
-		})).ok;
-	} catch {
-		return false;
-	}
-}
-async function fetchJson(url, signal) {
-	const res = await fetch(url, { signal });
-	if (!res.ok) throw new Error(`GET ${url} failed: ${res.status}`);
-	return await res.json();
-}
-async function fetchApiHistory(since, qText, signal) {
-	const p = new URLSearchParams({ since });
-	if (qText) p.set("q", qText);
-	const res = await fetch(`${BASE}/api/history?${p.toString()}`, { signal });
-	if (!res.ok) throw new Error(`history failed: ${res.status}`);
-	return await res.json();
-}
-/** POST /history/delete: prune click history by scope.
-* Backend replies {"ok": true, "deleted": n} for JSON clients. */
-async function deleteHistory(scope) {
-	const res = await fetch(`${BASE}/history/delete`, {
-		method: "POST",
-		headers: {
-			"Content-Type": "application/json",
-			Accept: "application/json"
-		},
-		body: JSON.stringify({ scope })
-	});
-	if (!res.ok) throw new Error(`delete failed: ${res.status}`);
-	return (await res.json()).deleted;
-}
-function apiStats(signal) {
-	return fetchJson(`${BASE}/api/stats`, signal);
-}
-var BASE;
-var init_api = __esmMin((() => {
-	init_devlog();
-	BASE = "";
-}));
-//#endregion
 //#region src/lib/format.ts
 function domainOf(url) {
 	try {
@@ -1440,7 +1634,10 @@ function HistoryRoute() {
 		setLoading(true);
 		fetchApiHistory(s, q).then((r) => {
 			if (seq.current !== id) return;
-			setItems(r.items);
+			setItems(r.items.map((it) => ({
+				...it,
+				sort_at: it.kind === "click" ? it.clicked_at : it.created_at
+			})));
 			setCounts({
 				clicks: r.clicks,
 				cache_rows: r.cache_rows
@@ -2173,7 +2370,7 @@ var init_routes = __esmMin((() => {
 /** Card-less Google-anatomy result: favicon + domain, blue title,
 * two-line snippet, collapsed cached text preview. */
 function ResultCard({ result, onOpen }) {
-	const url = result.url;
+	const url = result.url ?? "";
 	const domain = domainOf(url);
 	const snippet = (result.text || result.highlights?.join(" ") || "").trim();
 	const title = result.title || "(untitled)";
@@ -2352,9 +2549,10 @@ function nextStatus(payload) {
 }
 function nextError(payload) {
 	if (!payload._error) return null;
+	const kind = payload._error_kind;
 	return {
 		message: payload._error,
-		kind: payload._error_kind
+		kind: kind === "rate_limited" || kind === "timeout" || kind === "backend_error" ? kind : void 0
 	};
 }
 var PAGE_SIZE, initial;
@@ -2506,7 +2704,7 @@ function SourceCard({ source, n, queryHash }) {
 			query_hash: queryHash,
 			result_id: `src-${n}`,
 			url: source.url,
-			title: source.title
+			title: source.title ?? ""
 		}),
 		class: "card card-compact bg-base-200 border border-base-300 w-[150px] shrink-0 snap-start hover:opacity-90 transition-opacity",
 		children: /* @__PURE__ */ jsxs("div", {
@@ -2724,7 +2922,7 @@ function applyAnswerEvent(state, ev) {
 		...state,
 		text: ev.answer || state.text,
 		status: state.status === "stopped" ? "stopped" : ev.error ? "error" : "done",
-		cached: ev.cached,
+		cached: ev.cached ?? false,
 		confidence: ev.confidence,
 		relatedQuestions: ev.related_questions ?? [],
 		error: ev.error ?? null
@@ -3031,9 +3229,9 @@ function SearchRoute() {
 							queryHash: qHash,
 							onOpen: (res) => recordClick({
 								query_hash: qHash,
-								result_id: res.id || res.url,
-								url: res.url,
-								title: res.title
+								result_id: res.id || res.url || "",
+								url: res.url ?? "",
+								title: res.title ?? ""
 							})
 						})
 					}, r.id || r.url)

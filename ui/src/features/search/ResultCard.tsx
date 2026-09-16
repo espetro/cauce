@@ -1,4 +1,4 @@
-import type { SearchResult } from "../../lib/api";
+import type { SearchResult } from "../../lib/schemas";
 import { domainOf, faviconFor, truncate } from "../../lib/format";
 
 interface Props {
@@ -10,7 +10,7 @@ interface Props {
 /** Card-less Google-anatomy result: favicon + domain, blue title,
  * two-line snippet, collapsed cached text preview. */
 export function ResultCard({ result, onOpen }: Props) {
-  const url = result.url;
+  const url = result.url ?? "";
   const domain = domainOf(url);
   const snippet = (result.text || result.highlights?.join(" ") || "").trim();
   const title = result.title || "(untitled)";

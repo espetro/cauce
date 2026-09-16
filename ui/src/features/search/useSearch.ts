@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState } from "preact/hooks";
-import type { SearchResponse, SearchResult } from "../../lib/api";
 import { deleteCacheRow, search } from "../../lib/api";
+import type { SearchResponse, SearchResult } from "../../lib/schemas";
 
 export type SearchStatus = "idle" | "loading" | "refreshing" | "success" | "empty" | "error";
 export type ErrorKind = "rate_limited" | "timeout" | "backend_error";
@@ -195,7 +195,12 @@ export function nextStatus(payload: SearchResponse): "success" | "empty" | "erro
 
 export function nextError(payload: SearchResponse): SearchError | null {
   if (!payload._error) return null;
-  return { message: payload._error, kind: payload._error_kind };
+  const kind = payload._error_kind;
+  return {
+    message: payload._error,
+    kind:
+      kind === "rate_limited" || kind === "timeout" || kind === "backend_error" ? kind : undefined,
+  };
 }
 
 export type { SearchResult };

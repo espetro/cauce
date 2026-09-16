@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import { useLocation } from "preact-iso";
 import { usePageTitle } from "../components/Header";
-import { deleteHistory, fetchApiHistory, type HistoryItem, type HistoryScope } from "../lib/api";
+import { deleteHistory, fetchApiHistory, type HistoryScope } from "../lib/api";
+import type { HistoryRow } from "../lib/schemas";
 import { truncate } from "../lib/format";
 
 const SINCE_VALUES: HistoryScope[] = ["24", "168", "720", "all"];
@@ -77,7 +78,7 @@ export default function HistoryRoute() {
   const since = parseSince(query?.since);
   const qf = String(query?.qf ?? "");
 
-  const [items, setItems] = useState<HistoryItem[]>([]);
+  const [items, setItems] = useState<HistoryRow[]>([]);
   const [counts, setCounts] = useState({ clicks: 0, cache_rows: 0 });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -89,7 +90,12 @@ export default function HistoryRoute() {
     fetchApiHistory(s, q)
       .then((r) => {
         if (seq.current !== id) return;
-        setItems(r.items);
+        setItems(
+          r.items.map((it): HistoryRow => ({
+            ...it,
+            sort_at: it.kind === "click" ? it.clicked_at : it.created_at,
+          })),
+        );
         setCounts({ clicks: r.clicks, cache_rows: r.cache_rows });
         setError(null);
       })

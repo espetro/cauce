@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { metaLine, nextStatus } from "./useSearch";
-import type { SearchResponse } from "../../lib/api";
+import type { SearchResponse } from "../../lib/schemas";
 import { cachedAgeOf, isCacheHit } from "./useSearch";
 
 const payload = (over: Partial<SearchResponse>): SearchResponse => ({

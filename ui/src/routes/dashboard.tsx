@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import { usePageTitle } from "../components/Header";
-import { apiStats, type ApiStats } from "../lib/api";
+import { apiStats as apiStatsFetch } from "../lib/api";
+import type { ApiStats } from "../lib/schemas";
 import { fmtBytes, fmtTs } from "../lib/format";
 
 const MAX_BAR_DAYS = 30;
@@ -69,7 +70,7 @@ export default function DashboardRoute() {
 
   useEffect(() => {
     const id = ++seq.current;
-    apiStats()
+    apiStatsFetch()
       .then((s) => seq.current === id && (setStats(s), setError(null)))
       .catch((e: Error) => seq.current === id && setError(e.message));
   }, []);

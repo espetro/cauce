@@ -1,35 +1,21 @@
-/** AI-mode client types + endpoint clients: /v1/models, /answer (SSE). */
+/** AI-mode endpoint clients: /v1/models, /settings/test, /answer (SSE).
+ * Response schemas + AnswerEvent live in ./schemas.ts (bound to the
+ * generated OpenAPI types). */
+import * as v from "valibot";
+import { ApiError, request } from "./api";
 import { devLog } from "./devlog";
+import {
+  AnswerEventSchema,
+  ModelsResponseSchema,
+  SettingsTestSchema,
+  type AiSource,
+  type AnswerEvent,
+  type ModelsResponse,
+  type SettingsTest,
+} from "./schemas";
 
-export interface ModelsResponse {
-  object: "list";
-  data: Array<{ id: string; object: "model"; owned_by?: string | null }>;
-  ai_available: boolean;
-  /** Backend hint when model listing failed (auth, base_url, ...). */
-  error?: string | null;
-}
+export type { AiSource, AnswerEvent, ModelsResponse };
 
-export interface AiSource {
-  title: string;
-  url: string;
-  favicon?: string | null;
-}
-
-export type AnswerEvent =
-  | { type: "step"; tool: string; query: string; label: string }
-  | { type: "delta"; text: string }
-  | { type: "sources"; sources: AiSource[] }
-  | {
-      type: "done";
-      answer: string;
-      related_questions: string[];
-      confidence: number;
-      model?: string;
-      cached: boolean;
-      error?: string;
-    };
-
-/** Verify AI config with POST /settings/test (provider + key + model). */
 export interface TestConnectionBody {
   provider: string;
   model: string;
@@ -37,35 +23,21 @@ export interface TestConnectionBody {
   api_key?: string;
 }
 
-export async function testConnection(
-  body: TestConnectionBody,
-): Promise<{ ok: boolean; detail: string }> {
-  const res = await fetch(`/settings/test`, {
+/** Verify AI config with POST /settings/test (provider + key + model). */
+export async function testConnection(body: TestConnectionBody): Promise<SettingsTest> {
+  return request("/settings/test", SettingsTestSchema, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ai: body }),
+    body: { ai: body },
   });
-  if (!res.ok) {
-    let detail = `HTTP ${res.status}`;
-    try {
-      const j = (await res.json()) as { detail?: string };
-      if (j?.detail) detail = j.detail;
-    } catch {
-      // non-json error
-    }
-    return { ok: false, detail };
-  }
-  return (await res.json()) as { ok: boolean; detail: string };
 }
 
 export async function listModels(signal?: AbortSignal): Promise<ModelsResponse> {
-  const res = await fetch(`/v1/models`, { signal });
-  if (!res.ok)
-    return { object: "list", data: [], ai_available: false, error: `HTTP ${res.status}` };
-  return (await res.json()) as ModelsResponse;
+  return request("/v1/models", ModelsResponseSchema, { signal });
 }
 
-/** Consume the /answer SSE stream via chunked fetch. Calls `on` per event. */
+/** Consume the /answer SSE stream via chunked fetch. Calls `on` per event.
+ * Malformed frames are skipped (try/catch), well-formed frames are
+ * type-narrowed through AnswerEventSchema. */
 export async function streamAnswer(
   query: string,
   on: (ev: AnswerEvent) => void,
@@ -78,14 +50,19 @@ export async function streamAnswer(
     signal,
   });
   if (!res.ok || !res.body) {
-    let detail = `${res.status}`;
+    let code = "http_error";
+    let detail = `HTTP ${res.status}`;
     try {
-      const j = (await res.json()) as { detail?: string };
-      if (j?.detail) detail = j.detail;
+      const envelope = v.parse(
+        v.object({ error: v.object({ code: v.string(), message: v.string() }) }),
+        await res.json(),
+      );
+      code = envelope.error.code;
+      detail = envelope.error.message;
     } catch {
       // non-json error body
     }
-    throw new Error(detail);
+    throw new ApiError(code, detail, res.status);
   }
 
   const reader = res.body.getReader();
@@ -110,7 +87,7 @@ export async function streamAnswer(
       for (const line of frame.split("\n")) {
         if (!line.startsWith("data: ")) continue;
         try {
-          const ev = JSON.parse(line.slice(6)) as AnswerEvent;
+          const ev = v.parse(AnswerEventSchema, JSON.parse(line.slice(6)));
           tick(ev.type);
           on(ev);
         } catch {

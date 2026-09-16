@@ -1,4 +1,6 @@
 import * as v from "valibot";
+import { request } from "../../lib/api";
+import { SettingsGetSchema, SettingsPutSchema, type SettingsGet } from "../../lib/schemas";
 
 /** [ai] config fields per oxe config.toml schema. */
 export const SettingsSchema = v.object({
@@ -13,16 +15,7 @@ export type SettingsValues = v.InferInput<typeof SettingsSchema>;
 
 export const PROVIDERS = ["openai", "anthropic", "groq", "mistral"] as const;
 
-export interface SettingsGet {
-  ai: {
-    provider: string;
-    model: string;
-    api_key: string | null; // redacted
-    base_url: string | null;
-    enabled: boolean;
-    api_key_env?: string | null;
-  } | null;
-}
+export type { SettingsGet };
 
 export interface SettingsPut {
   provider: string;
@@ -33,26 +26,13 @@ export interface SettingsPut {
 }
 
 export async function getSettings(signal?: AbortSignal): Promise<SettingsGet> {
-  const res = await fetch(`/settings`, { signal });
-  if (!res.ok) throw new Error(`GET /settings failed: ${res.status}`);
-  return (await res.json()) as SettingsGet;
+  return request("/settings", SettingsGetSchema, { signal });
 }
 
 export async function putSettings(body: SettingsPut): Promise<void> {
-  const res = await fetch(`/settings`, {
+  // backend expects the [ai] section nested under an "ai" key
+  await request("/settings", SettingsPutSchema, {
     method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    // backend expects the [ai] section nested under an "ai" key
-    body: JSON.stringify({ ai: body }),
+    body: { ai: body },
   });
-  if (!res.ok) {
-    let detail = `${res.status}`;
-    try {
-      const j = (await res.json()) as { detail?: string };
-      if (j?.detail) detail = j.detail;
-    } catch {
-      // non-json error
-    }
-    throw new Error(detail);
-  }
 }

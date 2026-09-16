@@ -302,9 +302,9 @@ export default function SearchRoute() {
                       onOpen={(res) =>
                         recordClick({
                           query_hash: qHash,
-                          result_id: res.id || res.url,
-                          url: res.url,
-                          title: res.title,
+                          result_id: res.id || res.url || "",
+                          url: res.url ?? "",
+                          title: res.title ?? "",
                         })
                       }
                     />
