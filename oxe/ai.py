@@ -513,32 +513,32 @@ async def test_provider_connection(cfg: AIConfig, timeout_s: float = 10.0) -> di
 
         from openai import OpenAI  # lazy
 
-        client = OpenAI(api_key=api_key, base_url=cfg.base_url, timeout=timeout_s)
-        try:
-            client.chat.completions.create(
-                model=cfg.model,
-                max_tokens=1,
-                messages=[{"role": "user", "content": "hi"}],
-            )
-            return {"ok": True, "detail": "ok: completion succeeded"}
-        except Exception as completion_err:
-            # fall back to listing: distinguishes auth/base_url issues from
-            # a bad model id (a 401 fails both; a bad model only the call)
+        with OpenAI(api_key=api_key, base_url=cfg.base_url, timeout=timeout_s) as client:
             try:
-                models = client.models.list()
-                if not models.data:
-                    raise _ModelNotFound("provider model list is empty")  # noqa: TRY301
-                raise _ModelNotFound(str(completion_err))  # noqa: TRY301
-            except _ModelNotFound:
-                raise
-            except Exception as list_err:
-                # listing succeeded but completion failed -> model problem
-                if not _looks_like_auth(list_err):
-                    return {
-                        "ok": False,
-                        "detail": _friendly_provider_error(completion_err, cfg),
-                    }
-                raise
+                client.chat.completions.create(
+                    model=cfg.model,
+                    max_tokens=1,
+                    messages=[{"role": "user", "content": "hi"}],
+                )
+                return {"ok": True, "detail": "ok: completion succeeded"}
+            except Exception as completion_err:
+                # fall back to listing: distinguishes auth/base_url issues from
+                # a bad model id (a 401 fails both; a bad model only the call)
+                try:
+                    models = client.models.list()
+                    if not models.data:
+                        raise _ModelNotFound("provider model list is empty")  # noqa: TRY301
+                    raise _ModelNotFound(str(completion_err))  # noqa: TRY301
+                except _ModelNotFound:
+                    raise
+                except Exception as list_err:
+                    # listing succeeded but completion failed -> model problem
+                    if not _looks_like_auth(list_err):
+                        return {
+                            "ok": False,
+                            "detail": _friendly_provider_error(completion_err, cfg),
+                        }
+                    raise
 
     def _check_sync() -> dict:
         """Run the (blocking) SDK checks on a worker thread with its own loop."""

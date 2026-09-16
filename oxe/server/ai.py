@@ -143,18 +143,24 @@ def build_router(state: AppState) -> APIRouter:
             if cfg.provider == "openai":
                 from openai import AsyncOpenAI  # lazy
 
-                client = AsyncOpenAI(api_key=api_key, base_url=cfg.base_url)
-                resp = _run_async(client.models.list)
-                models = [
-                    {"id": m.id, "object": "model", "owned_by": getattr(m, "owned_by", None)}
-                    for m in resp.data
-                ]
+                async def _fetch():
+                    async with AsyncOpenAI(api_key=api_key, base_url=cfg.base_url) as client:
+                        resp = await client.models.list()
+                    return [
+                        {"id": m.id, "object": "model", "owned_by": getattr(m, "owned_by", None)}
+                        for m in resp.data
+                    ]
+
+                models = _run_async(_fetch)
             elif cfg.provider == "anthropic":
                 from anthropic import AsyncAnthropic  # lazy
 
-                client = AsyncAnthropic(api_key=api_key, base_url=cfg.base_url)
-                resp = _run_async(client.models.list)
-                models = [{"id": m.id, "object": "model"} for m in resp.data]
+                async def _fetch():
+                    async with AsyncAnthropic(api_key=api_key, base_url=cfg.base_url) as client:
+                        resp = await client.models.list()
+                    return [{"id": m.id, "object": "model"} for m in resp.data]
+
+                models = _run_async(_fetch)
         except ImportError:
             log.warning("/v1/models: provider SDK not installed (pip install oxe[ai])")
             _dev_event("models", results=0, error="sdk not installed")

@@ -4,6 +4,7 @@ Usage: oxe stats [--db PATH] [--out DIR] [--days N]
 Writes a single self-contained index.html with inline SVG charts, no JS.
 """
 
+import contextlib
 import html
 import sqlite3
 from datetime import datetime, timedelta, timezone
@@ -296,21 +297,17 @@ def _render_page(panels, days, generated) -> str:
 
 def build_json(db_path: str, days: int = 14) -> dict:
     """Return dashboard aggregates as JSON-ready dict (sister of build())."""
-    conn = None
     try:
-        conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=5)
-        if not _has_search_log(conn):
-            daily_rows = top_queries = zero_result = client_split = []
-        else:
-            daily_rows = _fetch_daily(conn, days)
-            top_queries = _fetch_top_queries(conn, days)
-            zero_result = _fetch_zero_result(conn, days)
-            client_split = _fetch_client_split(conn, days)
+        with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=5) as conn:
+            if not _has_search_log(conn):
+                daily_rows = top_queries = zero_result = client_split = []
+            else:
+                daily_rows = _fetch_daily(conn, days)
+                top_queries = _fetch_top_queries(conn, days)
+                zero_result = _fetch_zero_result(conn, days)
+                client_split = _fetch_client_split(conn, days)
     except sqlite3.OperationalError:
         daily_rows = top_queries = zero_result = client_split = []
-    finally:
-        if conn is not None:
-            conn.close()
 
     per_day: dict[str, dict] = {d: {"cache": 0, "network": 0} for d in _day_keys(days)}
     for ts, src, _ms in daily_rows:
@@ -348,13 +345,33 @@ def build_json(db_path: str, days: int = 14) -> dict:
 def build(db_path: str, out_dir: str, days: int = 30) -> str:
     """Build the dashboard and return the path of the written index.html."""
     generated = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")
-    try:
-        conn = _connect(db_path)
-    except sqlite3.OperationalError:
-        conn = None
-
     panels = []
-    if conn is None or not _has_search_log(conn):
+    try:
+        with contextlib.closing(_connect(db_path)) as conn:
+            if not _has_search_log(conn):
+                empty = '<p class="empty">no data yet</p>'
+                panels = [
+                    _panel("searches per day", empty),
+                    _panel("cache hit rate", empty),
+                    _panel("network latency", empty),
+                    _panel("client split", empty),
+                    _panel("top queries", empty, wide=True),
+                    _panel("zero-result queries", empty, wide=True),
+                ]
+            else:
+                rows = _fetch_daily(conn, days)
+                top = _fetch_top_queries(conn, days)
+                zeros = _fetch_zero_result(conn, days)
+                clients = _fetch_client_split(conn, days)
+                panels = [
+                    _panel("searches per day", panel_searches_per_day(rows, days)),
+                    _panel("cache hit rate", panel_hit_rate(rows, days)),
+                    _panel("network latency", panel_latency(rows, days)),
+                    _panel("client split", panel_client_split_rows(clients)),
+                    _panel("top queries", panel_top_queries(top), wide=True),
+                    _panel("zero-result queries", panel_zero_result(zeros), wide=True),
+                ]
+    except sqlite3.OperationalError:
         empty = '<p class="empty">no data yet</p>'
         panels = [
             _panel("searches per day", empty),
@@ -364,30 +381,12 @@ def build(db_path: str, out_dir: str, days: int = 30) -> str:
             _panel("top queries", empty, wide=True),
             _panel("zero-result queries", empty, wide=True),
         ]
-    else:
-        try:
-            rows = _fetch_daily(conn, days)
-            top = _fetch_top_queries(conn, days)
-            zeros = _fetch_zero_result(conn, days)
-            clients = _fetch_client_split(conn, days)
-        finally:
-            conn.close()
-        panels = [
-            _panel("searches per day", panel_searches_per_day(rows, days)),
-            _panel("cache hit rate", panel_hit_rate(rows, days)),
-            _panel("network latency", panel_latency(rows, days)),
-            _panel("client split", panel_client_split_rows(clients)),
-            _panel("top queries", panel_top_queries(top), wide=True),
-            _panel("zero-result queries", panel_zero_result(zeros), wide=True),
-        ]
 
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     path = out / "index.html"
     path.write_text(_render_page(panels, days, generated), encoding="utf-8")
     return str(path)
-
-
 def _fetch_client_split(conn, days):
     return list(_run(sqlload.queries().stat_client_split, conn, cutoff=_since_clause(days)))
 

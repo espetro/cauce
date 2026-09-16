@@ -188,6 +188,7 @@ def _patch_openai(completion=None, listing=None):
     """Patch oxe.ai's lazy `from openai import OpenAI` with a fake client."""
     fake_mod = MagicMock()
     client_inst = fake_mod.OpenAI.return_value
+    fake_mod.OpenAI.return_value.__enter__.return_value = client_inst
     if completion is not None:
         client_inst.chat.completions.create = completion
     if listing is not None:

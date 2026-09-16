@@ -53,9 +53,12 @@ def make_app(
 
         @asynccontextmanager
         async def lifespan(app: FastAPI):
-            async with mcp_app.router.lifespan_context(mcp_app):
-                _prune_on_startup()
-                yield
+            try:
+                async with mcp_app.router.lifespan_context(mcp_app):
+                    _prune_on_startup()
+                    yield
+            finally:
+                c.close()
 
         app = FastAPI(title=SERVICE_NAME, version=VERSION, lifespan=lifespan)
         app.mount("/mcp", mcp_app)
@@ -65,8 +68,11 @@ def make_app(
 
         @asynccontextmanager
         async def lifespan(app: FastAPI):
-            _prune_on_startup()
-            yield
+            try:
+                _prune_on_startup()
+                yield
+            finally:
+                c.close()
 
         app = FastAPI(title=SERVICE_NAME, version=VERSION, lifespan=lifespan)
 
