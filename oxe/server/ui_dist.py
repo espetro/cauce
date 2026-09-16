@@ -33,6 +33,12 @@ def _ui_dist_dir() -> Path | None:
     return None
 
 
+def _shell(dist: Path, route: str) -> Path:
+    """Per-route prerendered shell (dist/<route>/index.html), else root shell."""
+    shell = dist / route.strip("/") / "index.html"
+    return shell if shell.is_file() else dist / "index.html"
+
+
 _MEDIA_TYPES = {
     ".html": "text/html",
     ".js": "application/javascript",

@@ -23,7 +23,7 @@ from .schemas import (
     HistoryDeleteResponse,
 )
 from .state import AppState
-from .ui_dist import _NO_UI_PAGE, _ui_dist_dir
+from .ui_dist import _NO_UI_PAGE, _shell, _ui_dist_dir
 
 log = logging.getLogger(__name__)
 
@@ -124,7 +124,7 @@ def build_router(state: AppState) -> APIRouter:
     ) -> Response:
         dist = _ui_dist_dir()
         if dist is not None:
-            return FileResponse(dist / "index.html", media_type="text/html")
+            return FileResponse(_shell(dist, "/history"), media_type="text/html")
         return HTMLResponse(_NO_UI_PAGE)
 
     @router.post("/history/delete")
@@ -156,7 +156,7 @@ def build_router(state: AppState) -> APIRouter:
         """Serve the SPA shell for the /dashboard route (data via /api/stats)."""
         dist = _ui_dist_dir()
         if dist is not None:
-            return FileResponse(dist / "index.html", media_type="text/html")
+            return FileResponse(_shell(dist, "/dashboard"), media_type="text/html")
         return HTMLResponse(_NO_UI_PAGE)
 
     @router.post("/click", response_model=ClickResponse)
