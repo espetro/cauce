@@ -1,22 +1,21 @@
 import { toChildArray, type ComponentChildren, type JSX } from "preact";
 import { useEffect, useState } from "preact/hooks";
-import { useLocation } from "preact-iso";
 import { listModels, type ModelsResponse } from "../lib/ai";
 import * as m from "../lib/i18n";
+import { openPath, routeUrl, useRoute } from "../lib/routes";
 import { SettingsDialog } from "../features/settings/SettingsDialog";
 import IconGitHub from "~icons/lucide/github";
 
 interface NavItem {
-  href: string;
+  route: "home" | "history" | "dashboard";
   label: string;
-  active?: boolean;
   exact?: boolean;
 }
 
 const NAV: NavItem[] = [
-  { href: "/", label: m.nav_search(), exact: true },
-  { href: "/history", label: m.nav_history() },
-  { href: "/dashboard", label: m.nav_dashboard() },
+  { route: "home", label: m.nav_search(), exact: true },
+  { route: "history", label: m.nav_history() },
+  { route: "dashboard", label: m.nav_dashboard() },
 ];
 
 /** AI-mode availability from GET /v1/models (`ai_available`).
@@ -36,17 +35,17 @@ export function useAiAvailable(): boolean | null {
 const GitHubIcon = () => <IconGitHub class="w-4 h-4" aria-hidden="true" />;
 
 export function Header() {
-  const { path, query, route } = useLocation();
+  const page = useRoute();
   // ?settings=open is addressable on any route; strip on close.
-  const settingsOpen = query?.settings === "open";
+  const settingsOpen = page?.search.settings === "open";
   const closeSettings = () => {
     const sp = new URLSearchParams(window.location.search);
     sp.delete("settings");
     const qs = sp.toString();
-    route(`${window.location.pathname}${qs ? `?${qs}` : ""}`, true);
+    openPath(`${window.location.pathname}${qs ? `?${qs}` : ""}`, true);
   };
   const isActive = (item: NavItem) =>
-    item.exact ? path === item.href : path === item.href || path.startsWith(`${item.href}/`);
+    item.exact ? page?.route === item.route : page?.route === item.route;
   return (
     <header class="navbar bg-base-100 border-b border-base-300 px-4 h-12 min-h-12 flex items-center gap-4">
       <a href="/" class="font-logo font-semibold tracking-tight text-base">
@@ -55,8 +54,8 @@ export function Header() {
       <nav class="flex items-center gap-1 flex-wrap text-sm" aria-label="main">
         {NAV.map((item) => (
           <a
-            key={item.href}
-            href={item.href}
+            key={item.route}
+            href={routeUrl(item.route)}
             class={`px-2 py-1 rounded ${isActive(item) ? "font-semibold" : "opacity-70 hover:opacity-100"}`}
             aria-current={isActive(item) ? "page" : undefined}
           >
@@ -69,7 +68,12 @@ export function Header() {
           type="button"
           class="btn btn-ghost btn-xs"
           aria-label={m.header_aria_settings()}
-          onClick={() => route(`${window.location.pathname}?settings=open`)}
+          onClick={() => {
+            const sp = new URLSearchParams(window.location.search);
+            sp.set("settings", "open");
+            const qs = sp.toString();
+            openPath(`${window.location.pathname}${qs ? `?${qs}` : ""}`);
+          }}
         >
           {m.header_settings()}
         </button>

@@ -1,8 +1,10 @@
 import prerender, { locationStub } from "preact-iso/prerender";
-import { ErrorBoundary, LocationProvider, Route, Router, lazy, useLocation } from "preact-iso";
+import { ErrorBoundary, lazy } from "preact-iso";
 import { Component, toChildArray } from "preact";
 import { useCallback, useEffect, useId, useRef, useState } from "preact/hooks";
 import * as v from "valibot";
+import { createRouter, getPagePath, openPage, redirectPage } from "@nanostores/router";
+import { useStore } from "@nanostores/preact";
 import { Fragment, jsx, jsxs } from "preact/jsx-runtime";
 import { WindowVirtualizer } from "virtua";
 //#region \0rolldown/runtime.js
@@ -3125,6 +3127,45 @@ var init_ai = __esmMin((() => {
 	};
 }));
 //#endregion
+//#region src/lib/routes.ts
+function useRoute() {
+	return useStore(router);
+}
+function clean(search) {
+	if (!search) return {};
+	const out = {};
+	for (const [k, v] of Object.entries(search)) if (!OMITTED.has(k)) out[k] = v;
+	return out;
+}
+function navigate(name, search) {
+	openPage(router, name, {}, clean(search) ?? {});
+}
+/** Typed programmatic navigation (replace history entry). */
+function redirect(name, search) {
+	redirectPage(router, name, {}, clean(search) ?? {});
+}
+/** Build a route URL from its typed name + search params. */
+function routeUrl(name, search) {
+	return getPagePath(router, name, {}, clean(search) ?? {});
+}
+/** Open a raw URL through the router (string URLs, e.g. searchUrl() output).
+* `replace` swaps the current history entry instead of pushing. */
+function openPath(path, replace = false) {
+	router.open(path, replace);
+}
+var config, router, OMITTED;
+var init_routes$1 = __esmMin((() => {
+	config = {
+		home: "/",
+		search: "/search",
+		history: "/history",
+		dashboard: "/dashboard"
+	};
+	router = createRouter(config);
+	if (typeof window !== "undefined" && typeof location !== "undefined") router.open(location.pathname + location.search, true);
+	OMITTED = /* @__PURE__ */ new Set(["p"]);
+}));
+//#endregion
 //#region src/lib/useMountEffect.ts
 /** Escape hatch for one-time external sync on mount (setup + cleanup).
 * Wraps useEffect with an empty dependency array to make intent explicit. */
@@ -3752,15 +3793,15 @@ function useAiAvailable() {
 	return ai;
 }
 function Header() {
-	const { path, query, route } = useLocation();
-	const settingsOpen = query?.settings === "open";
+	const page = useRoute();
+	const settingsOpen = page?.search.settings === "open";
 	const closeSettings = () => {
 		const sp = new URLSearchParams(window.location.search);
 		sp.delete("settings");
 		const qs = sp.toString();
-		route(`${window.location.pathname}${qs ? `?${qs}` : ""}`, true);
+		openPath(`${window.location.pathname}${qs ? `?${qs}` : ""}`, true);
 	};
-	const isActive = (item) => item.exact ? path === item.href : path === item.href || path.startsWith(`${item.href}/`);
+	const isActive = (item) => item.exact ? page?.route === item.route : page?.route === item.route;
 	return /* @__PURE__ */ jsxs("header", {
 		class: "navbar bg-base-100 border-b border-base-300 px-4 h-12 min-h-12 flex items-center gap-4",
 		children: [
@@ -3773,11 +3814,11 @@ function Header() {
 				class: "flex items-center gap-1 flex-wrap text-sm",
 				"aria-label": "main",
 				children: NAV.map((item) => /* @__PURE__ */ jsx("a", {
-					href: item.href,
+					href: routeUrl(item.route),
 					class: `px-2 py-1 rounded ${isActive(item) ? "font-semibold" : "opacity-70 hover:opacity-100"}`,
 					"aria-current": isActive(item) ? "page" : void 0,
 					children: isActive(item) ? `[${item.label}]` : item.label
-				}, item.href))
+				}, item.route))
 			}),
 			/* @__PURE__ */ jsxs("span", {
 				class: "ml-auto flex items-center gap-1",
@@ -3786,7 +3827,12 @@ function Header() {
 						type: "button",
 						class: "btn btn-ghost btn-xs",
 						"aria-label": header_aria_settings(),
-						onClick: () => route(`${window.location.pathname}?settings=open`),
+						onClick: () => {
+							const sp = new URLSearchParams(window.location.search);
+							sp.set("settings", "open");
+							const qs = sp.toString();
+							openPath(`${window.location.pathname}${qs ? `?${qs}` : ""}`);
+						},
 						children: header_settings()
 					}),
 					/* @__PURE__ */ jsx("a", {
@@ -3829,20 +3875,21 @@ var NAV, GitHubIcon;
 var init_Header = __esmMin((() => {
 	init_ai();
 	init_i18n();
+	init_routes$1();
 	init_SettingsDialog();
 	init_github();
 	NAV = [
 		{
-			href: "/",
+			route: "home",
 			label: nav_search(),
 			exact: true
 		},
 		{
-			href: "/history",
+			route: "history",
 			label: nav_history()
 		},
 		{
-			href: "/dashboard",
+			route: "dashboard",
 			label: nav_dashboard()
 		}
 	];
@@ -3960,595 +4007,6 @@ function Layout({ children }) {
 		]
 	});
 }
-//#endregion
-//#region src/routes/404.tsx
-var _404_exports = /* @__PURE__ */ __exportAll({ default: () => NotFound });
-function NotFound() {
-	return /* @__PURE__ */ jsxs("div", {
-		class: "flex-1 flex flex-col items-center justify-center min-h-[60vh] px-4 text-center animate-in fade-in zoom-in-95 duration-300",
-		children: [
-			/* @__PURE__ */ jsx("p", {
-				class: "text-5xl font-logo font-semibold tracking-tight opacity-30",
-				children: "404"
-			}),
-			/* @__PURE__ */ jsx("h1", {
-				class: "mt-2 text-lg font-medium",
-				children: notfound_title()
-			}),
-			/* @__PURE__ */ jsx("p", {
-				class: "mt-1 text-sm opacity-60",
-				children: notfound_body()
-			}),
-			/* @__PURE__ */ jsxs("div", {
-				class: "mt-6 flex items-center gap-2",
-				children: [/* @__PURE__ */ jsx("a", {
-					href: "/",
-					class: "btn btn-primary btn-sm",
-					children: notfound_back()
-				}), /* @__PURE__ */ jsx("a", {
-					href: "/history",
-					class: "btn btn-ghost btn-sm",
-					children: notfound_history()
-				})]
-			})
-		]
-	});
-}
-var init__404 = __esmMin((() => {
-	init_i18n();
-}));
-//#endregion
-//#region src/lib/format.ts
-function domainOf(url) {
-	try {
-		return new URL(url).hostname.replace(/^www\./, "") || url;
-	} catch {
-		return url;
-	}
-}
-function faviconFor(url) {
-	const d = domainOf(url);
-	return `https://icons.duckduckgo.com/ip3/${encodeURIComponent(d)}.ico`;
-}
-function fmtDur(s) {
-	if (s == null || s < 0) return "0s";
-	if (s < 60) return `${Math.floor(s)}s`;
-	if (s < 3600) return `${Math.floor(s / 60)}m`;
-	if (s < 86400) return `${Math.floor(s / 3600)}h`;
-	return `${Math.floor(s / 86400)}d`;
-}
-function fmtBytes(n) {
-	if (n < 1024) return `${n} B`;
-	if (n < 1048576) return `${(n / 1024).toFixed(1)} KB`;
-	return `${(n / 1048576).toFixed(1)} MB`;
-}
-function fmtTs(epoch) {
-	if (!epoch) return "—";
-	return (/* @__PURE__ */ new Date(epoch * 1e3)).toISOString().replace("T", " ").slice(0, 19) + " UTC";
-}
-function truncate(s, n) {
-	return s.length > n ? `${s.slice(0, n - 1)}…` : s;
-}
-var init_format = __esmMin((() => {}));
-//#endregion
-//#region src/routes/dashboard.tsx
-var dashboard_exports = /* @__PURE__ */ __exportAll({ default: () => DashboardRoute });
-function Panel(props) {
-	return /* @__PURE__ */ jsxs("section", {
-		class: `border border-base-300 rounded-lg p-4 min-w-0 ${props.wide ? "md:col-span-2" : ""}`,
-		children: [/* @__PURE__ */ jsx("h2", {
-			class: "text-sm font-medium mb-3",
-			children: props.title
-		}), props.children]
-	});
-}
-function Empty() {
-	return /* @__PURE__ */ jsx("p", {
-		class: "opacity-50 text-sm",
-		children: dashboard_empty()
-	});
-}
-/** Token-based inline SVG sparkline: total searches per day. */
-function Sparkline({ days }) {
-	const data = days.slice(-30);
-	const max = Math.max(...data.map((d) => d.total), 1);
-	const W = 240;
-	const H = 48;
-	const step = data.length > 1 ? W / (data.length - 1) : W;
-	const pts = data.map((d, i) => `${(i * step).toFixed(1)},${(H - d.total / max * 44 - 2).toFixed(1)}`);
-	return /* @__PURE__ */ jsx("svg", {
-		viewBox: `0 0 ${W} ${H}`,
-		class: "w-full h-12",
-		role: "img",
-		"aria-label": dashboard_aria_sparkline(),
-		children: /* @__PURE__ */ jsx("polyline", {
-			points: pts.join(" "),
-			fill: "none",
-			stroke: "currentColor",
-			"stroke-width": "1.5",
-			class: "text-primary"
-		})
-	});
-}
-function Bar({ value, max, label }) {
-	const pct = max > 0 ? Math.round(value / max * 100) : 0;
-	return /* @__PURE__ */ jsxs("div", {
-		class: "mb-1",
-		children: [/* @__PURE__ */ jsxs("div", {
-			class: "flex justify-between text-[13px]",
-			children: [/* @__PURE__ */ jsx("span", {
-				class: "truncate max-w-[70%]",
-				children: label
-			}), /* @__PURE__ */ jsx("span", {
-				class: "opacity-60",
-				children: value
-			})]
-		}), /* @__PURE__ */ jsx("progress", {
-			class: "progress progress-primary h-1",
-			value: pct,
-			max: 100,
-			"aria-label": `${label}: ${value}`
-		})]
-	});
-}
-function DashboardRoute() {
-	usePageTitle(dashboard_page_title());
-	const [stats, setStats] = useState(null);
-	const [error, setError] = useState(null);
-	const seq = useRef(0);
-	useEffect(() => {
-		const id = ++seq.current;
-		apiStats().then((s) => seq.current === id && (setStats(s), setError(null))).catch((e) => seq.current === id && setError(e.message));
-	}, []);
-	return /* @__PURE__ */ jsxs("div", {
-		class: "w-full max-w-[960px] mx-auto px-4 pb-16",
-		children: [
-			/* @__PURE__ */ jsx("h1", {
-				class: "text-xl font-semibold mt-6 mb-1",
-				children: dashboard_title()
-			}),
-			/* @__PURE__ */ jsx("p", {
-				class: "text-[13px] opacity-60 mb-4",
-				children: dashboard_window({ n: stats?.days ?? 14 })
-			}),
-			error && /* @__PURE__ */ jsx("p", {
-				class: "text-error py-6 text-sm",
-				children: dashboard_error({ e: error })
-			}),
-			!stats && !error && /* @__PURE__ */ jsx("div", {
-				class: "py-10 flex justify-center",
-				"aria-busy": "true",
-				children: /* @__PURE__ */ jsx("span", { class: "loading loading-dots loading-md" })
-			}),
-			stats && /* @__PURE__ */ jsxs("div", {
-				class: "grid gap-4 md:grid-cols-2",
-				children: [
-					/* @__PURE__ */ jsx(Panel, {
-						title: dashboard_panel_per_day(),
-						children: stats.searches_per_day.some((d) => d.total > 0) ? /* @__PURE__ */ jsxs(Fragment, { children: [/* @__PURE__ */ jsx(Sparkline, { days: stats.searches_per_day }), /* @__PURE__ */ jsx("p", {
-							class: "text-[13px] opacity-60 mt-1",
-							children: dashboard_per_day_total({ n: stats.searches_per_day.reduce((a, d) => a + d.total, 0) })
-						})] }) : /* @__PURE__ */ jsx(Empty, {})
-					}),
-					/* @__PURE__ */ jsx(Panel, {
-						title: dashboard_panel_hit_rate(),
-						children: stats.hit_rate.rate != null ? /* @__PURE__ */ jsxs(Fragment, { children: [/* @__PURE__ */ jsxs("div", {
-							class: "text-3xl font-bold",
-							children: [stats.hit_rate.rate, "%"]
-						}), /* @__PURE__ */ jsx("p", {
-							class: "text-[13px] opacity-60",
-							children: dashboard_hit_rate_detail({
-								hits: stats.hit_rate.cache_hits,
-								total: stats.hit_rate.total
-							})
-						})] }) : /* @__PURE__ */ jsx(Empty, {})
-					}),
-					/* @__PURE__ */ jsx(Panel, {
-						title: dashboard_panel_latency(),
-						children: stats.latency_ms.p50 != null ? /* @__PURE__ */ jsx("div", {
-							class: "grid grid-cols-3 gap-2 text-center",
-							children: [
-								"p50",
-								"p90",
-								"p99"
-							].map((p) => /* @__PURE__ */ jsxs("div", { children: [/* @__PURE__ */ jsx("div", {
-								class: "text-xl font-semibold",
-								children: Math.round(stats.latency_ms[p] ?? 0)
-							}), /* @__PURE__ */ jsxs("div", {
-								class: "text-[13px] opacity-60",
-								children: [p, " ms"]
-							})] }, p))
-						}) : /* @__PURE__ */ jsx(Empty, {})
-					}),
-					/* @__PURE__ */ jsx(Panel, {
-						title: dashboard_panel_clients(),
-						children: stats.client_split.length > 0 ? /* @__PURE__ */ jsx("div", { children: stats.client_split.map((c) => /* @__PURE__ */ jsx(Bar, {
-							value: c.count,
-							label: c.client,
-							max: Math.max(...stats.client_split.map((x) => x.count))
-						}, c.client)) }) : /* @__PURE__ */ jsx(Empty, {})
-					}),
-					/* @__PURE__ */ jsx(Panel, {
-						title: dashboard_panel_top_queries(),
-						wide: true,
-						children: stats.top_queries.length > 0 ? /* @__PURE__ */ jsx("div", { children: stats.top_queries.slice(0, 10).map((q) => /* @__PURE__ */ jsx(Bar, {
-							value: q.count,
-							label: q.query,
-							max: Math.max(...stats.top_queries.slice(0, 10).map((x) => x.count))
-						}, q.query)) }) : /* @__PURE__ */ jsx(Empty, {})
-					}),
-					/* @__PURE__ */ jsx(Panel, {
-						title: dashboard_panel_zero_result(),
-						wide: true,
-						children: stats.zero_result_queries.length > 0 ? /* @__PURE__ */ jsx("ul", {
-							class: "text-[13px] space-y-1",
-							children: stats.zero_result_queries.slice(0, 10).map((q) => /* @__PURE__ */ jsxs("li", {
-								class: "flex justify-between gap-4",
-								children: [/* @__PURE__ */ jsx("span", {
-									class: "truncate",
-									children: q.query
-								}), /* @__PURE__ */ jsx("span", {
-									class: "opacity-60 whitespace-nowrap",
-									children: fmtTs(q.last_seen)
-								})]
-							}, q.query))
-						}) : /* @__PURE__ */ jsx("p", {
-							class: "opacity-50 text-sm",
-							children: dashboard_zero_result_none()
-						})
-					}),
-					/* @__PURE__ */ jsx(Panel, {
-						title: dashboard_panel_cache(),
-						wide: true,
-						children: /* @__PURE__ */ jsx("table", {
-							class: "table table-sm text-[13px]",
-							children: /* @__PURE__ */ jsxs("tbody", { children: [
-								/* @__PURE__ */ jsxs("tr", { children: [
-									/* @__PURE__ */ jsx("td", {
-										class: "opacity-60",
-										children: dashboard_cache_rows()
-									}),
-									/* @__PURE__ */ jsx("td", {
-										class: "text-right",
-										children: stats.cache.rows
-									}),
-									/* @__PURE__ */ jsx("td", {
-										class: "opacity-60",
-										children: dashboard_cache_unexpired()
-									}),
-									/* @__PURE__ */ jsx("td", {
-										class: "text-right",
-										children: stats.cache.unexpired_rows
-									})
-								] }),
-								/* @__PURE__ */ jsxs("tr", { children: [
-									/* @__PURE__ */ jsx("td", {
-										class: "opacity-60",
-										children: dashboard_cache_db_size()
-									}),
-									/* @__PURE__ */ jsx("td", {
-										class: "text-right",
-										children: fmtBytes(stats.cache.db_size_bytes)
-									}),
-									/* @__PURE__ */ jsx("td", {
-										class: "opacity-60",
-										children: dashboard_cache_total_hits()
-									}),
-									/* @__PURE__ */ jsx("td", {
-										class: "text-right",
-										children: stats.cache.total_hits
-									})
-								] }),
-								/* @__PURE__ */ jsxs("tr", { children: [
-									/* @__PURE__ */ jsx("td", {
-										class: "opacity-60",
-										children: dashboard_cache_newest()
-									}),
-									/* @__PURE__ */ jsx("td", {
-										class: "text-right",
-										children: fmtTs(stats.cache.newest)
-									}),
-									/* @__PURE__ */ jsx("td", {
-										class: "opacity-60",
-										children: dashboard_cache_oldest()
-									}),
-									/* @__PURE__ */ jsx("td", {
-										class: "text-right",
-										children: fmtTs(stats.cache.oldest_unexpired)
-									})
-								] })
-							] })
-						})
-					})
-				]
-			})
-		]
-	});
-}
-var init_dashboard = __esmMin((() => {
-	init_Header();
-	init_api();
-	init_format();
-	init_i18n();
-}));
-//#endregion
-//#region src/routes/history.tsx
-var history_exports = /* @__PURE__ */ __exportAll({ default: () => HistoryRoute });
-function parseSince(v) {
-	return SINCE_VALUES.includes(v) ? v : "all";
-}
-function fmtLocal(epoch) {
-	if (!epoch) return "—";
-	const d = /* @__PURE__ */ new Date(epoch * 1e3);
-	const p = (n) => String(n).padStart(2, "0");
-	return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
-}
-/** Two-step delete: pick a scope, then confirm. `all` requires a second
-* click on the same button (double-click confirm). */
-function DeleteControls({ onDeleted, onError }) {
-	const [scope, setScope] = useState("24h");
-	const [armed, setArmed] = useState(false);
-	const [busy, setBusy] = useState(false);
-	const run = () => {
-		setBusy(true);
-		deleteHistory(scope).then(() => {
-			setArmed(false);
-			onDeleted();
-		}).catch((e) => onError(e.message)).finally(() => setBusy(false));
-	};
-	return /* @__PURE__ */ jsxs("div", {
-		class: "flex items-center gap-2",
-		children: [/* @__PURE__ */ jsxs("select", {
-			class: "select select-sm w-40",
-			value: scope,
-			onChange: (e) => {
-				setScope(e.target.value);
-				setArmed(false);
-			},
-			"aria-label": history_aria_delete_scope(),
-			children: [
-				/* @__PURE__ */ jsx("option", {
-					value: "24h",
-					children: history_delete_older_24h()
-				}),
-				/* @__PURE__ */ jsx("option", {
-					value: "7d",
-					children: history_delete_older_7d()
-				}),
-				/* @__PURE__ */ jsx("option", {
-					value: "30d",
-					children: history_delete_older_30d()
-				}),
-				/* @__PURE__ */ jsx("option", {
-					value: "all",
-					children: history_delete_all()
-				})
-			]
-		}), /* @__PURE__ */ jsx("button", {
-			type: "button",
-			class: `btn btn-sm ${armed ? "btn-error" : "btn-ghost text-error"}`,
-			disabled: busy,
-			onClick: () => armed ? run() : setArmed(true),
-			onBlur: () => setArmed(false),
-			children: armed ? scope === "all" ? history_delete_confirm_all() : history_delete_confirm() : history_delete_arm()
-		})]
-	});
-}
-function HistoryRoute() {
-	usePageTitle(history_page_title());
-	const { query, route: spaRoute } = useLocation();
-	const since = parseSince(query?.since);
-	const qf = String(query?.qf ?? "");
-	const [items, setItems] = useState([]);
-	const [counts, setCounts] = useState({
-		clicks: 0,
-		cache_rows: 0
-	});
-	const [loading, setLoading] = useState(true);
-	const [error, setError] = useState(null);
-	const seq = useRef(0);
-	const load = (s, q) => {
-		const id = ++seq.current;
-		setLoading(true);
-		fetchApiHistory(s, q).then((r) => {
-			if (seq.current !== id) return;
-			setItems(r.items.map((it) => ({
-				...it,
-				sort_at: it.kind === "click" ? it.clicked_at : it.created_at
-			})));
-			setCounts({
-				clicks: r.clicks,
-				cache_rows: r.cache_rows
-			});
-			setError(null);
-		}).catch((e) => seq.current === id && setError(e.message)).finally(() => seq.current === id && setLoading(false));
-	};
-	useEffect(() => {
-		load(since, qf);
-	}, [since, qf]);
-	const setParam = (key, value) => {
-		const sp = new URLSearchParams(window.location.search);
-		if (value && !(key === "since" && value === "all")) sp.set(key, value);
-		else sp.delete(key);
-		const qs = sp.toString();
-		spaRoute(`${window.location.pathname}${qs ? `?${qs}` : ""}`, true);
-	};
-	const clearFilters = () => {
-		const sp = new URLSearchParams(window.location.search);
-		sp.delete("since");
-		sp.delete("qf");
-		const qs = sp.toString();
-		spaRoute(`${window.location.pathname}${qs ? `?${qs}` : ""}`, true);
-	};
-	return /* @__PURE__ */ jsxs("div", {
-		class: "w-full max-w-[960px] mx-auto px-4 pb-16",
-		children: [
-			/* @__PURE__ */ jsx("h1", {
-				class: "text-xl font-semibold mt-6 mb-1",
-				children: history_title()
-			}),
-			/* @__PURE__ */ jsx("p", {
-				class: "text-[13px] opacity-60 mb-4",
-				children: history_summary({
-					clicks: counts.clicks,
-					rows: counts.cache_rows
-				})
-			}),
-			/* @__PURE__ */ jsxs("div", {
-				class: "flex flex-wrap items-center gap-2 mb-4",
-				children: [
-					/* @__PURE__ */ jsxs("select", {
-						class: "select select-sm w-32",
-						value: since,
-						onChange: (e) => setParam("since", e.target.value),
-						"aria-label": history_aria_time_filter(),
-						children: [
-							/* @__PURE__ */ jsx("option", {
-								value: "all",
-								children: history_opt_all_time()
-							}),
-							/* @__PURE__ */ jsx("option", {
-								value: "24",
-								children: history_opt_last_24h()
-							}),
-							/* @__PURE__ */ jsx("option", {
-								value: "168",
-								children: history_opt_last_week()
-							}),
-							/* @__PURE__ */ jsx("option", {
-								value: "720",
-								children: history_opt_last_month()
-							})
-						]
-					}),
-					/* @__PURE__ */ jsx("input", {
-						type: "search",
-						class: "input input-sm w-56",
-						placeholder: history_filter_placeholder(),
-						value: qf,
-						onInput: (e) => setParam("qf", e.target.value),
-						"aria-label": history_aria_query_filter()
-					}),
-					(since !== "all" || qf) && /* @__PURE__ */ jsx("button", {
-						type: "button",
-						class: "btn btn-ghost btn-sm",
-						onClick: clearFilters,
-						children: history_clear()
-					}),
-					/* @__PURE__ */ jsx("div", {
-						class: "ml-auto",
-						children: /* @__PURE__ */ jsx(DeleteControls, {
-							onDeleted: () => load(since, qf),
-							onError: setError
-						})
-					})
-				]
-			}),
-			loading && /* @__PURE__ */ jsx("div", {
-				class: "py-10 flex justify-center",
-				"aria-busy": "true",
-				children: /* @__PURE__ */ jsx("span", { class: "loading loading-dots loading-md" })
-			}),
-			!loading && error && /* @__PURE__ */ jsx("p", {
-				class: "text-error py-6 text-sm",
-				children: history_error({ e: error })
-			}),
-			!loading && !error && items.length === 0 && /* @__PURE__ */ jsxs("p", {
-				class: "opacity-60 py-8 text-sm",
-				children: [
-					history_empty_prefix(),
-					/* @__PURE__ */ jsx("a", {
-						href: "/",
-						class: "link link-primary",
-						children: history_empty_link()
-					}),
-					history_empty_suffix()
-				]
-			}),
-			!loading && items.length > 0 && /* @__PURE__ */ jsx("div", {
-				class: "overflow-x-auto",
-				children: /* @__PURE__ */ jsxs("table", {
-					class: "table table-sm",
-					children: [/* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsxs("tr", {
-						class: "text-[13px] opacity-60",
-						children: [
-							/* @__PURE__ */ jsx("th", { children: history_col_when() }),
-							/* @__PURE__ */ jsx("th", { children: history_col_kind() }),
-							/* @__PURE__ */ jsx("th", { children: history_col_query() }),
-							/* @__PURE__ */ jsx("th", {
-								class: "hidden md:table-cell",
-								children: history_col_detail()
-							}),
-							/* @__PURE__ */ jsx("th", {})
-						]
-					}) }), /* @__PURE__ */ jsx("tbody", { children: items.map((r) => /* @__PURE__ */ jsxs("tr", {
-						class: "align-top",
-						children: [
-							/* @__PURE__ */ jsx("td", {
-								class: "whitespace-nowrap text-[13px]",
-								children: fmtLocal(r.sort_at)
-							}),
-							/* @__PURE__ */ jsx("td", {
-								class: "text-[13px]",
-								children: /* @__PURE__ */ jsx("span", {
-									class: `badge badge-sm ${r.kind === "click" ? "badge-primary" : "badge-ghost"}`,
-									children: r.kind === "click" ? history_kind_click({ source: r.source ?? "web" }) : history_kind_search()
-								})
-							}),
-							/* @__PURE__ */ jsx("td", {
-								class: "text-[13px]",
-								children: /* @__PURE__ */ jsx("a", {
-									href: `/row/${r.query_hash}`,
-									class: "link link-primary",
-									onClick: (e) => {
-										e.preventDefault();
-										e.stopPropagation();
-										if (r.query) spaRoute(`/search?q=${encodeURIComponent(r.query)}`);
-										else window.location.href = `/row/${r.query_hash}`;
-									},
-									children: r.query || history_no_query()
-								})
-							}),
-							/* @__PURE__ */ jsx("td", {
-								class: "hidden md:table-cell text-[13px] opacity-60 max-w-[300px] truncate",
-								children: r.kind === "click" ? /* @__PURE__ */ jsx("a", {
-									href: r.url,
-									target: "_blank",
-									rel: "noopener noreferrer",
-									class: "link link-hover",
-									children: truncate(r.url ?? "", 80)
-								}) : /* @__PURE__ */ jsx(Fragment, { children: history_hits({
-									hits: r.hits ?? 0,
-									at: fmtLocal(r.expires_at ?? 0)
-								}) })
-							}),
-							/* @__PURE__ */ jsx("td", { children: r.kind === "click" && /* @__PURE__ */ jsx("button", {
-								type: "button",
-								class: "btn btn-ghost btn-xs",
-								onClick: () => fetch(`/search?q=${encodeURIComponent(r.query || "")}`, { headers: { Accept: "application/json" } }).then((res) => res.text()).then((t) => navigator.clipboard?.writeText(t)).catch((err) => toast("error", history_copy_json_failed({ e: err.message }))),
-								children: history_copy_json()
-							}) })
-						]
-					}, `${r.kind}-${r.query_hash}-${r.sort_at}`)) })]
-				})
-			})
-		]
-	});
-}
-var SINCE_VALUES;
-var init_history = __esmMin((() => {
-	init_Header();
-	init_api();
-	init_format();
-	init_Toasts();
-	init_i18n();
-	SINCE_VALUES = [
-		"24",
-		"168",
-		"720",
-		"all"
-	];
-}));
 //#endregion
 //#region src/components/ModeSegments.tsx
 /** Models + AI availability from GET /v1/models.
@@ -5064,7 +4522,6 @@ var init_SearchBox = __esmMin((() => {
 var routes_exports = /* @__PURE__ */ __exportAll({ default: () => Home });
 function Home() {
 	usePageTitle("");
-	const { route } = useLocation();
 	const [q, setQ] = useState("");
 	const [mode, setMode] = useSearchMode();
 	const { available: aiAvailable, models, error: modelsError } = useModels();
@@ -5073,8 +4530,10 @@ function Home() {
 		const trimmed = query.trim();
 		if (!trimmed) return;
 		setMode(mode);
-		const url = effectiveMode === "ai" ? `/search?q=${encodeURIComponent(trimmed)}&mode=ai` : `/search?q=${encodeURIComponent(trimmed)}`;
-		route(url);
+		navigate("search", effectiveMode === "ai" ? {
+			q: trimmed,
+			mode: "ai"
+		} : { q: trimmed });
 	};
 	return /* @__PURE__ */ jsxs(Center, {
 		vh: true,
@@ -5107,10 +4566,44 @@ function Home() {
 }
 var init_routes = __esmMin((() => {
 	init_Header();
+	init_routes$1();
 	init_ModeSegments();
 	init_SearchBox();
 	init_i18n();
 }));
+//#endregion
+//#region src/lib/format.ts
+function domainOf(url) {
+	try {
+		return new URL(url).hostname.replace(/^www\./, "") || url;
+	} catch {
+		return url;
+	}
+}
+function faviconFor(url) {
+	const d = domainOf(url);
+	return `https://icons.duckduckgo.com/ip3/${encodeURIComponent(d)}.ico`;
+}
+function fmtDur(s) {
+	if (s == null || s < 0) return "0s";
+	if (s < 60) return `${Math.floor(s)}s`;
+	if (s < 3600) return `${Math.floor(s / 60)}m`;
+	if (s < 86400) return `${Math.floor(s / 3600)}h`;
+	return `${Math.floor(s / 86400)}d`;
+}
+function fmtBytes(n) {
+	if (n < 1024) return `${n} B`;
+	if (n < 1048576) return `${(n / 1024).toFixed(1)} KB`;
+	return `${(n / 1048576).toFixed(1)} MB`;
+}
+function fmtTs(epoch) {
+	if (!epoch) return "—";
+	return (/* @__PURE__ */ new Date(epoch * 1e3)).toISOString().replace("T", " ").slice(0, 19) + " UTC";
+}
+function truncate(s, n) {
+	return s.length > n ? `${s.slice(0, n - 1)}…` : s;
+}
+var init_format = __esmMin((() => {}));
 //#endregion
 //#region src/features/search/ResultCard.tsx
 /** Card-less Google-anatomy result: favicon + domain, blue title,
@@ -5327,19 +4820,6 @@ var init_useSearch = __esmMin((() => {
 var init_search$1 = __esmMin((() => {
 	init_useSearch();
 }));
-//#endregion
-//#region src/features/search/pager.ts
-/** Rebuild /search url from params, preserving anything not derived.
-* The `p` (page) param is deprecated: continuous scroll owns pagination,
-* generated links never carry it, and deep links that do are ignored. */
-function searchUrl(params) {
-	const sp = new URLSearchParams();
-	sp.set("q", params.q);
-	if (params.mode === "ai") sp.set("mode", "ai");
-	for (const [k, v] of Object.entries(params.extra ?? {})) sp.set(k, v);
-	return `/search?${sp.toString()}`;
-}
-var init_pager = __esmMin((() => {}));
 //#endregion
 //#region src/features/answer/MarkdownLite.tsx
 /** Tiny markdown-lite inline renderer: `code`, **bold**, *italic*, [n] citations. */
@@ -5750,9 +5230,14 @@ var init_useAnswer = __esmMin((() => {
 //#region src/routes/search.tsx
 var search_exports = /* @__PURE__ */ __exportAll({ default: () => SearchRoute });
 function SearchRoute() {
-	const { query, route } = useLocation();
+	const query = useRoute()?.search ?? {};
 	const q = String(query?.q ?? "");
 	usePageTitle(q || search_page_title());
+	/** Search URL params, preserving the cross-route ?settings=open flag. */
+	const withSettings = (params) => query.settings ? {
+		...params,
+		settings: query.settings
+	} : params;
 	const aiAvailable = useAiAvailable();
 	const { models, error: modelsError } = useModels();
 	const [input, setInput] = useState(q);
@@ -5767,7 +5252,7 @@ function SearchRoute() {
 			const sp = new URLSearchParams(window.location.search);
 			sp.delete("p");
 			const qs = sp.toString();
-			route(`${window.location.pathname}${qs ? `?${qs}` : ""}`, true);
+			openPath(`${window.location.pathname}${qs ? `?${qs}` : ""}`, true);
 		}
 	}, [query?.p]);
 	useEffect(function rerunOnQueryChange() {
@@ -5788,17 +5273,12 @@ function SearchRoute() {
 			return () => clearTimeout(t);
 		}
 	}, [state.results.length, state.loadingMore]);
-	const changeMode = (m) => {
-		setMode(m);
-		if ((new URLSearchParams(window.location.search).get("mode") === "ai" ? "ai" : "traditional") !== m) {
-			const extra = {};
-			if (typeof query?.settings === "string") extra.settings = query.settings;
-			route(searchUrl({
-				q,
-				mode: m,
-				extra
-			}), true);
-		}
+	const changeMode = (next) => {
+		setMode(next);
+		if ((query?.mode === "ai" ? "ai" : "traditional") !== next) redirect("search", next === "ai" ? withSettings({
+			q,
+			mode: "ai"
+		}) : withSettings({ q }));
 	};
 	useEffect(function runAnswerOnQueryOrModeChange() {
 		if (q && effectiveMode === "ai") answer.run(q);
@@ -5806,21 +5286,21 @@ function SearchRoute() {
 	const submit = (raw) => {
 		const t = raw.trim();
 		if (!t) return;
-		const extra = {};
-		if (typeof query?.settings === "string") extra.settings = query.settings;
-		route(searchUrl({
+		navigate("search", withSettings(mode === "ai" ? {
 			q: t,
-			mode,
-			extra
-		}));
+			mode: "ai"
+		} : { q: t }));
 	};
 	const askAi = (query) => {
 		setMode("ai");
-		route(`/search?q=${encodeURIComponent(query)}&mode=ai`);
+		navigate("search", {
+			q: query,
+			mode: "ai"
+		});
 	};
 	const viewClassic = () => {
 		setMode("traditional");
-		route(`/search?q=${encodeURIComponent(q)}`);
+		navigate("search", { q });
 	};
 	const { payload, loading, error, results } = state;
 	const qHash = payload?._q_hash ?? "";
@@ -6025,7 +5505,7 @@ var init_search = __esmMin((() => {
 	init_Toasts();
 	init_ResultCard();
 	init_search$1();
-	init_pager();
+	init_routes$1();
 	init_format();
 	init_i18n();
 	init_AnswerView();
@@ -6033,65 +5513,594 @@ var init_search = __esmMin((() => {
 	init_SearchBox();
 }));
 //#endregion
-//#region src/app.tsx
-var pages = /* #__PURE__ */ Object.assign({
-	"./routes/404.tsx": () => Promise.resolve().then(() => (init__404(), _404_exports)),
-	"./routes/dashboard.tsx": () => Promise.resolve().then(() => (init_dashboard(), dashboard_exports)),
-	"./routes/history.tsx": () => Promise.resolve().then(() => (init_history(), history_exports)),
-	"./routes/index.tsx": () => Promise.resolve().then(() => (init_routes(), routes_exports)),
-	"./routes/search.tsx": () => Promise.resolve().then(() => (init_search(), search_exports))
-});
-var isPage = (file) => !file.split("/").pop().startsWith("_");
-function routePath(file) {
-	return file.replace("./routes", "").replace(/\.tsx$/, "").replace(/\/index$/, "").replace(/\[(\w+)\]/g, ":$1") || "/";
+//#region src/routes/history.tsx
+var history_exports = /* @__PURE__ */ __exportAll({ default: () => HistoryRoute });
+function parseSince(v) {
+	return SINCE_VALUES.includes(v) ? v : "all";
 }
-/** Layout resolution: the statically imported root _layout.tsx applies to
-* every page. If segment layouts (routes/<seg>/_layout.tsx) are ever added,
-* restore an eager glob here (excluding the root file) with
-* longest-prefix-match resolution (glob "routes/<seg>/_layout.tsx").
-*/
-function layoutFor(_pagePath) {
-	return Layout;
+function fmtLocal(epoch) {
+	if (!epoch) return "—";
+	const d = /* @__PURE__ */ new Date(epoch * 1e3);
+	const p = (n) => String(n).padStart(2, "0");
+	return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
-var pageRoutes = Object.entries(pages).filter(([file]) => isPage(file)).map(([file, load]) => {
-	const path = routePath(file);
-	const Layout = layoutFor(file);
-	return {
-		path,
-		Component: lazy(async () => {
-			const Page = (await load()).default;
-			const Wrapped = (props) => /* @__PURE__ */ jsx(Layout, { children: /* @__PURE__ */ jsx(Page, { ...props }) });
-			return { default: Wrapped };
-		}),
-		isDefault: path === "/404"
+/** Two-step delete: pick a scope, then confirm. `all` requires a second
+* click on the same button (double-click confirm). */
+function DeleteControls({ onDeleted, onError }) {
+	const [scope, setScope] = useState("24h");
+	const [armed, setArmed] = useState(false);
+	const [busy, setBusy] = useState(false);
+	const run = () => {
+		setBusy(true);
+		deleteHistory(scope).then(() => {
+			setArmed(false);
+			onDeleted();
+		}).catch((e) => onError(e.message)).finally(() => setBusy(false));
 	};
-});
-function App({ url }) {
-	const regular = pageRoutes.filter((r) => !r.isDefault);
-	const fallback = pageRoutes.filter((r) => r.isDefault);
-	const wrap = (Component) => {
-		const C = Component;
-		return (props) => /* @__PURE__ */ jsx(ErrorBoundary, { children: /* @__PURE__ */ jsx(C, { ...props }) });
-	};
-	return /* @__PURE__ */ jsx(LocationProvider, {
-		...url ? { url } : {},
-		children: /* @__PURE__ */ jsxs(Router, { children: [regular.map(({ path, Component }) => /* @__PURE__ */ jsx(Route, {
-			path,
-			component: wrap(Component)
-		}, path)), fallback.map(({ Component }) => /* @__PURE__ */ jsx(Route, {
-			default: true,
-			component: wrap(Component)
-		}, "404"))] })
+	return /* @__PURE__ */ jsxs("div", {
+		class: "flex items-center gap-2",
+		children: [/* @__PURE__ */ jsxs("select", {
+			class: "select select-sm w-40",
+			value: scope,
+			onChange: (e) => {
+				setScope(e.target.value);
+				setArmed(false);
+			},
+			"aria-label": history_aria_delete_scope(),
+			children: [
+				/* @__PURE__ */ jsx("option", {
+					value: "24h",
+					children: history_delete_older_24h()
+				}),
+				/* @__PURE__ */ jsx("option", {
+					value: "7d",
+					children: history_delete_older_7d()
+				}),
+				/* @__PURE__ */ jsx("option", {
+					value: "30d",
+					children: history_delete_older_30d()
+				}),
+				/* @__PURE__ */ jsx("option", {
+					value: "all",
+					children: history_delete_all()
+				})
+			]
+		}), /* @__PURE__ */ jsx("button", {
+			type: "button",
+			class: `btn btn-sm ${armed ? "btn-error" : "btn-ghost text-error"}`,
+			disabled: busy,
+			onClick: () => armed ? run() : setArmed(true),
+			onBlur: () => setArmed(false),
+			children: armed ? scope === "all" ? history_delete_confirm_all() : history_delete_confirm() : history_delete_arm()
+		})]
 	});
+}
+function HistoryRoute() {
+	usePageTitle(history_page_title());
+	const query = useRoute()?.search ?? {};
+	const since = parseSince(query?.since);
+	const qf = String(query?.qf ?? "");
+	const [items, setItems] = useState([]);
+	const [counts, setCounts] = useState({
+		clicks: 0,
+		cache_rows: 0
+	});
+	const [loading, setLoading] = useState(true);
+	const [error, setError] = useState(null);
+	const seq = useRef(0);
+	const load = (s, q) => {
+		const id = ++seq.current;
+		setLoading(true);
+		fetchApiHistory(s, q).then((r) => {
+			if (seq.current !== id) return;
+			setItems(r.items.map((it) => ({
+				...it,
+				sort_at: it.kind === "click" ? it.clicked_at : it.created_at
+			})));
+			setCounts({
+				clicks: r.clicks,
+				cache_rows: r.cache_rows
+			});
+			setError(null);
+		}).catch((e) => seq.current === id && setError(e.message)).finally(() => seq.current === id && setLoading(false));
+	};
+	useEffect(() => {
+		load(since, qf);
+	}, [since, qf]);
+	const setParam = (key, value) => {
+		const sp = new URLSearchParams(window.location.search);
+		if (value && !(key === "since" && value === "all")) sp.set(key, value);
+		else sp.delete(key);
+		const qs = sp.toString();
+		openPath(`${window.location.pathname}${qs ? `?${qs}` : ""}`, true);
+	};
+	const clearFilters = () => {
+		const sp = new URLSearchParams(window.location.search);
+		sp.delete("since");
+		sp.delete("qf");
+		const qs = sp.toString();
+		openPath(`${window.location.pathname}${qs ? `?${qs}` : ""}`, true);
+	};
+	return /* @__PURE__ */ jsxs("div", {
+		class: "w-full max-w-[960px] mx-auto px-4 pb-16",
+		children: [
+			/* @__PURE__ */ jsx("h1", {
+				class: "text-xl font-semibold mt-6 mb-1",
+				children: history_title()
+			}),
+			/* @__PURE__ */ jsx("p", {
+				class: "text-[13px] opacity-60 mb-4",
+				children: history_summary({
+					clicks: counts.clicks,
+					rows: counts.cache_rows
+				})
+			}),
+			/* @__PURE__ */ jsxs("div", {
+				class: "flex flex-wrap items-center gap-2 mb-4",
+				children: [
+					/* @__PURE__ */ jsxs("select", {
+						class: "select select-sm w-32",
+						value: since,
+						onChange: (e) => setParam("since", e.target.value),
+						"aria-label": history_aria_time_filter(),
+						children: [
+							/* @__PURE__ */ jsx("option", {
+								value: "all",
+								children: history_opt_all_time()
+							}),
+							/* @__PURE__ */ jsx("option", {
+								value: "24",
+								children: history_opt_last_24h()
+							}),
+							/* @__PURE__ */ jsx("option", {
+								value: "168",
+								children: history_opt_last_week()
+							}),
+							/* @__PURE__ */ jsx("option", {
+								value: "720",
+								children: history_opt_last_month()
+							})
+						]
+					}),
+					/* @__PURE__ */ jsx("input", {
+						type: "search",
+						class: "input input-sm w-56",
+						placeholder: history_filter_placeholder(),
+						value: qf,
+						onInput: (e) => setParam("qf", e.target.value),
+						"aria-label": history_aria_query_filter()
+					}),
+					(since !== "all" || qf) && /* @__PURE__ */ jsx("button", {
+						type: "button",
+						class: "btn btn-ghost btn-sm",
+						onClick: clearFilters,
+						children: history_clear()
+					}),
+					/* @__PURE__ */ jsx("div", {
+						class: "ml-auto",
+						children: /* @__PURE__ */ jsx(DeleteControls, {
+							onDeleted: () => load(since, qf),
+							onError: setError
+						})
+					})
+				]
+			}),
+			loading && /* @__PURE__ */ jsx("div", {
+				class: "py-10 flex justify-center",
+				"aria-busy": "true",
+				children: /* @__PURE__ */ jsx("span", { class: "loading loading-dots loading-md" })
+			}),
+			!loading && error && /* @__PURE__ */ jsx("p", {
+				class: "text-error py-6 text-sm",
+				children: history_error({ e: error })
+			}),
+			!loading && !error && items.length === 0 && /* @__PURE__ */ jsxs("p", {
+				class: "opacity-60 py-8 text-sm",
+				children: [
+					history_empty_prefix(),
+					/* @__PURE__ */ jsx("a", {
+						href: "/",
+						class: "link link-primary",
+						children: history_empty_link()
+					}),
+					history_empty_suffix()
+				]
+			}),
+			!loading && items.length > 0 && /* @__PURE__ */ jsx("div", {
+				class: "overflow-x-auto",
+				children: /* @__PURE__ */ jsxs("table", {
+					class: "table table-sm",
+					children: [/* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsxs("tr", {
+						class: "text-[13px] opacity-60",
+						children: [
+							/* @__PURE__ */ jsx("th", { children: history_col_when() }),
+							/* @__PURE__ */ jsx("th", { children: history_col_kind() }),
+							/* @__PURE__ */ jsx("th", { children: history_col_query() }),
+							/* @__PURE__ */ jsx("th", {
+								class: "hidden md:table-cell",
+								children: history_col_detail()
+							}),
+							/* @__PURE__ */ jsx("th", {})
+						]
+					}) }), /* @__PURE__ */ jsx("tbody", { children: items.map((r) => /* @__PURE__ */ jsxs("tr", {
+						class: "align-top",
+						children: [
+							/* @__PURE__ */ jsx("td", {
+								class: "whitespace-nowrap text-[13px]",
+								children: fmtLocal(r.sort_at)
+							}),
+							/* @__PURE__ */ jsx("td", {
+								class: "text-[13px]",
+								children: /* @__PURE__ */ jsx("span", {
+									class: `badge badge-sm ${r.kind === "click" ? "badge-primary" : "badge-ghost"}`,
+									children: r.kind === "click" ? history_kind_click({ source: r.source ?? "web" }) : history_kind_search()
+								})
+							}),
+							/* @__PURE__ */ jsx("td", {
+								class: "text-[13px]",
+								children: /* @__PURE__ */ jsx("a", {
+									href: `/row/${r.query_hash}`,
+									class: "link link-primary",
+									onClick: (e) => {
+										e.preventDefault();
+										if (r.query) openPath(`/search?q=${encodeURIComponent(r.query)}`);
+										else window.location.href = `/row/${r.query_hash}`;
+									},
+									children: r.query || history_no_query()
+								})
+							}),
+							/* @__PURE__ */ jsx("td", {
+								class: "hidden md:table-cell text-[13px] opacity-60 max-w-[300px] truncate",
+								children: r.kind === "click" ? /* @__PURE__ */ jsx("a", {
+									href: r.url,
+									target: "_blank",
+									rel: "noopener noreferrer",
+									class: "link link-hover",
+									children: truncate(r.url ?? "", 80)
+								}) : /* @__PURE__ */ jsx(Fragment, { children: history_hits({
+									hits: r.hits ?? 0,
+									at: fmtLocal(r.expires_at ?? 0)
+								}) })
+							}),
+							/* @__PURE__ */ jsx("td", { children: r.kind === "click" && /* @__PURE__ */ jsx("button", {
+								type: "button",
+								class: "btn btn-ghost btn-xs",
+								onClick: () => fetch(`/search?q=${encodeURIComponent(r.query || "")}`, { headers: { Accept: "application/json" } }).then((res) => res.text()).then((t) => navigator.clipboard?.writeText(t)).catch((err) => toast("error", history_copy_json_failed({ e: err.message }))),
+								children: history_copy_json()
+							}) })
+						]
+					}, `${r.kind}-${r.query_hash}-${r.sort_at}`)) })]
+				})
+			})
+		]
+	});
+}
+var SINCE_VALUES;
+var init_history = __esmMin((() => {
+	init_Header();
+	init_api();
+	init_format();
+	init_Toasts();
+	init_i18n();
+	init_routes$1();
+	SINCE_VALUES = [
+		"24",
+		"168",
+		"720",
+		"all"
+	];
+}));
+//#endregion
+//#region src/routes/dashboard.tsx
+var dashboard_exports = /* @__PURE__ */ __exportAll({ default: () => DashboardRoute });
+function Panel(props) {
+	return /* @__PURE__ */ jsxs("section", {
+		class: `border border-base-300 rounded-lg p-4 min-w-0 ${props.wide ? "md:col-span-2" : ""}`,
+		children: [/* @__PURE__ */ jsx("h2", {
+			class: "text-sm font-medium mb-3",
+			children: props.title
+		}), props.children]
+	});
+}
+function Empty() {
+	return /* @__PURE__ */ jsx("p", {
+		class: "opacity-50 text-sm",
+		children: dashboard_empty()
+	});
+}
+/** Token-based inline SVG sparkline: total searches per day. */
+function Sparkline({ days }) {
+	const data = days.slice(-30);
+	const max = Math.max(...data.map((d) => d.total), 1);
+	const W = 240;
+	const H = 48;
+	const step = data.length > 1 ? W / (data.length - 1) : W;
+	const pts = data.map((d, i) => `${(i * step).toFixed(1)},${(H - d.total / max * 44 - 2).toFixed(1)}`);
+	return /* @__PURE__ */ jsx("svg", {
+		viewBox: `0 0 ${W} ${H}`,
+		class: "w-full h-12",
+		role: "img",
+		"aria-label": dashboard_aria_sparkline(),
+		children: /* @__PURE__ */ jsx("polyline", {
+			points: pts.join(" "),
+			fill: "none",
+			stroke: "currentColor",
+			"stroke-width": "1.5",
+			class: "text-primary"
+		})
+	});
+}
+function Bar({ value, max, label }) {
+	const pct = max > 0 ? Math.round(value / max * 100) : 0;
+	return /* @__PURE__ */ jsxs("div", {
+		class: "mb-1",
+		children: [/* @__PURE__ */ jsxs("div", {
+			class: "flex justify-between text-[13px]",
+			children: [/* @__PURE__ */ jsx("span", {
+				class: "truncate max-w-[70%]",
+				children: label
+			}), /* @__PURE__ */ jsx("span", {
+				class: "opacity-60",
+				children: value
+			})]
+		}), /* @__PURE__ */ jsx("progress", {
+			class: "progress progress-primary h-1",
+			value: pct,
+			max: 100,
+			"aria-label": `${label}: ${value}`
+		})]
+	});
+}
+function DashboardRoute() {
+	usePageTitle(dashboard_page_title());
+	const [stats, setStats] = useState(null);
+	const [error, setError] = useState(null);
+	const seq = useRef(0);
+	useEffect(() => {
+		const id = ++seq.current;
+		apiStats().then((s) => seq.current === id && (setStats(s), setError(null))).catch((e) => seq.current === id && setError(e.message));
+	}, []);
+	return /* @__PURE__ */ jsxs("div", {
+		class: "w-full max-w-[960px] mx-auto px-4 pb-16",
+		children: [
+			/* @__PURE__ */ jsx("h1", {
+				class: "text-xl font-semibold mt-6 mb-1",
+				children: dashboard_title()
+			}),
+			/* @__PURE__ */ jsx("p", {
+				class: "text-[13px] opacity-60 mb-4",
+				children: dashboard_window({ n: stats?.days ?? 14 })
+			}),
+			error && /* @__PURE__ */ jsx("p", {
+				class: "text-error py-6 text-sm",
+				children: dashboard_error({ e: error })
+			}),
+			!stats && !error && /* @__PURE__ */ jsx("div", {
+				class: "py-10 flex justify-center",
+				"aria-busy": "true",
+				children: /* @__PURE__ */ jsx("span", { class: "loading loading-dots loading-md" })
+			}),
+			stats && /* @__PURE__ */ jsxs("div", {
+				class: "grid gap-4 md:grid-cols-2",
+				children: [
+					/* @__PURE__ */ jsx(Panel, {
+						title: dashboard_panel_per_day(),
+						children: stats.searches_per_day.some((d) => d.total > 0) ? /* @__PURE__ */ jsxs(Fragment, { children: [/* @__PURE__ */ jsx(Sparkline, { days: stats.searches_per_day }), /* @__PURE__ */ jsx("p", {
+							class: "text-[13px] opacity-60 mt-1",
+							children: dashboard_per_day_total({ n: stats.searches_per_day.reduce((a, d) => a + d.total, 0) })
+						})] }) : /* @__PURE__ */ jsx(Empty, {})
+					}),
+					/* @__PURE__ */ jsx(Panel, {
+						title: dashboard_panel_hit_rate(),
+						children: stats.hit_rate.rate != null ? /* @__PURE__ */ jsxs(Fragment, { children: [/* @__PURE__ */ jsxs("div", {
+							class: "text-3xl font-bold",
+							children: [stats.hit_rate.rate, "%"]
+						}), /* @__PURE__ */ jsx("p", {
+							class: "text-[13px] opacity-60",
+							children: dashboard_hit_rate_detail({
+								hits: stats.hit_rate.cache_hits,
+								total: stats.hit_rate.total
+							})
+						})] }) : /* @__PURE__ */ jsx(Empty, {})
+					}),
+					/* @__PURE__ */ jsx(Panel, {
+						title: dashboard_panel_latency(),
+						children: stats.latency_ms.p50 != null ? /* @__PURE__ */ jsx("div", {
+							class: "grid grid-cols-3 gap-2 text-center",
+							children: [
+								"p50",
+								"p90",
+								"p99"
+							].map((p) => /* @__PURE__ */ jsxs("div", { children: [/* @__PURE__ */ jsx("div", {
+								class: "text-xl font-semibold",
+								children: Math.round(stats.latency_ms[p] ?? 0)
+							}), /* @__PURE__ */ jsxs("div", {
+								class: "text-[13px] opacity-60",
+								children: [p, " ms"]
+							})] }, p))
+						}) : /* @__PURE__ */ jsx(Empty, {})
+					}),
+					/* @__PURE__ */ jsx(Panel, {
+						title: dashboard_panel_clients(),
+						children: stats.client_split.length > 0 ? /* @__PURE__ */ jsx("div", { children: stats.client_split.map((c) => /* @__PURE__ */ jsx(Bar, {
+							value: c.count,
+							label: c.client,
+							max: Math.max(...stats.client_split.map((x) => x.count))
+						}, c.client)) }) : /* @__PURE__ */ jsx(Empty, {})
+					}),
+					/* @__PURE__ */ jsx(Panel, {
+						title: dashboard_panel_top_queries(),
+						wide: true,
+						children: stats.top_queries.length > 0 ? /* @__PURE__ */ jsx("div", { children: stats.top_queries.slice(0, 10).map((q) => /* @__PURE__ */ jsx(Bar, {
+							value: q.count,
+							label: q.query,
+							max: Math.max(...stats.top_queries.slice(0, 10).map((x) => x.count))
+						}, q.query)) }) : /* @__PURE__ */ jsx(Empty, {})
+					}),
+					/* @__PURE__ */ jsx(Panel, {
+						title: dashboard_panel_zero_result(),
+						wide: true,
+						children: stats.zero_result_queries.length > 0 ? /* @__PURE__ */ jsx("ul", {
+							class: "text-[13px] space-y-1",
+							children: stats.zero_result_queries.slice(0, 10).map((q) => /* @__PURE__ */ jsxs("li", {
+								class: "flex justify-between gap-4",
+								children: [/* @__PURE__ */ jsx("span", {
+									class: "truncate",
+									children: q.query
+								}), /* @__PURE__ */ jsx("span", {
+									class: "opacity-60 whitespace-nowrap",
+									children: fmtTs(q.last_seen)
+								})]
+							}, q.query))
+						}) : /* @__PURE__ */ jsx("p", {
+							class: "opacity-50 text-sm",
+							children: dashboard_zero_result_none()
+						})
+					}),
+					/* @__PURE__ */ jsx(Panel, {
+						title: dashboard_panel_cache(),
+						wide: true,
+						children: /* @__PURE__ */ jsx("table", {
+							class: "table table-sm text-[13px]",
+							children: /* @__PURE__ */ jsxs("tbody", { children: [
+								/* @__PURE__ */ jsxs("tr", { children: [
+									/* @__PURE__ */ jsx("td", {
+										class: "opacity-60",
+										children: dashboard_cache_rows()
+									}),
+									/* @__PURE__ */ jsx("td", {
+										class: "text-right",
+										children: stats.cache.rows
+									}),
+									/* @__PURE__ */ jsx("td", {
+										class: "opacity-60",
+										children: dashboard_cache_unexpired()
+									}),
+									/* @__PURE__ */ jsx("td", {
+										class: "text-right",
+										children: stats.cache.unexpired_rows
+									})
+								] }),
+								/* @__PURE__ */ jsxs("tr", { children: [
+									/* @__PURE__ */ jsx("td", {
+										class: "opacity-60",
+										children: dashboard_cache_db_size()
+									}),
+									/* @__PURE__ */ jsx("td", {
+										class: "text-right",
+										children: fmtBytes(stats.cache.db_size_bytes)
+									}),
+									/* @__PURE__ */ jsx("td", {
+										class: "opacity-60",
+										children: dashboard_cache_total_hits()
+									}),
+									/* @__PURE__ */ jsx("td", {
+										class: "text-right",
+										children: stats.cache.total_hits
+									})
+								] }),
+								/* @__PURE__ */ jsxs("tr", { children: [
+									/* @__PURE__ */ jsx("td", {
+										class: "opacity-60",
+										children: dashboard_cache_newest()
+									}),
+									/* @__PURE__ */ jsx("td", {
+										class: "text-right",
+										children: fmtTs(stats.cache.newest)
+									}),
+									/* @__PURE__ */ jsx("td", {
+										class: "opacity-60",
+										children: dashboard_cache_oldest()
+									}),
+									/* @__PURE__ */ jsx("td", {
+										class: "text-right",
+										children: fmtTs(stats.cache.oldest_unexpired)
+									})
+								] })
+							] })
+						})
+					})
+				]
+			})
+		]
+	});
+}
+var init_dashboard = __esmMin((() => {
+	init_Header();
+	init_api();
+	init_format();
+	init_i18n();
+}));
+//#endregion
+//#region src/routes/404.tsx
+var _404_exports = /* @__PURE__ */ __exportAll({ default: () => NotFound });
+function NotFound() {
+	return /* @__PURE__ */ jsxs("div", {
+		class: "flex-1 flex flex-col items-center justify-center min-h-[60vh] px-4 text-center animate-in fade-in zoom-in-95 duration-300",
+		children: [
+			/* @__PURE__ */ jsx("p", {
+				class: "text-5xl font-logo font-semibold tracking-tight opacity-30",
+				children: "404"
+			}),
+			/* @__PURE__ */ jsx("h1", {
+				class: "mt-2 text-lg font-medium",
+				children: notfound_title()
+			}),
+			/* @__PURE__ */ jsx("p", {
+				class: "mt-1 text-sm opacity-60",
+				children: notfound_body()
+			}),
+			/* @__PURE__ */ jsxs("div", {
+				class: "mt-6 flex items-center gap-2",
+				children: [/* @__PURE__ */ jsx("a", {
+					href: "/",
+					class: "btn btn-primary btn-sm",
+					children: notfound_back()
+				}), /* @__PURE__ */ jsx("a", {
+					href: "/history",
+					class: "btn btn-ghost btn-sm",
+					children: notfound_history()
+				})]
+			})
+		]
+	});
+}
+var init__404 = __esmMin((() => {
+	init_i18n();
+}));
+//#endregion
+//#region src/app.tsx
+init_routes$1();
+var withLayout = (load) => lazy(async () => {
+	const { default: Page } = await load();
+	return { default: (props) => /* @__PURE__ */ jsx(Layout, { children: /* @__PURE__ */ jsx(Page, { ...props }) }) };
+});
+var Pages = {
+	home: withLayout(() => Promise.resolve().then(() => (init_routes(), routes_exports))),
+	search: withLayout(() => Promise.resolve().then(() => (init_search(), search_exports))),
+	history: withLayout(() => Promise.resolve().then(() => (init_history(), history_exports))),
+	dashboard: withLayout(() => Promise.resolve().then(() => (init_dashboard(), dashboard_exports))),
+	notFound: withLayout(() => Promise.resolve().then(() => (init__404(), _404_exports)))
+};
+function Routed() {
+	const page = useRoute();
+	const Page = page ? Pages[page.route] : Pages.notFound;
+	return /* @__PURE__ */ jsx(Page, {});
+}
+function App() {
+	return /* @__PURE__ */ jsx(ErrorBoundary, { children: /* @__PURE__ */ jsx(Routed, {}) });
 }
 //#endregion
 //#region src/entry-prerender.tsx
+init_routes$1();
 /** Render the App for `url` to { html, links }. Routes with dynamic content
 * (search results, history) prerender only the shell; data loads client-side
-* on hydration. */
+* on hydration. The router store has no window in SSR, so seed it with the
+* target URL before rendering. */
 async function prerenderApp(url) {
 	locationStub(url);
-	return await prerender(/* @__PURE__ */ jsx(App, { url }));
+	openPath(url);
+	return await prerender(/* @__PURE__ */ jsx(App, {}));
 }
 //#endregion
 export { prerenderApp };

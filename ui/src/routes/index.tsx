@@ -1,13 +1,12 @@
 import { useState } from "preact/hooks";
-import { useLocation } from "preact-iso";
 import { Center, usePageTitle } from "../components/Header";
+import { navigate } from "../lib/routes";
 import { useModels, useSearchMode, type Mode } from "../components/ModeSegments";
 import { SearchBox } from "../features/suggests/SearchBox";
 import * as m from "../lib/i18n";
 
 export default function Home() {
   usePageTitle("");
-  const { route } = useLocation();
   const [q, setQ] = useState("");
   const [mode, setMode] = useSearchMode();
   const { available: aiAvailable, models, error: modelsError } = useModels();
@@ -19,11 +18,7 @@ export default function Home() {
     if (!trimmed) return;
     // persist the mode preference at event time (useSearchMode stores it)
     setMode(mode);
-    const url =
-      effectiveMode === "ai"
-        ? `/search?q=${encodeURIComponent(trimmed)}&mode=ai`
-        : `/search?q=${encodeURIComponent(trimmed)}`;
-    route(url);
+    navigate("search", effectiveMode === "ai" ? { q: trimmed, mode: "ai" } : { q: trimmed });
   };
 
   return (

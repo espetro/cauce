@@ -15,6 +15,9 @@
   },
   "dependencies": {
     "@fontsource-variable/plus-jakarta-sans": "^5.3.0",
+    "@nanostores/preact": "^1.1.0",
+    "@nanostores/router": "^1.1.0",
+    "nanostores": "^1.5.3",
     "preact": "^10.29.8",
     "preact-iso": "^2.12.2",
     "valibot": "^1.5.0",
@@ -31,6 +34,7 @@
     "@types/node": "^24.13.4",
     "@types/react": "^19",
     "daisyui": "^5.7.38",
+    "happy-dom": "^20.14.5",
     "openapi-typescript": "^7.13.0",
     "oxfmt": "^0.68.0",
     "oxlint": "^1.83.0",

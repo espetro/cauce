@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from "preact/hooks";
-import { useLocation } from "preact-iso";
 import { usePageTitle } from "../components/Header";
 import { deleteHistory, fetchApiHistory, type HistoryScope } from "../lib/api";
 import type { HistoryRow } from "../lib/schemas";
 import { truncate } from "../lib/format";
 import { toast } from "../components/Toasts";
 import * as m from "../lib/i18n";
+import { openPath, useRoute } from "../lib/routes";
 
 const SINCE_VALUES: HistoryScope[] = ["24", "168", "720", "all"];
 
@@ -79,7 +79,8 @@ function DeleteControls({
 
 export default function HistoryRoute() {
   usePageTitle(m.history_page_title());
-  const { query, route: spaRoute } = useLocation();
+  const page = useRoute();
+  const query = page?.search ?? {};
   // since/qf are URL-addressable (contract: /history?since=24&qf=python)
   const since = parseSince(query?.since);
   const qf = String(query?.qf ?? "");
@@ -119,7 +120,7 @@ export default function HistoryRoute() {
     if (value && !(key === "since" && value === "all")) sp.set(key, value);
     else sp.delete(key);
     const qs = sp.toString();
-    spaRoute(`${window.location.pathname}${qs ? `?${qs}` : ""}`, true);
+    openPath(`${window.location.pathname}${qs ? `?${qs}` : ""}`, true);
   };
 
   const clearFilters = () => {
@@ -127,7 +128,7 @@ export default function HistoryRoute() {
     sp.delete("since");
     sp.delete("qf");
     const qs = sp.toString();
-    spaRoute(`${window.location.pathname}${qs ? `?${qs}` : ""}`, true);
+    openPath(`${window.location.pathname}${qs ? `?${qs}` : ""}`, true);
   };
 
   return (
@@ -213,16 +214,13 @@ export default function HistoryRoute() {
                       href={`/row/${r.query_hash}`}
                       class="link link-primary"
                       onClick={(e) => {
-                        // /row is a backend-only path: no SPA route exists,
-                        // and preact-iso's window-level click listener ignores
-                        // defaultPrevented, so a plain handler here would still
-                        // get the /row URL pushState'd over our navigation.
-                        // stopPropagation in the preact (bubble) phase so
-                        // preact-iso never sees this click.
+                        // /row is a backend-only path: no SPA route exists.
+                        // preventDefault() keeps the router's own click
+                        // interception out (it respects defaultPrevented);
+                        // with a known query we route client-side instead.
                         e.preventDefault();
-                        e.stopPropagation();
                         if (r.query) {
-                          spaRoute(`/search?q=${encodeURIComponent(r.query)}`);
+                          openPath(`/search?q=${encodeURIComponent(r.query)}`);
                         } else {
                           // full-page nav: the server's /row -> /search 302
                           // does the work

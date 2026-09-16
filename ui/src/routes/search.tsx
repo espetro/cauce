@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from "preact/hooks";
-import { useLocation } from "preact-iso";
 import { WindowVirtualizer, type WindowVirtualizerHandle } from "virtua";
 import { useAiAvailable, usePageTitle } from "../components/Header";
 import { useModels, useSearchMode, type Mode } from "../components/ModeSegments";
@@ -7,7 +6,7 @@ import { recordClick } from "../lib/api";
 import { toast } from "../components/Toasts";
 import { ResultCard } from "../features/search/ResultCard";
 import { useSearch, cachedAgeOf, isCacheHit, metaLine } from "../features/search";
-import { searchUrl } from "../features/search/pager";
+import { navigate, openPath, redirect, useRoute, type RouteSearchParams } from "../lib/routes";
 import { fmtDur } from "../lib/format";
 import * as m from "../lib/i18n";
 import { AnswerView } from "../features/answer/AnswerView";
@@ -15,10 +14,15 @@ import { useAnswer } from "../features/answer/useAnswer";
 import { SearchBox } from "../features/suggests/SearchBox";
 
 export default function SearchRoute() {
-  const { query, route } = useLocation();
+  const page = useRoute();
+  const query = page?.search ?? {};
   const q = String(query?.q ?? "");
   // `p` is deprecated (continuous scroll): accepted in deep links, ignored.
   usePageTitle(q || m.search_page_title());
+
+  /** Search URL params, preserving the cross-route ?settings=open flag. */
+  const withSettings = (params: RouteSearchParams): RouteSearchParams =>
+    query.settings ? { ...params, settings: query.settings } : params;
 
   const aiAvailable = useAiAvailable();
   const { models, error: modelsError } = useModels();
@@ -45,7 +49,7 @@ export default function SearchRoute() {
         const sp = new URLSearchParams(window.location.search);
         sp.delete("p");
         const qs = sp.toString();
-        route(`${window.location.pathname}${qs ? `?${qs}` : ""}`, true);
+        openPath(`${window.location.pathname}${qs ? `?${qs}` : ""}`, true);
       }
       // eslint-disable-next-line react-hooks/exhaustive-deps
     },
@@ -92,14 +96,11 @@ export default function SearchRoute() {
 
   // Mode changes reach the URL from the setters below (changeMode, askAi,
   // viewClassic); no sync effect needed.
-  const changeMode = (m: Mode) => {
-    setMode(m);
-    const currentUrlMode =
-      new URLSearchParams(window.location.search).get("mode") === "ai" ? "ai" : "traditional";
-    if (currentUrlMode !== m) {
-      const extra: Record<string, string> = {};
-      if (typeof query?.settings === "string") extra.settings = query.settings;
-      route(searchUrl({ q, mode: m, extra }), true);
+  const changeMode = (next: Mode) => {
+    setMode(next);
+    const currentUrlMode = query?.mode === "ai" ? "ai" : "traditional";
+    if (currentUrlMode !== next) {
+      redirect("search", next === "ai" ? withSettings({ q, mode: "ai" }) : withSettings({ q }));
     }
   };
 
@@ -114,19 +115,17 @@ export default function SearchRoute() {
   const submit = (raw: string) => {
     const t = raw.trim();
     if (!t) return;
-    const extra: Record<string, string> = {};
-    if (typeof query?.settings === "string") extra.settings = query.settings;
-    route(searchUrl({ q: t, mode, extra }));
+    navigate("search", withSettings(mode === "ai" ? { q: t, mode: "ai" } : { q: t }));
   };
 
   const askAi = (query: string) => {
     setMode("ai");
-    route(`/search?q=${encodeURIComponent(query)}&mode=ai`);
+    navigate("search", { q: query, mode: "ai" });
   };
 
   const viewClassic = () => {
     setMode("traditional");
-    route(`/search?q=${encodeURIComponent(q)}`);
+    navigate("search", { q });
   };
   const { payload, loading, error, results } = state;
   const qHash = payload?._q_hash ?? "";
