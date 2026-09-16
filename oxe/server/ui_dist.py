@@ -31,25 +31,3 @@ def _ui_dist_dir() -> Path | None:
     if (pkg / "index.html").is_file():
         return pkg
     return None
-
-
-def _shell(dist: Path, route: str) -> Path:
-    """Per-route prerendered shell (dist/<route>/index.html), else root shell."""
-    shell = dist / route.strip("/") / "index.html"
-    return shell if shell.is_file() else dist / "index.html"
-
-
-_MEDIA_TYPES = {
-    ".html": "text/html",
-    ".js": "application/javascript",
-    ".css": "text/css",
-    ".json": "application/json",
-    ".svg": "image/svg+xml",
-    ".png": "image/png",
-    ".ico": "image/x-icon",
-    ".woff": "font/woff",
-    ".woff2": "font/woff2",
-    ".map": "application/json",
-    ".txt": "text/plain",
-    ".webmanifest": "application/manifest+json",
-}

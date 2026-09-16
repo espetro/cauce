@@ -18,7 +18,7 @@ from ..devlog import event as _dev_event
 from ..search import do_search
 from .schemas import ExaRequest, SearchResponse
 from .state import AppState
-from .ui_dist import _NO_UI_PAGE, _shell, _ui_dist_dir
+from .ui_dist import _NO_UI_PAGE, _ui_dist_dir
 
 log = logging.getLogger(__name__)
 
@@ -112,7 +112,7 @@ def build_router(state: AppState) -> APIRouter:
         dist = _ui_dist_dir()
         if dist is not None:
             return FileResponse(
-                _shell(dist, "/search"),
+                dist / "index.html",
                 media_type="text/html",
                 headers=_xcache_headers(payload),
             )

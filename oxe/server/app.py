@@ -113,4 +113,13 @@ def make_app(
     app.include_router(search_mod.build_router(state))
     app.include_router(cache_admin.build_router(state))
     app.include_router(ai_router_mod.build_router(state))
+
+    # Static SPA hosting last: hashed assets + SPA catch-all (registered after
+    # every API router so API routes always win).
+    from .system import mount_static
+    from .ui_dist import _ui_dist_dir
+
+    dist = _ui_dist_dir()
+    if dist is not None:
+        mount_static(app, dist)
     return app

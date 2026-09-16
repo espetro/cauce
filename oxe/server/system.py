@@ -1,14 +1,16 @@
 import os
+from pathlib import Path
 from typing import Optional
 from urllib.parse import quote
 
-from fastapi import APIRouter, HTTPException, Query
-from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
+from fastapi import APIRouter, Query, Request
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
+from starlette.staticfiles import StaticFiles
 
 from .config import SERVICE_NAME, VERSION
 from .schemas import HealthResponse
 from .state import AppState
-from .ui_dist import _MEDIA_TYPES, _NO_UI_PAGE, _ui_dist_dir
+from .ui_dist import _NO_UI_PAGE, _ui_dist_dir
 
 
 def build_router(state: AppState) -> APIRouter:
@@ -33,16 +35,34 @@ def build_router(state: AppState) -> APIRouter:
             return HTMLResponse(_NO_UI_PAGE)
         return RedirectResponse(url=f"/search?q={quote(q)}", status_code=302)
 
-    @router.get("/assets/{name}")
-    def ui_assets(name: str) -> Response:
-        """Serve built SPA assets from the UI dist dir (404 when absent)."""
-        if "/" in name or ".." in name:
-            raise HTTPException(status_code=400, detail="bad path")
-        dist = _ui_dist_dir()
-        p = dist / "assets" / name if dist else None
-        if p is None or not p.is_file():
-            raise HTTPException(status_code=404, detail="not found")
-        media = _MEDIA_TYPES.get(p.suffix, "application/octet-stream")
-        return FileResponse(p, media_type=media)
-
     return router
+
+
+def mount_static(app, dist: Path) -> None:
+    """Static assets + SPA catch-all. Register after all API routers."""
+    if (dist / "assets").is_dir():
+        app.mount("/assets", StaticFiles(directory=dist / "assets"), name="assets")
+
+    def _wants_json(request: Request) -> bool:
+        accept = request.headers.get("accept", "")
+        return "application/json" in accept and "text/html" not in accept
+
+    @app.get("/{path:path}", include_in_schema=False)
+    def spa_catch_all(path: str, request: Request) -> Response:
+        # Prerendered file for this exact path? (e.g. dist/about.html for
+        # /about, dist/404.html for /404)
+        prerendered = None
+        if path:
+            for candidate in (dist / f"{path}.html", dist / path / "index.html"):
+                if candidate.is_file():
+                    prerendered = candidate
+                    break
+        if prerendered is not None:
+            status = 404 if prerendered == dist / "404.html" else 200
+            return FileResponse(prerendered, media_type="text/html", status_code=status)
+        if _wants_json(request):
+            return JSONResponse(
+                status_code=404,
+                content={"error": {"code": "not_found", "message": f"no route for /{path}"}},
+            )
+        return FileResponse(dist / "404.html", media_type="text/html", status_code=404)

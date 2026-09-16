@@ -1366,44 +1366,6 @@
         "summary": "Api Stats"
       }
     },
-    "/assets/{name}": {
-      "get": {
-        "description": "Serve built SPA assets from the UI dist dir (404 when absent).",
-        "operationId": "ui_assets_assets__name__get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "name",
-            "required": true,
-            "schema": {
-              "title": "Name",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Ui Assets"
-      }
-    },
     "/cache": {
       "get": {
         "operationId": "ui_cache_cache_get",
