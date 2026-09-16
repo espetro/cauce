@@ -2,6 +2,7 @@ import { defineConfig, type UserConfig } from "vite";
 import preact from "@preact/preset-vite";
 import tailwindcss from "@tailwindcss/vite";
 import Icons from "unplugin-icons/vite";
+import { paraglideVitePlugin } from "@inlang/paraglide-js";
 import pkg from "./package.json" with { type: "json" };
 
 // Replace at build time: app version shown in the header.
@@ -13,9 +14,43 @@ const iconResolver = Icons({ compiler: "jsx", jsx: "preact" });
 const isDocument = (req: { headers: Record<string, string | string[] | undefined> }) =>
   (req.headers["sec-fetch-dest"] ?? "") === "document";
 
+const paraglide = paraglideVitePlugin({
+  project: "./project.inlang",
+  outdir: "./src/paraglide",
+  // EN-only app: static locale + baseLocale strategy let the bundler
+  // tree-shake all locale-detection machinery from the paraglide runtime
+  // (keeps us inside the 40KB gz JS budget).
+  strategy: ["baseLocale"],
+  experimentalStaticLocale: '"en"',
+  isServer: "typeof window === 'undefined'",
+  disableAsyncLocalStorage: true,
+});
+
 const spaConfig: UserConfig = {
   define: defines,
-  plugins: [preact(), tailwindcss(), iconResolver],
+  plugins: [
+    preact(),
+    tailwindcss(),
+    iconResolver,
+    paraglide,
+    // EN-only: swap the paraglide runtime for a minimal shim (see
+    // src/lib/paraglide-runtime-shim.js). The prerender build keeps the
+    // real runtime so server-side flows stay intact.
+    {
+      name: "oxe-paraglide-runtime-shim",
+      enforce: "pre",
+      resolveId(source, importer) {
+        if (
+          importer &&
+          importer.includes("src/paraglide") &&
+          (source === "../runtime.js" || source === "./runtime.js")
+        ) {
+          return new URL("./src/lib/paraglide-runtime-shim.js", import.meta.url).pathname;
+        }
+        return null;
+      },
+    },
+  ],
   server: {
     proxy: {
       "/search": {
@@ -57,7 +92,7 @@ const environmentsSsrNoExternal: object = {
 // out of the served bundle and the size budget.
 const prerenderConfig: UserConfig = {
   define: defines,
-  plugins: [preact(), iconResolver],
+  plugins: [preact(), iconResolver, paraglide],
   resolve: {
     // same alias the client build gets from @preact/preset-vite, needed for
     // react-facing deps (e.g. virtua) resolved at SSR runtime

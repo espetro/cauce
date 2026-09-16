@@ -5,6 +5,7 @@ import { bumpModels, ModelPicker } from "../../components/ModelPicker";
 import { toast } from "../../components/Toasts";
 import { getTheme, setTheme, THEMES, type ThemeChoice } from "../../lib/theme";
 import { getSettings, putSettings, PROVIDERS, SettingsSchema, type SettingsValues } from "./schema";
+import * as m from "../../lib/i18n";
 
 /** Settings dialog: native <dialog class="modal"> + <form method="dialog">.
  * Reads/writes the backend [ai] config via GET/PUT /settings; parse-on-submit
@@ -51,7 +52,7 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
       })
       .catch((e: unknown) => {
         if ((e as Error)?.name !== "AbortError")
-          setLoadError((e as Error)?.message ?? "load failed");
+          setLoadError((e as Error)?.message ?? m.settings_load_failed_msg());
       });
     listModels(ctl.signal)
       .then((m) => {
@@ -110,14 +111,14 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
       .then(() => {
         setSaving(false);
         bumpModels();
-        toast("success", "Settings saved");
+        toast("success", m.settings_toast_saved());
         dialogRef.current?.close();
       })
       .catch((err: unknown) => {
         setSaving(false);
-        const msg = (err as Error).message ?? "save failed";
+        const msg = (err as Error).message ?? m.settings_save_failed_msg();
         setSaveError(msg);
-        toast("error", `Settings save failed: ${msg}`);
+        toast("error", m.settings_toast_save_failed({ msg }));
       });
   };
 
@@ -132,7 +133,7 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
     const baseUrl = String(fd.get("base_url") ?? "").trim();
     const apiKey = String(fd.get("api_key") ?? "").trim();
     if (!modelTrimmed) {
-      setTestResult({ ok: false, detail: "Pick a model first" });
+      setTestResult({ ok: false, detail: m.settings_pick_model_first() });
       return;
     }
     setTesting(true);
@@ -146,11 +147,11 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
         setTestResult({ ok: Boolean(r.ok), detail: r.detail });
         toast(
           r.ok ? "success" : "error",
-          r.detail || (r.ok ? "Connection ok" : "Connection failed"),
+          r.detail || (r.ok ? m.settings_conn_ok() : m.settings_conn_failed()),
         );
       })
       .catch((err: unknown) => {
-        const detail = (err as Error).message ?? "test failed";
+        const detail = (err as Error).message ?? m.settings_test_failed();
         setTestResult({ ok: false, detail });
         toast("error", detail);
       })
@@ -161,21 +162,20 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
     fieldErrors[k] ? <p class="text-error text-xs mt-1">{fieldErrors[k]}</p> : null;
 
   return (
-    <dialog ref={dialogRef} class="modal" aria-label="Settings">
+    <dialog ref={dialogRef} class="modal" aria-label={m.settings_aria()}>
       <div class="modal-box w-full max-w-md animate-in fade-in zoom-in-95 duration-150">
-        <h2 class="text-base font-semibold mb-3">Settings</h2>
+        <h2 class="text-base font-semibold mb-3">{m.settings_title()}</h2>
         {loadError && (
           <div role="alert" class="alert alert-error text-sm mb-3">
-            Backend settings endpoints not available ({loadError}) - the server needs GET/PUT
-            /settings support
+            {m.settings_load_failed({ e: loadError })}
           </div>
         )}
         <form ref={formRef} onSubmit={submit} noValidate>
           <fieldset class="fieldset gap-2.5">
-            <legend class="fieldset-legend text-sm">AI</legend>
+            <legend class="fieldset-legend text-sm">{m.settings_fieldset_ai()}</legend>
 
             <label class="label text-xs" for="set-provider">
-              Provider
+              {m.settings_label_provider()}
             </label>
             <select
               id="set-provider"
@@ -193,7 +193,7 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
             {err("provider")}
 
             <label class="label text-xs" for="set-model">
-              Model
+              {m.settings_label_model()}
             </label>
             <ModelPicker
               id="set-model"
@@ -206,25 +206,25 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
             {err("model")}
             {modelsError && models.length === 0 && (
               <p class="text-warning text-xs mt-1" role="note">
-                Model listing failed: {modelsError}
+                {m.model_listing_failed({ e: modelsError })}
               </p>
             )}
 
             <label class="label text-xs" for="set-api-key">
-              API key
+              {m.settings_label_api_key()}
             </label>
             <input
               id="set-api-key"
               name="api_key"
               type="password"
               class="input input-sm w-full"
-              placeholder="(unchanged if blank)"
+              placeholder={m.settings_ph_api_key()}
               autocomplete="off"
             />
             {err("api_key")}
 
             <label class="label text-xs" for="set-base-url">
-              Base URL
+              {m.settings_label_base_url()}
             </label>
             <input
               id="set-base-url"
@@ -243,7 +243,11 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
                 disabled={testing}
                 onClick={runTest}
               >
-                {testing ? <span class="loading loading-spinner loading-xs" /> : "Test connection"}
+                {testing ? (
+                  <span class="loading loading-spinner loading-xs" />
+                ) : (
+                  m.settings_test_connection()
+                )}
               </button>
               {testResult && (
                 <span
@@ -257,13 +261,13 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
 
             <label class="label cursor-pointer gap-2 text-xs justify-start">
               <input type="checkbox" name="enabled" class="toggle toggle-sm" defaultChecked />
-              Enabled
+              {m.settings_label_enabled()}
             </label>
           </fieldset>
 
           <fieldset class="fieldset gap-2.5 mt-2">
-            <legend class="fieldset-legend text-sm">Theme</legend>
-            <div role="radiogroup" aria-label="Theme" class="join">
+            <legend class="fieldset-legend text-sm">{m.settings_fieldset_theme()}</legend>
+            <div role="radiogroup" aria-label={m.settings_aria_theme()} class="join">
               {THEMES.map((t) => (
                 <button
                   key={t}
@@ -277,12 +281,16 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
                     setTheme(t);
                   }}
                 >
-                  {t === "system" ? "System" : t === "light" ? "Light" : "Dark"}
+                  {t === "system"
+                    ? m.settings_theme_system()
+                    : t === "light"
+                      ? m.settings_theme_light()
+                      : m.settings_theme_dark()}
                 </button>
               ))}
             </div>
             {theme === "system" && (
-              <p class="text-xs opacity-50">Follows your OS light/dark preference</p>
+              <p class="text-xs opacity-50">{m.settings_theme_follows_os()}</p>
             )}
           </fieldset>
 
@@ -298,16 +306,16 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
               class="btn btn-ghost btn-sm"
               onClick={() => dialogRef.current?.close()}
             >
-              Cancel
+              {m.settings_cancel()}
             </button>
             <button type="submit" class="btn btn-primary btn-sm" disabled={saving}>
-              {saving ? <span class="loading loading-dots loading-xs" /> : "Save"}
+              {saving ? <span class="loading loading-dots loading-xs" /> : m.settings_save()}
             </button>
           </div>
         </form>
       </div>
       <form method="dialog" class="modal-backdrop">
-        <button aria-label="Close settings">close</button>
+        <button aria-label={m.settings_aria_close()}>{m.settings_backdrop_close()}</button>
       </form>
     </dialog>
   );

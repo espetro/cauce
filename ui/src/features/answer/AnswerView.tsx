@@ -2,6 +2,7 @@ import type { AnswerState } from "./useAnswer";
 import { MarkdownLite } from "./MarkdownLite";
 import { SourceCard } from "./SourceCard";
 import { Empty } from "../../components/Header";
+import * as m from "../../lib/i18n";
 
 interface Props {
   query: string;
@@ -23,18 +24,20 @@ export function AnswerView({ query, state, onStop, onRetry, onAskRelated, onView
   return (
     <div class="pt-2 flex flex-col gap-5 animate-in fade-in slide-in-from-bottom-2 duration-300">
       <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-        <h2 class="text-xs font-semibold tracking-widest uppercase opacity-60">answer</h2>
-        {cached && <span class="badge badge-ghost badge-xs">from cache</span>}
-        {streaming && <span class="text-xs opacity-50">streaming…</span>}
+        <h2 class="text-xs font-semibold tracking-widest uppercase opacity-60">
+          {m.answer_heading()}
+        </h2>
+        {cached && <span class="badge badge-ghost badge-xs">{m.answer_from_cache()}</span>}
+        {streaming && <span class="text-xs opacity-50">{m.answer_streaming()}</span>}
         <span class="ml-auto flex gap-2">
           {streaming && (
             <button type="button" class="btn btn-ghost btn-xs" onClick={onStop}>
-              stop
+              {m.answer_stop()}
             </button>
           )}
           {done && (
             <button type="button" class="btn btn-ghost btn-xs" onClick={onViewClassic}>
-              view classic
+              {m.answer_view_classic()}
             </button>
           )}
         </span>
@@ -66,22 +69,22 @@ export function AnswerView({ query, state, onStop, onRetry, onAskRelated, onView
             </div>
           )}
           <div role="alert" class="alert alert-error animate-in fade-in zoom-in-95 duration-300">
-            <span>stream interrupted - {error}</span>
+            <span>{m.answer_stream_interrupted({ e: error })}</span>
           </div>
           <div class="flex gap-2">
             <button type="button" class="btn btn-sm" onClick={onRetry}>
-              retry
+              {m.answer_retry()}
             </button>
             <button type="button" class="btn btn-ghost btn-sm" onClick={onViewClassic}>
-              switch to classic results
+              {m.answer_switch_classic()}
             </button>
           </div>
         </div>
       ) : emptySources ? (
         <div class="text-sm animate-in fade-in zoom-in-95 duration-300">
-          <p class="opacity-60 mb-2">no sources found for this query - try fewer words, or</p>
+          <p class="opacity-60 mb-2">{m.answer_no_sources()}</p>
           <button type="button" class="btn btn-sm" onClick={onViewClassic}>
-            switch to classic results
+            {m.answer_switch_classic()}
           </button>
         </div>
       ) : text ? (
@@ -92,7 +95,7 @@ export function AnswerView({ query, state, onStop, onRetry, onAskRelated, onView
               ▌
             </span>
           )}
-          {stopped && <p class="text-xs opacity-50 mt-1">stopped</p>}
+          {stopped && <p class="text-xs opacity-50 mt-1">{m.answer_stopped()}</p>}
         </div>
       ) : streaming && steps.length === 0 ? (
         <div class="flex flex-col gap-3 skeleton-shimmer" aria-busy="true">
@@ -109,7 +112,9 @@ export function AnswerView({ query, state, onStop, onRetry, onAskRelated, onView
 
       {sources.length > 0 && (
         <div>
-          <h2 class="text-xs font-semibold tracking-widest uppercase opacity-60 mb-2">sources</h2>
+          <h2 class="text-xs font-semibold tracking-widest uppercase opacity-60 mb-2">
+            {m.answer_sources_heading()}
+          </h2>
           <div class="flex gap-2 overflow-x-auto pb-2 snap-x -mx-4 px-4">
             {sources.map((s, i) => (
               <div
@@ -126,7 +131,9 @@ export function AnswerView({ query, state, onStop, onRetry, onAskRelated, onView
 
       {done && !error && relatedQuestions.length > 0 && (
         <div class="animate-in fade-in duration-300">
-          <h2 class="text-xs font-semibold tracking-widest uppercase opacity-60 mb-2">related</h2>
+          <h2 class="text-xs font-semibold tracking-widest uppercase opacity-60 mb-2">
+            {m.answer_related_heading()}
+          </h2>
           <ul class="space-y-1.5">
             {relatedQuestions.map((rq) => (
               <li key={rq}>
@@ -143,7 +150,7 @@ export function AnswerView({ query, state, onStop, onRetry, onAskRelated, onView
         </div>
       )}
 
-      {!text && !error && !emptySources && done && <Empty>no answer produced</Empty>}
+      {!text && !error && !emptySources && done && <Empty>{m.answer_none_produced()}</Empty>}
     </div>
   );
 }

@@ -1,5 +1,6 @@
 import { useId, useRef, useState } from "preact/hooks";
 import { useMountEffect } from "../lib/useMountEffect";
+import * as m from "../lib/i18n";
 
 /** Module-level models version counter. SettingsDialog calls `bumpModels()`
  * after a successful PUT /settings; every mounted useModels() refetches. */
@@ -43,7 +44,7 @@ export function ModelPicker({
   disabled,
   id,
   size = "sm",
-  label = "AI model",
+  label = m.model_aria_label(),
   modelsError,
 }: Props) {
   const [open, setOpen] = useState(false);
@@ -103,7 +104,7 @@ export function ModelPicker({
           autocomplete="off"
           class={`input ${h} w-full pr-6 min-w-0`}
           value={open ? filter : value}
-          placeholder={value || "filter models…"}
+          placeholder={value || m.model_ph_filter()}
           disabled={disabled}
           onInput={(e) => {
             const v = (e.target as HTMLInputElement).value;
@@ -150,9 +151,7 @@ export function ModelPicker({
           class="absolute left-0 right-0 top-full mt-1 z-50 bg-base-100 border border-base-300 rounded-md shadow-sm py-2 text-xs m-0 list-none p-0"
         >
           <li role="option" aria-selected={false} aria-disabled="true" class="px-3 opacity-60">
-            {modelsError
-              ? `Model listing failed: ${modelsError}`
-              : "No models - check provider / API key in settings"}
+            {modelsError ? m.model_listing_failed({ e: modelsError }) : m.model_none_hint()}
           </li>
         </ul>
       )}

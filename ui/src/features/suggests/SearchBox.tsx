@@ -3,6 +3,7 @@ import { SuggestionsDropdown } from "./SuggestionsDropdown";
 import { useListNav, useSuggests } from "./useSuggests";
 import { AiControls, ModeSegments, type Mode } from "../../components/ModeSegments";
 import { useMountEffect } from "../../lib/useMountEffect";
+import * as m from "../../lib/i18n";
 
 interface Props {
   value: string;
@@ -34,7 +35,7 @@ export function SearchBox({
   autoFocus,
   busy,
   size = "lg",
-  ariaLabel = "search",
+  ariaLabel = m.searchbox_aria_search(),
   mode,
   onModeChange,
   aiAvailable,
@@ -49,7 +50,7 @@ export function SearchBox({
   typedRef.current = value;
 
   const aiMode = mode === "ai";
-  const ph = placeholder ?? (aiMode ? "Ask anything privately" : "Search privately");
+  const ph = placeholder ?? (aiMode ? m.searchbox_ph_ai() : m.searchbox_ph_traditional());
 
   // suggestions are optional in AI mode; suppress them there (less noise)
   const { items, acOn, setAcOn } = useSuggests(aiMode ? "" : value, open);
@@ -124,7 +125,7 @@ export function SearchBox({
     <button
       type="submit"
       class="btn btn-ghost btn-sm btn-circle shrink-0"
-      aria-label="submit search"
+      aria-label={m.searchbox_aria_submit()}
       disabled={busy}
     >
       {busy ? (

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import { ddgAc, suggest } from "../../lib/api";
+import { suggest_group_history, suggest_web_suggestions } from "../../lib/i18n";
 export const AC_KEY = "oxe-ac";
 
 export interface Suggestion {
@@ -70,8 +71,8 @@ export function useSuggests(
 }
 
 export const GROUP_LABEL: Record<Suggestion["group"], string> = {
-  history: "your history",
-  web: "web suggestions",
+  history: suggest_group_history(),
+  web: suggest_web_suggestions(),
 };
 
 /** Merge history entries, dedup case-insensitively, most recent first. */

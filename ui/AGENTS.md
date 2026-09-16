@@ -80,6 +80,43 @@ checkpoint while testing, name it, make it reproducible via URL state
 `.agents/docs/screens/userflow-checkpoints.md` — this convention is the
 contract; keep the two lists in sync.
 
+## Copy & i18n
+
+All user-visible copy lives in `ui/messages/en.json`, compiled by
+@inlang/paraglide-js at build time. Components import messages from one
+place only: `import * as m from "../lib/i18n"` (which re-exports the
+generated `src/paraglide/messages.js`), then call `m.key()` or
+`m.key({ param })`.
+
+- Casing/tone: existing screen copy is lowercase sentence style
+  ("nothing here", "copy json"); brand name "oxe" and acronyms (AI, MCP,
+  API, URL) keep their casing. Match the screen's existing voice; do not
+  introduce Title Case or sentence-cased UI copy.
+- Params, not concatenation: never build user-visible text with template
+  strings across components. Pass params: `m.history_error({ e })`.
+- Plurals: the message-format plugin has no ICU inline plural in the
+  string syntax. Use the object form with an exact-match key:
+  `"search_meta_results": [{ "match": { "n=1": "{n} result", "n=*": "{n} results" } }]`.
+- What migrates: headings, labels, buttons, option text, empty states,
+  error lines, toasts, placeholders, aria-labels, `data-tip` tooltips,
+  `usePageTitle` args.
+- What does NOT migrate: wire values (`provider` ids like "openai",
+  mode values "ai"/"traditional", localStorage keys, env names),
+  `console.*` output, format.ts units (known debt), the logotype "oxe",
+  and the `aria-label="main"` nav landmark.
+- Guardrail: `bun scripts/no-raw-copy.ts` (in the `check` chain after the
+  size budget) fails on raw JSX text nodes and `label:/title:/placeholder:/
+  aria-label:/data-tip="…"` literals under `ui/src`. Intentional
+  exceptions live in the allowlist at the top of the script.
+- EN-only today: `vite.config.ts` pins `experimentalStaticLocale: '"en"'`
+  and aliases the paraglide runtime to `src/lib/paraglide-runtime-shim.js`
+  in the client build so locale-detection machinery stays out of the
+  bundle (budget!). The shim mirrors the generated runtime's internal
+  import surface (what compiled messages import) and MUST be
+  re-verified on any `@inlang/paraglide-js` version bump — messages'
+  imports are the contract. Adding a locale means removing that alias
+  and revisiting the size budget first.
+
 ## Quality loop
 
 - Dev port: `mise run dev` runs the backend on **4480** (must match the vite

@@ -1,5 +1,6 @@
 import type { Suggestion } from "./useSuggests";
 import { GROUP_LABEL } from "./useSuggests";
+import { suggest_aria_toggle_web, suggest_web_suggestions } from "../../lib/i18n";
 
 interface Props {
   items: Suggestion[];
@@ -58,13 +59,13 @@ export function SuggestionsDropdown({ items, activeIndex, onPick, onHover, acOn,
             class="flex items-center justify-between gap-2 px-3 py-1.5 text-[11px] uppercase tracking-wide opacity-60 cursor-pointer select-none"
             role="presentation"
           >
-            web suggestions
+            {suggest_web_suggestions()}
             <input
               type="checkbox"
               class="toggle toggle-xs"
               checked={acOn !== false}
               onChange={(e) => setAcOn((e.target as HTMLInputElement).checked)}
-              aria-label="toggle web suggestions"
+              aria-label={suggest_aria_toggle_web()}
             />
           </label>
         </li>

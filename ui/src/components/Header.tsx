@@ -2,6 +2,7 @@ import { toChildArray, type ComponentChildren, type JSX } from "preact";
 import { useEffect, useState } from "preact/hooks";
 import { useLocation } from "preact-iso";
 import { listModels, type ModelsResponse } from "../lib/ai";
+import * as m from "../lib/i18n";
 import { SettingsDialog } from "../features/settings/SettingsDialog";
 import IconGitHub from "~icons/lucide/github";
 
@@ -13,9 +14,9 @@ interface NavItem {
 }
 
 const NAV: NavItem[] = [
-  { href: "/", label: "Search", exact: true },
-  { href: "/history", label: "History" },
-  { href: "/dashboard", label: "Dashboard" },
+  { href: "/", label: m.nav_search(), exact: true },
+  { href: "/history", label: m.nav_history() },
+  { href: "/dashboard", label: m.nav_dashboard() },
 ];
 
 /** AI-mode availability from GET /v1/models (`ai_available`).
@@ -67,17 +68,17 @@ export function Header() {
         <button
           type="button"
           class="btn btn-ghost btn-xs"
-          aria-label="Settings"
+          aria-label={m.header_aria_settings()}
           onClick={() => route(`${window.location.pathname}?settings=open`)}
         >
-          Settings
+          {m.header_settings()}
         </button>
         <a
           href="https://github.com/espetro/oxe"
           target="_blank"
           rel="noopener noreferrer"
           class="btn btn-ghost btn-sm btn-circle"
-          aria-label="GitHub repository"
+          aria-label={m.header_aria_github()}
           tabIndex={0}
         >
           <GitHubIcon />
@@ -112,20 +113,20 @@ export function ModeToggle({
     disabled: boolean;
     title?: string;
   }> = [
-    { v: "traditional", label: "traditional", disabled: false },
+    { v: "traditional", label: m.mode_label_traditional(), disabled: false },
     {
       v: "ai",
-      label: "AI",
+      label: m.mode_label_ai(),
       disabled: aiAvailable === false,
     },
   ];
   return (
-    <div role="radiogroup" aria-label="Search mode" class="join">
+    <div role="radiogroup" aria-label={m.mode_aria_label()} class="join">
       {opts.map((o) => (
         <span
           key={o.v}
           class="tooltip tooltip-bottom"
-          data-tip={o.disabled ? "configure a model in settings to enable AI mode" : undefined}
+          data-tip={o.disabled ? m.mode_tip_ai_disabled() : undefined}
         >
           <button
             type="button"

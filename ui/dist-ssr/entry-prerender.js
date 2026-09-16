@@ -24,6 +24,2622 @@ var __exportAll = (all, no_symbols) => {
 	if (!no_symbols) __defProp(target, Symbol.toStringTag, { value: "Module" });
 	return target;
 };
+//#endregion
+//#region src/paraglide/runtime.js
+/**
+* @param {typeof strategy} strategyToUse
+* @param {string | undefined} urlForUrlStrategy
+* @returns {Locale | undefined}
+*/
+function resolveLocaleWithStrategies(strategyToUse, urlForUrlStrategy) {
+	/** @type {string | undefined} */
+	let locale;
+	for (const strat of strategyToUse) {
+		if (strat === "baseLocale") locale = "en";
+		else if (isCustomStrategy(strat) && customClientStrategies.has(strat)) {
+			const handler = customClientStrategies.get(strat);
+			if (handler) {
+				const result = handler.getLocale();
+				if (result instanceof Promise) continue;
+				if (result !== void 0) return assertIsLocale(result);
+			}
+		}
+		const matchedLocale = toLocale(locale);
+		if (matchedLocale) return matchedLocale;
+	}
+}
+/**
+* Coerces a locale-like string to the canonical locale value used by the runtime.
+*
+* @param {unknown} value
+* @returns {Locale | undefined}
+*/
+function toLocale(value) {
+	if (typeof value !== "string") return;
+	const lowerValue = value.toLowerCase();
+	for (const locale of locales) if (locale.toLowerCase() === lowerValue) return locale;
+}
+/**
+* Asserts that the input can be normalized to a locale.
+*
+* @param {unknown} input - The input to check.
+* @returns {Locale} The input normalized to a Locale.
+* @throws {Error} If the input is not a locale.
+*/
+function assertIsLocale(input) {
+	const locale = toLocale(input);
+	if (locale) return locale;
+	throw new Error(`Invalid locale: ${input}. Expected one of: ${locales.join(", ")}`);
+}
+/**
+* Applies the configured trailing slash policy to a URL.
+*
+* The root pathname always remains `/`. Query parameters and hashes are not
+* modified.
+*
+* @param {URL} url
+* @returns {URL}
+*/
+function normalizeTrailingSlash(url) {
+	return url;
+}
+/**
+* Matches a canonical URL while allowing configured patterns to retain their
+* existing trailing slash style.
+*
+* @param {URLPattern} pattern
+* @param {URL} url
+* @returns {any}
+*/
+function execUrlPattern(pattern, url) {
+	return pattern.exec(url.href);
+}
+/**
+* Low-level URL de-localization function, primarily used in server contexts.
+*
+* This function is designed for server-side usage where you need precise control
+* over URL de-localization, such as in middleware or request handlers. It works with
+* URL objects and always returns absolute URLs.
+*
+* For client-side UI components, use `deLocalizeHref()` instead, which provides
+* a more convenient API with relative paths.
+*
+* @see https://paraglidejs.com/i18n-routing
+*
+* @example
+* ```typescript
+* // Server middleware example
+* app.use((req, res, next) => {
+*   const url = new URL(req.url, `${req.protocol}://${req.headers.host}`);
+*   const baseUrl = deLocalizeUrl(url);
+*
+*   // Store the base URL for later use
+*   req.baseUrl = baseUrl;
+*   next();
+* });
+* ```
+*
+* @example
+* ```typescript
+* // Using with URL patterns
+* const url = new URL("https://example.com/de/about");
+* deLocalizeUrl(url); // => URL("https://example.com/about")
+*
+* // Using with domain-based localization
+* const url = new URL("https://de.example.com/store");
+* deLocalizeUrl(url); // => URL("https://example.com/store")
+* ```
+*
+* @param {string | URL} url - The URL to de-localize. If string, must be absolute.
+* @returns {URL} The de-localized URL, always absolute
+*/
+function deLocalizeUrl(url) {
+	return deLocalizeUrlDefaultPattern(url);
+}
+/**
+* De-localizes a URL using the default pattern (/:locale/*)
+* @param {string|URL} url
+* @returns {URL}
+*/
+function deLocalizeUrlDefaultPattern(url) {
+	const urlObj = normalizeTrailingSlash(typeof url === "string" ? new URL(url, getUrlOrigin()) : new URL(url));
+	const pathSegments = urlObj.pathname.split("/").filter(Boolean);
+	if (pathSegments.length > 0 && toLocale(pathSegments[0])) urlObj.pathname = "/" + pathSegments.slice(1).join("/");
+	return normalizeTrailingSlash(urlObj);
+}
+/**
+* Match route policy against both the public URL and its canonical URL.
+*
+* The function is deliberately separate from variables.js: configuration is
+* inert data, while canonicalization and route selection form a routing layer.
+*
+* @param {string | URL} url
+* @returns {{ match: string; strategy?: typeof strategy; exclude?: boolean } | undefined}
+*/
+function findMatchingRouteStrategy(url) {
+	if (routeStrategies.length === 0) return;
+	const urlString = typeof url === "string" ? url : url.href;
+	if (cachedRouteStrategyUrl === urlString) return cachedRouteStrategy;
+	const publicUrl = normalizeTrailingSlash(new URL(urlString, "http://example.com"));
+	const canonicalUrl = deLocalizeUrl(publicUrl);
+	const candidateUrls = canonicalUrl.href === publicUrl.href ? [publicUrl] : [publicUrl, canonicalUrl];
+	let match;
+	for (const candidateUrl of candidateUrls) {
+		for (const routeStrategy of routeStrategies) if (execUrlPattern(new URLPattern(routeStrategy.match, candidateUrl.href), candidateUrl)) {
+			match = routeStrategy;
+			break;
+		}
+		if (match) break;
+	}
+	cachedRouteStrategyUrl = urlString;
+	cachedRouteStrategy = match;
+	return match;
+}
+/**
+* Returns the strategy to use for a specific URL.
+*
+* If no route strategy matches (or the matching rule is `exclude: true`),
+* the global strategy is returned.
+*
+* @param {string | URL} url
+* @returns {typeof strategy}
+*/
+function getStrategyForUrl(url) {
+	const routeStrategy = findMatchingRouteStrategy(url);
+	if (routeStrategy && routeStrategy.exclude !== true && Array.isArray(routeStrategy.strategy)) return routeStrategy.strategy;
+	return strategy;
+}
+/**
+* Checks if the given strategy is a custom strategy.
+*
+* @param {unknown} strategy The name of the custom strategy to validate.
+* Must be a string that starts with "custom-" followed by alphanumeric characters, hyphens, or underscores.
+* @returns {boolean} Returns true if it is a custom strategy, false otherwise.
+*/
+function isCustomStrategy(strategy) {
+	return typeof strategy === "string" && /^custom-[A-Za-z0-9_-]+$/.test(strategy);
+}
+var URLPattern, locales, cookieName, strategy, routeStrategies, serverAsyncLocalStorage, isServer, experimentalStaticLocale, localeInitiallySet, getLocale, navigateOrReload, setLocale, getUrlOrigin, cookieNamePattern, cachedRouteStrategyUrl, cachedRouteStrategy, customClientStrategies;
+var init_runtime = __esmMin((() => {
+	URLPattern = {};
+	locales = ["en"];
+	cookieName = "PARAGLIDE_LOCALE";
+	strategy = ["baseLocale"];
+	routeStrategies = [];
+	serverAsyncLocalStorage = void 0;
+	isServer = typeof window === "undefined";
+	experimentalStaticLocale = assertIsLocale("en");
+	/** @type {any} */ globalThis.__paraglide = globalThis.__paraglide ?? {};
+	/** @type {any} */ globalThis.__paraglide.ssr = globalThis.__paraglide.ssr ?? {};
+	localeInitiallySet = false;
+	getLocale = () => {
+		if (experimentalStaticLocale !== void 0) return experimentalStaticLocale;
+		if (serverAsyncLocalStorage) {
+			const locale = serverAsyncLocalStorage?.getStore()?.locale;
+			if (locale) return locale;
+		}
+		let strategyToUse = strategy;
+		if (!isServer && typeof window !== "undefined" && window.location?.href) strategyToUse = getStrategyForUrl(window.location.href);
+		const resolved = resolveLocaleWithStrategies(strategyToUse, typeof window !== "undefined" ? window.location?.href : void 0);
+		if (resolved) {
+			if (!localeInitiallySet) {
+				localeInitiallySet = true;
+				setLocale(resolved, { reload: false });
+			}
+			return resolved;
+		}
+		throw new Error("No locale found. Read the docs https://paraglidejs.com/errors#no-locale-found");
+	};
+	navigateOrReload = (newLocation) => {
+		if (newLocation) window.location.href = newLocation;
+		else window.location.reload();
+	};
+	setLocale = (newLocale, options) => {
+		const optionsWithDefaults = {
+			reload: true,
+			...options
+		};
+		if (experimentalStaticLocale !== void 0 && newLocale !== experimentalStaticLocale && optionsWithDefaults.reload === false) {
+			console.warn(`Paraglide: setLocale(${JSON.stringify(newLocale)}, { reload: false }) cannot switch away from the statically built locale ${JSON.stringify(experimentalStaticLocale)}. A document navigation is required; reload has been forced to true.`);
+			optionsWithDefaults.reload = true;
+		}
+		/** @type {Locale | undefined} */
+		let currentLocale;
+		try {
+			currentLocale = getLocale();
+		} catch {}
+		/** @type {Array<Promise<void>>} */
+		const customSetLocalePromises = [];
+		/** @type {string | undefined} */
+		let newLocation = void 0;
+		let strategyToUse = strategy;
+		if (!isServer && typeof window !== "undefined" && window.location?.href) strategyToUse = getStrategyForUrl(window.location.href);
+		for (const strat of strategyToUse) if (strat === "baseLocale") continue;
+		else if (isCustomStrategy(strat) && customClientStrategies.has(strat)) {
+			const handler = customClientStrategies.get(strat);
+			if (handler) {
+				let result = handler.setLocale(newLocale);
+				if (result instanceof Promise) {
+					result = result.catch((error) => {
+						throw new Error(`Custom strategy "${strat}" setLocale failed.`, { cause: error });
+					});
+					customSetLocalePromises.push(result);
+				}
+			}
+		}
+		const runReload = () => {
+			if (!isServer && optionsWithDefaults.reload && window.location && newLocale !== currentLocale) navigateOrReload(newLocation);
+		};
+		if (customSetLocalePromises.length) return Promise.all(customSetLocalePromises).then(() => {
+			runReload();
+		});
+		runReload();
+	};
+	getUrlOrigin = () => {
+		if (serverAsyncLocalStorage) return serverAsyncLocalStorage.getStore()?.origin ?? "http://fallback.com";
+		else if (typeof window !== "undefined") return window.location.origin;
+		return "http://fallback.com";
+	};
+	cookieNamePattern = cookieName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+	new RegExp(`(?:^|;\\s*)${cookieNamePattern}=([^;]*)`);
+	customClientStrategies = /* @__PURE__ */ new Map();
+}));
+/**
+* A locale that is available in the project.
+*
+* @example
+*   setLocale(request.locale as Locale)
+*
+* @typedef {typeof locales[number]} Locale
+*/
+/**
+* A branded type representing a localized string.
+*
+* Message functions return this type instead of \`string\`, enabling TypeScript
+* to distinguish translated strings from regular strings at compile time.
+* This allows you to enforce that only properly localized content is used
+* in your UI components.
+*
+* Since \`LocalizedString\` is a branded subtype of \`string\`, it remains fully
+* backward compatible—you can pass it anywhere a \`string\` is expected.
+*
+* @example
+*   // Enforce localized strings in your components
+*   function PageTitle(props: { title: LocalizedString }) {
+*     return <h1>{props.title}</h1>
+*   }
+*
+*   // ✅ Correct: using a message function
+*   <PageTitle title={m.welcome_title()} />
+*
+*   // ❌ Type error: raw strings are not LocalizedString
+*   <PageTitle title="Welcome" />
+*
+* @example
+*   // LocalizedString is assignable to string (backward compatible)
+*   const localized: LocalizedString = m.greeting()
+*   const str: string = localized  // ✅ works fine
+*
+*   // But string is not assignable to LocalizedString
+*   const raw: LocalizedString = "Hello"  // ❌ Type error
+*
+* @example
+*   // Catches accidental string concatenation
+*   function showMessage(msg: LocalizedString) { ... }
+*
+*   showMessage(m.hello())                    // ✅
+*   showMessage("Hello " + userName)          // ❌ Type error
+*   showMessage(m.hello_user({ name: userName }))  // ✅ use params instead
+*
+* @typedef {string & { readonly __brand: 'LocalizedString' }} LocalizedString
+*/
+/**
+* A single markup option passed to a tag instance.
+*
+* @typedef {{
+*   name: string;
+*   value: unknown;
+* }} MessageMarkupOption
+*/
+/**
+* A single static markup attribute attached to a tag instance.
+*
+* @typedef {{
+*   name: string;
+*   value: string | true;
+* }} MessageMarkupAttribute
+*/
+/**
+* Record of markup options for a tag instance.
+*
+* @typedef {Record<string, unknown>} MessageMarkupOptions
+*/
+/**
+* Record of markup attributes for a tag instance.
+*
+* @typedef {Record<string, string | true>} MessageMarkupAttributes
+*/
+/**
+* Type-level schema for a single markup tag.
+*
+* @typedef {{
+*   options: MessageMarkupOptions;
+*   attributes: MessageMarkupAttributes;
+*   children: boolean;
+* }} MessageMarkupTag
+*/
+/**
+* Type-level schema for all markup tags in a message.
+*
+* @typedef {Record<string, MessageMarkupTag>} MessageMarkupSchema
+*/
+/**
+* Type-only metadata attached to compiled message functions.
+*
+* @template Inputs
+* @template Options
+* @template {MessageMarkupSchema} [Markup = MessageMarkupSchema]
+* @typedef {{
+*   readonly __paraglide?: {
+*     inputs: Inputs;
+*     options: Options;
+*     markup: Markup;
+*   };
+* }} MessageMetadata
+*/
+/**
+* A compiled, framework-neutral message part.
+*
+* @typedef {{
+*   type: "text";
+*   value: string;
+* } | {
+*   type: "markup-start";
+*   name: string;
+*   options: MessageMarkupOptions;
+*   attributes: MessageMarkupAttributes;
+* } | {
+*   type: "markup-end";
+*   name: string;
+*   options: MessageMarkupOptions;
+*   attributes: MessageMarkupAttributes;
+* } | {
+*   type: "markup-standalone";
+*   name: string;
+*   options: MessageMarkupOptions;
+*   attributes: MessageMarkupAttributes;
+* }} MessagePart
+*/
+/**
+* A message function is a message for a specific locale.
+*
+* @example
+*   m.hello({ name: 'world' })
+*
+* @typedef {(inputs?: Record<string, never>) => LocalizedString} MessageFunction
+*/
+/**
+* A message bundle function that selects the message to be returned.
+*
+* Uses `getLocale()` under the hood to determine the locale with an option.
+*
+* @template {string} T
+*
+* @example
+*   *   m.hello({ name: 'world' }, { locale: "en" })
+*
+* @typedef {(params: Record<string, never>, options: { locale: T }) => LocalizedString} MessageBundleFunction
+*/
+//#endregion
+//#region src/paraglide/messages/about_ai_body.js
+var en_about_ai_body, about_ai_body;
+var init_about_ai_body = __esmMin((() => {
+	init_runtime();
+	en_about_ai_body = () => {
+		return ` streaming answer with cited sources.`;
+	};
+	about_ai_body = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_about_ai_body(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/about_ai_label.js
+var en_about_ai_label, about_ai_label;
+var init_about_ai_label = __esmMin((() => {
+	init_runtime();
+	en_about_ai_label = () => {
+		return `AI:`;
+	};
+	about_ai_label = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_about_ai_label(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/about_aria.js
+var en_about_aria, about_aria;
+var init_about_aria = __esmMin((() => {
+	init_runtime();
+	en_about_aria = () => {
+		return `about oxe: caching, MCP API, search modes`;
+	};
+	about_aria = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_about_aria(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/about_line1.js
+var en_about_line1, about_line1;
+var init_about_line1 = __esmMin((() => {
+	init_runtime();
+	en_about_line1 = () => {
+		return `search once, share with your agents - cached, MCP-ready · REST + MCP API on :4479`;
+	};
+	about_line1 = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_about_line1(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/about_search_body.js
+var en_about_search_body, about_search_body;
+var init_about_search_body = __esmMin((() => {
+	init_runtime();
+	en_about_search_body = () => {
+		return ` classic link results with cache metadata. `;
+	};
+	about_search_body = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_about_search_body(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/about_search_label.js
+var en_about_search_label, about_search_label;
+var init_about_search_label = __esmMin((() => {
+	init_runtime();
+	en_about_search_label = () => {
+		return `search:`;
+	};
+	about_search_label = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_about_search_label(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/ai_label_model.js
+var en_ai_label_model, ai_label_model;
+var init_ai_label_model = __esmMin((() => {
+	init_runtime();
+	en_ai_label_model = () => {
+		return `model`;
+	};
+	ai_label_model = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_ai_label_model(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/ai_label_reasoning.js
+var en_ai_label_reasoning, ai_label_reasoning;
+var init_ai_label_reasoning = __esmMin((() => {
+	init_runtime();
+	en_ai_label_reasoning = () => {
+		return `reasoning`;
+	};
+	ai_label_reasoning = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_ai_label_reasoning(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/answer_from_cache.js
+var en_answer_from_cache, answer_from_cache;
+var init_answer_from_cache = __esmMin((() => {
+	init_runtime();
+	en_answer_from_cache = () => {
+		return `from cache`;
+	};
+	answer_from_cache = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_answer_from_cache(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/answer_heading.js
+var en_answer_heading, answer_heading;
+var init_answer_heading = __esmMin((() => {
+	init_runtime();
+	en_answer_heading = () => {
+		return `answer`;
+	};
+	answer_heading = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_answer_heading(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/answer_no_sources.js
+var en_answer_no_sources, answer_no_sources;
+var init_answer_no_sources = __esmMin((() => {
+	init_runtime();
+	en_answer_no_sources = () => {
+		return `no sources found for this query - try fewer words, or`;
+	};
+	answer_no_sources = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_answer_no_sources(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/answer_none_produced.js
+var en_answer_none_produced, answer_none_produced;
+var init_answer_none_produced = __esmMin((() => {
+	init_runtime();
+	en_answer_none_produced = () => {
+		return `no answer produced`;
+	};
+	answer_none_produced = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_answer_none_produced(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/answer_related_heading.js
+var en_answer_related_heading, answer_related_heading;
+var init_answer_related_heading = __esmMin((() => {
+	init_runtime();
+	en_answer_related_heading = () => {
+		return `related`;
+	};
+	answer_related_heading = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_answer_related_heading(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/answer_retry.js
+var en_answer_retry, answer_retry;
+var init_answer_retry = __esmMin((() => {
+	init_runtime();
+	en_answer_retry = () => {
+		return `retry`;
+	};
+	answer_retry = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_answer_retry(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/answer_sources_heading.js
+var en_answer_sources_heading, answer_sources_heading;
+var init_answer_sources_heading = __esmMin((() => {
+	init_runtime();
+	en_answer_sources_heading = () => {
+		return `sources`;
+	};
+	answer_sources_heading = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_answer_sources_heading(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/answer_stop.js
+var en_answer_stop, answer_stop;
+var init_answer_stop = __esmMin((() => {
+	init_runtime();
+	en_answer_stop = () => {
+		return `stop`;
+	};
+	answer_stop = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_answer_stop(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/answer_stopped.js
+var en_answer_stopped, answer_stopped;
+var init_answer_stopped = __esmMin((() => {
+	init_runtime();
+	en_answer_stopped = () => {
+		return `stopped`;
+	};
+	answer_stopped = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_answer_stopped(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/answer_stream_interrupted.js
+var en_answer_stream_interrupted, answer_stream_interrupted;
+var init_answer_stream_interrupted = __esmMin((() => {
+	init_runtime();
+	en_answer_stream_interrupted = (i) => {
+		return `stream interrupted - ${i?.e}`;
+	};
+	answer_stream_interrupted = ((inputs, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_answer_stream_interrupted(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/answer_streaming.js
+var en_answer_streaming, answer_streaming;
+var init_answer_streaming = __esmMin((() => {
+	init_runtime();
+	en_answer_streaming = () => {
+		return `streaming…`;
+	};
+	answer_streaming = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_answer_streaming(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/answer_switch_classic.js
+var en_answer_switch_classic, answer_switch_classic;
+var init_answer_switch_classic = __esmMin((() => {
+	init_runtime();
+	en_answer_switch_classic = () => {
+		return `switch to classic results`;
+	};
+	answer_switch_classic = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_answer_switch_classic(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/answer_view_classic.js
+var en_answer_view_classic, answer_view_classic;
+var init_answer_view_classic = __esmMin((() => {
+	init_runtime();
+	en_answer_view_classic = () => {
+		return `view classic`;
+	};
+	answer_view_classic = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_answer_view_classic(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/api_network_error.js
+var en_api_network_error, api_network_error;
+var init_api_network_error = __esmMin((() => {
+	init_runtime();
+	en_api_network_error = () => {
+		return `network error`;
+	};
+	api_network_error = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_api_network_error(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/dashboard_aria_sparkline.js
+var en_dashboard_aria_sparkline, dashboard_aria_sparkline;
+var init_dashboard_aria_sparkline = __esmMin((() => {
+	init_runtime();
+	en_dashboard_aria_sparkline = () => {
+		return `searches per day`;
+	};
+	dashboard_aria_sparkline = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_dashboard_aria_sparkline(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/dashboard_cache_db_size.js
+var en_dashboard_cache_db_size, dashboard_cache_db_size;
+var init_dashboard_cache_db_size = __esmMin((() => {
+	init_runtime();
+	en_dashboard_cache_db_size = () => {
+		return `db size`;
+	};
+	dashboard_cache_db_size = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_dashboard_cache_db_size(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/dashboard_cache_newest.js
+var en_dashboard_cache_newest, dashboard_cache_newest;
+var init_dashboard_cache_newest = __esmMin((() => {
+	init_runtime();
+	en_dashboard_cache_newest = () => {
+		return `newest`;
+	};
+	dashboard_cache_newest = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_dashboard_cache_newest(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/dashboard_cache_oldest.js
+var en_dashboard_cache_oldest, dashboard_cache_oldest;
+var init_dashboard_cache_oldest = __esmMin((() => {
+	init_runtime();
+	en_dashboard_cache_oldest = () => {
+		return `oldest`;
+	};
+	dashboard_cache_oldest = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_dashboard_cache_oldest(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/dashboard_cache_rows.js
+var en_dashboard_cache_rows, dashboard_cache_rows;
+var init_dashboard_cache_rows = __esmMin((() => {
+	init_runtime();
+	en_dashboard_cache_rows = () => {
+		return `rows`;
+	};
+	dashboard_cache_rows = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_dashboard_cache_rows(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/dashboard_cache_total_hits.js
+var en_dashboard_cache_total_hits, dashboard_cache_total_hits;
+var init_dashboard_cache_total_hits = __esmMin((() => {
+	init_runtime();
+	en_dashboard_cache_total_hits = () => {
+		return `total hits`;
+	};
+	dashboard_cache_total_hits = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_dashboard_cache_total_hits(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/dashboard_cache_unexpired.js
+var en_dashboard_cache_unexpired, dashboard_cache_unexpired;
+var init_dashboard_cache_unexpired = __esmMin((() => {
+	init_runtime();
+	en_dashboard_cache_unexpired = () => {
+		return `unexpired`;
+	};
+	dashboard_cache_unexpired = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_dashboard_cache_unexpired(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/dashboard_empty.js
+var en_dashboard_empty, dashboard_empty;
+var init_dashboard_empty = __esmMin((() => {
+	init_runtime();
+	en_dashboard_empty = () => {
+		return `no data yet`;
+	};
+	dashboard_empty = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_dashboard_empty(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/dashboard_error.js
+var en_dashboard_error, dashboard_error;
+var init_dashboard_error = __esmMin((() => {
+	init_runtime();
+	en_dashboard_error = (i) => {
+		return `error: ${i?.e}`;
+	};
+	dashboard_error = ((inputs, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_dashboard_error(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/dashboard_hit_rate_detail.js
+var en_dashboard_hit_rate_detail, dashboard_hit_rate_detail;
+var init_dashboard_hit_rate_detail = __esmMin((() => {
+	init_runtime();
+	en_dashboard_hit_rate_detail = (i) => {
+		return `${i?.hits} of ${i?.total} served from cache`;
+	};
+	dashboard_hit_rate_detail = ((inputs, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_dashboard_hit_rate_detail(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/dashboard_page_title.js
+var en_dashboard_page_title, dashboard_page_title;
+var init_dashboard_page_title = __esmMin((() => {
+	init_runtime();
+	en_dashboard_page_title = () => {
+		return `dashboard`;
+	};
+	dashboard_page_title = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_dashboard_page_title(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/dashboard_panel_cache.js
+var en_dashboard_panel_cache, dashboard_panel_cache;
+var init_dashboard_panel_cache = __esmMin((() => {
+	init_runtime();
+	en_dashboard_panel_cache = () => {
+		return `cache`;
+	};
+	dashboard_panel_cache = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_dashboard_panel_cache(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/dashboard_panel_clients.js
+var en_dashboard_panel_clients, dashboard_panel_clients;
+var init_dashboard_panel_clients = __esmMin((() => {
+	init_runtime();
+	en_dashboard_panel_clients = () => {
+		return `client split`;
+	};
+	dashboard_panel_clients = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_dashboard_panel_clients(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/dashboard_panel_hit_rate.js
+var en_dashboard_panel_hit_rate, dashboard_panel_hit_rate;
+var init_dashboard_panel_hit_rate = __esmMin((() => {
+	init_runtime();
+	en_dashboard_panel_hit_rate = () => {
+		return `cache hit rate`;
+	};
+	dashboard_panel_hit_rate = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_dashboard_panel_hit_rate(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/dashboard_panel_latency.js
+var en_dashboard_panel_latency, dashboard_panel_latency;
+var init_dashboard_panel_latency = __esmMin((() => {
+	init_runtime();
+	en_dashboard_panel_latency = () => {
+		return `network latency`;
+	};
+	dashboard_panel_latency = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_dashboard_panel_latency(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/dashboard_panel_per_day.js
+var en_dashboard_panel_per_day, dashboard_panel_per_day;
+var init_dashboard_panel_per_day = __esmMin((() => {
+	init_runtime();
+	en_dashboard_panel_per_day = () => {
+		return `searches per day`;
+	};
+	dashboard_panel_per_day = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_dashboard_panel_per_day(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/dashboard_panel_top_queries.js
+var en_dashboard_panel_top_queries, dashboard_panel_top_queries;
+var init_dashboard_panel_top_queries = __esmMin((() => {
+	init_runtime();
+	en_dashboard_panel_top_queries = () => {
+		return `top queries`;
+	};
+	dashboard_panel_top_queries = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_dashboard_panel_top_queries(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/dashboard_panel_zero_result.js
+var en_dashboard_panel_zero_result, dashboard_panel_zero_result;
+var init_dashboard_panel_zero_result = __esmMin((() => {
+	init_runtime();
+	en_dashboard_panel_zero_result = () => {
+		return `zero-result queries`;
+	};
+	dashboard_panel_zero_result = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_dashboard_panel_zero_result(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/dashboard_per_day_total.js
+var en_dashboard_per_day_total, dashboard_per_day_total;
+var init_dashboard_per_day_total = __esmMin((() => {
+	init_runtime();
+	en_dashboard_per_day_total = (i) => {
+		return `${i?.n} searches in window`;
+	};
+	dashboard_per_day_total = ((inputs, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_dashboard_per_day_total(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/dashboard_title.js
+var en_dashboard_title, dashboard_title;
+var init_dashboard_title = __esmMin((() => {
+	init_runtime();
+	en_dashboard_title = () => {
+		return `oxe stats`;
+	};
+	dashboard_title = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_dashboard_title(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/dashboard_window.js
+var en_dashboard_window, dashboard_window;
+var init_dashboard_window = __esmMin((() => {
+	init_runtime();
+	en_dashboard_window = (i) => {
+		return `window: last ${i?.n} days`;
+	};
+	dashboard_window = ((inputs, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_dashboard_window(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/dashboard_zero_result_none.js
+var en_dashboard_zero_result_none, dashboard_zero_result_none;
+var init_dashboard_zero_result_none = __esmMin((() => {
+	init_runtime();
+	en_dashboard_zero_result_none = () => {
+		return `none 🎉`;
+	};
+	dashboard_zero_result_none = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_dashboard_zero_result_none(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/error_back.js
+var en_error_back, error_back;
+var init_error_back = __esmMin((() => {
+	init_runtime();
+	en_error_back = () => {
+		return `back to search`;
+	};
+	error_back = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_error_back(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/error_title.js
+var en_error_title, error_title;
+var init_error_title = __esmMin((() => {
+	init_runtime();
+	en_error_title = () => {
+		return `something broke`;
+	};
+	error_title = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_error_title(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/error_try_again.js
+var en_error_try_again, error_try_again;
+var init_error_try_again = __esmMin((() => {
+	init_runtime();
+	en_error_try_again = () => {
+		return `try again`;
+	};
+	error_try_again = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_error_try_again(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/header_aria_github.js
+var en_header_aria_github, header_aria_github;
+var init_header_aria_github = __esmMin((() => {
+	init_runtime();
+	en_header_aria_github = () => {
+		return `GitHub repository`;
+	};
+	header_aria_github = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_header_aria_github(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/header_aria_settings.js
+var en_header_aria_settings, header_aria_settings;
+var init_header_aria_settings = __esmMin((() => {
+	init_runtime();
+	en_header_aria_settings = () => {
+		return `Settings`;
+	};
+	header_aria_settings = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_header_aria_settings(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/header_settings.js
+var en_header_settings, header_settings;
+var init_header_settings = __esmMin((() => {
+	init_runtime();
+	en_header_settings = () => {
+		return `Settings`;
+	};
+	header_settings = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_header_settings(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/history_aria_delete_scope.js
+var en_history_aria_delete_scope, history_aria_delete_scope;
+var init_history_aria_delete_scope = __esmMin((() => {
+	init_runtime();
+	en_history_aria_delete_scope = () => {
+		return `delete scope`;
+	};
+	history_aria_delete_scope = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_history_aria_delete_scope(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/history_aria_query_filter.js
+var en_history_aria_query_filter, history_aria_query_filter;
+var init_history_aria_query_filter = __esmMin((() => {
+	init_runtime();
+	en_history_aria_query_filter = () => {
+		return `query filter`;
+	};
+	history_aria_query_filter = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_history_aria_query_filter(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/history_aria_time_filter.js
+var en_history_aria_time_filter, history_aria_time_filter;
+var init_history_aria_time_filter = __esmMin((() => {
+	init_runtime();
+	en_history_aria_time_filter = () => {
+		return `time filter`;
+	};
+	history_aria_time_filter = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_history_aria_time_filter(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/history_clear.js
+var en_history_clear, history_clear;
+var init_history_clear = __esmMin((() => {
+	init_runtime();
+	en_history_clear = () => {
+		return `clear`;
+	};
+	history_clear = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_history_clear(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/history_col_detail.js
+var en_history_col_detail, history_col_detail;
+var init_history_col_detail = __esmMin((() => {
+	init_runtime();
+	en_history_col_detail = () => {
+		return `detail`;
+	};
+	history_col_detail = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_history_col_detail(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/history_col_kind.js
+var en_history_col_kind, history_col_kind;
+var init_history_col_kind = __esmMin((() => {
+	init_runtime();
+	en_history_col_kind = () => {
+		return `kind`;
+	};
+	history_col_kind = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_history_col_kind(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/history_col_query.js
+var en_history_col_query, history_col_query;
+var init_history_col_query = __esmMin((() => {
+	init_runtime();
+	en_history_col_query = () => {
+		return `query`;
+	};
+	history_col_query = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_history_col_query(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/history_col_when.js
+var en_history_col_when, history_col_when;
+var init_history_col_when = __esmMin((() => {
+	init_runtime();
+	en_history_col_when = () => {
+		return `when`;
+	};
+	history_col_when = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_history_col_when(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/history_copy_json.js
+var en_history_copy_json, history_copy_json;
+var init_history_copy_json = __esmMin((() => {
+	init_runtime();
+	en_history_copy_json = () => {
+		return `copy json`;
+	};
+	history_copy_json = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_history_copy_json(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/history_delete_all.js
+var en_history_delete_all, history_delete_all;
+var init_history_delete_all = __esmMin((() => {
+	init_runtime();
+	en_history_delete_all = () => {
+		return `all history`;
+	};
+	history_delete_all = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_history_delete_all(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/history_delete_arm.js
+var en_history_delete_arm, history_delete_arm;
+var init_history_delete_arm = __esmMin((() => {
+	init_runtime();
+	en_history_delete_arm = () => {
+		return `delete…`;
+	};
+	history_delete_arm = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_history_delete_arm(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/history_delete_confirm.js
+var en_history_delete_confirm, history_delete_confirm;
+var init_history_delete_confirm = __esmMin((() => {
+	init_runtime();
+	en_history_delete_confirm = () => {
+		return `confirm delete`;
+	};
+	history_delete_confirm = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_history_delete_confirm(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/history_delete_confirm_all.js
+var en_history_delete_confirm_all, history_delete_confirm_all;
+var init_history_delete_confirm_all = __esmMin((() => {
+	init_runtime();
+	en_history_delete_confirm_all = () => {
+		return `really delete all?`;
+	};
+	history_delete_confirm_all = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_history_delete_confirm_all(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/history_delete_older_24h.js
+var en_history_delete_older_24h, history_delete_older_24h;
+var init_history_delete_older_24h = __esmMin((() => {
+	init_runtime();
+	en_history_delete_older_24h = () => {
+		return `older than 24h`;
+	};
+	history_delete_older_24h = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_history_delete_older_24h(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/history_delete_older_30d.js
+var en_history_delete_older_30d, history_delete_older_30d;
+var init_history_delete_older_30d = __esmMin((() => {
+	init_runtime();
+	en_history_delete_older_30d = () => {
+		return `older than 30d`;
+	};
+	history_delete_older_30d = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_history_delete_older_30d(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/history_delete_older_7d.js
+var en_history_delete_older_7d, history_delete_older_7d;
+var init_history_delete_older_7d = __esmMin((() => {
+	init_runtime();
+	en_history_delete_older_7d = () => {
+		return `older than 7d`;
+	};
+	history_delete_older_7d = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_history_delete_older_7d(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/history_empty_link.js
+var en_history_empty_link, history_empty_link;
+var init_history_empty_link = __esmMin((() => {
+	init_runtime();
+	en_history_empty_link = () => {
+		return `search`;
+	};
+	history_empty_link = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_history_empty_link(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/history_empty_prefix.js
+var en_history_empty_prefix, history_empty_prefix;
+var init_history_empty_prefix = __esmMin((() => {
+	init_runtime();
+	en_history_empty_prefix = () => {
+		return `nothing here yet — open a result from the `;
+	};
+	history_empty_prefix = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_history_empty_prefix(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/history_empty_suffix.js
+var en_history_empty_suffix, history_empty_suffix;
+var init_history_empty_suffix = __esmMin((() => {
+	init_runtime();
+	en_history_empty_suffix = () => {
+		return ` page.`;
+	};
+	history_empty_suffix = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_history_empty_suffix(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/history_error.js
+var en_history_error, history_error;
+var init_history_error = __esmMin((() => {
+	init_runtime();
+	en_history_error = (i) => {
+		return `error: ${i?.e}`;
+	};
+	history_error = ((inputs, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_history_error(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/history_filter_placeholder.js
+var en_history_filter_placeholder, history_filter_placeholder;
+var init_history_filter_placeholder = __esmMin((() => {
+	init_runtime();
+	en_history_filter_placeholder = () => {
+		return `filter by query text…`;
+	};
+	history_filter_placeholder = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_history_filter_placeholder(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/history_hits.js
+var en_history_hits, history_hits;
+var init_history_hits = __esmMin((() => {
+	init_runtime();
+	en_history_hits = (i) => {
+		return `${i?.hits} hits · expires ${i?.at}`;
+	};
+	history_hits = ((inputs, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_history_hits(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/history_kind_click.js
+var en_history_kind_click, history_kind_click;
+var init_history_kind_click = __esmMin((() => {
+	init_runtime();
+	en_history_kind_click = (i) => {
+		return `click · ${i?.source}`;
+	};
+	history_kind_click = ((inputs, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_history_kind_click(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/history_kind_search.js
+var en_history_kind_search, history_kind_search;
+var init_history_kind_search = __esmMin((() => {
+	init_runtime();
+	en_history_kind_search = () => {
+		return `search`;
+	};
+	history_kind_search = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_history_kind_search(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/history_no_query.js
+var en_history_no_query, history_no_query;
+var init_history_no_query = __esmMin((() => {
+	init_runtime();
+	en_history_no_query = () => {
+		return `(no query)`;
+	};
+	history_no_query = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_history_no_query(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/history_opt_all_time.js
+var en_history_opt_all_time, history_opt_all_time;
+var init_history_opt_all_time = __esmMin((() => {
+	init_runtime();
+	en_history_opt_all_time = () => {
+		return `all time`;
+	};
+	history_opt_all_time = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_history_opt_all_time(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/history_opt_last_24h.js
+var en_history_opt_last_24h, history_opt_last_24h;
+var init_history_opt_last_24h = __esmMin((() => {
+	init_runtime();
+	en_history_opt_last_24h = () => {
+		return `last 24h`;
+	};
+	history_opt_last_24h = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_history_opt_last_24h(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/history_opt_last_month.js
+var en_history_opt_last_month, history_opt_last_month;
+var init_history_opt_last_month = __esmMin((() => {
+	init_runtime();
+	en_history_opt_last_month = () => {
+		return `last month`;
+	};
+	history_opt_last_month = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_history_opt_last_month(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/history_opt_last_week.js
+var en_history_opt_last_week, history_opt_last_week;
+var init_history_opt_last_week = __esmMin((() => {
+	init_runtime();
+	en_history_opt_last_week = () => {
+		return `last week`;
+	};
+	history_opt_last_week = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_history_opt_last_week(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/history_page_title.js
+var en_history_page_title, history_page_title;
+var init_history_page_title = __esmMin((() => {
+	init_runtime();
+	en_history_page_title = () => {
+		return `history`;
+	};
+	history_page_title = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_history_page_title(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/history_summary.js
+var en_history_summary, history_summary;
+var init_history_summary = __esmMin((() => {
+	init_runtime();
+	en_history_summary = (i) => {
+		return `${i?.clicks} clicks · ${i?.rows} cached searches · newest first`;
+	};
+	history_summary = ((inputs, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_history_summary(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/history_title.js
+var en_history_title, history_title;
+var init_history_title = __esmMin((() => {
+	init_runtime();
+	en_history_title = () => {
+		return `History`;
+	};
+	history_title = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_history_title(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/home_tagline.js
+var en_home_tagline, home_tagline;
+var init_home_tagline = __esmMin((() => {
+	init_runtime();
+	en_home_tagline = () => {
+		return `your local web intel layer`;
+	};
+	home_tagline = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_home_tagline(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/mode_aria_label.js
+var init_mode_aria_label = __esmMin((() => {
+	init_runtime();
+}));
+//#endregion
+//#region src/paraglide/messages/mode_aria_label_lower.js
+var en_mode_aria_label_lower, mode_aria_label_lower;
+var init_mode_aria_label_lower = __esmMin((() => {
+	init_runtime();
+	en_mode_aria_label_lower = () => {
+		return `search mode`;
+	};
+	mode_aria_label_lower = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_mode_aria_label_lower(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/mode_label_ai.js
+var en_mode_label_ai, mode_label_ai;
+var init_mode_label_ai = __esmMin((() => {
+	init_runtime();
+	en_mode_label_ai = () => {
+		return `AI`;
+	};
+	mode_label_ai = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_mode_label_ai(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/mode_label_traditional.js
+var init_mode_label_traditional = __esmMin((() => {
+	init_runtime();
+}));
+//#endregion
+//#region src/paraglide/messages/mode_tip_ai_disabled.js
+var init_mode_tip_ai_disabled = __esmMin((() => {
+	init_runtime();
+}));
+//#endregion
+//#region src/paraglide/messages/mode_tip_ai_disabled_short.js
+var en_mode_tip_ai_disabled_short, mode_tip_ai_disabled_short;
+var init_mode_tip_ai_disabled_short = __esmMin((() => {
+	init_runtime();
+	en_mode_tip_ai_disabled_short = () => {
+		return `configure a model in settings`;
+	};
+	mode_tip_ai_disabled_short = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_mode_tip_ai_disabled_short(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/model_aria_label.js
+var en_model_aria_label, model_aria_label;
+var init_model_aria_label = __esmMin((() => {
+	init_runtime();
+	en_model_aria_label = () => {
+		return `AI model`;
+	};
+	model_aria_label = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_model_aria_label(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/model_listing_failed.js
+var en_model_listing_failed, model_listing_failed;
+var init_model_listing_failed = __esmMin((() => {
+	init_runtime();
+	en_model_listing_failed = (i) => {
+		return `Model listing failed: ${i?.e}`;
+	};
+	model_listing_failed = ((inputs, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_model_listing_failed(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/model_none_hint.js
+var en_model_none_hint, model_none_hint;
+var init_model_none_hint = __esmMin((() => {
+	init_runtime();
+	en_model_none_hint = () => {
+		return `No models - check provider / API key in settings`;
+	};
+	model_none_hint = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_model_none_hint(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/model_ph_filter.js
+var en_model_ph_filter, model_ph_filter;
+var init_model_ph_filter = __esmMin((() => {
+	init_runtime();
+	en_model_ph_filter = () => {
+		return `filter models…`;
+	};
+	model_ph_filter = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_model_ph_filter(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/nav_dashboard.js
+var en_nav_dashboard, nav_dashboard;
+var init_nav_dashboard = __esmMin((() => {
+	init_runtime();
+	en_nav_dashboard = () => {
+		return `Dashboard`;
+	};
+	nav_dashboard = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_nav_dashboard(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/nav_history.js
+var en_nav_history, nav_history;
+var init_nav_history = __esmMin((() => {
+	init_runtime();
+	en_nav_history = () => {
+		return `History`;
+	};
+	nav_history = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_nav_history(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/nav_search.js
+var en_nav_search, nav_search;
+var init_nav_search = __esmMin((() => {
+	init_runtime();
+	en_nav_search = () => {
+		return `Search`;
+	};
+	nav_search = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_nav_search(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/notfound_back.js
+var en_notfound_back, notfound_back;
+var init_notfound_back = __esmMin((() => {
+	init_runtime();
+	en_notfound_back = () => {
+		return `back to search`;
+	};
+	notfound_back = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_notfound_back(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/notfound_body.js
+var en_notfound_body, notfound_body;
+var init_notfound_body = __esmMin((() => {
+	init_runtime();
+	en_notfound_body = () => {
+		return `this page does not exist — check the address or head back to search`;
+	};
+	notfound_body = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_notfound_body(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/notfound_history.js
+var en_notfound_history, notfound_history;
+var init_notfound_history = __esmMin((() => {
+	init_runtime();
+	en_notfound_history = () => {
+		return `history`;
+	};
+	notfound_history = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_notfound_history(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/notfound_title.js
+var en_notfound_title, notfound_title;
+var init_notfound_title = __esmMin((() => {
+	init_runtime();
+	en_notfound_title = () => {
+		return `nothing here`;
+	};
+	notfound_title = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_notfound_title(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/result_cached_text_preview.js
+var en_result_cached_text_preview, result_cached_text_preview;
+var init_result_cached_text_preview = __esmMin((() => {
+	init_runtime();
+	en_result_cached_text_preview = () => {
+		return `cached page text preview`;
+	};
+	result_cached_text_preview = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_result_cached_text_preview(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/result_untitled.js
+var en_result_untitled, result_untitled;
+var init_result_untitled = __esmMin((() => {
+	init_runtime();
+	en_result_untitled = () => {
+		return `(untitled)`;
+	};
+	result_untitled = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_result_untitled(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/search_ai_blocked.js
+var en_search_ai_blocked, search_ai_blocked;
+var init_search_ai_blocked = __esmMin((() => {
+	init_runtime();
+	en_search_ai_blocked = () => {
+		return `AI mode is not configured - set a model in settings`;
+	};
+	search_ai_blocked = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_search_ai_blocked(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/search_aria_cached_refresh.js
+var en_search_aria_cached_refresh, search_aria_cached_refresh;
+var init_search_aria_cached_refresh = __esmMin((() => {
+	init_runtime();
+	en_search_aria_cached_refresh = () => {
+		return `cached result: click to refresh from the web`;
+	};
+	search_aria_cached_refresh = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_search_aria_cached_refresh(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/search_aria_loading.js
+var en_search_aria_loading, search_aria_loading;
+var init_search_aria_loading = __esmMin((() => {
+	init_runtime();
+	en_search_aria_loading = () => {
+		return `loading`;
+	};
+	search_aria_loading = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_search_aria_loading(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/search_ask_ai_instead.js
+var en_search_ask_ai_instead, search_ask_ai_instead;
+var init_search_ask_ai_instead = __esmMin((() => {
+	init_runtime();
+	en_search_ask_ai_instead = () => {
+		return `ask AI instead`;
+	};
+	search_ask_ai_instead = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_search_ask_ai_instead(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/search_cached.js
+var init_search_cached = __esmMin((() => {
+	init_runtime();
+}));
+//#endregion
+//#region src/paraglide/messages/search_cached_age.js
+var en_search_cached_age, search_cached_age;
+var init_search_cached_age = __esmMin((() => {
+	init_runtime();
+	en_search_cached_age = (i) => {
+		return ` · ${i?.age} old`;
+	};
+	search_cached_age = ((inputs, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_search_cached_age(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/search_copy_json.js
+var en_search_copy_json, search_copy_json;
+var init_search_copy_json = __esmMin((() => {
+	init_runtime();
+	en_search_copy_json = () => {
+		return `copy json`;
+	};
+	search_copy_json = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_search_copy_json(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/search_copy_link.js
+var en_search_copy_link, search_copy_link;
+var init_search_copy_link = __esmMin((() => {
+	init_runtime();
+	en_search_copy_link = () => {
+		return `copy link`;
+	};
+	search_copy_link = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_search_copy_link(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/search_end_of_results.js
+var en_search_end_of_results, search_end_of_results;
+var init_search_end_of_results = __esmMin((() => {
+	init_runtime();
+	en_search_end_of_results = () => {
+		return `end of results`;
+	};
+	search_end_of_results = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_search_end_of_results(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/search_error_backend.js
+var en_search_error_backend, search_error_backend;
+var init_search_error_backend = __esmMin((() => {
+	init_runtime();
+	en_search_error_backend = () => {
+		return `search backend failed`;
+	};
+	search_error_backend = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_search_error_backend(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/search_error_rate_limited.js
+var en_search_error_rate_limited, search_error_rate_limited;
+var init_search_error_rate_limited = __esmMin((() => {
+	init_runtime();
+	en_search_error_rate_limited = () => {
+		return `search backend rate-limited, retry shortly`;
+	};
+	search_error_rate_limited = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_search_error_rate_limited(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/search_meta_results.js
+var en_search_meta_results, search_meta_results;
+var init_search_meta_results = __esmMin((() => {
+	init_runtime();
+	en_search_meta_results = (i) => {
+		if (i?.n === 1 || i?.n === "1") return `${i?.n} result`;
+		return `${i?.n} results`;
+	};
+	search_meta_results = ((inputs, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_search_meta_results(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/search_more_error.js
+var en_search_more_error, search_more_error;
+var init_search_more_error = __esmMin((() => {
+	init_runtime();
+	en_search_more_error = () => {
+		return `couldn’t load more results`;
+	};
+	search_more_error = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_search_more_error(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/search_more_results.js
+var en_search_more_results, search_more_results;
+var init_search_more_results = __esmMin((() => {
+	init_runtime();
+	en_search_more_results = () => {
+		return `more results`;
+	};
+	search_more_results = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_search_more_results(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/search_no_results.js
+var en_search_no_results, search_no_results;
+var init_search_no_results = __esmMin((() => {
+	init_runtime();
+	en_search_no_results = () => {
+		return `no results`;
+	};
+	search_no_results = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_search_no_results(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/search_page_title.js
+var en_search_page_title, search_page_title;
+var init_search_page_title = __esmMin((() => {
+	init_runtime();
+	en_search_page_title = () => {
+		return `search`;
+	};
+	search_page_title = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_search_page_title(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/search_retry.js
+var en_search_retry, search_retry;
+var init_search_retry = __esmMin((() => {
+	init_runtime();
+	en_search_retry = () => {
+		return `retry`;
+	};
+	search_retry = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_search_retry(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/search_searching.js
+var en_search_searching, search_searching;
+var init_search_searching = __esmMin((() => {
+	init_runtime();
+	en_search_searching = () => {
+		return `searching…`;
+	};
+	search_searching = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_search_searching(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/search_tip_refresh.js
+var en_search_tip_refresh, search_tip_refresh;
+var init_search_tip_refresh = __esmMin((() => {
+	init_runtime();
+	en_search_tip_refresh = () => {
+		return `Actually search the web (refreshes this cache entry)`;
+	};
+	search_tip_refresh = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_search_tip_refresh(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/search_toast_refreshed.js
+var en_search_toast_refreshed, search_toast_refreshed;
+var init_search_toast_refreshed = __esmMin((() => {
+	init_runtime();
+	en_search_toast_refreshed = () => {
+		return `refreshed from the web`;
+	};
+	search_toast_refreshed = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_search_toast_refreshed(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/searchbox_aria_search.js
+var en_searchbox_aria_search, searchbox_aria_search;
+var init_searchbox_aria_search = __esmMin((() => {
+	init_runtime();
+	en_searchbox_aria_search = () => {
+		return `search`;
+	};
+	searchbox_aria_search = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_searchbox_aria_search(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/searchbox_aria_submit.js
+var en_searchbox_aria_submit, searchbox_aria_submit;
+var init_searchbox_aria_submit = __esmMin((() => {
+	init_runtime();
+	en_searchbox_aria_submit = () => {
+		return `submit search`;
+	};
+	searchbox_aria_submit = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_searchbox_aria_submit(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/searchbox_ph_ai.js
+var en_searchbox_ph_ai, searchbox_ph_ai;
+var init_searchbox_ph_ai = __esmMin((() => {
+	init_runtime();
+	en_searchbox_ph_ai = () => {
+		return `Ask anything privately`;
+	};
+	searchbox_ph_ai = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_searchbox_ph_ai(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/searchbox_ph_traditional.js
+var en_searchbox_ph_traditional, searchbox_ph_traditional;
+var init_searchbox_ph_traditional = __esmMin((() => {
+	init_runtime();
+	en_searchbox_ph_traditional = () => {
+		return `Search privately`;
+	};
+	searchbox_ph_traditional = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_searchbox_ph_traditional(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/segments_search.js
+var en_segments_search, segments_search;
+var init_segments_search = __esmMin((() => {
+	init_runtime();
+	en_segments_search = () => {
+		return `Search`;
+	};
+	segments_search = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_segments_search(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/settings_aria.js
+var en_settings_aria, settings_aria;
+var init_settings_aria = __esmMin((() => {
+	init_runtime();
+	en_settings_aria = () => {
+		return `Settings`;
+	};
+	settings_aria = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_settings_aria(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/settings_aria_close.js
+var en_settings_aria_close, settings_aria_close;
+var init_settings_aria_close = __esmMin((() => {
+	init_runtime();
+	en_settings_aria_close = () => {
+		return `Close settings`;
+	};
+	settings_aria_close = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_settings_aria_close(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/settings_aria_theme.js
+var en_settings_aria_theme, settings_aria_theme;
+var init_settings_aria_theme = __esmMin((() => {
+	init_runtime();
+	en_settings_aria_theme = () => {
+		return `Theme`;
+	};
+	settings_aria_theme = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_settings_aria_theme(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/settings_backdrop_close.js
+var en_settings_backdrop_close, settings_backdrop_close;
+var init_settings_backdrop_close = __esmMin((() => {
+	init_runtime();
+	en_settings_backdrop_close = () => {
+		return `close`;
+	};
+	settings_backdrop_close = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_settings_backdrop_close(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/settings_cancel.js
+var en_settings_cancel, settings_cancel;
+var init_settings_cancel = __esmMin((() => {
+	init_runtime();
+	en_settings_cancel = () => {
+		return `Cancel`;
+	};
+	settings_cancel = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_settings_cancel(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/settings_conn_failed.js
+var en_settings_conn_failed, settings_conn_failed;
+var init_settings_conn_failed = __esmMin((() => {
+	init_runtime();
+	en_settings_conn_failed = () => {
+		return `Connection failed`;
+	};
+	settings_conn_failed = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_settings_conn_failed(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/settings_conn_ok.js
+var en_settings_conn_ok, settings_conn_ok;
+var init_settings_conn_ok = __esmMin((() => {
+	init_runtime();
+	en_settings_conn_ok = () => {
+		return `Connection ok`;
+	};
+	settings_conn_ok = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_settings_conn_ok(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/settings_fieldset_ai.js
+var en_settings_fieldset_ai, settings_fieldset_ai;
+var init_settings_fieldset_ai = __esmMin((() => {
+	init_runtime();
+	en_settings_fieldset_ai = () => {
+		return `AI`;
+	};
+	settings_fieldset_ai = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_settings_fieldset_ai(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/settings_fieldset_theme.js
+var en_settings_fieldset_theme, settings_fieldset_theme;
+var init_settings_fieldset_theme = __esmMin((() => {
+	init_runtime();
+	en_settings_fieldset_theme = () => {
+		return `Theme`;
+	};
+	settings_fieldset_theme = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_settings_fieldset_theme(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/settings_label_api_key.js
+var en_settings_label_api_key, settings_label_api_key;
+var init_settings_label_api_key = __esmMin((() => {
+	init_runtime();
+	en_settings_label_api_key = () => {
+		return `API key`;
+	};
+	settings_label_api_key = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_settings_label_api_key(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/settings_label_base_url.js
+var en_settings_label_base_url, settings_label_base_url;
+var init_settings_label_base_url = __esmMin((() => {
+	init_runtime();
+	en_settings_label_base_url = () => {
+		return `Base URL`;
+	};
+	settings_label_base_url = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_settings_label_base_url(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/settings_label_enabled.js
+var en_settings_label_enabled, settings_label_enabled;
+var init_settings_label_enabled = __esmMin((() => {
+	init_runtime();
+	en_settings_label_enabled = () => {
+		return `Enabled`;
+	};
+	settings_label_enabled = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_settings_label_enabled(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/settings_label_model.js
+var en_settings_label_model, settings_label_model;
+var init_settings_label_model = __esmMin((() => {
+	init_runtime();
+	en_settings_label_model = () => {
+		return `Model`;
+	};
+	settings_label_model = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_settings_label_model(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/settings_label_provider.js
+var en_settings_label_provider, settings_label_provider;
+var init_settings_label_provider = __esmMin((() => {
+	init_runtime();
+	en_settings_label_provider = () => {
+		return `Provider`;
+	};
+	settings_label_provider = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_settings_label_provider(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/settings_load_failed.js
+var en_settings_load_failed, settings_load_failed;
+var init_settings_load_failed = __esmMin((() => {
+	init_runtime();
+	en_settings_load_failed = (i) => {
+		return `Backend settings endpoints not available (${i?.e}) - the server needs GET/PUT /settings support`;
+	};
+	settings_load_failed = ((inputs, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_settings_load_failed(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/settings_load_failed_msg.js
+var en_settings_load_failed_msg, settings_load_failed_msg;
+var init_settings_load_failed_msg = __esmMin((() => {
+	init_runtime();
+	en_settings_load_failed_msg = () => {
+		return `settings load failed`;
+	};
+	settings_load_failed_msg = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_settings_load_failed_msg(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/settings_ph_api_key.js
+var en_settings_ph_api_key, settings_ph_api_key;
+var init_settings_ph_api_key = __esmMin((() => {
+	init_runtime();
+	en_settings_ph_api_key = () => {
+		return `(unchanged if blank)`;
+	};
+	settings_ph_api_key = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_settings_ph_api_key(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/settings_pick_model_first.js
+var en_settings_pick_model_first, settings_pick_model_first;
+var init_settings_pick_model_first = __esmMin((() => {
+	init_runtime();
+	en_settings_pick_model_first = () => {
+		return `Pick a model first`;
+	};
+	settings_pick_model_first = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_settings_pick_model_first(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/settings_save.js
+var en_settings_save, settings_save;
+var init_settings_save = __esmMin((() => {
+	init_runtime();
+	en_settings_save = () => {
+		return `Save`;
+	};
+	settings_save = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_settings_save(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/settings_save_failed_msg.js
+var en_settings_save_failed_msg, settings_save_failed_msg;
+var init_settings_save_failed_msg = __esmMin((() => {
+	init_runtime();
+	en_settings_save_failed_msg = () => {
+		return `settings save failed`;
+	};
+	settings_save_failed_msg = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_settings_save_failed_msg(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/settings_test_connection.js
+var en_settings_test_connection, settings_test_connection;
+var init_settings_test_connection = __esmMin((() => {
+	init_runtime();
+	en_settings_test_connection = () => {
+		return `Test connection`;
+	};
+	settings_test_connection = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_settings_test_connection(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/settings_test_failed.js
+var en_settings_test_failed, settings_test_failed;
+var init_settings_test_failed = __esmMin((() => {
+	init_runtime();
+	en_settings_test_failed = () => {
+		return `test failed`;
+	};
+	settings_test_failed = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_settings_test_failed(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/settings_theme_dark.js
+var en_settings_theme_dark, settings_theme_dark;
+var init_settings_theme_dark = __esmMin((() => {
+	init_runtime();
+	en_settings_theme_dark = () => {
+		return `Dark`;
+	};
+	settings_theme_dark = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_settings_theme_dark(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/settings_theme_follows_os.js
+var en_settings_theme_follows_os, settings_theme_follows_os;
+var init_settings_theme_follows_os = __esmMin((() => {
+	init_runtime();
+	en_settings_theme_follows_os = () => {
+		return `Follows your OS light/dark preference`;
+	};
+	settings_theme_follows_os = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_settings_theme_follows_os(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/settings_theme_light.js
+var en_settings_theme_light, settings_theme_light;
+var init_settings_theme_light = __esmMin((() => {
+	init_runtime();
+	en_settings_theme_light = () => {
+		return `Light`;
+	};
+	settings_theme_light = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_settings_theme_light(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/settings_theme_system.js
+var en_settings_theme_system, settings_theme_system;
+var init_settings_theme_system = __esmMin((() => {
+	init_runtime();
+	en_settings_theme_system = () => {
+		return `System`;
+	};
+	settings_theme_system = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_settings_theme_system(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/settings_title.js
+var en_settings_title, settings_title;
+var init_settings_title = __esmMin((() => {
+	init_runtime();
+	en_settings_title = () => {
+		return `Settings`;
+	};
+	settings_title = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_settings_title(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/settings_toast_save_failed.js
+var en_settings_toast_save_failed, settings_toast_save_failed;
+var init_settings_toast_save_failed = __esmMin((() => {
+	init_runtime();
+	en_settings_toast_save_failed = (i) => {
+		return `Settings save failed: ${i?.msg}`;
+	};
+	settings_toast_save_failed = ((inputs, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_settings_toast_save_failed(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/settings_toast_saved.js
+var en_settings_toast_saved, settings_toast_saved;
+var init_settings_toast_saved = __esmMin((() => {
+	init_runtime();
+	en_settings_toast_saved = () => {
+		return `Settings saved`;
+	};
+	settings_toast_saved = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_settings_toast_saved(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/suggest_aria_toggle_web.js
+var en_suggest_aria_toggle_web, suggest_aria_toggle_web;
+var init_suggest_aria_toggle_web = __esmMin((() => {
+	init_runtime();
+	en_suggest_aria_toggle_web = () => {
+		return `toggle web suggestions`;
+	};
+	suggest_aria_toggle_web = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_suggest_aria_toggle_web(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/suggest_group_history.js
+var en_suggest_group_history, suggest_group_history;
+var init_suggest_group_history = __esmMin((() => {
+	init_runtime();
+	en_suggest_group_history = () => {
+		return `your history`;
+	};
+	suggest_group_history = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_suggest_group_history(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/suggest_web_suggestions.js
+var en_suggest_web_suggestions, suggest_web_suggestions;
+var init_suggest_web_suggestions = __esmMin((() => {
+	init_runtime();
+	en_suggest_web_suggestions = () => {
+		return `web suggestions`;
+	};
+	suggest_web_suggestions = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_suggest_web_suggestions(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/_index.js
+var init__index = __esmMin((() => {
+	init_about_ai_body();
+	init_about_ai_label();
+	init_about_aria();
+	init_about_line1();
+	init_about_search_body();
+	init_about_search_label();
+	init_ai_label_model();
+	init_ai_label_reasoning();
+	init_answer_from_cache();
+	init_answer_heading();
+	init_answer_no_sources();
+	init_answer_none_produced();
+	init_answer_related_heading();
+	init_answer_retry();
+	init_answer_sources_heading();
+	init_answer_stop();
+	init_answer_stopped();
+	init_answer_stream_interrupted();
+	init_answer_streaming();
+	init_answer_switch_classic();
+	init_answer_view_classic();
+	init_api_network_error();
+	init_dashboard_aria_sparkline();
+	init_dashboard_cache_db_size();
+	init_dashboard_cache_newest();
+	init_dashboard_cache_oldest();
+	init_dashboard_cache_rows();
+	init_dashboard_cache_total_hits();
+	init_dashboard_cache_unexpired();
+	init_dashboard_empty();
+	init_dashboard_error();
+	init_dashboard_hit_rate_detail();
+	init_dashboard_page_title();
+	init_dashboard_panel_cache();
+	init_dashboard_panel_clients();
+	init_dashboard_panel_hit_rate();
+	init_dashboard_panel_latency();
+	init_dashboard_panel_per_day();
+	init_dashboard_panel_top_queries();
+	init_dashboard_panel_zero_result();
+	init_dashboard_per_day_total();
+	init_dashboard_title();
+	init_dashboard_window();
+	init_dashboard_zero_result_none();
+	init_error_back();
+	init_error_title();
+	init_error_try_again();
+	init_header_aria_github();
+	init_header_aria_settings();
+	init_header_settings();
+	init_history_aria_delete_scope();
+	init_history_aria_query_filter();
+	init_history_aria_time_filter();
+	init_history_clear();
+	init_history_col_detail();
+	init_history_col_kind();
+	init_history_col_query();
+	init_history_col_when();
+	init_history_copy_json();
+	init_history_delete_all();
+	init_history_delete_arm();
+	init_history_delete_confirm();
+	init_history_delete_confirm_all();
+	init_history_delete_older_24h();
+	init_history_delete_older_30d();
+	init_history_delete_older_7d();
+	init_history_empty_link();
+	init_history_empty_prefix();
+	init_history_empty_suffix();
+	init_history_error();
+	init_history_filter_placeholder();
+	init_history_hits();
+	init_history_kind_click();
+	init_history_kind_search();
+	init_history_no_query();
+	init_history_opt_all_time();
+	init_history_opt_last_24h();
+	init_history_opt_last_month();
+	init_history_opt_last_week();
+	init_history_page_title();
+	init_history_summary();
+	init_history_title();
+	init_home_tagline();
+	init_mode_aria_label();
+	init_mode_aria_label_lower();
+	init_mode_label_ai();
+	init_mode_label_traditional();
+	init_mode_tip_ai_disabled();
+	init_mode_tip_ai_disabled_short();
+	init_model_aria_label();
+	init_model_listing_failed();
+	init_model_none_hint();
+	init_model_ph_filter();
+	init_nav_dashboard();
+	init_nav_history();
+	init_nav_search();
+	init_notfound_back();
+	init_notfound_body();
+	init_notfound_history();
+	init_notfound_title();
+	init_result_cached_text_preview();
+	init_result_untitled();
+	init_search_ai_blocked();
+	init_search_aria_cached_refresh();
+	init_search_aria_loading();
+	init_search_ask_ai_instead();
+	init_search_cached();
+	init_search_cached_age();
+	init_search_copy_json();
+	init_search_copy_link();
+	init_search_end_of_results();
+	init_search_error_backend();
+	init_search_error_rate_limited();
+	init_search_meta_results();
+	init_search_more_error();
+	init_search_more_results();
+	init_search_no_results();
+	init_search_page_title();
+	init_search_retry();
+	init_search_searching();
+	init_search_tip_refresh();
+	init_search_toast_refreshed();
+	init_searchbox_aria_search();
+	init_searchbox_aria_submit();
+	init_searchbox_ph_ai();
+	init_searchbox_ph_traditional();
+	init_segments_search();
+	init_settings_aria();
+	init_settings_aria_close();
+	init_settings_aria_theme();
+	init_settings_backdrop_close();
+	init_settings_cancel();
+	init_settings_conn_failed();
+	init_settings_conn_ok();
+	init_settings_fieldset_ai();
+	init_settings_fieldset_theme();
+	init_settings_label_api_key();
+	init_settings_label_base_url();
+	init_settings_label_enabled();
+	init_settings_label_model();
+	init_settings_label_provider();
+	init_settings_load_failed();
+	init_settings_load_failed_msg();
+	init_settings_ph_api_key();
+	init_settings_pick_model_first();
+	init_settings_save();
+	init_settings_save_failed_msg();
+	init_settings_test_connection();
+	init_settings_test_failed();
+	init_settings_theme_dark();
+	init_settings_theme_follows_os();
+	init_settings_theme_light();
+	init_settings_theme_system();
+	init_settings_title();
+	init_settings_toast_save_failed();
+	init_settings_toast_saved();
+	init_suggest_aria_toggle_web();
+	init_suggest_group_history();
+	init_suggest_web_suggestions();
+}));
+//#endregion
+//#region src/paraglide/messages.js
+var init_messages = __esmMin((() => {
+	init__index();
+	init__index();
+}));
+//#endregion
+//#region src/lib/i18n.ts
+var init_i18n = __esmMin((() => {
+	init_messages();
+}));
 /** Time an async fetch; reports duration_ms + outcome. */
 async function devTimed(event, extra, fn) {
 	return fn();
@@ -220,7 +2836,7 @@ async function request(url, schema, opts = {}) {
 		});
 	} catch (e) {
 		if (e?.name === "AbortError") throw e;
-		throw new ApiError("network_error", e?.message ?? "network error", 0);
+		throw new ApiError("network_error", e?.message ?? api_network_error(), 0);
 	}
 	if (!res.ok) {
 		let code = "http_error";
@@ -324,6 +2940,7 @@ function apiStats(signal) {
 }
 var BASE, ApiError, ErrorEnvelopeSchema, SINCE_TO_BACKEND;
 var init_api = __esmMin((() => {
+	init_i18n();
 	init_devlog();
 	init_schemas();
 	BASE = "";
@@ -518,7 +3135,7 @@ function currentModelsVersion() {
 /** Filterable model combobox (SRP: pick one model from a large list).
 * Text input filters, click/focus opens, Enter selects, Escape closes;
 * aria-combobox semantics; list is max-height + scroll (446-model lists). */
-function ModelPicker({ models, value, onChange, disabled, id, size = "sm", label = "AI model", modelsError }) {
+function ModelPicker({ models, value, onChange, disabled, id, size = "sm", label = model_aria_label(), modelsError }) {
 	const [open, setOpen] = useState(false);
 	const [filter, setFilter] = useState("");
 	const [active, setActive] = useState(0);
@@ -572,7 +3189,7 @@ function ModelPicker({ models, value, onChange, disabled, id, size = "sm", label
 					autocomplete: "off",
 					class: `input ${size === "xs" ? "select-xs" : "select-sm"} w-full pr-6 min-w-0`,
 					value: open ? filter : value,
-					placeholder: value || "filter models…",
+					placeholder: value || model_ph_filter(),
 					disabled,
 					onInput: (e) => {
 						const v = e.target.value;
@@ -619,7 +3236,7 @@ function ModelPicker({ models, value, onChange, disabled, id, size = "sm", label
 					"aria-selected": false,
 					"aria-disabled": "true",
 					class: "px-3 opacity-60",
-					children: modelsError ? `Model listing failed: ${modelsError}` : "No models - check provider / API key in settings"
+					children: modelsError ? model_listing_failed({ e: modelsError }) : model_none_hint()
 				})
 			}),
 			open && filtered.length > 0 && /* @__PURE__ */ jsx("ul", {
@@ -645,6 +3262,7 @@ function ModelPicker({ models, value, onChange, disabled, id, size = "sm", label
 var modelsVersion;
 var init_ModelPicker = __esmMin((() => {
 	init_useMountEffect();
+	init_i18n();
 	modelsVersion = 0;
 }));
 //#endregion
@@ -800,7 +3418,7 @@ function SettingsDialog({ onClose }) {
 			const enabled = formRef.current?.elements?.namedItem("enabled");
 			if (enabled instanceof HTMLInputElement) enabled.checked = ai.enabled;
 		}).catch((e) => {
-			if (e?.name !== "AbortError") setLoadError(e?.message ?? "load failed");
+			if (e?.name !== "AbortError") setLoadError(e?.message ?? settings_load_failed_msg());
 		});
 		listModels(ctl.signal).then((m) => {
 			setModels(m.data.map((d) => d.id));
@@ -849,13 +3467,13 @@ function SettingsDialog({ onClose }) {
 		}).then(() => {
 			setSaving(false);
 			bumpModels();
-			toast("success", "Settings saved");
+			toast("success", settings_toast_saved());
 			dialogRef.current?.close();
 		}).catch((err) => {
 			setSaving(false);
-			const msg = err.message ?? "save failed";
+			const msg = err.message ?? settings_save_failed_msg();
 			setSaveError(msg);
-			toast("error", `Settings save failed: ${msg}`);
+			toast("error", settings_toast_save_failed({ msg }));
 		});
 	};
 	/** Verify the form's provider/model/key/base_url with POST /settings/test. */
@@ -871,7 +3489,7 @@ function SettingsDialog({ onClose }) {
 		if (!modelTrimmed) {
 			setTestResult({
 				ok: false,
-				detail: "Pick a model first"
+				detail: settings_pick_model_first()
 			});
 			return;
 		}
@@ -886,9 +3504,9 @@ function SettingsDialog({ onClose }) {
 				ok: Boolean(r.ok),
 				detail: r.detail
 			});
-			toast(r.ok ? "success" : "error", r.detail || (r.ok ? "Connection ok" : "Connection failed"));
+			toast(r.ok ? "success" : "error", r.detail || (r.ok ? settings_conn_ok() : settings_conn_failed()));
 		}).catch((err) => {
-			const detail = err.message ?? "test failed";
+			const detail = err.message ?? settings_test_failed();
 			setTestResult({
 				ok: false,
 				detail
@@ -903,22 +3521,18 @@ function SettingsDialog({ onClose }) {
 	return /* @__PURE__ */ jsxs("dialog", {
 		ref: dialogRef,
 		class: "modal",
-		"aria-label": "Settings",
+		"aria-label": settings_aria(),
 		children: [/* @__PURE__ */ jsxs("div", {
 			class: "modal-box w-full max-w-md animate-in fade-in zoom-in-95 duration-150",
 			children: [
 				/* @__PURE__ */ jsx("h2", {
 					class: "text-base font-semibold mb-3",
-					children: "Settings"
+					children: settings_title()
 				}),
-				loadError && /* @__PURE__ */ jsxs("div", {
+				loadError && /* @__PURE__ */ jsx("div", {
 					role: "alert",
 					class: "alert alert-error text-sm mb-3",
-					children: [
-						"Backend settings endpoints not available (",
-						loadError,
-						") - the server needs GET/PUT /settings support"
-					]
+					children: settings_load_failed({ e: loadError })
 				}),
 				/* @__PURE__ */ jsxs("form", {
 					ref: formRef,
@@ -930,12 +3544,12 @@ function SettingsDialog({ onClose }) {
 							children: [
 								/* @__PURE__ */ jsx("legend", {
 									class: "fieldset-legend text-sm",
-									children: "AI"
+									children: settings_fieldset_ai()
 								}),
 								/* @__PURE__ */ jsx("label", {
 									class: "label text-xs",
 									for: "set-provider",
-									children: "Provider"
+									children: settings_label_provider()
 								}),
 								/* @__PURE__ */ jsx("select", {
 									id: "set-provider",
@@ -952,7 +3566,7 @@ function SettingsDialog({ onClose }) {
 								/* @__PURE__ */ jsx("label", {
 									class: "label text-xs",
 									for: "set-model",
-									children: "Model"
+									children: settings_label_model()
 								}),
 								/* @__PURE__ */ jsx(ModelPicker, {
 									id: "set-model",
@@ -963,29 +3577,29 @@ function SettingsDialog({ onClose }) {
 									modelsError
 								}),
 								err("model"),
-								modelsError && models.length === 0 && /* @__PURE__ */ jsxs("p", {
+								modelsError && models.length === 0 && /* @__PURE__ */ jsx("p", {
 									class: "text-warning text-xs mt-1",
 									role: "note",
-									children: ["Model listing failed: ", modelsError]
+									children: model_listing_failed({ e: modelsError })
 								}),
 								/* @__PURE__ */ jsx("label", {
 									class: "label text-xs",
 									for: "set-api-key",
-									children: "API key"
+									children: settings_label_api_key()
 								}),
 								/* @__PURE__ */ jsx("input", {
 									id: "set-api-key",
 									name: "api_key",
 									type: "password",
 									class: "input input-sm w-full",
-									placeholder: "(unchanged if blank)",
+									placeholder: settings_ph_api_key(),
 									autocomplete: "off"
 								}),
 								err("api_key"),
 								/* @__PURE__ */ jsx("label", {
 									class: "label text-xs",
 									for: "set-base-url",
-									children: "Base URL"
+									children: settings_label_base_url()
 								}),
 								/* @__PURE__ */ jsx("input", {
 									id: "set-base-url",
@@ -1003,7 +3617,7 @@ function SettingsDialog({ onClose }) {
 										class: "btn btn-outline btn-sm",
 										disabled: testing,
 										onClick: runTest,
-										children: testing ? /* @__PURE__ */ jsx("span", { class: "loading loading-spinner loading-xs" }) : "Test connection"
+										children: testing ? /* @__PURE__ */ jsx("span", { class: "loading loading-spinner loading-xs" }) : settings_test_connection()
 									}), testResult && /* @__PURE__ */ jsx("span", {
 										class: `text-xs ${testResult.ok ? "text-success" : "text-error"}`,
 										role: "status",
@@ -1017,7 +3631,7 @@ function SettingsDialog({ onClose }) {
 										name: "enabled",
 										class: "toggle toggle-sm",
 										defaultChecked: true
-									}), "Enabled"]
+									}), settings_label_enabled()]
 								})
 							]
 						}),
@@ -1026,11 +3640,11 @@ function SettingsDialog({ onClose }) {
 							children: [
 								/* @__PURE__ */ jsx("legend", {
 									class: "fieldset-legend text-sm",
-									children: "Theme"
+									children: settings_fieldset_theme()
 								}),
 								/* @__PURE__ */ jsx("div", {
 									role: "radiogroup",
-									"aria-label": "Theme",
+									"aria-label": settings_aria_theme(),
 									class: "join",
 									children: THEMES.map((t) => /* @__PURE__ */ jsx("button", {
 										type: "button",
@@ -1042,12 +3656,12 @@ function SettingsDialog({ onClose }) {
 											setThemeState(t);
 											setTheme(t);
 										},
-										children: t === "system" ? "System" : t === "light" ? "Light" : "Dark"
+										children: t === "system" ? settings_theme_system() : t === "light" ? settings_theme_light() : settings_theme_dark()
 									}, t))
 								}),
 								theme === "system" && /* @__PURE__ */ jsx("p", {
 									class: "text-xs opacity-50",
-									children: "Follows your OS light/dark preference"
+									children: settings_theme_follows_os()
 								})
 							]
 						}),
@@ -1062,12 +3676,12 @@ function SettingsDialog({ onClose }) {
 								type: "button",
 								class: "btn btn-ghost btn-sm",
 								onClick: () => dialogRef.current?.close(),
-								children: "Cancel"
+								children: settings_cancel()
 							}), /* @__PURE__ */ jsx("button", {
 								type: "submit",
 								class: "btn btn-primary btn-sm",
 								disabled: saving,
-								children: saving ? /* @__PURE__ */ jsx("span", { class: "loading loading-dots loading-xs" }) : "Save"
+								children: saving ? /* @__PURE__ */ jsx("span", { class: "loading loading-dots loading-xs" }) : settings_save()
 							})]
 						})
 					]
@@ -1077,8 +3691,8 @@ function SettingsDialog({ onClose }) {
 			method: "dialog",
 			class: "modal-backdrop",
 			children: /* @__PURE__ */ jsx("button", {
-				"aria-label": "Close settings",
-				children: "close"
+				"aria-label": settings_aria_close(),
+				children: settings_backdrop_close()
 			})
 		})]
 	});
@@ -1089,6 +3703,7 @@ var init_SettingsDialog = __esmMin((() => {
 	init_Toasts();
 	init_theme();
 	init_schema();
+	init_i18n();
 }));
 //#endregion
 //#region ~icons/lucide/github.jsx
@@ -1156,16 +3771,16 @@ function Header() {
 					/* @__PURE__ */ jsx("button", {
 						type: "button",
 						class: "btn btn-ghost btn-xs",
-						"aria-label": "Settings",
+						"aria-label": header_aria_settings(),
 						onClick: () => route(`${window.location.pathname}?settings=open`),
-						children: "Settings"
+						children: header_settings()
 					}),
 					/* @__PURE__ */ jsx("a", {
 						href: "https://github.com/espetro/oxe",
 						target: "_blank",
 						rel: "noopener noreferrer",
 						class: "btn btn-ghost btn-sm btn-circle",
-						"aria-label": "GitHub repository",
+						"aria-label": header_aria_github(),
 						tabIndex: 0,
 						children: /* @__PURE__ */ jsx(GitHubIcon, {})
 					}),
@@ -1199,21 +3814,22 @@ function Empty$1({ children }) {
 var NAV, GitHubIcon;
 var init_Header = __esmMin((() => {
 	init_ai();
+	init_i18n();
 	init_SettingsDialog();
 	init_github();
 	NAV = [
 		{
 			href: "/",
-			label: "Search",
+			label: nav_search(),
 			exact: true
 		},
 		{
 			href: "/history",
-			label: "History"
+			label: nav_history()
 		},
 		{
 			href: "/dashboard",
-			label: "Dashboard"
+			label: nav_dashboard()
 		}
 	];
 	GitHubIcon = () => /* @__PURE__ */ jsx(lucideGithub, {
@@ -1224,38 +3840,34 @@ var init_Header = __esmMin((() => {
 //#endregion
 //#region src/components/AboutHint.tsx
 init_Header();
-/** (?) about affordance, fixed to the bottom-left corner of the page
-* (moved out of the navbar; lives in the root layout). daisyUI dropdown
-* opens on hover/focus or toggles on click; dropdown-end keeps the panel
-* inside the viewport down to ≈390px and clear of the content column
-* (toasts are top-right, so no collision). */
+init_i18n();
 function AboutHint() {
 	return /* @__PURE__ */ jsxs("div", {
 		class: "dropdown dropdown-end dropdown-top dropdown-hover dropdown-focus fixed bottom-3 left-3 z-40",
 		children: [/* @__PURE__ */ jsx("button", {
 			type: "button",
 			class: "btn btn-ghost btn-xs btn-circle opacity-30 hover:opacity-70",
-			"aria-label": "about oxe: caching, MCP API, search modes",
+			"aria-label": about_aria(),
 			children: "?"
 		}), /* @__PURE__ */ jsxs("div", {
 			class: "dropdown-content w-72 max-w-[min(288px,68vw)] bg-base-100 border border-base-300 rounded-md shadow-sm p-3 text-xs z-50",
 			role: "note",
 			children: [/* @__PURE__ */ jsx("p", {
 				class: "mb-1.5",
-				children: "search once, share with your agents - cached, MCP-ready · REST + MCP API on :4479"
+				children: about_line1()
 			}), /* @__PURE__ */ jsxs("p", {
 				class: "opacity-60",
 				children: [
 					/* @__PURE__ */ jsx("span", {
 						class: "font-medium opacity-80",
-						children: "search:"
+						children: about_search_label()
 					}),
-					" classic link results with cache metadata. ",
+					about_search_body(),
 					/* @__PURE__ */ jsx("span", {
 						class: "font-medium opacity-80",
-						children: "AI:"
+						children: about_ai_label()
 					}),
-					" streaming answer with cited sources."
+					about_ai_body()
 				]
 			})]
 		})]
@@ -1264,6 +3876,7 @@ function AboutHint() {
 //#endregion
 //#region src/components/ErrorBoundary.tsx
 /** @jsxImportSource preact */
+init_i18n();
 /** Route-level class boundary (mounted in routes/_layout.tsx around the
 * routed content): on a render crash it replaces the page area with a
 * 500-ish hero while keeping the app shell (header, toasts) alive. */
@@ -1287,7 +3900,7 @@ var ErrorBoundary$1 = class extends Component {
 					}),
 					/* @__PURE__ */ jsx("h1", {
 						class: "mt-2 text-lg font-medium",
-						children: "something broke"
+						children: error_title()
 					}),
 					/* @__PURE__ */ jsx("p", {
 						class: "py-3 text-sm opacity-60",
@@ -1299,11 +3912,11 @@ var ErrorBoundary$1 = class extends Component {
 							type: "button",
 							class: "btn btn-primary btn-sm",
 							onClick: () => this.setState({ error: null }),
-							children: "try again"
+							children: error_try_again()
 						}), /* @__PURE__ */ jsx("a", {
 							href: "/",
 							class: "btn btn-ghost btn-sm",
-							children: "back to search"
+							children: error_back()
 						})]
 					})
 				]
@@ -1346,28 +3959,30 @@ function NotFound() {
 			}),
 			/* @__PURE__ */ jsx("h1", {
 				class: "mt-2 text-lg font-medium",
-				children: "nothing here"
+				children: notfound_title()
 			}),
 			/* @__PURE__ */ jsx("p", {
 				class: "mt-1 text-sm opacity-60",
-				children: "this page does not exist — check the address or head back to search"
+				children: notfound_body()
 			}),
 			/* @__PURE__ */ jsxs("div", {
 				class: "mt-6 flex items-center gap-2",
 				children: [/* @__PURE__ */ jsx("a", {
 					href: "/",
 					class: "btn btn-primary btn-sm",
-					children: "back to search"
+					children: notfound_back()
 				}), /* @__PURE__ */ jsx("a", {
 					href: "/history",
 					class: "btn btn-ghost btn-sm",
-					children: "history"
+					children: notfound_history()
 				})]
 			})
 		]
 	});
 }
-var init__404 = __esmMin((() => {}));
+var init__404 = __esmMin((() => {
+	init_i18n();
+}));
 //#endregion
 //#region src/lib/format.ts
 function domainOf(url) {
@@ -1416,7 +4031,7 @@ function Panel(props) {
 function Empty() {
 	return /* @__PURE__ */ jsx("p", {
 		class: "opacity-50 text-sm",
-		children: "no data yet"
+		children: dashboard_empty()
 	});
 }
 /** Token-based inline SVG sparkline: total searches per day. */
@@ -1431,7 +4046,7 @@ function Sparkline({ days }) {
 		viewBox: `0 0 ${W} ${H}`,
 		class: "w-full h-12",
 		role: "img",
-		"aria-label": "searches per day",
+		"aria-label": dashboard_aria_sparkline(),
 		children: /* @__PURE__ */ jsx("polyline", {
 			points: pts.join(" "),
 			fill: "none",
@@ -1463,7 +4078,7 @@ function Bar({ value, max, label }) {
 	});
 }
 function DashboardRoute() {
-	usePageTitle("dashboard");
+	usePageTitle(dashboard_page_title());
 	const [stats, setStats] = useState(null);
 	const [error, setError] = useState(null);
 	const seq = useRef(0);
@@ -1476,19 +4091,15 @@ function DashboardRoute() {
 		children: [
 			/* @__PURE__ */ jsx("h1", {
 				class: "text-xl font-semibold mt-6 mb-1",
-				children: "oxe stats"
+				children: dashboard_title()
 			}),
-			/* @__PURE__ */ jsxs("p", {
+			/* @__PURE__ */ jsx("p", {
 				class: "text-[13px] opacity-60 mb-4",
-				children: [
-					"window: last ",
-					stats?.days ?? 14,
-					" days"
-				]
+				children: dashboard_window({ n: stats?.days ?? 14 })
 			}),
-			error && /* @__PURE__ */ jsxs("p", {
+			error && /* @__PURE__ */ jsx("p", {
 				class: "text-error py-6 text-sm",
-				children: ["error: ", error]
+				children: dashboard_error({ e: error })
 			}),
 			!stats && !error && /* @__PURE__ */ jsx("div", {
 				class: "py-10 flex justify-center",
@@ -1499,29 +4110,27 @@ function DashboardRoute() {
 				class: "grid gap-4 md:grid-cols-2",
 				children: [
 					/* @__PURE__ */ jsx(Panel, {
-						title: "searches per day",
-						children: stats.searches_per_day.some((d) => d.total > 0) ? /* @__PURE__ */ jsxs(Fragment, { children: [/* @__PURE__ */ jsx(Sparkline, { days: stats.searches_per_day }), /* @__PURE__ */ jsxs("p", {
+						title: dashboard_panel_per_day(),
+						children: stats.searches_per_day.some((d) => d.total > 0) ? /* @__PURE__ */ jsxs(Fragment, { children: [/* @__PURE__ */ jsx(Sparkline, { days: stats.searches_per_day }), /* @__PURE__ */ jsx("p", {
 							class: "text-[13px] opacity-60 mt-1",
-							children: [stats.searches_per_day.reduce((a, d) => a + d.total, 0), " searches in window"]
+							children: dashboard_per_day_total({ n: stats.searches_per_day.reduce((a, d) => a + d.total, 0) })
 						})] }) : /* @__PURE__ */ jsx(Empty, {})
 					}),
 					/* @__PURE__ */ jsx(Panel, {
-						title: "cache hit rate",
+						title: dashboard_panel_hit_rate(),
 						children: stats.hit_rate.rate != null ? /* @__PURE__ */ jsxs(Fragment, { children: [/* @__PURE__ */ jsxs("div", {
 							class: "text-3xl font-bold",
 							children: [stats.hit_rate.rate, "%"]
-						}), /* @__PURE__ */ jsxs("p", {
+						}), /* @__PURE__ */ jsx("p", {
 							class: "text-[13px] opacity-60",
-							children: [
-								stats.hit_rate.cache_hits,
-								" of ",
-								stats.hit_rate.total,
-								" served from cache"
-							]
+							children: dashboard_hit_rate_detail({
+								hits: stats.hit_rate.cache_hits,
+								total: stats.hit_rate.total
+							})
 						})] }) : /* @__PURE__ */ jsx(Empty, {})
 					}),
 					/* @__PURE__ */ jsx(Panel, {
-						title: "network latency",
+						title: dashboard_panel_latency(),
 						children: stats.latency_ms.p50 != null ? /* @__PURE__ */ jsx("div", {
 							class: "grid grid-cols-3 gap-2 text-center",
 							children: [
@@ -1538,7 +4147,7 @@ function DashboardRoute() {
 						}) : /* @__PURE__ */ jsx(Empty, {})
 					}),
 					/* @__PURE__ */ jsx(Panel, {
-						title: "client split",
+						title: dashboard_panel_clients(),
 						children: stats.client_split.length > 0 ? /* @__PURE__ */ jsx("div", { children: stats.client_split.map((c) => /* @__PURE__ */ jsx(Bar, {
 							value: c.count,
 							label: c.client,
@@ -1546,7 +4155,7 @@ function DashboardRoute() {
 						}, c.client)) }) : /* @__PURE__ */ jsx(Empty, {})
 					}),
 					/* @__PURE__ */ jsx(Panel, {
-						title: "top queries",
+						title: dashboard_panel_top_queries(),
 						wide: true,
 						children: stats.top_queries.length > 0 ? /* @__PURE__ */ jsx("div", { children: stats.top_queries.slice(0, 10).map((q) => /* @__PURE__ */ jsx(Bar, {
 							value: q.count,
@@ -1555,7 +4164,7 @@ function DashboardRoute() {
 						}, q.query)) }) : /* @__PURE__ */ jsx(Empty, {})
 					}),
 					/* @__PURE__ */ jsx(Panel, {
-						title: "zero-result queries",
+						title: dashboard_panel_zero_result(),
 						wide: true,
 						children: stats.zero_result_queries.length > 0 ? /* @__PURE__ */ jsx("ul", {
 							class: "text-[13px] space-y-1",
@@ -1571,11 +4180,11 @@ function DashboardRoute() {
 							}, q.query))
 						}) : /* @__PURE__ */ jsx("p", {
 							class: "opacity-50 text-sm",
-							children: "none 🎉"
+							children: dashboard_zero_result_none()
 						})
 					}),
 					/* @__PURE__ */ jsx(Panel, {
-						title: "cache",
+						title: dashboard_panel_cache(),
 						wide: true,
 						children: /* @__PURE__ */ jsx("table", {
 							class: "table table-sm text-[13px]",
@@ -1583,7 +4192,7 @@ function DashboardRoute() {
 								/* @__PURE__ */ jsxs("tr", { children: [
 									/* @__PURE__ */ jsx("td", {
 										class: "opacity-60",
-										children: "rows"
+										children: dashboard_cache_rows()
 									}),
 									/* @__PURE__ */ jsx("td", {
 										class: "text-right",
@@ -1591,7 +4200,7 @@ function DashboardRoute() {
 									}),
 									/* @__PURE__ */ jsx("td", {
 										class: "opacity-60",
-										children: "unexpired"
+										children: dashboard_cache_unexpired()
 									}),
 									/* @__PURE__ */ jsx("td", {
 										class: "text-right",
@@ -1601,7 +4210,7 @@ function DashboardRoute() {
 								/* @__PURE__ */ jsxs("tr", { children: [
 									/* @__PURE__ */ jsx("td", {
 										class: "opacity-60",
-										children: "db size"
+										children: dashboard_cache_db_size()
 									}),
 									/* @__PURE__ */ jsx("td", {
 										class: "text-right",
@@ -1609,7 +4218,7 @@ function DashboardRoute() {
 									}),
 									/* @__PURE__ */ jsx("td", {
 										class: "opacity-60",
-										children: "total hits"
+										children: dashboard_cache_total_hits()
 									}),
 									/* @__PURE__ */ jsx("td", {
 										class: "text-right",
@@ -1619,7 +4228,7 @@ function DashboardRoute() {
 								/* @__PURE__ */ jsxs("tr", { children: [
 									/* @__PURE__ */ jsx("td", {
 										class: "opacity-60",
-										children: "newest"
+										children: dashboard_cache_newest()
 									}),
 									/* @__PURE__ */ jsx("td", {
 										class: "text-right",
@@ -1627,7 +4236,7 @@ function DashboardRoute() {
 									}),
 									/* @__PURE__ */ jsx("td", {
 										class: "opacity-60",
-										children: "oldest"
+										children: dashboard_cache_oldest()
 									}),
 									/* @__PURE__ */ jsx("td", {
 										class: "text-right",
@@ -1646,6 +4255,7 @@ var init_dashboard = __esmMin((() => {
 	init_Header();
 	init_api();
 	init_format();
+	init_i18n();
 }));
 //#endregion
 //#region src/routes/history.tsx
@@ -1681,23 +4291,23 @@ function DeleteControls({ onDeleted, onError }) {
 				setScope(e.target.value);
 				setArmed(false);
 			},
-			"aria-label": "delete scope",
+			"aria-label": history_aria_delete_scope(),
 			children: [
 				/* @__PURE__ */ jsx("option", {
 					value: "24h",
-					children: "older than 24h"
+					children: history_delete_older_24h()
 				}),
 				/* @__PURE__ */ jsx("option", {
 					value: "7d",
-					children: "older than 7d"
+					children: history_delete_older_7d()
 				}),
 				/* @__PURE__ */ jsx("option", {
 					value: "30d",
-					children: "older than 30d"
+					children: history_delete_older_30d()
 				}),
 				/* @__PURE__ */ jsx("option", {
 					value: "all",
-					children: "all history"
+					children: history_delete_all()
 				})
 			]
 		}), /* @__PURE__ */ jsx("button", {
@@ -1706,12 +4316,12 @@ function DeleteControls({ onDeleted, onError }) {
 			disabled: busy,
 			onClick: () => armed ? run() : setArmed(true),
 			onBlur: () => setArmed(false),
-			children: armed ? scope === "all" ? "really delete all?" : "confirm delete" : "delete…"
+			children: armed ? scope === "all" ? history_delete_confirm_all() : history_delete_confirm() : history_delete_arm()
 		})]
 	});
 }
 function HistoryRoute() {
-	usePageTitle("history");
+	usePageTitle(history_page_title());
 	const { query, route } = useLocation();
 	const since = parseSince(query?.since);
 	const qf = String(query?.qf ?? "");
@@ -1761,16 +4371,14 @@ function HistoryRoute() {
 		children: [
 			/* @__PURE__ */ jsx("h1", {
 				class: "text-xl font-semibold mt-6 mb-1",
-				children: "History"
+				children: history_title()
 			}),
-			/* @__PURE__ */ jsxs("p", {
+			/* @__PURE__ */ jsx("p", {
 				class: "text-[13px] opacity-60 mb-4",
-				children: [
-					counts.clicks,
-					" clicks · ",
-					counts.cache_rows,
-					" cached searches · newest first"
-				]
+				children: history_summary({
+					clicks: counts.clicks,
+					rows: counts.cache_rows
+				})
 			}),
 			/* @__PURE__ */ jsxs("div", {
 				class: "flex flex-wrap items-center gap-2 mb-4",
@@ -1779,39 +4387,39 @@ function HistoryRoute() {
 						class: "select select-sm w-32",
 						value: since,
 						onChange: (e) => setParam("since", e.target.value),
-						"aria-label": "time filter",
+						"aria-label": history_aria_time_filter(),
 						children: [
 							/* @__PURE__ */ jsx("option", {
 								value: "all",
-								children: "all time"
+								children: history_opt_all_time()
 							}),
 							/* @__PURE__ */ jsx("option", {
 								value: "24",
-								children: "last 24h"
+								children: history_opt_last_24h()
 							}),
 							/* @__PURE__ */ jsx("option", {
 								value: "168",
-								children: "last week"
+								children: history_opt_last_week()
 							}),
 							/* @__PURE__ */ jsx("option", {
 								value: "720",
-								children: "last month"
+								children: history_opt_last_month()
 							})
 						]
 					}),
 					/* @__PURE__ */ jsx("input", {
 						type: "search",
 						class: "input input-sm w-56",
-						placeholder: "filter by query text…",
+						placeholder: history_filter_placeholder(),
 						value: qf,
 						onInput: (e) => setParam("qf", e.target.value),
-						"aria-label": "query filter"
+						"aria-label": history_aria_query_filter()
 					}),
 					(since !== "all" || qf) && /* @__PURE__ */ jsx("button", {
 						type: "button",
 						class: "btn btn-ghost btn-sm",
 						onClick: clearFilters,
-						children: "clear"
+						children: history_clear()
 					}),
 					/* @__PURE__ */ jsx("div", {
 						class: "ml-auto",
@@ -1827,22 +4435,20 @@ function HistoryRoute() {
 				"aria-busy": "true",
 				children: /* @__PURE__ */ jsx("span", { class: "loading loading-dots loading-md" })
 			}),
-			!loading && error && /* @__PURE__ */ jsxs("p", {
+			!loading && error && /* @__PURE__ */ jsx("p", {
 				class: "text-error py-6 text-sm",
-				children: ["error: ", error]
+				children: history_error({ e: error })
 			}),
 			!loading && !error && items.length === 0 && /* @__PURE__ */ jsxs("p", {
 				class: "opacity-60 py-8 text-sm",
 				children: [
-					"nothing here yet — open a result from the",
-					" ",
+					history_empty_prefix(),
 					/* @__PURE__ */ jsx("a", {
 						href: "/",
 						class: "link link-primary",
-						children: "search"
+						children: history_empty_link()
 					}),
-					" ",
-					"page."
+					history_empty_suffix()
 				]
 			}),
 			!loading && items.length > 0 && /* @__PURE__ */ jsx("div", {
@@ -1852,12 +4458,12 @@ function HistoryRoute() {
 					children: [/* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsxs("tr", {
 						class: "text-[13px] opacity-60",
 						children: [
-							/* @__PURE__ */ jsx("th", { children: "when" }),
-							/* @__PURE__ */ jsx("th", { children: "kind" }),
-							/* @__PURE__ */ jsx("th", { children: "query" }),
+							/* @__PURE__ */ jsx("th", { children: history_col_when() }),
+							/* @__PURE__ */ jsx("th", { children: history_col_kind() }),
+							/* @__PURE__ */ jsx("th", { children: history_col_query() }),
 							/* @__PURE__ */ jsx("th", {
 								class: "hidden md:table-cell",
-								children: "detail"
+								children: history_col_detail()
 							}),
 							/* @__PURE__ */ jsx("th", {})
 						]
@@ -1872,7 +4478,7 @@ function HistoryRoute() {
 								class: "text-[13px]",
 								children: /* @__PURE__ */ jsx("span", {
 									class: `badge badge-sm ${r.kind === "click" ? "badge-primary" : "badge-ghost"}`,
-									children: r.kind === "click" ? `click · ${r.source ?? "web"}` : "search"
+									children: r.kind === "click" ? history_kind_click({ source: r.source ?? "web" }) : history_kind_search()
 								})
 							}),
 							/* @__PURE__ */ jsx("td", {
@@ -1880,7 +4486,7 @@ function HistoryRoute() {
 								children: /* @__PURE__ */ jsx("a", {
 									href: `/row/${r.query_hash}`,
 									class: "link link-primary",
-									children: r.query || "(no query)"
+									children: r.query || history_no_query()
 								})
 							}),
 							/* @__PURE__ */ jsx("td", {
@@ -1891,17 +4497,16 @@ function HistoryRoute() {
 									rel: "noopener noreferrer",
 									class: "link link-hover",
 									children: truncate(r.url ?? "", 80)
-								}) : /* @__PURE__ */ jsxs(Fragment, { children: [
-									r.hits ?? 0,
-									" hits · expires ",
-									fmtLocal(r.expires_at ?? 0)
-								] })
+								}) : /* @__PURE__ */ jsx(Fragment, { children: history_hits({
+									hits: r.hits ?? 0,
+									at: fmtLocal(r.expires_at ?? 0)
+								}) })
 							}),
 							/* @__PURE__ */ jsx("td", { children: r.kind === "click" && /* @__PURE__ */ jsx("button", {
 								type: "button",
 								class: "btn btn-ghost btn-xs",
 								onClick: () => fetch(`/search?q=${encodeURIComponent(r.query || "")}`, { headers: { Accept: "application/json" } }).then((res) => res.text()).then((t) => navigator.clipboard?.writeText(t)),
-								children: "copy json"
+								children: history_copy_json()
 							}) })
 						]
 					}, `${r.kind}-${r.query_hash}-${r.sort_at}`)) })]
@@ -1915,6 +4520,7 @@ var init_history = __esmMin((() => {
 	init_Header();
 	init_api();
 	init_format();
+	init_i18n();
 	SINCE_VALUES = [
 		"24",
 		"168",
@@ -1960,14 +4566,14 @@ function ModeSegments({ mode, onChange, aiAvailable }) {
 	};
 	return /* @__PURE__ */ jsx("div", {
 		role: "radiogroup",
-		"aria-label": "search mode",
+		"aria-label": mode_aria_label_lower(),
 		class: "join bg-base-200 rounded-full p-0.5 shrink-0",
 		children: SEGMENTS.map((s) => {
 			const disabled = s.v === "ai" && aiDisabled;
 			const active = mode === s.v;
 			return /* @__PURE__ */ jsx("span", {
 				class: "tooltip tooltip-bottom",
-				"data-tip": disabled ? "configure a model in settings" : void 0,
+				"data-tip": disabled ? mode_tip_ai_disabled_short() : void 0,
 				children: /* @__PURE__ */ jsxs("button", {
 					type: "button",
 					role: "radio",
@@ -1988,7 +4594,7 @@ function ModeSegments({ mode, onChange, aiAvailable }) {
 							move(-1);
 						}
 					},
-					children: [s.v === "traditional" ? /* @__PURE__ */ jsx(Magnifier, {}) : /* @__PURE__ */ jsx(Sparkle, {}), s.label]
+					children: [s.v === "traditional" ? /* @__PURE__ */ jsx(Magnifier, {}) : /* @__PURE__ */ jsx(Sparkle, {}), s.label()]
 				})
 			}, s.v);
 		})
@@ -2015,7 +4621,7 @@ function AiControls({ available, models, modelsError }) {
 			class: "flex items-center gap-1.5 min-w-0 flex-1",
 			children: [/* @__PURE__ */ jsx("span", {
 				class: "shrink-0 opacity-70",
-				children: "model"
+				children: ai_label_model()
 			}), /* @__PURE__ */ jsx(ModelPicker, {
 				models,
 				value: model,
@@ -2030,7 +4636,7 @@ function AiControls({ available, models, modelsError }) {
 			"aria-checked": reasoning,
 			class: `btn btn-xs rounded-full shrink-0 self-start sm:self-auto ${reasoning ? "btn-primary btn-soft" : "btn-ghost"}`,
 			onClick: () => setReasoning(!reasoning),
-			children: "reasoning"
+			children: ai_label_reasoning()
 		})]
 	});
 }
@@ -2038,12 +4644,13 @@ var SEGMENTS, Magnifier, Sparkle, STORE_KEY, REASONING_KEY;
 var init_ModeSegments = __esmMin((() => {
 	init_ai();
 	init_ModelPicker();
+	init_i18n();
 	SEGMENTS = [{
 		v: "traditional",
-		label: "Search"
+		label: segments_search
 	}, {
 		v: "ai",
-		label: "AI"
+		label: mode_label_ai
 	}];
 	Magnifier = () => /* @__PURE__ */ jsxs("svg", {
 		width: "13",
@@ -2185,10 +4792,11 @@ function useListNav(count, onPick, onFill, onClose) {
 var AC_KEY, GROUP_LABEL;
 var init_useSuggests = __esmMin((() => {
 	init_api();
+	init_i18n();
 	AC_KEY = "oxe-ac";
 	GROUP_LABEL = {
-		history: "your history",
-		web: "web suggestions"
+		history: suggest_group_history(),
+		web: suggest_web_suggestions()
 	};
 }));
 //#endregion
@@ -2232,12 +4840,12 @@ function SuggestionsDropdown({ items, activeIndex, onPick, onHover, acOn, setAcO
 			children: /* @__PURE__ */ jsxs("label", {
 				class: "flex items-center justify-between gap-2 px-3 py-1.5 text-[11px] uppercase tracking-wide opacity-60 cursor-pointer select-none",
 				role: "presentation",
-				children: ["web suggestions", /* @__PURE__ */ jsx("input", {
+				children: [suggest_web_suggestions(), /* @__PURE__ */ jsx("input", {
 					type: "checkbox",
 					class: "toggle toggle-xs",
 					checked: acOn !== false,
 					onChange: (e) => setAcOn(e.target.checked),
-					"aria-label": "toggle web suggestions"
+					"aria-label": suggest_aria_toggle_web()
 				})]
 			})
 		})]
@@ -2245,6 +4853,7 @@ function SuggestionsDropdown({ items, activeIndex, onPick, onHover, acOn, setAcO
 }
 var init_SuggestionsDropdown = __esmMin((() => {
 	init_useSuggests();
+	init_i18n();
 }));
 //#endregion
 //#region src/features/suggests/SearchBox.tsx
@@ -2252,7 +4861,7 @@ var init_SuggestionsDropdown = __esmMin((() => {
 * mode toggle at the right end, and (AI mode) a second action row that
 * reveals via a smooth morphism. Suggestions stay anchored to the pill.
 * Does not fetch (the suggests hook owns that) and does not navigate. */
-function SearchBox({ value, onInput, onSubmit, placeholder, autoFocus, busy, size = "lg", ariaLabel = "search", mode, onModeChange, aiAvailable, models = [], modelsError }) {
+function SearchBox({ value, onInput, onSubmit, placeholder, autoFocus, busy, size = "lg", ariaLabel = searchbox_aria_search(), mode, onModeChange, aiAvailable, models = [], modelsError }) {
 	const [open, setOpen] = useState(false);
 	const [focused, setFocused] = useState(false);
 	const boxRef = useRef(null);
@@ -2260,7 +4869,7 @@ function SearchBox({ value, onInput, onSubmit, placeholder, autoFocus, busy, siz
 	const typedRef = useRef(value);
 	typedRef.current = value;
 	const aiMode = mode === "ai";
-	const ph = placeholder ?? (aiMode ? "Ask anything privately" : "Search privately");
+	const ph = placeholder ?? (aiMode ? searchbox_ph_ai() : searchbox_ph_traditional());
 	const { items, acOn, setAcOn } = useSuggests(aiMode ? "" : value, open);
 	const { activeIndex, handleKey, setActiveIndex } = useListNav(items.length, (i) => {
 		const t = items[i]?.text;
@@ -2289,6 +4898,56 @@ function SearchBox({ value, onInput, onSubmit, placeholder, autoFocus, busy, siz
 		return () => document.removeEventListener("mousedown", onDocClick);
 	});
 	const showDropdown = open && value.trim().length >= 2 && items.length > 0;
+	const input = /* @__PURE__ */ jsx("input", {
+		ref: inputRef,
+		type: "search",
+		name: "q",
+		enterkeyhint: "search",
+		autofocus: autoFocus,
+		class: "grow bg-transparent outline-none min-w-0",
+		placeholder: ph,
+		"aria-label": ariaLabel,
+		"aria-autocomplete": "list",
+		"aria-expanded": showDropdown,
+		"aria-controls": "suggest-listbox",
+		autocomplete: "off",
+		value,
+		onInput: (e) => {
+			onInput(e.target.value);
+			setOpen(true);
+			setActiveIndex(null);
+		},
+		onFocus: () => {
+			setOpen(true);
+			setFocused(true);
+		},
+		onBlur: () => setFocused(false),
+		onKeyDown: (e) => {
+			if (showDropdown) handleKey(e);
+			else if (e.key === "Escape") e.target.blur();
+		}
+	});
+	const submitBtn = /* @__PURE__ */ jsx("button", {
+		type: "submit",
+		class: "btn btn-ghost btn-sm btn-circle shrink-0",
+		"aria-label": searchbox_aria_submit(),
+		disabled: busy,
+		children: busy ? /* @__PURE__ */ jsx("span", { class: "loading loading-dots loading-xs" }) : /* @__PURE__ */ jsxs("svg", {
+			width: "16",
+			height: "16",
+			viewBox: "0 0 24 24",
+			fill: "none",
+			stroke: "currentColor",
+			"stroke-width": "2",
+			"stroke-linecap": "round",
+			"aria-hidden": "true",
+			children: [/* @__PURE__ */ jsx("circle", {
+				cx: "11",
+				cy: "11",
+				r: "7"
+			}), /* @__PURE__ */ jsx("path", { d: "m20 20-3.5-3.5" })]
+		})
+	});
 	return /* @__PURE__ */ jsxs("div", {
 		class: "relative w-full min-w-0 max-w-[min(672px,calc(100vw-48px))]",
 		ref: boxRef,
@@ -2308,61 +4967,13 @@ function SearchBox({ value, onInput, onSubmit, placeholder, autoFocus, busy, siz
 				children: [/* @__PURE__ */ jsxs("div", {
 					class: `flex items-center gap-1.5 ${size === "lg" ? "min-h-10" : "min-h-8"}`,
 					children: [
-						/* @__PURE__ */ jsx("input", {
-							ref: inputRef,
-							type: "search",
-							name: "q",
-							enterkeyhint: "search",
-							autofocus: autoFocus,
-							class: "grow bg-transparent outline-none min-w-0",
-							placeholder: ph,
-							"aria-label": ariaLabel,
-							"aria-autocomplete": "list",
-							"aria-expanded": showDropdown,
-							"aria-controls": "suggest-listbox",
-							autocomplete: "off",
-							value,
-							onInput: (e) => {
-								onInput(e.target.value);
-								setOpen(true);
-								setActiveIndex(null);
-							},
-							onFocus: () => {
-								setOpen(true);
-								setFocused(true);
-							},
-							onBlur: () => setFocused(false),
-							onKeyDown: (e) => {
-								if (showDropdown) handleKey(e);
-								else if (e.key === "Escape") e.target.blur();
-							}
-						}),
+						input,
 						mode && onModeChange ? /* @__PURE__ */ jsx(ModeSegments, {
 							mode,
 							onChange: onModeChange,
 							aiAvailable: aiAvailable ?? null
 						}) : null,
-						/* @__PURE__ */ jsx("button", {
-							type: "submit",
-							class: "btn btn-ghost btn-sm btn-circle shrink-0",
-							"aria-label": "submit search",
-							disabled: busy,
-							children: busy ? /* @__PURE__ */ jsx("span", { class: "loading loading-dots loading-xs" }) : /* @__PURE__ */ jsxs("svg", {
-								width: "16",
-								height: "16",
-								viewBox: "0 0 24 24",
-								fill: "none",
-								stroke: "currentColor",
-								"stroke-width": "2",
-								"stroke-linecap": "round",
-								"aria-hidden": "true",
-								children: [/* @__PURE__ */ jsx("circle", {
-									cx: "11",
-									cy: "11",
-									r: "7"
-								}), /* @__PURE__ */ jsx("path", { d: "m20 20-3.5-3.5" })]
-							})
-						})
+						submitBtn
 					]
 				}), mode === "ai" && /* @__PURE__ */ jsx("div", {
 					class: "ai-row-in border-t border-base-200 mt-1.5 pt-1.5",
@@ -2396,6 +5007,7 @@ var init_SearchBox = __esmMin((() => {
 	init_useSuggests();
 	init_ModeSegments();
 	init_useMountEffect();
+	init_i18n();
 }));
 //#endregion
 //#region src/routes/index.tsx
@@ -2432,7 +5044,7 @@ function Home() {
 			}),
 			/* @__PURE__ */ jsx("p", {
 				class: "opacity-50 text-sm mb-6 max-md:mb-4 md:mb-10",
-				children: "your local web intel layer"
+				children: home_tagline()
 			}),
 			/* @__PURE__ */ jsx("div", {
 				class: "self-stretch flex justify-center px-3 min-w-0 mb-8",
@@ -2457,6 +5069,7 @@ var init_routes = __esmMin((() => {
 	init_Header();
 	init_ModeSegments();
 	init_SearchBox();
+	init_i18n();
 	MODE_KEY$1 = "oxe-mode";
 }));
 //#endregion
@@ -2467,7 +5080,7 @@ function ResultCard({ result, onOpen }) {
 	const url = result.url ?? "";
 	const domain = domainOf(url);
 	const snippet = (result.text || result.highlights?.join(" ") || "").trim();
-	const title = result.title || "(untitled)";
+	const title = result.title || result_untitled();
 	return /* @__PURE__ */ jsxs("article", {
 		class: "py-3",
 		children: [
@@ -2506,7 +5119,7 @@ function ResultCard({ result, onOpen }) {
 				class: "text-sm",
 				children: [/* @__PURE__ */ jsx("summary", {
 					class: "opacity-50 cursor-pointer select-none text-[13px]",
-					children: "cached page text preview"
+					children: result_cached_text_preview()
 				}), /* @__PURE__ */ jsx("p", {
 					class: "opacity-70 m-1 whitespace-pre-wrap",
 					children: truncate(snippet, 400)
@@ -2517,6 +5130,7 @@ function ResultCard({ result, onOpen }) {
 }
 var init_ResultCard = __esmMin((() => {
 	init_format();
+	init_i18n();
 }));
 //#endregion
 //#region src/features/search/useSearch.ts
@@ -2633,7 +5247,7 @@ function useSearch() {
 }
 function metaLine(payload, total) {
 	if (!payload && total === 0) return "";
-	return `${total} result${total === 1 ? "" : "s"}`;
+	return search_meta_results({ n: total });
 }
 /** Terminal status derived from a successful search response: an empty
 * page carrying `_error` is an error, not a clean empty. */
@@ -2652,6 +5266,7 @@ function nextError(payload) {
 var PAGE_SIZE, initial;
 var init_useSearch = __esmMin((() => {
 	init_api();
+	init_i18n();
 	PAGE_SIZE = 10;
 	initial = () => ({
 		payload: null,
@@ -2850,15 +5465,15 @@ function AnswerView({ query, state, onStop, onRetry, onAskRelated, onViewClassic
 				children: [
 					/* @__PURE__ */ jsx("h2", {
 						class: "text-xs font-semibold tracking-widest uppercase opacity-60",
-						children: "answer"
+						children: answer_heading()
 					}),
 					cached && /* @__PURE__ */ jsx("span", {
 						class: "badge badge-ghost badge-xs",
-						children: "from cache"
+						children: answer_from_cache()
 					}),
 					streaming && /* @__PURE__ */ jsx("span", {
 						class: "text-xs opacity-50",
-						children: "streaming…"
+						children: answer_streaming()
 					}),
 					/* @__PURE__ */ jsxs("span", {
 						class: "ml-auto flex gap-2",
@@ -2866,12 +5481,12 @@ function AnswerView({ query, state, onStop, onRetry, onAskRelated, onViewClassic
 							type: "button",
 							class: "btn btn-ghost btn-xs",
 							onClick: onStop,
-							children: "stop"
+							children: answer_stop()
 						}), done && /* @__PURE__ */ jsx("button", {
 							type: "button",
 							class: "btn btn-ghost btn-xs",
 							onClick: onViewClassic,
-							children: "view classic"
+							children: answer_view_classic()
 						})]
 					})
 				]
@@ -2897,7 +5512,7 @@ function AnswerView({ query, state, onStop, onRetry, onAskRelated, onViewClassic
 					/* @__PURE__ */ jsx("div", {
 						role: "alert",
 						class: "alert alert-error animate-in fade-in zoom-in-95 duration-300",
-						children: /* @__PURE__ */ jsxs("span", { children: ["stream interrupted - ", error] })
+						children: /* @__PURE__ */ jsx("span", { children: answer_stream_interrupted({ e: error }) })
 					}),
 					/* @__PURE__ */ jsxs("div", {
 						class: "flex gap-2",
@@ -2905,12 +5520,12 @@ function AnswerView({ query, state, onStop, onRetry, onAskRelated, onViewClassic
 							type: "button",
 							class: "btn btn-sm",
 							onClick: onRetry,
-							children: "retry"
+							children: answer_retry()
 						}), /* @__PURE__ */ jsx("button", {
 							type: "button",
 							class: "btn btn-ghost btn-sm",
 							onClick: onViewClassic,
-							children: "switch to classic results"
+							children: answer_switch_classic()
 						})]
 					})
 				]
@@ -2918,12 +5533,12 @@ function AnswerView({ query, state, onStop, onRetry, onAskRelated, onViewClassic
 				class: "text-sm animate-in fade-in zoom-in-95 duration-300",
 				children: [/* @__PURE__ */ jsx("p", {
 					class: "opacity-60 mb-2",
-					children: "no sources found for this query - try fewer words, or"
+					children: answer_no_sources()
 				}), /* @__PURE__ */ jsx("button", {
 					type: "button",
 					class: "btn btn-sm",
 					onClick: onViewClassic,
-					children: "switch to classic results"
+					children: answer_switch_classic()
 				})]
 			}) : text ? /* @__PURE__ */ jsxs("div", { children: [
 				/* @__PURE__ */ jsx(MarkdownLite, { text }),
@@ -2934,7 +5549,7 @@ function AnswerView({ query, state, onStop, onRetry, onAskRelated, onViewClassic
 				}),
 				stopped && /* @__PURE__ */ jsx("p", {
 					class: "text-xs opacity-50 mt-1",
-					children: "stopped"
+					children: answer_stopped()
 				})
 			] }) : streaming && steps.length === 0 ? /* @__PURE__ */ jsxs("div", {
 				class: "flex flex-col gap-3 skeleton-shimmer",
@@ -2955,7 +5570,7 @@ function AnswerView({ query, state, onStop, onRetry, onAskRelated, onViewClassic
 			}) : null,
 			sources.length > 0 && /* @__PURE__ */ jsxs("div", { children: [/* @__PURE__ */ jsx("h2", {
 				class: "text-xs font-semibold tracking-widest uppercase opacity-60 mb-2",
-				children: "sources"
+				children: answer_sources_heading()
 			}), /* @__PURE__ */ jsx("div", {
 				class: "flex gap-2 overflow-x-auto pb-2 snap-x -mx-4 px-4",
 				children: sources.map((s, i) => /* @__PURE__ */ jsx("div", {
@@ -2972,7 +5587,7 @@ function AnswerView({ query, state, onStop, onRetry, onAskRelated, onViewClassic
 				class: "animate-in fade-in duration-300",
 				children: [/* @__PURE__ */ jsx("h2", {
 					class: "text-xs font-semibold tracking-widest uppercase opacity-60 mb-2",
-					children: "related"
+					children: answer_related_heading()
 				}), /* @__PURE__ */ jsx("ul", {
 					class: "space-y-1.5",
 					children: relatedQuestions.map((rq) => /* @__PURE__ */ jsx("li", { children: /* @__PURE__ */ jsx("button", {
@@ -2983,7 +5598,7 @@ function AnswerView({ query, state, onStop, onRetry, onAskRelated, onViewClassic
 					}) }, rq))
 				})]
 			}),
-			!text && !error && !emptySources && done && /* @__PURE__ */ jsx(Empty$1, { children: "no answer produced" })
+			!text && !error && !emptySources && done && /* @__PURE__ */ jsx(Empty$1, { children: answer_none_produced() })
 		]
 	});
 }
@@ -2991,6 +5606,7 @@ var init_AnswerView = __esmMin((() => {
 	init_MarkdownLite();
 	init_SourceCard();
 	init_Header();
+	init_i18n();
 }));
 //#endregion
 //#region src/features/answer/useAnswer.ts
@@ -3098,7 +5714,7 @@ function SearchRoute() {
 	const { query, route } = useLocation();
 	const q = String(query?.q ?? "");
 	const urlMode = query?.mode === "ai" ? "ai" : "traditional";
-	usePageTitle(q || "search");
+	usePageTitle(q || search_page_title());
 	const aiAvailable = useAiAvailable();
 	const { models, error: modelsError } = useModels();
 	const [input, setInput] = useState(q);
@@ -3194,29 +5810,29 @@ function SearchRoute() {
 				aiModeBlocked && /* @__PURE__ */ jsx("p", {
 					class: "text-xs opacity-60 mt-1",
 					role: "note",
-					children: "AI mode is not configured - set a model in settings"
+					children: search_ai_blocked()
 				}),
 				effectiveMode === "traditional" && results.length > 0 && payload && /* @__PURE__ */ jsxs("div", {
 					class: "flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px]",
 					children: [
 						/* @__PURE__ */ jsx("span", {
 							class: "opacity-60",
-							children: metaLine(payload, results.length) || (loading ? "searching…" : "")
+							children: metaLine(payload, results.length) || (loading ? search_searching() : "")
 						}),
 						isCacheHit(payload) && /* @__PURE__ */ jsx("span", {
 							class: "tooltip",
-							"data-tip": "Actually search the web (refreshes this cache entry)",
+							"data-tip": search_tip_refresh(),
 							children: /* @__PURE__ */ jsxs("button", {
 								type: "button",
 								class: "badge badge-sm badge-ghost cursor-pointer",
-								"aria-label": "cached result: click to refresh from the web",
+								"aria-label": search_aria_cached_refresh(),
 								onClick: () => {
 									refresh(q);
-									toast("success", "refreshed from the web");
+									toast("success", search_toast_refreshed());
 								},
 								children: ["cached", (() => {
 									const age = cachedAgeOf(payload);
-									return age != null ? ` · ${fmtDur(age)} old` : "";
+									return age != null ? search_cached_age({ age: fmtDur(age) }) : "";
 								})()]
 							})
 						}),
@@ -3226,7 +5842,7 @@ function SearchRoute() {
 								type: "button",
 								class: "btn btn-ghost btn-xs",
 								onClick: () => navigator.clipboard?.writeText(window.location.href),
-								children: "copy link"
+								children: search_copy_link()
 							}), /* @__PURE__ */ jsx("button", {
 								type: "button",
 								class: "btn btn-ghost btn-xs",
@@ -3235,7 +5851,7 @@ function SearchRoute() {
 									results,
 									costDollars: payload.costDollars
 								})),
-								children: "copy json"
+								children: search_copy_json()
 							})]
 						})
 					]
@@ -3275,23 +5891,23 @@ function SearchRoute() {
 				children: [error.kind === "rate_limited" ? /* @__PURE__ */ jsx("div", {
 					role: "alert",
 					class: "alert alert-warning text-sm",
-					children: /* @__PURE__ */ jsx("span", { children: "search backend rate-limited, retry shortly" })
+					children: /* @__PURE__ */ jsx("span", { children: search_error_rate_limited() })
 				}) : /* @__PURE__ */ jsx("div", {
 					role: "alert",
 					class: "alert alert-error text-sm",
-					children: /* @__PURE__ */ jsx("span", { children: "search backend failed" })
+					children: /* @__PURE__ */ jsx("span", { children: search_error_backend() })
 				}), /* @__PURE__ */ jsxs("div", {
 					class: "flex gap-2",
 					children: [/* @__PURE__ */ jsx("button", {
 						type: "button",
 						class: "btn btn-sm",
 						onClick: () => run(q),
-						children: "retry"
+						children: search_retry()
 					}), aiAvailable === true && /* @__PURE__ */ jsx("button", {
 						type: "button",
 						class: "btn btn-ghost btn-sm",
 						onClick: () => askAi(q),
-						children: "ask AI instead"
+						children: search_ask_ai_instead()
 					})]
 				})]
 			}),
@@ -3299,12 +5915,12 @@ function SearchRoute() {
 				class: "py-10 text-sm animate-in fade-in zoom-in-95 duration-300",
 				children: [/* @__PURE__ */ jsx("p", {
 					class: "opacity-60 mb-3",
-					children: "no results"
+					children: search_no_results()
 				}), aiAvailable === true && /* @__PURE__ */ jsx("button", {
 					type: "button",
 					class: "btn btn-sm",
 					onClick: () => askAi(q),
-					children: "ask AI instead"
+					children: search_ask_ai_instead()
 				})]
 			}),
 			!loading && results.length > 0 && /* @__PURE__ */ jsxs(Fragment, { children: [
@@ -3336,23 +5952,23 @@ function SearchRoute() {
 					role: "status",
 					children: /* @__PURE__ */ jsx("span", {
 						class: "loading loading-dots loading-sm opacity-50",
-						"aria-label": "loading"
+						"aria-label": search_aria_loading()
 					})
 				}),
 				!state.hasNext && !state.loadingMore && !state.moreError && /* @__PURE__ */ jsx("p", {
 					class: "py-6 text-center text-sm opacity-40",
-					children: "end of results"
+					children: search_end_of_results()
 				}),
 				state.moreError && /* @__PURE__ */ jsxs("div", {
 					class: "py-6 flex flex-col items-center gap-2 text-sm",
 					children: [/* @__PURE__ */ jsx("p", {
 						class: "opacity-60",
-						children: "couldn’t load more results"
+						children: search_more_error()
 					}), /* @__PURE__ */ jsx("button", {
 						type: "button",
 						class: "btn btn-ghost btn-sm",
 						onClick: () => loadMore(q),
-						children: "retry"
+						children: search_retry()
 					})]
 				}),
 				state.hasNext && !state.loadingMore && !state.moreError && /* @__PURE__ */ jsx("div", {
@@ -3361,7 +5977,7 @@ function SearchRoute() {
 						type: "button",
 						class: "btn btn-ghost btn-sm opacity-60",
 						onClick: () => loadMore(q),
-						children: "more results"
+						children: search_more_results()
 					})
 				})
 			] })
@@ -3378,6 +5994,7 @@ var init_search = __esmMin((() => {
 	init_search$1();
 	init_pager();
 	init_format();
+	init_i18n();
 	init_AnswerView();
 	init_useAnswer();
 	init_SearchBox();

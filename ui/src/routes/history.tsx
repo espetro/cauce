@@ -4,6 +4,7 @@ import { usePageTitle } from "../components/Header";
 import { deleteHistory, fetchApiHistory, type HistoryScope } from "../lib/api";
 import type { HistoryRow } from "../lib/schemas";
 import { truncate } from "../lib/format";
+import * as m from "../lib/i18n";
 
 const SINCE_VALUES: HistoryScope[] = ["24", "168", "720", "all"];
 
@@ -51,12 +52,12 @@ function DeleteControls({
           setScope((e.target as HTMLSelectElement).value as typeof scope);
           setArmed(false);
         }}
-        aria-label="delete scope"
+        aria-label={m.history_aria_delete_scope()}
       >
-        <option value="24h">older than 24h</option>
-        <option value="7d">older than 7d</option>
-        <option value="30d">older than 30d</option>
-        <option value="all">all history</option>
+        <option value="24h">{m.history_delete_older_24h()}</option>
+        <option value="7d">{m.history_delete_older_7d()}</option>
+        <option value="30d">{m.history_delete_older_30d()}</option>
+        <option value="all">{m.history_delete_all()}</option>
       </select>
       <button
         type="button"
@@ -65,14 +66,18 @@ function DeleteControls({
         onClick={() => (armed ? run() : setArmed(true))}
         onBlur={() => setArmed(false)}
       >
-        {armed ? (scope === "all" ? "really delete all?" : "confirm delete") : "delete…"}
+        {armed
+          ? scope === "all"
+            ? m.history_delete_confirm_all()
+            : m.history_delete_confirm()
+          : m.history_delete_arm()}
       </button>
     </div>
   );
 }
 
 export default function HistoryRoute() {
-  usePageTitle("history");
+  usePageTitle(m.history_page_title());
   const { query, route } = useLocation();
   // since/qf are URL-addressable (contract: /history?since=24&qf=python)
   const since = parseSince(query?.since);
@@ -126,9 +131,9 @@ export default function HistoryRoute() {
 
   return (
     <div class="w-full max-w-[960px] mx-auto px-4 pb-16">
-      <h1 class="text-xl font-semibold mt-6 mb-1">History</h1>
+      <h1 class="text-xl font-semibold mt-6 mb-1">{m.history_title()}</h1>
       <p class="text-[13px] opacity-60 mb-4">
-        {counts.clicks} clicks · {counts.cache_rows} cached searches · newest first
+        {m.history_summary({ clicks: counts.clicks, rows: counts.cache_rows })}
       </p>
 
       <div class="flex flex-wrap items-center gap-2 mb-4">
@@ -136,24 +141,24 @@ export default function HistoryRoute() {
           class="select select-sm w-32"
           value={since}
           onChange={(e) => setParam("since", (e.target as HTMLSelectElement).value)}
-          aria-label="time filter"
+          aria-label={m.history_aria_time_filter()}
         >
-          <option value="all">all time</option>
-          <option value="24">last 24h</option>
-          <option value="168">last week</option>
-          <option value="720">last month</option>
+          <option value="all">{m.history_opt_all_time()}</option>
+          <option value="24">{m.history_opt_last_24h()}</option>
+          <option value="168">{m.history_opt_last_week()}</option>
+          <option value="720">{m.history_opt_last_month()}</option>
         </select>
         <input
           type="search"
           class="input input-sm w-56"
-          placeholder="filter by query text…"
+          placeholder={m.history_filter_placeholder()}
           value={qf}
           onInput={(e) => setParam("qf", (e.target as HTMLInputElement).value)}
-          aria-label="query filter"
+          aria-label={m.history_aria_query_filter()}
         />
         {(since !== "all" || qf) && (
           <button type="button" class="btn btn-ghost btn-sm" onClick={clearFilters}>
-            clear
+            {m.history_clear()}
           </button>
         )}
         <div class="ml-auto">
@@ -166,14 +171,14 @@ export default function HistoryRoute() {
           <span class="loading loading-dots loading-md" />
         </div>
       )}
-      {!loading && error && <p class="text-error py-6 text-sm">error: {error}</p>}
+      {!loading && error && <p class="text-error py-6 text-sm">{m.history_error({ e: error })}</p>}
       {!loading && !error && items.length === 0 && (
         <p class="opacity-60 py-8 text-sm">
-          nothing here yet — open a result from the{" "}
+          {m.history_empty_prefix()}
           <a href="/" class="link link-primary">
-            search
-          </a>{" "}
-          page.
+            {m.history_empty_link()}
+          </a>
+          {m.history_empty_suffix()}
         </p>
       )}
 
@@ -182,10 +187,10 @@ export default function HistoryRoute() {
           <table class="table table-sm">
             <thead>
               <tr class="text-[13px] opacity-60">
-                <th>when</th>
-                <th>kind</th>
-                <th>query</th>
-                <th class="hidden md:table-cell">detail</th>
+                <th>{m.history_col_when()}</th>
+                <th>{m.history_col_kind()}</th>
+                <th>{m.history_col_query()}</th>
+                <th class="hidden md:table-cell">{m.history_col_detail()}</th>
                 <th />
               </tr>
             </thead>
@@ -197,12 +202,14 @@ export default function HistoryRoute() {
                     <span
                       class={`badge badge-sm ${r.kind === "click" ? "badge-primary" : "badge-ghost"}`}
                     >
-                      {r.kind === "click" ? `click · ${r.source ?? "web"}` : "search"}
+                      {r.kind === "click"
+                        ? m.history_kind_click({ source: r.source ?? "web" })
+                        : m.history_kind_search()}
                     </span>
                   </td>
                   <td class="text-[13px]">
                     <a href={`/row/${r.query_hash}`} class="link link-primary">
-                      {r.query || "(no query)"}
+                      {r.query || m.history_no_query()}
                     </a>
                   </td>
                   <td class="hidden md:table-cell text-[13px] opacity-60 max-w-[300px] truncate">
@@ -216,9 +223,7 @@ export default function HistoryRoute() {
                         {truncate(r.url ?? "", 80)}
                       </a>
                     ) : (
-                      <>
-                        {r.hits ?? 0} hits · expires {fmtLocal(r.expires_at ?? 0)}
-                      </>
+                      <>{m.history_hits({ hits: r.hits ?? 0, at: fmtLocal(r.expires_at ?? 0) })}</>
                     )}
                   </td>
                   <td>
@@ -234,7 +239,7 @@ export default function HistoryRoute() {
                             .then((t) => navigator.clipboard?.writeText(t))
                         }
                       >
-                        copy json
+                        {m.history_copy_json()}
                       </button>
                     )}
                   </td>

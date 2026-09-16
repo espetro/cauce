@@ -3,6 +3,7 @@ import { useLocation } from "preact-iso";
 import { Center, usePageTitle } from "../components/Header";
 import { useModels, type Mode } from "../components/ModeSegments";
 import { SearchBox } from "../features/suggests/SearchBox";
+import * as m from "../lib/i18n";
 
 const MODE_KEY = "oxe-mode";
 
@@ -46,7 +47,7 @@ export default function Home() {
   return (
     <Center vh>
       <h1 class="text-5xl font-semibold tracking-tight mb-4">oxe</h1>
-      <p class="opacity-50 text-sm mb-6 max-md:mb-4 md:mb-10">your local web intel layer</p>
+      <p class="opacity-50 text-sm mb-6 max-md:mb-4 md:mb-10">{m.home_tagline()}</p>
       <div class="self-stretch flex justify-center px-3 min-w-0 mb-8">
         <SearchBox
           value={q}

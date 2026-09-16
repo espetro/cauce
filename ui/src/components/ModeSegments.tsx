@@ -1,6 +1,7 @@
 import { useEffect, useState } from "preact/hooks";
 import { listModels, type ModelsResponse } from "../lib/ai";
 import { currentModelsVersion, ModelPicker, onModelsBump } from "./ModelPicker";
+import * as m from "../lib/i18n";
 export type Mode = "traditional" | "ai";
 
 /** Models + AI availability from GET /v1/models.
@@ -30,9 +31,9 @@ export function useModels(): {
   return { available, models, error };
 }
 
-const SEGMENTS: Array<{ v: Mode; label: string }> = [
-  { v: "traditional", label: "Search" },
-  { v: "ai", label: "AI" },
+const SEGMENTS: Array<{ v: Mode; label: () => string }> = [
+  { v: "traditional", label: m.segments_search },
+  { v: "ai", label: m.mode_label_ai },
 ];
 
 const Magnifier = () => (
@@ -87,7 +88,7 @@ export function ModeSegments({
   return (
     <div
       role="radiogroup"
-      aria-label="search mode"
+      aria-label={m.mode_aria_label_lower()}
       class="join bg-base-200 rounded-full p-0.5 shrink-0"
     >
       {SEGMENTS.map((s) => {
@@ -97,7 +98,7 @@ export function ModeSegments({
           <span
             key={s.v}
             class="tooltip tooltip-bottom"
-            data-tip={disabled ? "configure a model in settings" : undefined}
+            data-tip={disabled ? m.mode_tip_ai_disabled_short() : undefined}
           >
             <button
               type="button"
@@ -125,7 +126,7 @@ export function ModeSegments({
               }}
             >
               {s.v === "traditional" ? <Magnifier /> : <Sparkle />}
-              {s.label}
+              {s.label()}
             </button>
           </span>
         );
@@ -167,7 +168,7 @@ export function AiControls({
   return (
     <div class="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-2 w-full text-xs min-w-0">
       <div class="flex items-center gap-1.5 min-w-0 flex-1">
-        <span class="shrink-0 opacity-70">model</span>
+        <span class="shrink-0 opacity-70">{m.ai_label_model()}</span>
         <ModelPicker
           models={models}
           value={model}
@@ -184,7 +185,7 @@ export function AiControls({
         class={`btn btn-xs rounded-full shrink-0 self-start sm:self-auto ${reasoning ? "btn-primary btn-soft" : "btn-ghost"}`}
         onClick={() => setReasoning(!reasoning)}
       >
-        reasoning
+        {m.ai_label_reasoning()}
       </button>
     </div>
   );

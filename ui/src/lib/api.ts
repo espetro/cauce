@@ -10,6 +10,7 @@
 const BASE = "";
 
 import * as v from "valibot";
+import { api_network_error } from "./i18n";
 import { devLog, devTimed } from "./devlog";
 import {
   ApiStatsSchema,
@@ -65,7 +66,7 @@ export async function request<S extends v.GenericSchema>(
     });
   } catch (e) {
     if ((e as Error)?.name === "AbortError") throw e;
-    throw new ApiError("network_error", (e as Error)?.message ?? "network error", 0);
+    throw new ApiError("network_error", (e as Error)?.message ?? api_network_error(), 0);
   }
   if (!res.ok) {
     let code = "http_error";

@@ -9,6 +9,7 @@ import { ResultCard } from "../features/search/ResultCard";
 import { useSearch, cachedAgeOf, isCacheHit, metaLine } from "../features/search";
 import { searchUrl } from "../features/search/pager";
 import { fmtDur } from "../lib/format";
+import * as m from "../lib/i18n";
 import { AnswerView } from "../features/answer/AnswerView";
 import { useAnswer } from "../features/answer/useAnswer";
 import { SearchBox } from "../features/suggests/SearchBox";
@@ -31,7 +32,7 @@ export default function SearchRoute() {
   const q = String(query?.q ?? "");
   // `p` is deprecated (continuous scroll): accepted in deep links, ignored.
   const urlMode = query?.mode === "ai" ? "ai" : "traditional";
-  usePageTitle(q || "search");
+  usePageTitle(q || m.search_page_title());
 
   const aiAvailable = useAiAvailable();
   const { models, error: modelsError } = useModels();
@@ -168,29 +169,29 @@ export default function SearchRoute() {
         />
         {aiModeBlocked && (
           <p class="text-xs opacity-60 mt-1" role="note">
-            AI mode is not configured - set a model in settings
+            {m.search_ai_blocked()}
           </p>
         )}
         {effectiveMode === "traditional" && results.length > 0 && payload && (
           <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px]">
             <span class="opacity-60">
-              {metaLine(payload, results.length) || (loading ? "searching…" : "")}
+              {metaLine(payload, results.length) || (loading ? m.search_searching() : "")}
             </span>
             {isCacheHit(payload) && (
-              <span class="tooltip" data-tip="Actually search the web (refreshes this cache entry)">
+              <span class="tooltip" data-tip={m.search_tip_refresh()}>
                 <button
                   type="button"
                   class="badge badge-sm badge-ghost cursor-pointer"
-                  aria-label="cached result: click to refresh from the web"
+                  aria-label={m.search_aria_cached_refresh()}
                   onClick={() => {
                     refresh(q);
-                    toast("success", "refreshed from the web");
+                    toast("success", m.search_toast_refreshed());
                   }}
                 >
                   cached
                   {(() => {
                     const age = cachedAgeOf(payload);
-                    return age != null ? ` · ${fmtDur(age)} old` : "";
+                    return age != null ? m.search_cached_age({ age: fmtDur(age) }) : "";
                   })()}
                 </button>
               </span>
@@ -202,7 +203,7 @@ export default function SearchRoute() {
                   class="btn btn-ghost btn-xs"
                   onClick={() => navigator.clipboard?.writeText(window.location.href)}
                 >
-                  copy link
+                  {m.search_copy_link()}
                 </button>
                 <button
                   type="button"
@@ -217,7 +218,7 @@ export default function SearchRoute() {
                     )
                   }
                 >
-                  copy json
+                  {m.search_copy_json()}
                 </button>
               </span>
             )}
@@ -256,20 +257,20 @@ export default function SearchRoute() {
             <div class="py-6 flex flex-col gap-3 animate-in fade-in zoom-in-95 duration-300">
               {error.kind === "rate_limited" ? (
                 <div role="alert" class="alert alert-warning text-sm">
-                  <span>search backend rate-limited, retry shortly</span>
+                  <span>{m.search_error_rate_limited()}</span>
                 </div>
               ) : (
                 <div role="alert" class="alert alert-error text-sm">
-                  <span>search backend failed</span>
+                  <span>{m.search_error_backend()}</span>
                 </div>
               )}
               <div class="flex gap-2">
                 <button type="button" class="btn btn-sm" onClick={() => run(q)}>
-                  retry
+                  {m.search_retry()}
                 </button>
                 {aiAvailable === true && (
                   <button type="button" class="btn btn-ghost btn-sm" onClick={() => askAi(q)}>
-                    ask AI instead
+                    {m.search_ask_ai_instead()}
                   </button>
                 )}
               </div>
@@ -278,10 +279,10 @@ export default function SearchRoute() {
 
           {!loading && !error && payload && results.length === 0 && (
             <div class="py-10 text-sm animate-in fade-in zoom-in-95 duration-300">
-              <p class="opacity-60 mb-3">no results</p>
+              <p class="opacity-60 mb-3">{m.search_no_results()}</p>
               {aiAvailable === true && (
                 <button type="button" class="btn btn-sm" onClick={() => askAi(q)}>
-                  ask AI instead
+                  {m.search_ask_ai_instead()}
                 </button>
               )}
             </div>
@@ -314,17 +315,20 @@ export default function SearchRoute() {
 
               {state.loadingMore && (
                 <div class="py-6 flex justify-center" aria-busy="true" role="status">
-                  <span class="loading loading-dots loading-sm opacity-50" aria-label="loading" />
+                  <span
+                    class="loading loading-dots loading-sm opacity-50"
+                    aria-label={m.search_aria_loading()}
+                  />
                 </div>
               )}
               {!state.hasNext && !state.loadingMore && !state.moreError && (
-                <p class="py-6 text-center text-sm opacity-40">end of results</p>
+                <p class="py-6 text-center text-sm opacity-40">{m.search_end_of_results()}</p>
               )}
               {state.moreError && (
                 <div class="py-6 flex flex-col items-center gap-2 text-sm">
-                  <p class="opacity-60">couldn’t load more results</p>
+                  <p class="opacity-60">{m.search_more_error()}</p>
                   <button type="button" class="btn btn-ghost btn-sm" onClick={() => loadMore(q)}>
-                    retry
+                    {m.search_retry()}
                   </button>
                 </div>
               )}
@@ -335,7 +339,7 @@ export default function SearchRoute() {
                     class="btn btn-ghost btn-sm opacity-60"
                     onClick={() => loadMore(q)}
                   >
-                    more results
+                    {m.search_more_results()}
                   </button>
                 </div>
               )}

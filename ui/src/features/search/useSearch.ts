@@ -1,5 +1,6 @@
 import { useCallback, useRef, useState } from "preact/hooks";
 import { deleteCacheRow, search } from "../../lib/api";
+import { search_meta_results } from "../../lib/i18n";
 import type { SearchResponse, SearchResult } from "../../lib/schemas";
 
 export type SearchStatus = "idle" | "loading" | "refreshing" | "success" | "empty" | "error";
@@ -183,7 +184,7 @@ export function useSearch(): {
 
 export function metaLine(payload: SearchResponse | null, total: number): string {
   if (!payload && total === 0) return "";
-  return `${total} result${total === 1 ? "" : "s"}`;
+  return search_meta_results({ n: total });
 }
 
 /** Terminal status derived from a successful search response: an empty

@@ -1,5 +1,6 @@
 import type { SearchResult } from "../../lib/schemas";
 import { domainOf, faviconFor, truncate } from "../../lib/format";
+import * as m from "../../lib/i18n";
 
 interface Props {
   result: SearchResult;
@@ -13,7 +14,7 @@ export function ResultCard({ result, onOpen }: Props) {
   const url = result.url ?? "";
   const domain = domainOf(url);
   const snippet = (result.text || result.highlights?.join(" ") || "").trim();
-  const title = result.title || "(untitled)";
+  const title = result.title || m.result_untitled();
   return (
     <article class="py-3">
       <div class="flex items-center gap-2 text-[13px] opacity-70">
@@ -44,7 +45,7 @@ export function ResultCard({ result, onOpen }: Props) {
       {snippet && (
         <details class="text-sm">
           <summary class="opacity-50 cursor-pointer select-none text-[13px]">
-            cached page text preview
+            {m.result_cached_text_preview()}
           </summary>
           <p class="opacity-70 m-1 whitespace-pre-wrap">{truncate(snippet, 400)}</p>
         </details>
