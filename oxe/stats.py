@@ -298,7 +298,9 @@ def _render_page(panels, days, generated) -> str:
 def build_json(db_path: str, days: int = 14) -> dict:
     """Return dashboard aggregates as JSON-ready dict (sister of build())."""
     try:
-        with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=5) as conn:
+        with contextlib.closing(
+            sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=5)
+        ) as conn:
             if not _has_search_log(conn):
                 daily_rows = top_queries = zero_result = client_split = []
             else:

@@ -134,6 +134,6 @@ mise run validate
 start=$(date +%s)
 bun run --cwd ui check
 echo "OK ui-build ($(( $(date +%s) - start ))s, prerendered dist + size budgets)"
-test -s dist/index.html && [ "$(wc -c < dist/index.html)" -gt 2048 ] \\
+test -s ui/dist/index.html && [ "$(wc -c < ui/dist/index.html)" -gt 2048 ] \\
   || { echo "FAIL prerendered dist/index.html missing or too small"; exit 1; }
 """

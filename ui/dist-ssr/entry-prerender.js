@@ -349,6 +349,63 @@ var init_api = __esmMin((() => {
 	};
 }));
 //#endregion
+//#region \0@oxc-project+runtime@0.149.0/helpers/esm/usingCtx.js
+function _usingCtx() {
+	var r = "function" == typeof SuppressedError ? SuppressedError : function(r, e) {
+		var n = Error();
+		return n.name = "SuppressedError", n.error = r, n.suppressed = e, n;
+	}, e = {}, n = [];
+	function using(r, e) {
+		if (null != e) {
+			if (Object(e) !== e) throw new TypeError("using declarations can only be used with objects, functions, null, or undefined.");
+			if (r) var o = e[Symbol.asyncDispose || Symbol["for"]("Symbol.asyncDispose")];
+			if (void 0 === o && (o = e[Symbol.dispose || Symbol["for"]("Symbol.dispose")], r)) var t = o;
+			if ("function" != typeof o) throw new TypeError("Object is not disposable.");
+			t && (o = function o() {
+				try {
+					t.call(e);
+				} catch (r) {
+					return Promise.reject(r);
+				}
+			}), n.push({
+				v: e,
+				d: o,
+				a: r
+			});
+		} else r && n.push({
+			d: e,
+			a: r
+		});
+		return e;
+	}
+	return {
+		e,
+		u: using.bind(null, !1),
+		a: using.bind(null, !0),
+		d: function d() {
+			var o, t = this.e, s = 0;
+			function next() {
+				for (; o = n.pop();) try {
+					if (!o.a && 1 === s) return s = 0, n.push(o), Promise.resolve().then(next);
+					if (o.d) {
+						var r = o.d.call(o.v);
+						if (o.a) return s |= 2, Promise.resolve(r).then(next, err);
+					} else s |= 1;
+				} catch (r) {
+					return err(r);
+				}
+				if (1 === s) return t !== e ? Promise.reject(t) : Promise.resolve();
+				if (t !== e) throw t;
+			}
+			function err(n) {
+				return t = t !== e ? new r(n, t) : n, next();
+			}
+			return next();
+		}
+	};
+}
+var init_usingCtx = __esmMin((() => {}));
+//#endregion
 //#region src/lib/ai.ts
 /** AI-mode endpoint clients: /v1/models, /settings/test, /answer (SSE).
 * Response schemas + AnswerEvent live in ./schemas.ts (bound to the
@@ -367,53 +424,74 @@ async function listModels(signal) {
 * Malformed frames are skipped (try/catch), well-formed frames are
 * type-narrowed through AnswerEventSchema. */
 async function streamAnswer(query, on, signal) {
-	const res = await fetch(`/answer`, {
-		method: "POST",
-		headers: {
-			"Content-Type": "application/json",
-			Accept: "text/event-stream"
-		},
-		body: JSON.stringify({ query }),
-		signal
-	});
-	if (!res.ok || !res.body) {
-		let code = "http_error";
-		let detail = `HTTP ${res.status}`;
-		try {
-			const envelope = v.parse(v.object({ error: v.object({
-				code: v.string(),
-				message: v.string()
-			}) }), await res.json());
-			code = envelope.error.code;
-			detail = envelope.error.message;
-		} catch {}
-		throw new ApiError(code, detail, res.status);
-	}
-	const reader = res.body.getReader();
-	const decoder = new TextDecoder();
-	let buf = "";
-	for (;;) {
-		const { done, value } = await reader.read();
-		if (done) break;
-		buf += decoder.decode(value, { stream: true });
-		let idx;
-		while ((idx = buf.indexOf("\n\n")) !== -1) {
-			const frame = buf.slice(0, idx);
-			buf = buf.slice(idx + 2);
-			for (const line of frame.split("\n")) {
-				if (!line.startsWith("data: ")) continue;
-				try {
-					const ev = v.parse(AnswerEventSchema, JSON.parse(line.slice(6)));
-					ev.type;
-					on(ev);
-				} catch {}
+	try {
+		var _usingCtx$1 = _usingCtx();
+		const res = await fetch(`/answer`, {
+			method: "POST",
+			headers: {
+				"Content-Type": "application/json",
+				Accept: "text/event-stream"
+			},
+			body: JSON.stringify({ query }),
+			signal
+		});
+		if (!res.ok || !res.body) {
+			let code = "http_error";
+			let detail = `HTTP ${res.status}`;
+			try {
+				const envelope = v.parse(v.object({ error: v.object({
+					code: v.string(),
+					message: v.string()
+				}) }), await res.json());
+				code = envelope.error.code;
+				detail = envelope.error.message;
+			} catch {}
+			throw new ApiError(code, detail, res.status);
+		}
+		const reader = _usingCtx$1.a(new StreamReader(res.body.getReader()));
+		const decoder = new TextDecoder();
+		let buf = "";
+		for (;;) {
+			const { done, value } = await reader.read();
+			if (done) break;
+			buf += decoder.decode(value, { stream: true });
+			let idx;
+			while ((idx = buf.indexOf("\n\n")) !== -1) {
+				const frame = buf.slice(0, idx);
+				buf = buf.slice(idx + 2);
+				for (const line of frame.split("\n")) {
+					if (!line.startsWith("data: ")) continue;
+					try {
+						const ev = v.parse(AnswerEventSchema, JSON.parse(line.slice(6)));
+						ev.type;
+						on(ev);
+					} catch {}
+				}
 			}
 		}
+	} catch (_) {
+		_usingCtx$1.e = _;
+	} finally {
+		await _usingCtx$1.d();
 	}
 }
+var StreamReader;
 var init_ai = __esmMin((() => {
 	init_api();
 	init_schemas();
+	init_usingCtx();
+	StreamReader = class {
+		reader;
+		constructor(reader) {
+			this.reader = reader;
+		}
+		read() {
+			return this.reader.read();
+		}
+		async [Symbol.asyncDispose]() {
+			await this.reader.cancel();
+		}
+	};
 }));
 //#endregion
 //#region src/lib/useMountEffect.ts
