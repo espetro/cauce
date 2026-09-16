@@ -1,3 +1,4 @@
+/** @jsxImportSource preact */
 import { Component, type ComponentChildren } from "preact";
 
 /** Class boundary: renders a daisyUI hero fallback on render errors. */

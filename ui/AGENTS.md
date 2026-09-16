@@ -80,6 +80,12 @@ contract; keep the two lists in sync.
 
 ## Quality loop
 
+- Dev port: `mise run dev` runs the backend on **4480** (must match the vite
+  proxy target in `ui/vite.config.ts`); the production/preview server is
+  **4479**. When testing against a server you started yourself, check which
+  port it's on before blaming CORS/502s — a stale instance on the other port
+  is the usual culprit.
+
 - `mise run lint` (oxlint + oxfmt) and `mise run check` (size budgets) must pass.
 - UI polish standard: high-end visual design per `.agents/docs/screens/` specs; when in doubt, fewer boxes, more whitespace, card-less anatomy.
 - Deliberately constrained flexibility: don't invent alternate layouts, extra dependencies, or CSS outside tokens. Go straight to the point.

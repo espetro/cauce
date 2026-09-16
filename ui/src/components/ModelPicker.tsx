@@ -78,6 +78,19 @@ export function ModelPicker({
     inputRef.current?.blur();
   };
 
+  /** Commit typed text on blur: exact (case-insensitive) match against the
+   * model list selects that model; anything else is a custom model id. */
+  const commit = () => {
+    const t = filter.trim();
+    if (!t || t === value) {
+      setOpen(false);
+      setFilter("");
+      return;
+    }
+    const exact = models.find((m) => m.toLowerCase() === t.toLowerCase());
+    pick(exact ?? t);
+  };
+
   const h = size === "xs" ? "select-xs" : "select-sm";
   return (
     <div class="relative" ref={rootRef}>
@@ -103,6 +116,7 @@ export function ModelPicker({
             setFilter("");
             setOpen(true);
           }}
+          onBlur={commit}
           onKeyDown={(e) => {
             const ke = e as unknown as KeyboardEvent;
             if (ke.key === "ArrowDown") {
