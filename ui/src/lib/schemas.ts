@@ -204,7 +204,7 @@ export const AnswerEventSchema = v.variant("type", [
     confidence: num,
     model: v.optional(str),
     cached: v.optional(v.boolean()),
-    error: v.optional(str),
+    error: v.nullish(str),
     sources: v.optional(v.array(AiSourceSchema)),
   }),
 ]);

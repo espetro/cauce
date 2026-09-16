@@ -58,7 +58,7 @@ export default function SearchRoute() {
       if (q && effectiveMode === "traditional") run(q);
       // eslint-disable-next-line react-hooks/exhaustive-deps
     },
-    [q],
+    [q, effectiveMode],
   );
 
   // continuous scroll: fetch the next page when the user is within ~2

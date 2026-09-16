@@ -175,6 +175,19 @@ describe("AnswerEventSchema", () => {
     if (doneErr.type === "done") expect(doneErr.error).toBe("boom");
   });
 
+  test("done with error: null parses (backend always emits the key)", () => {
+    const done = v.parse(AnswerEventSchema, {
+      type: "done",
+      answer: "ok",
+      related_questions: [],
+      confidence: 9,
+      cached: true,
+      error: null,
+      sources: [],
+    });
+    if (done.type === "done") expect(done.error).toBeNull();
+  });
+
   test("rejects unknown event types (malformed frames are skipped by ai.ts)", () => {
     expect(v.is(AnswerEventSchema, { type: "nope" })).toBe(false);
   });
