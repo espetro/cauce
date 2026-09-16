@@ -64,14 +64,17 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
 
   // open + focus management; the close event (Esc, backdrop, cancel button,
   // save) bubbles to the parent which strips the ?settings param.
-  useEffect(() => {
-    const dlg = dialogRef.current;
-    if (!dlg) return;
-    dlg.showModal();
-    dlg.addEventListener("close", onClose);
-    dlg.querySelector<HTMLInputElement>("select, input")?.focus();
-    return () => dlg.removeEventListener("close", onClose);
-  }, [onClose]);
+  useEffect(
+    function wireDialogOnMount() {
+      const dlg = dialogRef.current;
+      if (!dlg) return;
+      dlg.showModal();
+      dlg.addEventListener("close", onClose);
+      dlg.querySelector<HTMLInputElement>("select, input")?.focus();
+      return () => dlg.removeEventListener("close", onClose);
+    },
+    [onClose],
+  );
 
   const submit = (e: Event) => {
     e.preventDefault();

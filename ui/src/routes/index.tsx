@@ -1,4 +1,4 @@
-import { useEffect, useState } from "preact/hooks";
+import { useState } from "preact/hooks";
 import { useLocation } from "preact-iso";
 import { Center, usePageTitle } from "../components/Header";
 import { useModels, type Mode } from "../components/ModeSegments";
@@ -6,10 +6,10 @@ import { SearchBox } from "../features/suggests/SearchBox";
 
 const MODE_KEY = "oxe-mode";
 
-export default function Home() {
-  usePageTitle("");
-  const { route } = useLocation();
-  const [q, setQ] = useState("");
+/** Persist at event time and keep the tri-state demote as a derived value
+ * (never write the demoted value back into state, so aiAvailable recovering
+ * restores the user's AI choice). */
+function useMode(): [Mode, (m: Mode) => void] {
   const [mode, setMode] = useState<Mode>(() =>
     typeof localStorage === "undefined"
       ? "traditional"
@@ -17,22 +17,27 @@ export default function Home() {
         ? "ai"
         : "traditional",
   );
+  const setModeAndStore = (m: Mode) => {
+    setMode(m);
+    localStorage.setItem(MODE_KEY, m);
+  };
+  return [mode, setModeAndStore];
+}
+
+export default function Home() {
+  usePageTitle("");
+  const { route } = useLocation();
+  const [q, setQ] = useState("");
+  const [mode, setMode] = useMode();
   const { available: aiAvailable, models, error: modelsError } = useModels();
-
-  useEffect(() => {
-    if (mode === "ai" && aiAvailable === false) setMode("traditional");
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [aiAvailable]);
-
-  useEffect(() => {
-    localStorage.setItem(MODE_KEY, mode);
-  }, [mode]);
+  // AI unavailable: render Search results (do not demote stored preference).
+  const effectiveMode: Mode = mode === "ai" && aiAvailable === false ? "traditional" : mode;
 
   const submit = (query: string) => {
     const trimmed = query.trim();
     if (!trimmed) return;
     route(
-      mode === "ai"
+      effectiveMode === "ai"
         ? `/search?q=${encodeURIComponent(trimmed)}&mode=ai`
         : `/search?q=${encodeURIComponent(trimmed)}`,
     );
@@ -49,7 +54,7 @@ export default function Home() {
           onSubmit={submit}
           autoFocus
           size="lg"
-          mode={mode}
+          mode={effectiveMode}
           onModeChange={setMode}
           aiAvailable={aiAvailable}
           models={models}

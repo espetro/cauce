@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from "preact/hooks";
+import { useRef, useState } from "preact/hooks";
 import { SuggestionsDropdown } from "./SuggestionsDropdown";
 import { useListNav, useSuggests } from "./useSuggests";
 import { AiControls, ModeSegments, type Mode } from "../../components/ModeSegments";
+import { useMountEffect } from "../../lib/useMountEffect";
 
 interface Props {
   value: string;
@@ -77,13 +78,13 @@ export function SearchBox({
     },
   );
 
-  useEffect(() => {
+  useMountEffect(function closeOnOutsideClick() {
     const onDocClick = (e: MouseEvent) => {
       if (boxRef.current && !boxRef.current.contains(e.target as Node)) setOpen(false);
     };
     document.addEventListener("mousedown", onDocClick);
     return () => document.removeEventListener("mousedown", onDocClick);
-  }, []);
+  });
 
   const showDropdown = open && value.trim().length >= 2 && items.length > 0;
 

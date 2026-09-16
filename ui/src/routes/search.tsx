@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import { useLocation } from "preact-iso";
 import { WindowVirtualizer, type WindowVirtualizerHandle } from "virtua";
 import { useAiAvailable, usePageTitle } from "../components/Header";
@@ -16,6 +16,16 @@ import { SearchBox } from "../features/suggests/SearchBox";
 const MODE_KEY = "oxe-mode";
 type Mode = "traditional" | "ai";
 
+/** Set mode and persist it at event time (no sync effect). */
+function useMode(initial: Mode): [Mode, (m: Mode) => void] {
+  const [mode, setMode] = useState<Mode>(initial);
+  const setModeAndStore = (m: Mode) => {
+    setMode(m);
+    localStorage.setItem(MODE_KEY, m);
+  };
+  return [mode, setModeAndStore];
+}
+
 export default function SearchRoute() {
   const { query, route } = useLocation();
   const q = String(query?.q ?? "");
@@ -26,40 +36,43 @@ export default function SearchRoute() {
   const aiAvailable = useAiAvailable();
   const { models, error: modelsError } = useModels();
   const [input, setInput] = useState(q);
-  const [mode, setMode] = useState<Mode>(urlMode);
+  const [mode, setMode] = useMode(urlMode);
   const { state, run, loadMore, refresh } = useSearch();
   const answer = useAnswer();
   const virtuaRef = useRef<WindowVirtualizerHandle>(null);
 
-  useEffect(() => {
-    localStorage.setItem(MODE_KEY, mode);
-  }, [mode]);
-
+  // mode is persisted at event time by useMode's setModeAndStore.
   // AI mode is unavailable: ?mode=ai URLs stay on classic results (no redirect)
   // with a small inline notice; the disabled toggle communicates why.
   const aiModeBlocked = mode === "ai" && aiAvailable === false;
   const effectiveMode: Mode = aiModeBlocked ? "traditional" : mode;
 
   // strip deprecated `p` from the canonical url (deep links still render)
-  useEffect(() => {
-    if (typeof query?.p === "string") {
-      const sp = new URLSearchParams(window.location.search);
-      sp.delete("p");
-      const qs = sp.toString();
-      route(`${window.location.pathname}${qs ? `?${qs}` : ""}`, true);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [query?.p]);
+  useEffect(
+    function stripDeprecatedPageParam() {
+      if (typeof query?.p === "string") {
+        const sp = new URLSearchParams(window.location.search);
+        sp.delete("p");
+        const qs = sp.toString();
+        route(`${window.location.pathname}${qs ? `?${qs}` : ""}`, true);
+      }
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    },
+    [query?.p],
+  );
 
-  useEffect(() => {
-    setInput(q);
-    if (q && effectiveMode === "traditional") run(q);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [q]);
+  useEffect(
+    function rerunOnQueryChange() {
+      setInput(q);
+      if (q && effectiveMode === "traditional") run(q);
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    },
+    [q],
+  );
 
-  const maybeLoadMore = useCallback(() => {
-    // continuous scroll: fetch the next page when the user is within ~2
-    // item-heights of the list end; refires for every page until MAX_PAGES
+  // continuous scroll: fetch the next page when the user is within ~2
+  // item-heights of the list end; refires for every page until MAX_PAGES
+  const maybeLoadMore = () => {
     const v = virtuaRef.current;
     const n = state.results.length;
     if (!v || n === 0) return;
@@ -68,32 +81,51 @@ export default function SearchRoute() {
     const listEnd = v.getItemOffset(last) + itemH;
     const remain = listEnd - (window.scrollY + v.viewportSize);
     if (remain < 2 * itemH) loadMore(q);
-  }, [state.results.length, loadMore, q]);
+  };
 
   // If page 1 fits the viewport, no scroll event ever fires: re-check after
   // results arrive so short first pages keep loading. Virtualizer measures
   // asynchronously, so defer one tick; loadMore guards re-entrancy itself.
-  useEffect(() => {
-    if (state.results.length > 0 && !state.loadingMore) {
-      const t = setTimeout(maybeLoadMore, 0);
-      return () => clearTimeout(t);
-    }
-  }, [state.results.length, state.loadingMore, maybeLoadMore]);
+  // maybeLoadMore is a plain closure: results.length/loadingMore cover its
+  // inputs, and it re-reads fresh values each call.
+  useEffect(
+    function checkLoadMoreAfterResults() {
+      if (state.results.length > 0 && !state.loadingMore) {
+        const t = setTimeout(maybeLoadMore, 0);
+        return () => clearTimeout(t);
+      }
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    },
+    [state.results.length, state.loadingMore],
+  );
 
-  // canonical url: ai mode is expressed via &mode=ai; preserve other params
-  useEffect(() => {
-    if (urlMode !== mode) {
+  // Mode changes reach the URL from the setters below (changeMode, askAi,
+  // viewClassic); no sync effect needed.
+  const changeMode = (m: Mode) => {
+    setMode(m);
+    if (urlMode !== m) {
       const extra: Record<string, string> = {};
       if (typeof query?.settings === "string") extra.settings = query.settings;
-      route(searchUrl({ q, mode, extra }), true);
+      route(searchUrl({ q, mode: m, extra }), true);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, urlMode]);
+  };
 
-  useEffect(() => {
-    if (q && effectiveMode === "ai") answer.run(q);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [q, effectiveMode]);
+  useEffect(
+    function rerunOnQueryChange() {
+      setInput(q);
+      if (q && effectiveMode === "traditional") run(q);
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    },
+    [q],
+  );
+
+  useEffect(
+    function runAnswerOnQueryOrModeChange() {
+      if (q && effectiveMode === "ai") answer.run(q);
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    },
+    [q, effectiveMode],
+  );
 
   const submit = (raw: string) => {
     const t = raw.trim();
@@ -103,19 +135,15 @@ export default function SearchRoute() {
     route(searchUrl({ q: t, mode, extra }));
   };
 
-  const askAi = useCallback(
-    (query: string) => {
-      setMode("ai");
-      route(`/search?q=${encodeURIComponent(query)}&mode=ai`);
-    },
-    [route],
-  );
+  const askAi = (query: string) => {
+    setMode("ai");
+    route(`/search?q=${encodeURIComponent(query)}&mode=ai`);
+  };
 
-  const viewClassic = useCallback(() => {
+  const viewClassic = () => {
     setMode("traditional");
     route(`/search?q=${encodeURIComponent(q)}`);
-  }, [route, q]);
-
+  };
   const { payload, loading, error, results } = state;
   const qHash = payload?._q_hash ?? "";
 
@@ -133,7 +161,7 @@ export default function SearchRoute() {
           }
           size="md"
           mode={mode}
-          onModeChange={setMode}
+          onModeChange={changeMode}
           aiAvailable={aiAvailable}
           models={models}
           modelsError={modelsError}

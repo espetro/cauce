@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from "preact/hooks";
+import { useCallback, useRef, useState } from "preact/hooks";
 import { streamAnswer, type AiSource, type AnswerEvent } from "../../lib/ai";
+import { useMountEffect } from "../../lib/useMountEffect";
 
 export type AnswerStatus = "idle" | "streaming" | "done" | "error" | "stopped";
 
@@ -58,9 +59,11 @@ export function useAnswer() {
   const abortRef = useRef<AbortController | null>(null);
   const stoppedRef = useRef(false);
 
-  useEffect(() => () => abortRef.current?.abort(), []);
+  useMountEffect(function abortStreamOnUnmount() {
+    return () => abortRef.current?.abort();
+  });
 
-  const run = useCallback((query: string) => {
+  const run = useCallback(function runAnswerStream(query: string) {
     abortRef.current?.abort();
     const ctl = new AbortController();
     abortRef.current = ctl;
@@ -80,7 +83,7 @@ export function useAnswer() {
     });
   }, []);
 
-  const stop = useCallback(() => {
+  const stop = useCallback(function stopAnswerStream() {
     stoppedRef.current = true;
     abortRef.current?.abort();
     setState((s) => ({ ...s, status: "stopped" }));

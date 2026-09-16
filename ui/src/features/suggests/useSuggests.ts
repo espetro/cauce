@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import { ddgAc, suggest } from "../../lib/api";
-
 export const AC_KEY = "oxe-ac";
 
 export interface Suggestion {
@@ -25,38 +24,41 @@ export function useSuggests(
     () => typeof localStorage === "undefined" || localStorage.getItem(AC_KEY) !== "off",
   );
 
-  useEffect(() => {
-    const v = query.trim().toLowerCase();
-    if (!open || v.length < 2) {
-      setHistory([]);
-      return;
-    }
-    const ctl = new AbortController();
-    suggest(v, ctl.signal)
-      .then(setHistory)
-      .catch(() => {});
-    return () => ctl.abort();
-  }, [query, open]);
-
-  useEffect(() => {
-    const v = query.trim().toLowerCase();
-    if (!open || v.length < 2 || !acOn) {
-      setWeb([]);
-      return;
-    }
-    const ctlRef = { current: null as AbortController | null };
-    const t = setTimeout(() => {
+  // One consolidated fetch pass: history suggestions are immediate, web
+  // suggestions debounced 300ms behind the same query; a single timer +
+  // AbortController pair per keystroke guards stale races for both.
+  useEffect(
+    function fetchSuggestions() {
+      const v = query.trim().toLowerCase();
+      if (!open || v.length < 2) {
+        setHistory([]);
+        setWeb([]);
+        return;
+      }
+      const webCtlRef = { current: null as AbortController | null };
+      const t = setTimeout(() => {
+        const ctl = new AbortController();
+        webCtlRef.current = ctl;
+        if (acOn) {
+          ddgAc(v, ctl.signal)
+            .then(setWeb)
+            .catch(() => {});
+        } else {
+          setWeb([]);
+        }
+      }, 300);
       const ctl = new AbortController();
-      ctlRef.current = ctl;
-      ddgAc(v, ctl.signal)
-        .then(setWeb)
+      suggest(v, ctl.signal)
+        .then(setHistory)
         .catch(() => {});
-    }, 300);
-    return () => {
-      clearTimeout(t);
-      ctlRef.current?.abort();
-    };
-  }, [query, open, acOn]);
+      return function cancelSuggestions() {
+        clearTimeout(t);
+        ctl.abort();
+        webCtlRef.current?.abort();
+      };
+    },
+    [query, open, acOn],
+  );
 
   const setAcOn = (v: boolean) => {
     setAcOnState(v);

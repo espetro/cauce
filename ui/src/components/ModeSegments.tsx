@@ -1,7 +1,6 @@
 import { useEffect, useState } from "preact/hooks";
 import { listModels, type ModelsResponse } from "../lib/ai";
 import { currentModelsVersion, ModelPicker, onModelsBump } from "./ModelPicker";
-
 export type Mode = "traditional" | "ai";
 
 /** Models + AI availability from GET /v1/models.
@@ -150,21 +149,20 @@ export function AiControls({
   modelsError?: string | null;
 }) {
   const ls = () => (typeof localStorage === "undefined" ? null : localStorage);
-  const [model, setModel] = useState(() => ls()?.getItem(STORE_KEY) ?? "");
-  const [reasoning, setReasoning] = useState(() => ls()?.getItem(REASONING_KEY) === "1");
+  const [storedModel, setStoredModel] = useState(() => ls()?.getItem(STORE_KEY) ?? "");
+  const [reasoning, setReasoningState] = useState(() => ls()?.getItem(REASONING_KEY) === "1");
 
-  useEffect(() => {
-    localStorage.setItem(STORE_KEY, model);
-  }, [model]);
-  useEffect(() => {
-    localStorage.setItem(REASONING_KEY, reasoning ? "1" : "0");
-  }, [reasoning]);
-
-  // fall back to the first model when empty or a ghost (stale) stored value
-  useEffect(() => {
-    if (models.length === 0) return;
-    if (!model || !models.includes(model)) setModel(models[0]);
-  }, [models, model]);
+  // Persist at event time. Fall back to the first model when the stored
+  // value is empty or a ghost (stale) entry; derive, don't effect.
+  const model = storedModel && models.includes(storedModel) ? storedModel : (models[0] ?? "");
+  const setModel = (m: string) => {
+    setStoredModel(m);
+    ls()?.setItem(STORE_KEY, m);
+  };
+  const setReasoning = (r: boolean) => {
+    setReasoningState(Boolean(r));
+    ls()?.setItem(REASONING_KEY, r ? "1" : "0");
+  };
 
   return (
     <div class="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-2 w-full text-xs min-w-0">
@@ -184,7 +182,7 @@ export function AiControls({
         role="switch"
         aria-checked={reasoning}
         class={`btn btn-xs rounded-full shrink-0 self-start sm:self-auto ${reasoning ? "btn-primary btn-soft" : "btn-ghost"}`}
-        onClick={() => setReasoning((r) => !r)}
+        onClick={() => setReasoning(!reasoning)}
       >
         reasoning
       </button>

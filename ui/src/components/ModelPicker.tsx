@@ -1,4 +1,5 @@
-import { useEffect, useId, useMemo, useRef, useState } from "preact/hooks";
+import { useId, useRef, useState } from "preact/hooks";
+import { useMountEffect } from "../lib/useMountEffect";
 
 /** Module-level models version counter. SettingsDialog calls `bumpModels()`
  * after a successful PUT /settings; every mounted useModels() refetches. */
@@ -53,23 +54,19 @@ export function ModelPicker({
   const autoId = useId();
   const listId = `model-picker-list-${autoId}`;
 
-  const filtered = useMemo(() => {
-    const f = filter.trim().toLowerCase();
-    const list = f ? models.filter((m) => m.toLowerCase().includes(f)) : models;
-    return list.slice(0, 50);
-  }, [models, filter]);
+  // filter on render (sub-50-item slice); no memo needed
+  const filterLc = filter.trim().toLowerCase();
+  const filtered = (
+    filterLc ? models.filter((m) => m.toLowerCase().includes(filterLc)) : models
+  ).slice(0, 50);
 
-  useEffect(() => {
+  useMountEffect(function closeOnOutsideClick() {
     const onDocClick = (e: MouseEvent) => {
       if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false);
     };
     document.addEventListener("mousedown", onDocClick);
     return () => document.removeEventListener("mousedown", onDocClick);
-  }, []);
-
-  useEffect(() => {
-    if (open) setActive(0);
-  }, [open, filter]);
+  });
 
   const pick = (m: string) => {
     onChange(m);
@@ -109,12 +106,15 @@ export function ModelPicker({
           placeholder={value || "filter models…"}
           disabled={disabled}
           onInput={(e) => {
-            setFilter((e.target as HTMLInputElement).value);
+            const v = (e.target as HTMLInputElement).value;
+            setFilter(v);
             setOpen(true);
+            setActive(0);
           }}
           onFocus={() => {
             setFilter("");
             setOpen(true);
+            setActive(0);
           }}
           onBlur={commit}
           onKeyDown={(e) => {

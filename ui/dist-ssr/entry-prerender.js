@@ -1,7 +1,7 @@
 import prerender, { locationStub } from "preact-iso/prerender";
 import { ErrorBoundary, LocationProvider, Route, Router, lazy, useLocation } from "preact-iso";
 import { Component, toChildArray } from "preact";
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from "preact/hooks";
+import { useCallback, useEffect, useId, useRef, useState } from "preact/hooks";
 import * as v from "valibot";
 import { Fragment, jsx, jsxs } from "preact/jsx-runtime";
 import { WindowVirtualizer } from "virtua";
@@ -103,6 +103,14 @@ async function streamAnswer(query, on, signal) {
 }
 var init_ai = __esmMin((() => {}));
 //#endregion
+//#region src/lib/useMountEffect.ts
+/** Escape hatch for one-time external sync on mount (setup + cleanup).
+* Wraps useEffect with an empty dependency array to make intent explicit. */
+function useMountEffect(effect) {
+	useEffect(effect, []);
+}
+var init_useMountEffect = __esmMin((() => {}));
+//#endregion
 //#region src/components/ModelPicker.tsx
 function bumpModels() {
 	modelsVersion += 1;
@@ -126,20 +134,15 @@ function ModelPicker({ models, value, onChange, disabled, id, size = "sm", label
 	const rootRef = useRef(null);
 	const inputRef = useRef(null);
 	const listId = `model-picker-list-${useId()}`;
-	const filtered = useMemo(() => {
-		const f = filter.trim().toLowerCase();
-		return (f ? models.filter((m) => m.toLowerCase().includes(f)) : models).slice(0, 50);
-	}, [models, filter]);
-	useEffect(() => {
+	const filterLc = filter.trim().toLowerCase();
+	const filtered = (filterLc ? models.filter((m) => m.toLowerCase().includes(filterLc)) : models).slice(0, 50);
+	useMountEffect(function closeOnOutsideClick() {
 		const onDocClick = (e) => {
 			if (rootRef.current && !rootRef.current.contains(e.target)) setOpen(false);
 		};
 		document.addEventListener("mousedown", onDocClick);
 		return () => document.removeEventListener("mousedown", onDocClick);
-	}, []);
-	useEffect(() => {
-		if (open) setActive(0);
-	}, [open, filter]);
+	});
 	const pick = (m) => {
 		onChange(m);
 		setOpen(false);
@@ -181,12 +184,15 @@ function ModelPicker({ models, value, onChange, disabled, id, size = "sm", label
 					placeholder: value || "filter models…",
 					disabled,
 					onInput: (e) => {
-						setFilter(e.target.value);
+						const v = e.target.value;
+						setFilter(v);
 						setOpen(true);
+						setActive(0);
 					},
 					onFocus: () => {
 						setFilter("");
 						setOpen(true);
+						setActive(0);
 					},
 					onBlur: commit,
 					onKeyDown: (e) => {
@@ -247,6 +253,7 @@ function ModelPicker({ models, value, onChange, disabled, id, size = "sm", label
 }
 var modelsVersion;
 var init_ModelPicker = __esmMin((() => {
+	init_useMountEffect();
 	modelsVersion = 0;
 }));
 //#endregion
@@ -254,7 +261,7 @@ var init_ModelPicker = __esmMin((() => {
 function emit() {
 	for (const fn of subs) fn(toasts);
 }
-/** Push a toast; auto-dismissed by the container after 4s. */
+/** Push a toast; auto-dismissed after 4s (timer cleared on dismiss). */
 function toast(type, msg) {
 	const t = {
 		id: nextId++,
@@ -263,21 +270,26 @@ function toast(type, msg) {
 	};
 	toasts = [...toasts, t];
 	emit();
-	setTimeout(() => dismiss(t.id), 4e3);
+	timers.set(t.id, setTimeout(() => dismiss(t.id), 4e3));
 }
 function dismiss(id) {
+	const timer = timers.get(id);
+	if (timer) {
+		clearTimeout(timer);
+		timers.delete(id);
+	}
 	toasts = toasts.filter((t) => t.id !== id);
 	emit();
 }
 /** Fixed daisyUI toast stack (bottom-end). Mount once, next to the Header. */
 function Toasts() {
 	const [list, setList] = useState(toasts);
-	useEffect(() => {
+	useMountEffect(function subscribeToToasts() {
 		subs.add(setList);
 		return () => {
 			subs.delete(setList);
 		};
-	}, []);
+	});
 	const alertClass = (t) => t.type === "success" ? "alert-success" : t.type === "error" ? "alert-error" : "alert-info";
 	return /* @__PURE__ */ jsx("div", {
 		class: "toast toast-end toast-bottom z-50",
@@ -289,11 +301,13 @@ function Toasts() {
 		}, t.id))
 	});
 }
-var toasts, nextId, subs;
+var toasts, nextId, subs, timers;
 var init_Toasts = __esmMin((() => {
+	init_useMountEffect();
 	toasts = [];
 	nextId = 1;
 	subs = /* @__PURE__ */ new Set();
+	timers = /* @__PURE__ */ new Map();
 }));
 //#endregion
 //#region src/lib/theme.ts
@@ -412,7 +426,7 @@ function SettingsDialog({ onClose }) {
 		}).catch(() => setModels([]));
 		return () => ctl.abort();
 	}, []);
-	useEffect(() => {
+	useEffect(function wireDialogOnMount() {
 		const dlg = dialogRef.current;
 		if (!dlg) return;
 		dlg.showModal();
@@ -1510,18 +1524,17 @@ function ModeSegments({ mode, onChange, aiAvailable }) {
 * Pure UI state (localStorage); request wiring is a backend concern. */
 function AiControls({ available, models, modelsError }) {
 	const ls = () => typeof localStorage === "undefined" ? null : localStorage;
-	const [model, setModel] = useState(() => ls()?.getItem(STORE_KEY) ?? "");
-	const [reasoning, setReasoning] = useState(() => ls()?.getItem(REASONING_KEY) === "1");
-	useEffect(() => {
-		localStorage.setItem(STORE_KEY, model);
-	}, [model]);
-	useEffect(() => {
-		localStorage.setItem(REASONING_KEY, reasoning ? "1" : "0");
-	}, [reasoning]);
-	useEffect(() => {
-		if (models.length === 0) return;
-		if (!model || !models.includes(model)) setModel(models[0]);
-	}, [models, model]);
+	const [storedModel, setStoredModel] = useState(() => ls()?.getItem(STORE_KEY) ?? "");
+	const [reasoning, setReasoningState] = useState(() => ls()?.getItem(REASONING_KEY) === "1");
+	const model = storedModel && models.includes(storedModel) ? storedModel : models[0] ?? "";
+	const setModel = (m) => {
+		setStoredModel(m);
+		ls()?.setItem(STORE_KEY, m);
+	};
+	const setReasoning = (r) => {
+		setReasoningState(Boolean(r));
+		ls()?.setItem(REASONING_KEY, r ? "1" : "0");
+	};
 	return /* @__PURE__ */ jsxs("div", {
 		class: "flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-2 w-full text-xs min-w-0",
 		children: [/* @__PURE__ */ jsxs("div", {
@@ -1542,7 +1555,7 @@ function AiControls({ available, models, modelsError }) {
 			role: "switch",
 			"aria-checked": reasoning,
 			class: `btn btn-xs rounded-full shrink-0 self-start sm:self-auto ${reasoning ? "btn-primary btn-soft" : "btn-ghost"}`,
-			onClick: () => setReasoning((r) => !r),
+			onClick: () => setReasoning(!reasoning),
 			children: "reasoning"
 		})]
 	});
@@ -1596,31 +1609,26 @@ function useSuggests(query, open) {
 	const [history, setHistory] = useState([]);
 	const [web, setWeb] = useState([]);
 	const [acOn, setAcOnState] = useState(() => typeof localStorage === "undefined" || localStorage.getItem("oxe-ac") !== "off");
-	useEffect(() => {
+	useEffect(function fetchSuggestions() {
 		const v = query.trim().toLowerCase();
 		if (!open || v.length < 2) {
 			setHistory([]);
-			return;
-		}
-		const ctl = new AbortController();
-		suggest(v, ctl.signal).then(setHistory).catch(() => {});
-		return () => ctl.abort();
-	}, [query, open]);
-	useEffect(() => {
-		const v = query.trim().toLowerCase();
-		if (!open || v.length < 2 || !acOn) {
 			setWeb([]);
 			return;
 		}
-		const ctlRef = { current: null };
+		const webCtlRef = { current: null };
 		const t = setTimeout(() => {
 			const ctl = new AbortController();
-			ctlRef.current = ctl;
-			ddgAc(v, ctl.signal).then(setWeb).catch(() => {});
+			webCtlRef.current = ctl;
+			if (acOn) ddgAc(v, ctl.signal).then(setWeb).catch(() => {});
+			else setWeb([]);
 		}, 300);
-		return () => {
+		const ctl = new AbortController();
+		suggest(v, ctl.signal).then(setHistory).catch(() => {});
+		return function cancelSuggestions() {
 			clearTimeout(t);
-			ctlRef.current?.abort();
+			ctl.abort();
+			webCtlRef.current?.abort();
 		};
 	}, [
 		query,
@@ -1799,13 +1807,13 @@ function SearchBox({ value, onInput, onSubmit, placeholder, autoFocus, busy, siz
 		setActiveIndex(null);
 		onInput(typedRef.current);
 	});
-	useEffect(() => {
+	useMountEffect(function closeOnOutsideClick() {
 		const onDocClick = (e) => {
 			if (boxRef.current && !boxRef.current.contains(e.target)) setOpen(false);
 		};
 		document.addEventListener("mousedown", onDocClick);
 		return () => document.removeEventListener("mousedown", onDocClick);
-	}, []);
+	});
 	const showDropdown = open && value.trim().length >= 2 && items.length > 0;
 	return /* @__PURE__ */ jsxs("div", {
 		class: "relative w-full min-w-0 max-w-[min(672px,calc(100vw-48px))]",
@@ -1913,26 +1921,33 @@ var init_SearchBox = __esmMin((() => {
 	init_SuggestionsDropdown();
 	init_useSuggests();
 	init_ModeSegments();
+	init_useMountEffect();
 }));
 //#endregion
 //#region src/routes/index.tsx
 var routes_exports = /* @__PURE__ */ __exportAll({ default: () => Home });
+/** Persist at event time and keep the tri-state demote as a derived value
+* (never write the demoted value back into state, so aiAvailable recovering
+* restores the user's AI choice). */
+function useMode$1() {
+	const [mode, setMode] = useState(() => typeof localStorage === "undefined" ? "traditional" : localStorage.getItem(MODE_KEY$1) === "ai" ? "ai" : "traditional");
+	const setModeAndStore = (m) => {
+		setMode(m);
+		localStorage.setItem(MODE_KEY$1, m);
+	};
+	return [mode, setModeAndStore];
+}
 function Home() {
 	usePageTitle("");
 	const { route } = useLocation();
 	const [q, setQ] = useState("");
-	const [mode, setMode] = useState(() => typeof localStorage === "undefined" ? "traditional" : localStorage.getItem(MODE_KEY$1) === "ai" ? "ai" : "traditional");
+	const [mode, setMode] = useMode$1();
 	const { available: aiAvailable, models, error: modelsError } = useModels();
-	useEffect(() => {
-		if (mode === "ai" && aiAvailable === false) setMode("traditional");
-	}, [aiAvailable]);
-	useEffect(() => {
-		localStorage.setItem(MODE_KEY$1, mode);
-	}, [mode]);
+	const effectiveMode = mode === "ai" && aiAvailable === false ? "traditional" : mode;
 	const submit = (query) => {
 		const trimmed = query.trim();
 		if (!trimmed) return;
-		route(mode === "ai" ? `/search?q=${encodeURIComponent(trimmed)}&mode=ai` : `/search?q=${encodeURIComponent(trimmed)}`);
+		route(effectiveMode === "ai" ? `/search?q=${encodeURIComponent(trimmed)}&mode=ai` : `/search?q=${encodeURIComponent(trimmed)}`);
 	};
 	return /* @__PURE__ */ jsxs(Center, {
 		vh: true,
@@ -1953,7 +1968,7 @@ function Home() {
 					onSubmit: submit,
 					autoFocus: true,
 					size: "lg",
-					mode,
+					mode: effectiveMode,
 					onModeChange: setMode,
 					aiAvailable,
 					models,
@@ -2219,15 +2234,16 @@ function renderInline(text, keyBase) {
 				onClick: (e) => {
 					e.preventDefault();
 					const el = document.getElementById(`src-${n}`);
-					if (el) {
-						el.scrollIntoView({
-							behavior: "smooth",
-							block: "nearest",
-							inline: "center"
-						});
-						el.classList.add("outline", "outline-primary");
-						setTimeout(() => el.classList.remove("outline", "outline-primary"), 1200);
-					}
+					if (!el) return;
+					el.scrollIntoView({
+						behavior: "smooth",
+						block: "nearest",
+						inline: "center"
+					});
+					el.classList.add("outline", "outline-primary");
+					setTimeout(() => {
+						if (el.isConnected) el.classList.remove("outline", "outline-primary");
+					}, 1200);
 				},
 				children: n
 			}, `${keyBase}-r${i++}`));
@@ -2537,10 +2553,12 @@ function useAnswer() {
 	const [state, setState] = useState(INITIAL);
 	const abortRef = useRef(null);
 	const stoppedRef = useRef(false);
-	useEffect(() => () => abortRef.current?.abort(), []);
+	useMountEffect(function abortStreamOnUnmount() {
+		return () => abortRef.current?.abort();
+	});
 	return {
 		state,
-		run: useCallback((query) => {
+		run: useCallback(function runAnswerStream(query) {
 			abortRef.current?.abort();
 			const ctl = new AbortController();
 			abortRef.current = ctl;
@@ -2564,7 +2582,7 @@ function useAnswer() {
 				}));
 			});
 		}, []),
-		stop: useCallback(() => {
+		stop: useCallback(function stopAnswerStream() {
 			stoppedRef.current = true;
 			abortRef.current?.abort();
 			setState((s) => ({
@@ -2577,6 +2595,7 @@ function useAnswer() {
 var INITIAL;
 var init_useAnswer = __esmMin((() => {
 	init_ai();
+	init_useMountEffect();
 	INITIAL = {
 		status: "idle",
 		text: "",
@@ -2591,6 +2610,15 @@ var init_useAnswer = __esmMin((() => {
 //#endregion
 //#region src/routes/search.tsx
 var search_exports = /* @__PURE__ */ __exportAll({ default: () => SearchRoute });
+/** Set mode and persist it at event time (no sync effect). */
+function useMode(initial) {
+	const [mode, setMode] = useState(initial);
+	const setModeAndStore = (m) => {
+		setMode(m);
+		localStorage.setItem(MODE_KEY, m);
+	};
+	return [mode, setModeAndStore];
+}
 function SearchRoute() {
 	const { query, route } = useLocation();
 	const q = String(query?.q ?? "");
@@ -2599,16 +2627,13 @@ function SearchRoute() {
 	const aiAvailable = useAiAvailable();
 	const { models, error: modelsError } = useModels();
 	const [input, setInput] = useState(q);
-	const [mode, setMode] = useState(urlMode);
+	const [mode, setMode] = useMode(urlMode);
 	const { state, run, loadMore, refresh } = useSearch();
 	const answer = useAnswer();
 	const virtuaRef = useRef(null);
-	useEffect(() => {
-		localStorage.setItem(MODE_KEY, mode);
-	}, [mode]);
 	const aiModeBlocked = mode === "ai" && aiAvailable === false;
 	const effectiveMode = aiModeBlocked ? "traditional" : mode;
-	useEffect(() => {
+	useEffect(function stripDeprecatedPageParam() {
 		if (typeof query?.p === "string") {
 			const sp = new URLSearchParams(window.location.search);
 			sp.delete("p");
@@ -2616,44 +2641,41 @@ function SearchRoute() {
 			route(`${window.location.pathname}${qs ? `?${qs}` : ""}`, true);
 		}
 	}, [query?.p]);
-	useEffect(() => {
+	useEffect(function rerunOnQueryChange() {
 		setInput(q);
 		if (q && effectiveMode === "traditional") run(q);
 	}, [q]);
-	const maybeLoadMore = useCallback(() => {
+	const maybeLoadMore = () => {
 		const v = virtuaRef.current;
 		const n = state.results.length;
 		if (!v || n === 0) return;
 		const last = n - 1;
 		const itemH = v.getItemSize(last) || 140;
 		if (v.getItemOffset(last) + itemH - (window.scrollY + v.viewportSize) < 2 * itemH) loadMore(q);
-	}, [
-		state.results.length,
-		loadMore,
-		q
-	]);
-	useEffect(() => {
+	};
+	useEffect(function checkLoadMoreAfterResults() {
 		if (state.results.length > 0 && !state.loadingMore) {
 			const t = setTimeout(maybeLoadMore, 0);
 			return () => clearTimeout(t);
 		}
-	}, [
-		state.results.length,
-		state.loadingMore,
-		maybeLoadMore
-	]);
-	useEffect(() => {
-		if (urlMode !== mode) {
+	}, [state.results.length, state.loadingMore]);
+	const changeMode = (m) => {
+		setMode(m);
+		if (urlMode !== m) {
 			const extra = {};
 			if (typeof query?.settings === "string") extra.settings = query.settings;
 			route(searchUrl({
 				q,
-				mode,
+				mode: m,
 				extra
 			}), true);
 		}
-	}, [mode, urlMode]);
-	useEffect(() => {
+	};
+	useEffect(function rerunOnQueryChange() {
+		setInput(q);
+		if (q && effectiveMode === "traditional") run(q);
+	}, [q]);
+	useEffect(function runAnswerOnQueryOrModeChange() {
 		if (q && effectiveMode === "ai") answer.run(q);
 	}, [q, effectiveMode]);
 	const submit = (raw) => {
@@ -2667,14 +2689,14 @@ function SearchRoute() {
 			extra
 		}));
 	};
-	const askAi = useCallback((query) => {
+	const askAi = (query) => {
 		setMode("ai");
 		route(`/search?q=${encodeURIComponent(query)}&mode=ai`);
-	}, [route]);
-	const viewClassic = useCallback(() => {
+	};
+	const viewClassic = () => {
 		setMode("traditional");
 		route(`/search?q=${encodeURIComponent(q)}`);
-	}, [route, q]);
+	};
 	const { payload, loading, error, results } = state;
 	const qHash = payload?._q_hash ?? "";
 	return /* @__PURE__ */ jsxs("div", {
@@ -2689,7 +2711,7 @@ function SearchRoute() {
 					busy: effectiveMode === "ai" ? answer.state.status === "idle" || answer.state.status === "streaming" : loading,
 					size: "md",
 					mode,
-					onModeChange: setMode,
+					onModeChange: changeMode,
 					aiAvailable,
 					models,
 					modelsError

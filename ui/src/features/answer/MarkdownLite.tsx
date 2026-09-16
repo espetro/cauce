@@ -36,11 +36,13 @@ export function renderInline(text: string, keyBase: string): JSX.Element[] {
           onClick={(e) => {
             e.preventDefault();
             const el = document.getElementById(`src-${n}`);
-            if (el) {
-              el.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
-              el.classList.add("outline", "outline-primary");
-              setTimeout(() => el.classList.remove("outline", "outline-primary"), 1200);
-            }
+            if (!el) return;
+            el.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
+            el.classList.add("outline", "outline-primary");
+            setTimeout(() => {
+              // guard: element may be unmounted by the time the timer fires
+              if (el.isConnected) el.classList.remove("outline", "outline-primary");
+            }, 1200);
           }}
         >
           {n}

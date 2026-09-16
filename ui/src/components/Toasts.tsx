@@ -1,4 +1,5 @@
-import { useEffect, useState } from "preact/hooks";
+import { useState } from "preact/hooks";
+import { useMountEffect } from "../lib/useMountEffect";
 
 export interface Toast {
   id: number;
@@ -10,19 +11,29 @@ let toasts: Toast[] = [];
 let nextId = 1;
 const subs = new Set<(t: Toast[]) => void>();
 
+let timers = new Map<number, ReturnType<typeof setTimeout>>();
+
 function emit() {
   for (const fn of subs) fn(toasts);
 }
 
-/** Push a toast; auto-dismissed by the container after 4s. */
+/** Push a toast; auto-dismissed after 4s (timer cleared on dismiss). */
 export function toast(type: Toast["type"], msg: string) {
   const t = { id: nextId++, type, msg };
   toasts = [...toasts, t];
   emit();
-  setTimeout(() => dismiss(t.id), 4000);
+  timers.set(
+    t.id,
+    setTimeout(() => dismiss(t.id), 4000),
+  );
 }
 
 export function dismiss(id: number) {
+  const timer = timers.get(id);
+  if (timer) {
+    clearTimeout(timer);
+    timers.delete(id);
+  }
   toasts = toasts.filter((t) => t.id !== id);
   emit();
 }
@@ -30,12 +41,12 @@ export function dismiss(id: number) {
 /** Fixed daisyUI toast stack (bottom-end). Mount once, next to the Header. */
 export function Toasts() {
   const [list, setList] = useState<Toast[]>(toasts);
-  useEffect(() => {
+  useMountEffect(function subscribeToToasts() {
     subs.add(setList);
     return () => {
       subs.delete(setList);
     };
-  }, []);
+  });
   const alertClass = (t: Toast) =>
     t.type === "success" ? "alert-success" : t.type === "error" ? "alert-error" : "alert-info";
   return (
