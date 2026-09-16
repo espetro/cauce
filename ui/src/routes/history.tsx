@@ -3,7 +3,7 @@ import { usePageTitle } from "../components/Header";
 import { deleteHistory, fetchApiHistory, type HistoryScope } from "../lib/api";
 import type { HistoryRow } from "../lib/schemas";
 import { truncate } from "../lib/format";
-import { toast } from "../components/Toasts";
+import { toast } from "../lib/toasts";
 import * as m from "../lib/i18n";
 import { openPath, useRoute } from "../lib/routes";
 

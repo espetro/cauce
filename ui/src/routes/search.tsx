@@ -3,7 +3,7 @@ import { WindowVirtualizer, type WindowVirtualizerHandle } from "virtua";
 import { useAiAvailable, usePageTitle } from "../components/Header";
 import { useModels, useSearchMode, type Mode } from "../components/ModeSegments";
 import { recordClick } from "../lib/api";
-import { toast } from "../components/Toasts";
+import { toast } from "../lib/toasts";
 import { ResultCard } from "../features/search/ResultCard";
 import { useSearch, cachedAgeOf, isCacheHit, metaLine } from "../features/search";
 import { navigate, openPath, redirect, useRoute, type RouteSearchParams } from "../lib/routes";

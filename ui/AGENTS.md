@@ -68,10 +68,12 @@ be relied on until implemented. `since` and `qf` work today
 stripped from the url. Theme and mode persist
 in `localStorage` (`oxe-theme`, `oxe-mode`), deliberately not URLs.
 
-State library: custom hooks on top of preact-iso's `useLocation()` /
-`route()` (pattern: `routes/search.tsx` mode handling, `components/Header.tsx`
-settings handling). No new state dependencies (`qss`, signals, nanostores
-are all unnecessary at this size); JS budget stays 45KB gz.
+State library: nanostores is the approved store layer, in two cases only:
+routing (`lib/routes.ts` is the canonical pattern) and UI-shared atoms like
+toasts (`lib/toasts.ts`). preact-iso stays only for lazy/hydrate/prerender.
+Do NOT move URL-contract state (the param table above) or fetch state
+machines into stores; those stay in custom hooks / route components. JS
+budget stays 45KB gz.
 
 QA agent convention: (a) drive states via URL deep links, not
 click-throughs, whenever a URL recipe exists; (b) when you find a new key

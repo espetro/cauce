@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "preact/hooks";
 import * as v from "valibot";
 import { listModels, testConnection } from "../../lib/ai";
 import { bumpModels, ModelPicker } from "../../components/ModelPicker";
-import { toast } from "../../components/Toasts";
+import { toast } from "../../lib/toasts";
 import { getTheme, setTheme, THEMES, type ThemeChoice } from "../../lib/theme";
 import { getSettings, putSettings, PROVIDERS, SettingsSchema, type SettingsValues } from "./schema";
 import * as m from "../../lib/i18n";
