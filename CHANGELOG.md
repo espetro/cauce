@@ -16,6 +16,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Search pagination end to end (`page` in the cache key and DDGS page kwarg); `_cached_at` on cached payloads and a `_refresh` flag to force network refresh.
 - Dev observability: `OXE_DEV=1` emits structured JSON events (search, suggest, ac, answer, models); `mise run logs` tails the dev server log.
 - `POST /row/{key}/delete` is idempotent: 204 for non-HTML clients on an already-deleted row (UI refresh flow), 303 redirect for browsers.
+- `GET /api/history` (merged click-history view) and `GET /api/stats` (dashboard metrics: searches per day, cache hit rate, latency percentiles, client split), plus a `/dashboard` SPA shell that renders them.
+- Pydantic contract models for the typed endpoints with a JSON error envelope, and an OpenAPI export pipeline (`/docs`).
+- Error states for search: backend failures are distinguished from genuinely empty results via `_error` and `_error_kind` payload fields and an `X-Cache: HIT/MISS` response header; failed searches are not cached.
+- `POST /settings/test` to verify AI provider credentials; env-template-preserving saves and conf-gated answer caching with greeting guard.
+- Web UI: self-hosted fonts (Plus Jakarta Sans + Apfel Grotesk), i18n via paraglide (EN-only), motion system with status state machines and error boundaries, virtualized continuous-scroll result list, openapi-generated types with a single typed request helper.
+
+### Changed
+
+- `oxe/server.py` split into an `oxe/server/` package of APIRouters grouped by resource.
+- The server serves per-route prerendered SPA shells with a root fallback for faster first paint.
 
 ### Changed
 
@@ -23,6 +33,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The legacy server-rendered UI was removed: `oxe/ui.py` and `oxe/static/` are gone. Content negotiation on `/search` is unchanged (HTML browsers get the SPA or the no-UI page, `Accept: application/json` clients get Exa JSON).
 - `mise run build:ui` builds `ui/dist` and copies it to `oxe/ui_dist` for packaging; package-data ships `ui_dist` when present.
 - Ruff configuration now lives in `pyproject.toml` (select E,F,W,I,B,SIM,RUF,C4,UP,BLE,TRY with pragmatic ignores); `mise run lint:py` is clean.
+- AI clients are closed per request and managed with context managers; readonly stats connections are closed deterministically.
+- UI size budgets raised to 45KB gzipped JS / 35KB gzipped CSS for feature headroom.
 
 ## [0.3.1] - 2026-09-15
 
