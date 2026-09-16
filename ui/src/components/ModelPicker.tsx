@@ -151,8 +151,8 @@ export function ModelPicker({
         >
           <li role="option" aria-selected={false} aria-disabled="true" class="px-3 opacity-60">
             {modelsError
-              ? `model listing failed: ${modelsError}`
-              : "no models - check provider / API key in settings"}
+              ? `Model listing failed: ${modelsError}`
+              : "No models - check provider / API key in settings"}
           </li>
         </ul>
       )}

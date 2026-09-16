@@ -123,7 +123,7 @@ export function ModeToggle({
     },
   ];
   return (
-    <div role="radiogroup" aria-label="search mode" class="join">
+    <div role="radiogroup" aria-label="Search mode" class="join">
       {opts.map((o) => (
         <span
           key={o.v}
@@ -155,7 +155,7 @@ export function Center({ children, vh = false }: { children: ComponentChildren; 
   return (
     <div
       class={`flex w-full flex-col items-center ${
-        vh ? "justify-center min-h-[75vh] -mt-[30vh]" : ""
+        vh ? "justify-center grow min-h-[calc(100vh-3rem)]" : ""
       }`}
     >
       {children as JSX.Element}

@@ -69,12 +69,18 @@ body {
   }
 }
 
-/* pill focus indicator: subtle border darkening + faint muted ring (DDG style) */
-.oxe-pill-focus {
+/* pill focus indicator: subtle border darkening + faint muted ring (DDG style).
+ * Shared by the search pill and all form fields so the app has ONE focus
+ * language: daisyUI's default 2px base-content outline is overridden here
+ * (token variables only). */
+.oxe-pill-focus,
+.input:focus,
+.select:focus {
   border-color: var(--color-base-content);
   box-shadow:
     0 0 0 2px color-mix(in oklab, var(--color-primary) 18%, transparent),
     0 1px 6px color-mix(in oklab, var(--color-base-content) 12%, transparent);
+  outline: none;
 }
 
 /* AI morphism: second action row reveals inside the pill.

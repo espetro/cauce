@@ -619,7 +619,7 @@ function ModelPicker({ models, value, onChange, disabled, id, size = "sm", label
 					"aria-selected": false,
 					"aria-disabled": "true",
 					class: "px-3 opacity-60",
-					children: modelsError ? `model listing failed: ${modelsError}` : "no models - check provider / API key in settings"
+					children: modelsError ? `Model listing failed: ${modelsError}` : "No models - check provider / API key in settings"
 				})
 			}),
 			open && filtered.length > 0 && /* @__PURE__ */ jsx("ul", {
@@ -849,13 +849,13 @@ function SettingsDialog({ onClose }) {
 		}).then(() => {
 			setSaving(false);
 			bumpModels();
-			toast("success", "settings saved");
+			toast("success", "Settings saved");
 			dialogRef.current?.close();
 		}).catch((err) => {
 			setSaving(false);
 			const msg = err.message ?? "save failed";
 			setSaveError(msg);
-			toast("error", `settings save failed: ${msg}`);
+			toast("error", `Settings save failed: ${msg}`);
 		});
 	};
 	/** Verify the form's provider/model/key/base_url with POST /settings/test. */
@@ -871,7 +871,7 @@ function SettingsDialog({ onClose }) {
 		if (!modelTrimmed) {
 			setTestResult({
 				ok: false,
-				detail: "pick a model first"
+				detail: "Pick a model first"
 			});
 			return;
 		}
@@ -886,7 +886,7 @@ function SettingsDialog({ onClose }) {
 				ok: Boolean(r.ok),
 				detail: r.detail
 			});
-			toast(r.ok ? "success" : "error", r.detail || (r.ok ? "connection ok" : "connection failed"));
+			toast(r.ok ? "success" : "error", r.detail || (r.ok ? "Connection ok" : "Connection failed"));
 		}).catch((err) => {
 			const detail = err.message ?? "test failed";
 			setTestResult({
@@ -903,19 +903,19 @@ function SettingsDialog({ onClose }) {
 	return /* @__PURE__ */ jsxs("dialog", {
 		ref: dialogRef,
 		class: "modal",
-		"aria-label": "settings",
+		"aria-label": "Settings",
 		children: [/* @__PURE__ */ jsxs("div", {
 			class: "modal-box w-full max-w-md animate-in fade-in zoom-in-95 duration-150",
 			children: [
 				/* @__PURE__ */ jsx("h2", {
 					class: "text-base font-semibold mb-3",
-					children: "settings"
+					children: "Settings"
 				}),
 				loadError && /* @__PURE__ */ jsxs("div", {
 					role: "alert",
 					class: "alert alert-error text-sm mb-3",
 					children: [
-						"backend settings endpoints not available (",
+						"Backend settings endpoints not available (",
 						loadError,
 						") - the server needs GET/PUT /settings support"
 					]
@@ -930,12 +930,12 @@ function SettingsDialog({ onClose }) {
 							children: [
 								/* @__PURE__ */ jsx("legend", {
 									class: "fieldset-legend text-sm",
-									children: "ai"
+									children: "AI"
 								}),
 								/* @__PURE__ */ jsx("label", {
 									class: "label text-xs",
 									for: "set-provider",
-									children: "provider"
+									children: "Provider"
 								}),
 								/* @__PURE__ */ jsx("select", {
 									id: "set-provider",
@@ -952,7 +952,7 @@ function SettingsDialog({ onClose }) {
 								/* @__PURE__ */ jsx("label", {
 									class: "label text-xs",
 									for: "set-model",
-									children: "model"
+									children: "Model"
 								}),
 								/* @__PURE__ */ jsx(ModelPicker, {
 									id: "set-model",
@@ -966,12 +966,12 @@ function SettingsDialog({ onClose }) {
 								modelsError && models.length === 0 && /* @__PURE__ */ jsxs("p", {
 									class: "text-warning text-xs mt-1",
 									role: "note",
-									children: ["model listing failed: ", modelsError]
+									children: ["Model listing failed: ", modelsError]
 								}),
 								/* @__PURE__ */ jsx("label", {
 									class: "label text-xs",
 									for: "set-api-key",
-									children: "api key"
+									children: "API key"
 								}),
 								/* @__PURE__ */ jsx("input", {
 									id: "set-api-key",
@@ -985,7 +985,7 @@ function SettingsDialog({ onClose }) {
 								/* @__PURE__ */ jsx("label", {
 									class: "label text-xs",
 									for: "set-base-url",
-									children: "base url"
+									children: "Base URL"
 								}),
 								/* @__PURE__ */ jsx("input", {
 									id: "set-base-url",
@@ -1017,7 +1017,7 @@ function SettingsDialog({ onClose }) {
 										name: "enabled",
 										class: "toggle toggle-sm",
 										defaultChecked: true
-									}), "enabled"]
+									}), "Enabled"]
 								})
 							]
 						}),
@@ -1026,11 +1026,11 @@ function SettingsDialog({ onClose }) {
 							children: [
 								/* @__PURE__ */ jsx("legend", {
 									class: "fieldset-legend text-sm",
-									children: "theme"
+									children: "Theme"
 								}),
 								/* @__PURE__ */ jsx("div", {
 									role: "radiogroup",
-									"aria-label": "theme",
+									"aria-label": "Theme",
 									class: "join",
 									children: THEMES.map((t) => /* @__PURE__ */ jsx("button", {
 										type: "button",
@@ -1047,7 +1047,7 @@ function SettingsDialog({ onClose }) {
 								}),
 								theme === "system" && /* @__PURE__ */ jsx("p", {
 									class: "text-xs opacity-50",
-									children: "follows your OS light/dark preference"
+									children: "Follows your OS light/dark preference"
 								})
 							]
 						}),
@@ -1062,12 +1062,12 @@ function SettingsDialog({ onClose }) {
 								type: "button",
 								class: "btn btn-ghost btn-sm",
 								onClick: () => dialogRef.current?.close(),
-								children: "cancel"
+								children: "Cancel"
 							}), /* @__PURE__ */ jsx("button", {
 								type: "submit",
 								class: "btn btn-primary btn-sm",
 								disabled: saving,
-								children: saving ? /* @__PURE__ */ jsx("span", { class: "loading loading-dots loading-xs" }) : "save"
+								children: saving ? /* @__PURE__ */ jsx("span", { class: "loading loading-dots loading-xs" }) : "Save"
 							})]
 						})
 					]
@@ -1077,7 +1077,7 @@ function SettingsDialog({ onClose }) {
 			method: "dialog",
 			class: "modal-backdrop",
 			children: /* @__PURE__ */ jsx("button", {
-				"aria-label": "close settings",
+				"aria-label": "Close settings",
 				children: "close"
 			})
 		})]
@@ -1167,7 +1167,7 @@ function usePageTitle(title) {
 }
 function Center({ children, vh = false }) {
 	return /* @__PURE__ */ jsx("div", {
-		class: `flex w-full flex-col items-center ${vh ? "justify-center min-h-[75vh] -mt-[30vh]" : ""}`,
+		class: `flex w-full flex-col items-center ${vh ? "justify-center grow min-h-[calc(100vh-3rem)]" : ""}`,
 		children
 	});
 }

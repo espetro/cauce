@@ -110,14 +110,14 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
       .then(() => {
         setSaving(false);
         bumpModels();
-        toast("success", "settings saved");
+        toast("success", "Settings saved");
         dialogRef.current?.close();
       })
       .catch((err: unknown) => {
         setSaving(false);
         const msg = (err as Error).message ?? "save failed";
         setSaveError(msg);
-        toast("error", `settings save failed: ${msg}`);
+        toast("error", `Settings save failed: ${msg}`);
       });
   };
 
@@ -132,7 +132,7 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
     const baseUrl = String(fd.get("base_url") ?? "").trim();
     const apiKey = String(fd.get("api_key") ?? "").trim();
     if (!modelTrimmed) {
-      setTestResult({ ok: false, detail: "pick a model first" });
+      setTestResult({ ok: false, detail: "Pick a model first" });
       return;
     }
     setTesting(true);
@@ -146,7 +146,7 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
         setTestResult({ ok: Boolean(r.ok), detail: r.detail });
         toast(
           r.ok ? "success" : "error",
-          r.detail || (r.ok ? "connection ok" : "connection failed"),
+          r.detail || (r.ok ? "Connection ok" : "Connection failed"),
         );
       })
       .catch((err: unknown) => {
@@ -161,21 +161,21 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
     fieldErrors[k] ? <p class="text-error text-xs mt-1">{fieldErrors[k]}</p> : null;
 
   return (
-    <dialog ref={dialogRef} class="modal" aria-label="settings">
+    <dialog ref={dialogRef} class="modal" aria-label="Settings">
       <div class="modal-box w-full max-w-md animate-in fade-in zoom-in-95 duration-150">
-        <h2 class="text-base font-semibold mb-3">settings</h2>
+        <h2 class="text-base font-semibold mb-3">Settings</h2>
         {loadError && (
           <div role="alert" class="alert alert-error text-sm mb-3">
-            backend settings endpoints not available ({loadError}) - the server needs GET/PUT
+            Backend settings endpoints not available ({loadError}) - the server needs GET/PUT
             /settings support
           </div>
         )}
         <form ref={formRef} onSubmit={submit} noValidate>
           <fieldset class="fieldset gap-2.5">
-            <legend class="fieldset-legend text-sm">ai</legend>
+            <legend class="fieldset-legend text-sm">AI</legend>
 
             <label class="label text-xs" for="set-provider">
-              provider
+              Provider
             </label>
             <select
               id="set-provider"
@@ -193,7 +193,7 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
             {err("provider")}
 
             <label class="label text-xs" for="set-model">
-              model
+              Model
             </label>
             <ModelPicker
               id="set-model"
@@ -206,12 +206,12 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
             {err("model")}
             {modelsError && models.length === 0 && (
               <p class="text-warning text-xs mt-1" role="note">
-                model listing failed: {modelsError}
+                Model listing failed: {modelsError}
               </p>
             )}
 
             <label class="label text-xs" for="set-api-key">
-              api key
+              API key
             </label>
             <input
               id="set-api-key"
@@ -224,7 +224,7 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
             {err("api_key")}
 
             <label class="label text-xs" for="set-base-url">
-              base url
+              Base URL
             </label>
             <input
               id="set-base-url"
@@ -257,13 +257,13 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
 
             <label class="label cursor-pointer gap-2 text-xs justify-start">
               <input type="checkbox" name="enabled" class="toggle toggle-sm" defaultChecked />
-              enabled
+              Enabled
             </label>
           </fieldset>
 
           <fieldset class="fieldset gap-2.5 mt-2">
-            <legend class="fieldset-legend text-sm">theme</legend>
-            <div role="radiogroup" aria-label="theme" class="join">
+            <legend class="fieldset-legend text-sm">Theme</legend>
+            <div role="radiogroup" aria-label="Theme" class="join">
               {THEMES.map((t) => (
                 <button
                   key={t}
@@ -282,7 +282,7 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
               ))}
             </div>
             {theme === "system" && (
-              <p class="text-xs opacity-50">follows your OS light/dark preference</p>
+              <p class="text-xs opacity-50">Follows your OS light/dark preference</p>
             )}
           </fieldset>
 
@@ -298,16 +298,16 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
               class="btn btn-ghost btn-sm"
               onClick={() => dialogRef.current?.close()}
             >
-              cancel
+              Cancel
             </button>
             <button type="submit" class="btn btn-primary btn-sm" disabled={saving}>
-              {saving ? <span class="loading loading-dots loading-xs" /> : "save"}
+              {saving ? <span class="loading loading-dots loading-xs" /> : "Save"}
             </button>
           </div>
         </form>
       </div>
       <form method="dialog" class="modal-backdrop">
-        <button aria-label="close settings">close</button>
+        <button aria-label="Close settings">close</button>
       </form>
     </dialog>
   );
