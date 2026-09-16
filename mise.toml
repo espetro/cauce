@@ -54,6 +54,10 @@ description = "Typecheck + build + size budgets"
 dir = "ui"
 run = "bun run check"
 
+[tasks.openapi]
+description = "Regenerate openapi.json at repo root from the FastAPI app"
+run = "uv run python scripts/export_openapi.py"
+
 [tasks.lint]
 description = "Lint everything (python + ui)"
 depends = ["lint:py", "lint:ui"]

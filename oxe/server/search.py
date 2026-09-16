@@ -16,7 +16,7 @@ from .. import exa_compat
 from ..devlog import DEV as _DEV
 from ..devlog import event as _dev_event
 from ..search import do_search
-from .schemas import ExaRequest
+from .schemas import ExaRequest, SearchResponse
 from .state import AppState
 from .ui_dist import _NO_UI_PAGE, _ui_dist_dir
 
@@ -28,6 +28,12 @@ def build_router(state: AppState) -> APIRouter:
 
     def _xcache_headers(payload: dict) -> dict:
         return {"X-Cache": "HIT" if payload.get("_source") == "cache" else "MISS"}
+
+    def _serialize_search(payload: dict) -> dict:
+        """Validate + alias-serialize a search payload (byte-identical _-fields)."""
+        return SearchResponse.model_validate(payload).model_dump(
+            by_alias=True, exclude_none=False
+        )
 
     def _search_payload(q: str, num_results: int = 10, page: int = 1) -> dict:
         return do_search(
@@ -42,7 +48,7 @@ def build_router(state: AppState) -> APIRouter:
             on_result=state.observer,
         )
 
-    @router.post("/search")
+    @router.post("/search", response_model=SearchResponse)
     def exa_search(
         req: ExaRequest,
         authorization: Optional[str] = Header(default=None),
@@ -81,7 +87,7 @@ def build_router(state: AppState) -> APIRouter:
                 else int((time.monotonic() - _t0) * 1000),
                 results=len(out.get("results") or []),
             )
-        return JSONResponse(out, headers=_xcache_headers(out))
+        return JSONResponse(_serialize_search(out), headers=_xcache_headers(out))
 
     @router.get("/search", response_class=HTMLResponse)
     def ui_search_get(
@@ -95,7 +101,13 @@ def build_router(state: AppState) -> APIRouter:
         q = q.strip()
         if accept and "application/json" in accept:
             payload = _search_payload(q, page=p)
-            return JSONResponse(payload, headers=_xcache_headers(payload))
+            # Model only the JSON branch: validate + alias-serialize so the
+            # documented schema matches the wire format (_-prefixed fields kept).
+            # The HTML branch below stays outside the response model (content
+            # negotiation is an invariant).
+            return JSONResponse(
+                _serialize_search(payload), headers=_xcache_headers(payload)
+            )
         payload = _search_payload(q, page=p)
         dist = _ui_dist_dir()
         if dist is not None:

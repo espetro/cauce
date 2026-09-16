@@ -6,6 +6,15 @@ from fastapi.responses import Response, StreamingResponse
 
 from ..devlog import DEV as _DEV
 from ..devlog import event as _dev_event
+from .schemas import (
+    AnswerRequest,
+    ModelsResponse,
+    SettingsPutRequest,
+    SettingsPutResponse,
+    SettingsResponse,
+    SettingsTestRequest,
+    SettingsTestResponse,
+)
 from .state import AppState
 
 log = logging.getLogger(__name__)
@@ -39,12 +48,12 @@ def build_router(state: AppState) -> APIRouter:
     c = state.cache
 
     @router.post("/answer")
-    def ai_answer(req: dict) -> Response:
+    def ai_answer(req: AnswerRequest) -> Response:
         """SSE-stream an AI answer for a query. Requires a configured model."""
         from .. import ai as ai_mod
         from ..config import load_config
 
-        query = ((req or {}).get("query") or "").strip() if isinstance(req, dict) else ""
+        query = req.query.strip()
         if not query:
             raise HTTPException(status_code=422, detail="query required")
         try:
@@ -110,7 +119,7 @@ def build_router(state: AppState) -> APIRouter:
 
         return StreamingResponse(_stream(), media_type="text/event-stream")
 
-    @router.get("/v1/models")
+    @router.get("/v1/models", response_model=ModelsResponse)
     def list_models() -> dict:
         """Provider model listing via direct SDK calls; [] when unconfigured."""
         from ..config import load_config
@@ -156,7 +165,7 @@ def build_router(state: AppState) -> APIRouter:
         _dev_event("models", results=len(models), error=None)
         return {"object": "list", "data": models, "ai_available": bool(models)}
 
-    @router.get("/settings")
+    @router.get("/settings", response_model=SettingsResponse)
     def get_settings() -> dict:
         """Current [ai] config for the settings dialog; api_key redacted."""
         from ..config import config_path, load_config
@@ -180,31 +189,27 @@ def build_router(state: AppState) -> APIRouter:
             },
         }
 
-    @router.put("/settings")
-    def put_settings(payload: dict) -> dict:
+    @router.put("/settings", response_model=SettingsPutResponse)
+    def put_settings(payload: SettingsPutRequest) -> dict:
         """Write the [ai] config section. api_key left untouched when omitted."""
         from ..config import VALID_PROVIDERS, AIConfig, load_config, save_config
 
-        if not isinstance(payload or {}, dict):
-            raise HTTPException(status_code=422, detail="json body required")
-        ai = (payload or {}).get("ai")
-        if not isinstance(ai, dict):
-            raise HTTPException(status_code=422, detail="ai object required")
+        ai = payload.ai
         try:
             existing = load_config()
         except ValueError as e:
             raise HTTPException(status_code=500, detail=f"bad config: {e}")
 
-        provider = (ai.get("provider") or "").strip()
-        model = (ai.get("model") or "").strip()
+        provider = (ai.provider or "").strip()
+        model = (ai.model or "").strip()
         if not provider or not model:
             raise HTTPException(status_code=422, detail="provider and model required")
         # {env.*} templates from the loaded config; a field keeps its template
         # (so the secret is never flattened to plaintext) unless the PUT
         # explicitly provides a new literal value for it.
         templates = dict(existing.env_templates) if existing is not None else {}
-        api_key = ai.get("api_key")
-        api_key_env = (ai.get("api_key_env") or "").strip() or None
+        api_key = ai.api_key
+        api_key_env = (ai.api_key_env or "").strip() or None
         if api_key is not None and not str(api_key).strip():
             api_key = None
         if api_key is None:
@@ -222,7 +227,7 @@ def build_router(state: AppState) -> APIRouter:
                 templates["api_key_env"] = existing.env_templates["api_key_env"]
         else:
             templates.pop("api_key_env", None)
-        base_url = (ai.get("base_url") or "").strip() or None
+        base_url = (ai.base_url or "").strip() or None
         if base_url is None:
             templates.pop("base_url", None)
             if existing is not None and (
@@ -240,7 +245,7 @@ def build_router(state: AppState) -> APIRouter:
             api_key=str(api_key).strip() if api_key else None,
             api_key_env=api_key_env,
             base_url=base_url,
-            enabled=bool(ai.get("enabled", True)),
+            enabled=bool(ai.enabled),
             env_templates=templates,
         )
         if cfg.provider not in VALID_PROVIDERS:
@@ -253,10 +258,10 @@ def build_router(state: AppState) -> APIRouter:
         except OSError as e:
             raise HTTPException(status_code=500, detail=f"cannot write config: {e}")
         log.info("UI: config saved to %s", path)
-        return {"ok": True, "config_path": str(path)}
+        return SettingsPutResponse(ok=True, config_path=str(path)).model_dump()
 
-    @router.post("/settings/test")
-    def test_settings(payload: dict) -> dict:
+    @router.post("/settings/test", response_model=SettingsTestResponse)
+    def test_settings(payload: SettingsTestRequest) -> dict:
         """Verify provider + api_key + base_url + model with a minimal call.
 
         Body: {"ai": {provider, model, base_url?, api_key?}}; blank/omitted
@@ -266,16 +271,14 @@ def build_router(state: AppState) -> APIRouter:
         from .. import ai as ai_mod
         from ..config import AIConfig, load_config
 
-        ai = (payload or {}).get("ai")
-        if not isinstance(ai, dict):
-            raise HTTPException(status_code=422, detail="ai object required")
-        provider = (ai.get("provider") or "").strip()
-        model = (ai.get("model") or "").strip()
+        ai = payload.ai
+        provider = (ai.provider or "").strip()
+        model = (ai.model or "").strip()
         if not provider or not model:
             raise HTTPException(status_code=422, detail="provider and model required")
-        api_key = ai.get("api_key")
+        api_key = ai.api_key
         api_key = str(api_key).strip() if api_key else None
-        base_url = (ai.get("base_url") or "").strip() or None
+        base_url = (ai.base_url or "").strip() or None
         if api_key is None or base_url is None:
             try:
                 existing = load_config()

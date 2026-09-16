@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
 
 from .config import SERVICE_NAME, VERSION
+from .schemas import HealthResponse
 from .state import AppState
 from .ui_dist import _MEDIA_TYPES, _NO_UI_PAGE, _ui_dist_dir
 
@@ -13,7 +14,7 @@ from .ui_dist import _MEDIA_TYPES, _NO_UI_PAGE, _ui_dist_dir
 def build_router(state: AppState) -> APIRouter:
     router = APIRouter()
 
-    @router.get("/health")
+    @router.get("/health", response_model=HealthResponse)
     def health() -> dict:
         return {
             "status": "ok",

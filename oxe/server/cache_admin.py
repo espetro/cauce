@@ -1,19 +1,27 @@
 import logging
 import time
-from typing import Optional
+from typing import Literal, Optional
 from urllib.parse import quote
 
 from fastapi import APIRouter, Header, HTTPException, Query, Request
 from fastapi.responses import (
     FileResponse,
     HTMLResponse,
-    JSONResponse,
     RedirectResponse,
     Response,
 )
 
 from .. import stats as stats_mod
 from ..cache import TTLCache
+from .schemas import (
+    ApiHistoryResponse,
+    ApiStatsResponse,
+    CacheInvalidateResponse,
+    CacheStatsResponse,
+    ClickRequest,
+    ClickResponse,
+    HistoryDeleteResponse,
+)
 from .state import AppState
 from .ui_dist import _NO_UI_PAGE, _ui_dist_dir
 
@@ -26,11 +34,11 @@ def build_router(state: AppState) -> APIRouter:
     router = APIRouter()
     c = state.cache
 
-    @router.get("/cache/stats")
+    @router.get("/cache/stats", response_model=CacheStatsResponse)
     def cache_stats() -> dict:
         return c.stats()
 
-    @router.post("/cache/invalidate")
+    @router.post("/cache/invalidate", response_model=CacheInvalidateResponse)
     def cache_invalidate(
         authorization: Optional[str] = Header(default=None),
         x_api_key: Optional[str] = Header(default=None, alias="x-api-key"),
@@ -42,12 +50,12 @@ def build_router(state: AppState) -> APIRouter:
         deleted = c.invalidate()
         return {"deleted": deleted}
 
-    @router.get("/api/history")
+    @router.get("/api/history", response_model=ApiHistoryResponse)
     def api_history(
-        since: str = Query(default="all"),
+        since: Literal["24h", "7d", "30d", "all"] = Query(default="all"),
         q: Optional[str] = Query(default=None),
         limit: int = Query(default=50, ge=1, le=200),
-        kind: str = Query(default="all"),
+        kind: Literal["all", "clicks", "cache"] = Query(default="all"),
     ) -> dict:
         """JSON API for the SPA /history page: merged user activity view.
 
@@ -56,10 +64,6 @@ def build_router(state: AppState) -> APIRouter:
         Returns {items, clicks, cache_rows, limit, since} sorted newest
         first; each item has a `kind` field ("click" | "cache").
         """
-        if since not in _SINCE_HOURS:
-            raise HTTPException(status_code=422, detail="since must be 24h|7d|30d|all")
-        if kind not in ("all", "clicks", "cache"):
-            raise HTTPException(status_code=422, detail="kind must be all|clicks|cache")
         hours = _SINCE_HOURS[since]
         items: list[dict] = []
         if kind in ("all", "clicks"):
@@ -104,7 +108,7 @@ def build_router(state: AppState) -> APIRouter:
             "since": since,
         }
 
-    @router.get("/api/stats")
+    @router.get("/api/stats", response_model=ApiStatsResponse)
     def api_stats(days: int = Query(default=14, ge=1, le=90)) -> dict:
         """JSON API for the SPA /dashboard page: aggregates from search_log
         (per-day, hit rate, latency percentiles, top/zero-result queries,
@@ -144,7 +148,7 @@ def build_router(state: AppState) -> APIRouter:
         n = c.delete_clicks(scope)
         log.info("UI: deleted %d clicks (scope=%s)", n, scope)
         if api:
-            return JSONResponse({"ok": True, "deleted": n})
+            return HistoryDeleteResponse(ok=True, deleted=n).model_dump()
         return RedirectResponse(url="/history", status_code=303)
 
     @router.get("/dashboard", response_class=HTMLResponse)
@@ -155,17 +159,17 @@ def build_router(state: AppState) -> APIRouter:
             return FileResponse(dist / "index.html", media_type="text/html")
         return HTMLResponse(_NO_UI_PAGE)
 
-    @router.post("/click")
-    def ui_click(payload: dict) -> dict:
-        qh = (payload.get("query_hash") or "").strip()
-        rid = (payload.get("result_id") or "").strip()
-        url = (payload.get("url") or "").strip()
-        title = (payload.get("title") or "").strip()[:500]
-        source = (payload.get("source") or "web").strip()[:16]
+    @router.post("/click", response_model=ClickResponse)
+    def ui_click(payload: ClickRequest) -> dict:
+        qh = payload.query_hash.strip()
+        rid = payload.result_id.strip()
+        url = payload.url.strip()
+        title = payload.title.strip()[:500]
+        source = payload.source
         if not (qh and rid and url):
             raise HTTPException(status_code=422, detail="query_hash, result_id, url required")
         click_id = c.record_click(qh, rid, url, title, source=source)
-        return {"ok": True, "click_id": click_id}
+        return ClickResponse(ok=True, click_id=click_id).model_dump()
 
     @router.get("/cache", response_class=HTMLResponse)
     def ui_cache(

@@ -2,7 +2,9 @@ import logging
 from contextlib import asynccontextmanager
 from typing import Callable
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 
 from ..cache import TTLCache
 from . import ai as ai_router_mod
@@ -79,6 +81,27 @@ def make_app(
                 m,
                 SEARCH_LOG_RETENTION_DAYS,
             )
+
+    # Unified error envelope: {"error": {"code": "<http_error|validation_error>",
+    # "message": ...}}. Status codes are preserved from the original exception.
+    def _envelope_error(status: int, message: str, code: str) -> JSONResponse:
+        return JSONResponse(
+            status_code=status,
+            content={"error": {"code": code, "message": message}},
+        )
+
+    @app.exception_handler(HTTPException)
+    async def _http_exception_handler(request: Request, exc: HTTPException):
+        return _envelope_error(exc.status_code, str(exc.detail), "http_error")
+
+    @app.exception_handler(RequestValidationError)
+    async def _validation_exception_handler(request: Request, exc: RequestValidationError):
+        parts = []
+        for err in exc.errors():
+            loc = ".".join(str(p) for p in err.get("loc", []) if p != "body")
+            msg = err.get("msg", "invalid value")
+            parts.append(f"{loc}: {msg}" if loc else msg)
+        return _envelope_error(422, "; ".join(parts) or "validation error", "validation_error")
 
     app.include_router(system.build_router(state))
     app.include_router(search_mod.build_router(state))
