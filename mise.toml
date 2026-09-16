@@ -38,8 +38,7 @@ description = "Build the UI and copy it into oxe/ui_dist for packaging"
 run = """
 #!/usr/bin/env bash
 set -euo pipefail
-cd ui && bun run build
-cd ..
+bun run --cwd ui build
 rm -rf oxe/ui_dist
 cp -R ui/dist oxe/ui_dist
 echo "copied ui/dist -> oxe/ui_dist ($(find oxe/ui_dist -type f | wc -l | tr -d ' ') files)"
@@ -65,6 +64,13 @@ depends = ["lint:py", "lint:ui"]
 [tasks."lint:py"]
 description = "Lint the Python package"
 run = "uv run --with ruff ruff check oxe"
+
+[tasks."openapi:ts"]
+description = "Regenerate openapi.json then the UI's generated types (run after backend schema changes)"
+run = """
+mise run openapi
+bun run --cwd ui gen:types
+"""
 
 [tasks."lint:ui"]
 description = "Lint the UI workspace (oxlint + oxfmt)"
@@ -106,9 +112,9 @@ step() { # label, then command...
 
 step ruff       uv run --with ruff ruff check oxe tests
 step pytest     uv run --with pytest pytest -x -q
-step ui-lint    bash -c 'cd ui && bun run lint'
-step tsc        bash -c 'cd ui && bunx tsc -b'
-step bun-test   bash -c 'cd ui && bun test src'
+step ui-lint    bun run --cwd ui lint
+step tsc        bash -c 'cd ui && bun x tsc -b'
+step bun-test   bun test --cwd ui src
 
 total=$(( $(date +%s) - start ))
 if [ "$fail" -eq 0 ]; then
@@ -126,7 +132,7 @@ run = """
 set -euo pipefail
 mise run validate
 start=$(date +%s)
-cd ui && bun run check
+bun run --cwd ui check
 echo "OK ui-build ($(( $(date +%s) - start ))s, prerendered dist + size budgets)"
 test -s dist/index.html && [ "$(wc -c < dist/index.html)" -gt 2048 ] \\
   || { echo "FAIL prerendered dist/index.html missing or too small"; exit 1; }
