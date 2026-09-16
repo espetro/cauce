@@ -20,7 +20,7 @@ DELETE FROM cache WHERE query_hash = :key;
 SELECT COUNT(*) FROM cache;
 
 -- name: list-rows(now, q, fuzzy_ids, limit, offset)
-SELECT query_hash AS hash, query_text AS query, expires_at, hits,
+SELECT query_hash AS hash, query_text AS query, expires_at, hits, created_at,
        length(response) AS size_bytes
 FROM cache
 WHERE (CAST(:now AS INTEGER) = 0 OR expires_at >= :now)

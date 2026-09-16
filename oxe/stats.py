@@ -294,6 +294,57 @@ def _render_page(panels, days, generated) -> str:
     )
 
 
+def build_json(db_path: str, days: int = 14) -> dict:
+    """Return dashboard aggregates as JSON-ready dict (sister of build())."""
+    conn = None
+    try:
+        conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=5)
+        if not _has_search_log(conn):
+            daily_rows = top_queries = zero_result = client_split = []
+        else:
+            daily_rows = _fetch_daily(conn, days)
+            top_queries = _fetch_top_queries(conn, days)
+            zero_result = _fetch_zero_result(conn, days)
+            client_split = _fetch_client_split(conn, days)
+    except sqlite3.OperationalError:
+        daily_rows = top_queries = zero_result = client_split = []
+    finally:
+        if conn is not None:
+            conn.close()
+
+    per_day: dict[str, dict] = {d: {"cache": 0, "network": 0} for d in _day_keys(days)}
+    for ts, src, _ms in daily_rows:
+        d = _ts_day(ts)
+        if d in per_day:
+            per_day[d]["cache" if src == "cache" else "network"] += 1
+    total = len(daily_rows)
+    hits = sum(1 for _, s, _ in daily_rows if s == "cache")
+    lats = sorted(ms for _, _, ms in daily_rows if ms is not None)
+
+    return {
+        "days": days,
+        "searches_per_day": [
+            {"day": d, **v, "total": v["cache"] + v["network"]}
+            for d, v in per_day.items()
+        ],
+        "hit_rate": {
+            "total": total,
+            "cache_hits": hits,
+            "rate": round(100 * hits / total, 1) if total else None,
+        },
+        "latency_ms": {
+            "p50": round(_percentile(lats, 50), 1) if lats else None,
+            "p90": round(_percentile(lats, 90), 1) if lats else None,
+            "p99": round(_percentile(lats, 99), 1) if lats else None,
+        },
+        "top_queries": [{"query": t, "count": c} for t, c in top_queries],
+        "zero_result_queries": [
+            {"query": t, "last_seen": ts} for t, ts in zero_result
+        ],
+        "client_split": [{"client": cl, "count": n} for cl, n in client_split],
+    }
+
+
 def build(db_path: str, out_dir: str, days: int = 30) -> str:
     """Build the dashboard and return the path of the written index.html."""
     generated = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")

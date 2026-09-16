@@ -135,6 +135,7 @@ class TTLCache:
                 "hash": r["hash"],
                 "query": r["query"],
                 "expires_at": r["expires_at"],
+                "created_at": r["created_at"],
                 "hits": r["hits"],
                 "size_bytes": r["size_bytes"],
                 "expired": r["expires_at"] < now if now else r["expires_at"] < int(time.time()),

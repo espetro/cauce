@@ -124,8 +124,6 @@ def test_do_search_page2_empty_cached_briefly(tmp_path):
         out = do_search(cache, {"query": "q", "numResults": 3, "page": 2})
     assert out["results"] == []
     # cached empty page-2 expires within the short page TTL window
-    import sqlite3
-
     expires = cache._conn.execute(
         "SELECT expires_at FROM cache WHERE query_hash = ?", (out["_q_hash"],)
     ).fetchone()

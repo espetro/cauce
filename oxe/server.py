@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any, Callable, Optional
 from urllib.parse import quote
 
-from fastapi import FastAPI, Form, Header, HTTPException, Query, Request
+from fastapi import FastAPI, Header, HTTPException, Query, Request
 from fastapi.responses import (
     FileResponse,
     HTMLResponse,
@@ -19,6 +19,7 @@ from mcp.server.transport_security import TransportSecuritySettings
 from pydantic import BaseModel
 
 from . import __version__, exa_compat
+from . import stats as stats_mod
 from .cache import TTLCache
 from .devlog import DEV as _DEV
 from .devlog import event as _dev_event
@@ -340,6 +341,79 @@ def make_app(
         media = _MEDIA_TYPES.get(p.suffix, "application/octet-stream")
         return FileResponse(p, media_type=media)
 
+    _SINCE_HOURS = {"24h": 24, "7d": 168, "30d": 720, "all": None}
+
+    @app.get("/api/history")
+    def api_history(
+        since: str = Query(default="all"),
+        q: Optional[str] = Query(default=None),
+        limit: int = Query(default=50, ge=1, le=200),
+        kind: str = Query(default="all"),
+    ) -> dict:
+        """JSON API for the SPA /history page: merged user activity view.
+
+        Params: since=24h|7d|30d|all (default all), q=substring filter,
+        limit=1..200 (default 50), kind=all|clicks|cache (default all).
+        Returns {items, clicks, cache_rows, limit, since} sorted newest
+        first; each item has a `kind` field ("click" | "cache").
+        """
+        if since not in _SINCE_HOURS:
+            raise HTTPException(status_code=422, detail="since must be 24h|7d|30d|all")
+        if kind not in ("all", "clicks", "cache"):
+            raise HTTPException(status_code=422, detail="kind must be all|clicks|cache")
+        hours = _SINCE_HOURS[since]
+        items: list[dict] = []
+        if kind in ("all", "clicks"):
+            for r in c.get_clicks(query_text=q, limit=200, since_hours=hours):
+                items.append(
+                    {
+                        "kind": "click",
+                        "clicked_at": r["clicked_at"],
+                        "sort_at": r["clicked_at"],
+                        "query_hash": r["query_hash"],
+                        "query": r["query"],
+                        "result_id": r["result_id"],
+                        "url": r["url"],
+                        "title": r["title"],
+                        "source": r["source"],
+                    }
+                )
+        if kind in ("all", "cache"):
+            for r in c.list_rows(q=q, limit=200):
+                created = r.get("created_at") or r["expires_at"]
+                if hours is not None and created < time.time() - hours * 3600:
+                    continue
+                items.append(
+                    {
+                        "kind": "cache",
+                        "created_at": created,
+                        "sort_at": created,
+                        "query_hash": r["hash"],
+                        "query": r["query"],
+                        "expires_at": r["expires_at"],
+                        "hits": r["hits"],
+                        "size_bytes": r["size_bytes"],
+                    }
+                )
+        items.sort(key=lambda i: i.pop("sort_at"), reverse=True)
+        n_clicks = sum(1 for i in items if i["kind"] == "click")
+        return {
+            "items": items[:limit],
+            "clicks": n_clicks,
+            "cache_rows": len(items) - n_clicks,
+            "limit": limit,
+            "since": since,
+        }
+
+    @app.get("/api/stats")
+    def api_stats(days: int = Query(default=14, ge=1, le=90)) -> dict:
+        """JSON API for the SPA /dashboard page: aggregates from search_log
+        (per-day, hit rate, latency percentiles, top/zero-result queries,
+        client split) plus cache stats. Params: days=1..90 (default 14)."""
+        data = stats_mod.build_json(c.db_path, days=days)
+        data["cache"] = c.stats()
+        return data
+
     @app.get("/history", response_class=HTMLResponse)
     def ui_history(
         q: Optional[str] = Query(default=None),
@@ -351,10 +425,36 @@ def make_app(
         return HTMLResponse(_NO_UI_PAGE)
 
     @app.post("/history/delete")
-    def ui_history_delete(scope: str = Form(...)) -> RedirectResponse:
+    async def ui_history_delete(request: Request) -> Response:
+        """Delete click history. Accepts form field `scope` (HTML POST,
+        redirects back to /history) or JSON body {"scope": ...} (API clients,
+        JSON reply {"ok": true, "deleted": n})."""
+        ctype = request.headers.get("content-type", "")
+        if "application/json" in ctype:
+            raw = await request.body()
+            body = await request.json() if raw else {}
+            scope = (body or {}).get("scope", "")
+            api = True
+        else:
+            form = await request.form()
+            scope = form.get("scope", "")
+            api = False
+        scope = (scope or "").strip()
+        if scope not in ("24h", "7d", "30d", "all"):
+            raise HTTPException(status_code=422, detail="scope must be 24h|7d|30d|all")
         n = c.delete_clicks(scope)
         log.info("UI: deleted %d clicks (scope=%s)", n, scope)
+        if api:
+            return JSONResponse({"ok": True, "deleted": n})
         return RedirectResponse(url="/history", status_code=303)
+
+    @app.get("/dashboard", response_class=HTMLResponse)
+    def ui_dashboard() -> Response:
+        """Serve the SPA shell for the /dashboard route (data via /api/stats)."""
+        dist = _ui_dist_dir()
+        if dist is not None:
+            return FileResponse(dist / "index.html", media_type="text/html")
+        return HTMLResponse(_NO_UI_PAGE)
 
     @app.post("/answer")
     def ai_answer(req: dict) -> Response:
