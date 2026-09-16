@@ -1,35 +1,15 @@
 import { useState } from "preact/hooks";
 import { useLocation } from "preact-iso";
 import { Center, usePageTitle } from "../components/Header";
-import { useModels, type Mode } from "../components/ModeSegments";
+import { useModels, useSearchMode, type Mode } from "../components/ModeSegments";
 import { SearchBox } from "../features/suggests/SearchBox";
 import * as m from "../lib/i18n";
-
-const MODE_KEY = "oxe-mode";
-
-/** Persist at event time and keep the tri-state demote as a derived value
- * (never write the demoted value back into state, so aiAvailable recovering
- * restores the user's AI choice). */
-function useMode(): [Mode, (m: Mode) => void] {
-  const [mode, setMode] = useState<Mode>(() =>
-    typeof localStorage === "undefined"
-      ? "traditional"
-      : localStorage.getItem(MODE_KEY) === "ai"
-        ? "ai"
-        : "traditional",
-  );
-  const setModeAndStore = (m: Mode) => {
-    setMode(m);
-    localStorage.setItem(MODE_KEY, m);
-  };
-  return [mode, setModeAndStore];
-}
 
 export default function Home() {
   usePageTitle("");
   const { route } = useLocation();
   const [q, setQ] = useState("");
-  const [mode, setMode] = useMode();
+  const [mode, setMode] = useSearchMode();
   const { available: aiAvailable, models, error: modelsError } = useModels();
   // AI unavailable: render Search results (do not demote stored preference).
   const effectiveMode: Mode = mode === "ai" && aiAvailable === false ? "traditional" : mode;
@@ -37,11 +17,13 @@ export default function Home() {
   const submit = (query: string) => {
     const trimmed = query.trim();
     if (!trimmed) return;
-    route(
+    // persist the mode preference at event time (useSearchMode stores it)
+    setMode(mode);
+    const url =
       effectiveMode === "ai"
         ? `/search?q=${encodeURIComponent(trimmed)}&mode=ai`
-        : `/search?q=${encodeURIComponent(trimmed)}`,
-    );
+        : `/search?q=${encodeURIComponent(trimmed)}`;
+    route(url);
   };
 
   return (

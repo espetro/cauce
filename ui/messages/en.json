@@ -32,6 +32,7 @@
   "history_no_query": "(no query)",
   "history_hits": "{hits} hits · expires {at}",
   "history_copy_json": "copy json",
+  "history_copy_json_failed": "copy failed: {e}",
   "history_aria_delete_scope": "delete scope",
   "history_delete_older_24h": "older than 24h",
   "history_delete_older_7d": "older than 7d",
@@ -110,7 +111,6 @@
   "result_cached_text_preview": "cached page text preview",
   "answer_heading": "answer",
   "answer_from_cache": "from cache",
-  "answer_streaming": "streaming…",
   "answer_stop": "stop",
   "answer_view_classic": "view classic",
   "answer_stream_interrupted": "stream interrupted - {e}",
@@ -166,5 +166,6 @@
   "settings_load_failed_msg": "settings load failed",
   "settings_save_failed_msg": "settings save failed",
   "settings_test_failed": "test failed",
-  "api_network_error": "network error"
+  "api_network_error": "network error",
+  "answer_aria_generating": "generating answer"
 }

@@ -178,6 +178,7 @@ export function SearchBox({
                 available={aiAvailable ?? null}
                 models={models}
                 modelsError={modelsError}
+                busy={busy}
               />
             </div>
           )}

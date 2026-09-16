@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "preact/hooks";
 import { useLocation } from "preact-iso";
 import { WindowVirtualizer, type WindowVirtualizerHandle } from "virtua";
 import { useAiAvailable, usePageTitle } from "../components/Header";
-import { useModels } from "../components/ModeSegments";
+import { useModels, useSearchMode, type Mode } from "../components/ModeSegments";
 import { recordClick } from "../lib/api";
 import { toast } from "../components/Toasts";
 import { ResultCard } from "../features/search/ResultCard";
@@ -14,35 +14,25 @@ import { AnswerView } from "../features/answer/AnswerView";
 import { useAnswer } from "../features/answer/useAnswer";
 import { SearchBox } from "../features/suggests/SearchBox";
 
-const MODE_KEY = "oxe-mode";
-type Mode = "traditional" | "ai";
-
-/** Set mode and persist it at event time (no sync effect). */
-function useMode(initial: Mode): [Mode, (m: Mode) => void] {
-  const [mode, setMode] = useState<Mode>(initial);
-  const setModeAndStore = (m: Mode) => {
-    setMode(m);
-    localStorage.setItem(MODE_KEY, m);
-  };
-  return [mode, setModeAndStore];
-}
-
 export default function SearchRoute() {
   const { query, route } = useLocation();
   const q = String(query?.q ?? "");
   // `p` is deprecated (continuous scroll): accepted in deep links, ignored.
-  const urlMode = query?.mode === "ai" ? "ai" : "traditional";
   usePageTitle(q || m.search_page_title());
 
   const aiAvailable = useAiAvailable();
   const { models, error: modelsError } = useModels();
   const [input, setInput] = useState(q);
-  const [mode, setMode] = useMode(urlMode);
+  // Single source of truth (useSearchMode): URL `mode` param first, then the
+  // persisted localStorage preference. Toggles persist at event time and
+  // route(), so both the toggle and the layout agree on load and after.
+  // Demotion stays derived (never written to storage).
+  const [mode, setMode] = useSearchMode();
   const { state, run, loadMore, refresh } = useSearch();
   const answer = useAnswer();
   const virtuaRef = useRef<WindowVirtualizerHandle>(null);
 
-  // mode is persisted at event time by useMode's setModeAndStore.
+  // mode is persisted at event time by useSearchMode's setter.
   // AI mode is unavailable: ?mode=ai URLs stay on classic results (no redirect)
   // with a small inline notice; the disabled toggle communicates why.
   const aiModeBlocked = mode === "ai" && aiAvailable === false;
@@ -104,21 +94,14 @@ export default function SearchRoute() {
   // viewClassic); no sync effect needed.
   const changeMode = (m: Mode) => {
     setMode(m);
-    if (urlMode !== m) {
+    const currentUrlMode =
+      new URLSearchParams(window.location.search).get("mode") === "ai" ? "ai" : "traditional";
+    if (currentUrlMode !== m) {
       const extra: Record<string, string> = {};
       if (typeof query?.settings === "string") extra.settings = query.settings;
       route(searchUrl({ q, mode: m, extra }), true);
     }
   };
-
-  useEffect(
-    function rerunOnQueryChange() {
-      setInput(q);
-      if (q && effectiveMode === "traditional") run(q);
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    },
-    [q],
-  );
 
   useEffect(
     function runAnswerOnQueryOrModeChange() {

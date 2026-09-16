@@ -26,6 +26,9 @@ function routePath(file: string): string {
       .replace("./routes", "")
       .replace(/\.tsx$/, "")
       .replace(/\/index$/, "")
+      // NOTE: there is no /row SPA route (backend-only path). preact-iso
+      // intercepts ALL same-origin anchors, so backend-only paths like /row
+      // must never be used as plain SPA links — see routes/history.tsx.
       // './routes/row/[key].tsx' -> '/row/:key'
       .replace(/\[(\w+)\]/g, ":$1") || "/"
   );

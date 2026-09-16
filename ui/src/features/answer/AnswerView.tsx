@@ -17,6 +17,9 @@ interface Props {
 export function AnswerView({ query, state, onStop, onRetry, onAskRelated, onViewClassic }: Props) {
   const { text, steps, sources, status, cached, error, relatedQuestions } = state;
   const streaming = status === "idle" || status === "streaming";
+  // deltas are flowing while steps are already done: the answer area is the
+  // single progress affordance from this point (steps keep plain markers).
+  const streamingDeltas = status === "streaming";
   const done = status === "done" || status === "stopped" || status === "error";
   const stopped = status === "stopped";
   const emptySources = done && !error && sources.length === 0 && !text;
@@ -28,7 +31,14 @@ export function AnswerView({ query, state, onStop, onRetry, onAskRelated, onView
           {m.answer_heading()}
         </h2>
         {cached && <span class="badge badge-ghost badge-xs">{m.answer_from_cache()}</span>}
-        {streaming && <span class="text-xs opacity-50">{m.answer_streaming()}</span>}
+        {/* deltas streaming, steps finished: subtle dots-only indicator (no label) */}
+        {streamingDeltas && (
+          <span
+            class="loading loading-dots loading-xs opacity-50"
+            role="status"
+            aria-label={m.answer_aria_generating()}
+          />
+        )}
         <span class="ml-auto flex gap-2">
           {streaming && (
             <button type="button" class="btn btn-ghost btn-xs" onClick={onStop}>
@@ -50,7 +60,7 @@ export function AnswerView({ query, state, onStop, onRetry, onAskRelated, onView
               key={i}
               class="flex items-center gap-2 animate-in fade-in slide-in-from-bottom-2 duration-300"
             >
-              {!done || i < steps.length - 1 ? (
+              {!done && !(streamingDeltas && i === steps.length - 1) ? (
                 <span class="loading loading-spinner loading-xs" />
               ) : (
                 <span aria-hidden="true">·</span>
@@ -90,7 +100,7 @@ export function AnswerView({ query, state, onStop, onRetry, onAskRelated, onView
       ) : text ? (
         <div>
           <MarkdownLite text={text} />
-          {streaming && (
+          {streamingDeltas && (
             <span class="animate-pulse font-mono" aria-hidden="true">
               ▌
             </span>

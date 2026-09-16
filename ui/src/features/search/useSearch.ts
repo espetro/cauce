@@ -173,7 +173,12 @@ export function useSearch(): {
     if (key) {
       deleteCacheRow(key)
         .catch(() => undefined)
-        .finally(() => fetchPage(q, 1, "refresh"));
+        .then(() => {
+          // a newer search may have started while the delete was in
+          // flight; don't supersede it with a stale fetch
+          if (qRef.current !== q) return;
+          fetchPage(q, 1, "refresh");
+        });
     } else {
       fetchPage(q, 1, "refresh");
     }

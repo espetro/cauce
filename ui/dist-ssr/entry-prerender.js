@@ -535,6 +535,19 @@ var init_ai_label_reasoning = __esmMin((() => {
 	});
 }));
 //#endregion
+//#region src/paraglide/messages/answer_aria_generating.js
+var en_answer_aria_generating, answer_aria_generating;
+var init_answer_aria_generating = __esmMin((() => {
+	init_runtime();
+	en_answer_aria_generating = () => {
+		return `generating answer`;
+	};
+	answer_aria_generating = ((inputs = {}, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_answer_aria_generating(inputs);
+	});
+}));
+//#endregion
 //#region src/paraglide/messages/answer_from_cache.js
 var en_answer_from_cache, answer_from_cache;
 var init_answer_from_cache = __esmMin((() => {
@@ -662,19 +675,6 @@ var init_answer_stream_interrupted = __esmMin((() => {
 	answer_stream_interrupted = ((inputs, options = {}) => {
 		experimentalStaticLocale ?? options.locale ?? getLocale();
 		return en_answer_stream_interrupted(inputs);
-	});
-}));
-//#endregion
-//#region src/paraglide/messages/answer_streaming.js
-var en_answer_streaming, answer_streaming;
-var init_answer_streaming = __esmMin((() => {
-	init_runtime();
-	en_answer_streaming = () => {
-		return `streaming…`;
-	};
-	answer_streaming = ((inputs = {}, options = {}) => {
-		experimentalStaticLocale ?? options.locale ?? getLocale();
-		return en_answer_streaming(inputs);
 	});
 }));
 //#endregion
@@ -1195,6 +1195,19 @@ var init_history_copy_json = __esmMin((() => {
 	history_copy_json = ((inputs = {}, options = {}) => {
 		experimentalStaticLocale ?? options.locale ?? getLocale();
 		return en_history_copy_json(inputs);
+	});
+}));
+//#endregion
+//#region src/paraglide/messages/history_copy_json_failed.js
+var en_history_copy_json_failed, history_copy_json_failed;
+var init_history_copy_json_failed = __esmMin((() => {
+	init_runtime();
+	en_history_copy_json_failed = (i) => {
+		return `copy failed: ${i?.e}`;
+	};
+	history_copy_json_failed = ((inputs, options = {}) => {
+		experimentalStaticLocale ?? options.locale ?? getLocale();
+		return en_history_copy_json_failed(inputs);
 	});
 }));
 //#endregion
@@ -2477,6 +2490,7 @@ var init__index = __esmMin((() => {
 	init_about_search_label();
 	init_ai_label_model();
 	init_ai_label_reasoning();
+	init_answer_aria_generating();
 	init_answer_from_cache();
 	init_answer_heading();
 	init_answer_no_sources();
@@ -2487,7 +2501,6 @@ var init__index = __esmMin((() => {
 	init_answer_stop();
 	init_answer_stopped();
 	init_answer_stream_interrupted();
-	init_answer_streaming();
 	init_answer_switch_classic();
 	init_answer_view_classic();
 	init_api_network_error();
@@ -2528,6 +2541,7 @@ var init__index = __esmMin((() => {
 	init_history_col_query();
 	init_history_col_when();
 	init_history_copy_json();
+	init_history_copy_json_failed();
 	init_history_delete_all();
 	init_history_delete_arm();
 	init_history_delete_confirm();
@@ -3187,7 +3201,7 @@ function ModelPicker({ models, value, onChange, disabled, id, size = "sm", label
 					"aria-autocomplete": "list",
 					"aria-controls": listId,
 					autocomplete: "off",
-					class: `input ${size === "xs" ? "select-xs" : "select-sm"} w-full pr-6 min-w-0`,
+					class: `input ${size === "xs" ? "select-xs" : "select-sm"} oxe-pill-control w-full pr-6 min-w-0`,
 					value: open ? filter : value,
 					placeholder: value || model_ph_filter(),
 					disabled,
@@ -4322,7 +4336,7 @@ function DeleteControls({ onDeleted, onError }) {
 }
 function HistoryRoute() {
 	usePageTitle(history_page_title());
-	const { query, route } = useLocation();
+	const { query, route: spaRoute } = useLocation();
 	const since = parseSince(query?.since);
 	const qf = String(query?.qf ?? "");
 	const [items, setItems] = useState([]);
@@ -4357,14 +4371,14 @@ function HistoryRoute() {
 		if (value && !(key === "since" && value === "all")) sp.set(key, value);
 		else sp.delete(key);
 		const qs = sp.toString();
-		route(`${window.location.pathname}${qs ? `?${qs}` : ""}`, true);
+		spaRoute(`${window.location.pathname}${qs ? `?${qs}` : ""}`, true);
 	};
 	const clearFilters = () => {
 		const sp = new URLSearchParams(window.location.search);
 		sp.delete("since");
 		sp.delete("qf");
 		const qs = sp.toString();
-		route(`${window.location.pathname}${qs ? `?${qs}` : ""}`, true);
+		spaRoute(`${window.location.pathname}${qs ? `?${qs}` : ""}`, true);
 	};
 	return /* @__PURE__ */ jsxs("div", {
 		class: "w-full max-w-[960px] mx-auto px-4 pb-16",
@@ -4486,6 +4500,12 @@ function HistoryRoute() {
 								children: /* @__PURE__ */ jsx("a", {
 									href: `/row/${r.query_hash}`,
 									class: "link link-primary",
+									onClick: (e) => {
+										e.preventDefault();
+										e.stopPropagation();
+										if (r.query) spaRoute(`/search?q=${encodeURIComponent(r.query)}`);
+										else window.location.href = `/row/${r.query_hash}`;
+									},
 									children: r.query || history_no_query()
 								})
 							}),
@@ -4505,7 +4525,7 @@ function HistoryRoute() {
 							/* @__PURE__ */ jsx("td", { children: r.kind === "click" && /* @__PURE__ */ jsx("button", {
 								type: "button",
 								class: "btn btn-ghost btn-xs",
-								onClick: () => fetch(`/search?q=${encodeURIComponent(r.query || "")}`, { headers: { Accept: "application/json" } }).then((res) => res.text()).then((t) => navigator.clipboard?.writeText(t)),
+								onClick: () => fetch(`/search?q=${encodeURIComponent(r.query || "")}`, { headers: { Accept: "application/json" } }).then((res) => res.text()).then((t) => navigator.clipboard?.writeText(t)).catch((err) => toast("error", history_copy_json_failed({ e: err.message }))),
 								children: history_copy_json()
 							}) })
 						]
@@ -4520,6 +4540,7 @@ var init_history = __esmMin((() => {
 	init_Header();
 	init_api();
 	init_format();
+	init_Toasts();
 	init_i18n();
 	SINCE_VALUES = [
 		"24",
@@ -4553,6 +4574,27 @@ function useModels() {
 		models,
 		error
 	};
+}
+/** Single source of truth for the search mode: the URL `mode` param when
+* present, else the persisted localStorage preference, else "traditional".
+* Both routes (/, /search) use this so the toggle and the rendered layout
+* always agree from the first paint (fixes the reload divergence where the
+* layout came from localStorage but the toggle from the absent URL param).
+* Setters persist at event time; routes own their URL updates. */
+function useSearchMode() {
+	const [mode, setMode] = useState(() => {
+		if (typeof window !== "undefined") {
+			const url = new URLSearchParams(window.location.search).get("mode");
+			if (url === "ai" || url === "traditional") return url;
+		}
+		if (typeof localStorage !== "undefined" && localStorage.getItem(MODE_KEY) === "ai") return "ai";
+		return "traditional";
+	});
+	const setModeAndStore = (m) => {
+		setMode(m);
+		localStorage.setItem(MODE_KEY, m);
+	};
+	return [mode, setModeAndStore];
 }
 /** DDG-style inline segmented mode toggle at the right end of the pill:
 * light track, active segment is a white pill with a small shadow.
@@ -4601,8 +4643,10 @@ function ModeSegments({ mode, onChange, aiAvailable }) {
 	});
 }
 /** AI second-row controls: model picker + reasoning toggle chip.
-* Pure UI state (localStorage); request wiring is a backend concern. */
-function AiControls({ available, models, modelsError }) {
+* Pure UI state (localStorage); request wiring is a backend concern.
+* `busy` (answer run in flight) disables the reasoning toggle: switching it
+* mid-run has no effect on the stream and reads as a broken control. */
+function AiControls({ available, models, modelsError, busy }) {
 	const ls = () => typeof localStorage === "undefined" ? null : localStorage;
 	const [storedModel, setStoredModel] = useState(() => ls()?.getItem(STORE_KEY) ?? "");
 	const [reasoning, setReasoningState] = useState(() => ls()?.getItem(REASONING_KEY) === "1");
@@ -4634,17 +4678,22 @@ function AiControls({ available, models, modelsError }) {
 			type: "button",
 			role: "switch",
 			"aria-checked": reasoning,
-			class: `btn btn-xs rounded-full shrink-0 self-start sm:self-auto ${reasoning ? "btn-primary btn-soft" : "btn-ghost"}`,
-			onClick: () => setReasoning(!reasoning),
+			"aria-disabled": busy || void 0,
+			disabled: busy,
+			class: `btn btn-xs oxe-pill-control shrink-0 self-start sm:self-auto border ${reasoning ? "btn-primary btn-soft" : "btn-ghost"} ${busy ? "btn-disabled opacity-40" : ""}`,
+			onClick: () => {
+				if (!busy) setReasoning(!reasoning);
+			},
 			children: ai_label_reasoning()
 		})]
 	});
 }
-var SEGMENTS, Magnifier, Sparkle, STORE_KEY, REASONING_KEY;
+var MODE_KEY, SEGMENTS, Magnifier, Sparkle, STORE_KEY, REASONING_KEY;
 var init_ModeSegments = __esmMin((() => {
 	init_ai();
 	init_ModelPicker();
 	init_i18n();
+	MODE_KEY = "oxe-mode";
 	SEGMENTS = [{
 		v: "traditional",
 		label: segments_search
@@ -4980,7 +5029,8 @@ function SearchBox({ value, onInput, onSubmit, placeholder, autoFocus, busy, siz
 					children: /* @__PURE__ */ jsx(AiControls, {
 						available: aiAvailable ?? null,
 						models,
-						modelsError
+						modelsError,
+						busy
 					})
 				})]
 			})
@@ -5012,28 +5062,19 @@ var init_SearchBox = __esmMin((() => {
 //#endregion
 //#region src/routes/index.tsx
 var routes_exports = /* @__PURE__ */ __exportAll({ default: () => Home });
-/** Persist at event time and keep the tri-state demote as a derived value
-* (never write the demoted value back into state, so aiAvailable recovering
-* restores the user's AI choice). */
-function useMode$1() {
-	const [mode, setMode] = useState(() => typeof localStorage === "undefined" ? "traditional" : localStorage.getItem(MODE_KEY$1) === "ai" ? "ai" : "traditional");
-	const setModeAndStore = (m) => {
-		setMode(m);
-		localStorage.setItem(MODE_KEY$1, m);
-	};
-	return [mode, setModeAndStore];
-}
 function Home() {
 	usePageTitle("");
 	const { route } = useLocation();
 	const [q, setQ] = useState("");
-	const [mode, setMode] = useMode$1();
+	const [mode, setMode] = useSearchMode();
 	const { available: aiAvailable, models, error: modelsError } = useModels();
 	const effectiveMode = mode === "ai" && aiAvailable === false ? "traditional" : mode;
 	const submit = (query) => {
 		const trimmed = query.trim();
 		if (!trimmed) return;
-		route(effectiveMode === "ai" ? `/search?q=${encodeURIComponent(trimmed)}&mode=ai` : `/search?q=${encodeURIComponent(trimmed)}`);
+		setMode(mode);
+		const url = effectiveMode === "ai" ? `/search?q=${encodeURIComponent(trimmed)}&mode=ai` : `/search?q=${encodeURIComponent(trimmed)}`;
+		route(url);
 	};
 	return /* @__PURE__ */ jsxs(Center, {
 		vh: true,
@@ -5064,13 +5105,11 @@ function Home() {
 		]
 	});
 }
-var MODE_KEY$1;
 var init_routes = __esmMin((() => {
 	init_Header();
 	init_ModeSegments();
 	init_SearchBox();
 	init_i18n();
-	MODE_KEY$1 = "oxe-mode";
 }));
 //#endregion
 //#region src/features/search/ResultCard.tsx
@@ -5235,7 +5274,10 @@ function useSearch() {
 	]);
 	const refresh = (q) => {
 		const key = state.payload?._q_hash;
-		if (key) deleteCacheRow(key).catch(() => void 0).finally(() => fetchPage(q, 1, "refresh"));
+		if (key) deleteCacheRow(key).catch(() => void 0).then(() => {
+			if (qRef.current !== q) return;
+			fetchPage(q, 1, "refresh");
+		});
 		else fetchPage(q, 1, "refresh");
 	};
 	return {
@@ -5454,6 +5496,7 @@ var init_SourceCard = __esmMin((() => {
 function AnswerView({ query, state, onStop, onRetry, onAskRelated, onViewClassic }) {
 	const { text, steps, sources, status, cached, error, relatedQuestions } = state;
 	const streaming = status === "idle" || status === "streaming";
+	const streamingDeltas = status === "streaming";
 	const done = status === "done" || status === "stopped" || status === "error";
 	const stopped = status === "stopped";
 	const emptySources = done && !error && sources.length === 0 && !text;
@@ -5471,9 +5514,10 @@ function AnswerView({ query, state, onStop, onRetry, onAskRelated, onViewClassic
 						class: "badge badge-ghost badge-xs",
 						children: answer_from_cache()
 					}),
-					streaming && /* @__PURE__ */ jsx("span", {
-						class: "text-xs opacity-50",
-						children: answer_streaming()
+					streamingDeltas && /* @__PURE__ */ jsx("span", {
+						class: "loading loading-dots loading-xs opacity-50",
+						role: "status",
+						"aria-label": answer_aria_generating()
 					}),
 					/* @__PURE__ */ jsxs("span", {
 						class: "ml-auto flex gap-2",
@@ -5496,7 +5540,7 @@ function AnswerView({ query, state, onStop, onRetry, onAskRelated, onViewClassic
 				"aria-live": "polite",
 				children: steps.map((s, i) => /* @__PURE__ */ jsxs("li", {
 					class: "flex items-center gap-2 animate-in fade-in slide-in-from-bottom-2 duration-300",
-					children: [!done || i < steps.length - 1 ? /* @__PURE__ */ jsx("span", { class: "loading loading-spinner loading-xs" }) : /* @__PURE__ */ jsx("span", {
+					children: [!done && !(streamingDeltas && i === steps.length - 1) ? /* @__PURE__ */ jsx("span", { class: "loading loading-spinner loading-xs" }) : /* @__PURE__ */ jsx("span", {
 						"aria-hidden": "true",
 						children: "·"
 					}), /* @__PURE__ */ jsx("span", { children: s })]
@@ -5542,7 +5586,7 @@ function AnswerView({ query, state, onStop, onRetry, onAskRelated, onViewClassic
 				})]
 			}) : text ? /* @__PURE__ */ jsxs("div", { children: [
 				/* @__PURE__ */ jsx(MarkdownLite, { text }),
-				streaming && /* @__PURE__ */ jsx("span", {
+				streamingDeltas && /* @__PURE__ */ jsx("span", {
 					class: "animate-pulse font-mono",
 					"aria-hidden": "true",
 					children: "▌"
@@ -5610,6 +5654,9 @@ var init_AnswerView = __esmMin((() => {
 }));
 //#endregion
 //#region src/features/answer/useAnswer.ts
+function stripAnswerMeta(text) {
+	return text.replace(META_TAIL_RE, "");
+}
 /** Pure SSE event reducer so event handling is testable without a stream.
 * The first event transitions idle -> streaming; done/error terminalize. */
 function applyAnswerEvent(state, ev) {
@@ -5621,7 +5668,7 @@ function applyAnswerEvent(state, ev) {
 	if (ev.type === "delta") return {
 		...state,
 		status: "streaming",
-		text: state.text + ev.text
+		text: stripAnswerMeta(state.text + ev.text)
 	};
 	if (ev.type === "sources") return {
 		...state,
@@ -5630,7 +5677,7 @@ function applyAnswerEvent(state, ev) {
 	};
 	if (ev.type === "done") return {
 		...state,
-		text: ev.answer || state.text,
+		text: ev.answer || stripAnswerMeta(state.text),
 		status: state.status === "stopped" ? "stopped" : ev.error ? "error" : "done",
 		cached: ev.cached ?? false,
 		confidence: ev.confidence,
@@ -5683,10 +5730,11 @@ function useAnswer() {
 		}, [])
 	};
 }
-var INITIAL;
+var META_TAIL_RE, INITIAL;
 var init_useAnswer = __esmMin((() => {
 	init_ai();
 	init_useMountEffect();
+	META_TAIL_RE = /\s*\{\s*"confidence"\s*:\s*\d+[\s\S]*?"related_questions"\s*:[\s\S]*?\}\s*$/;
 	INITIAL = {
 		status: "idle",
 		text: "",
@@ -5701,24 +5749,14 @@ var init_useAnswer = __esmMin((() => {
 //#endregion
 //#region src/routes/search.tsx
 var search_exports = /* @__PURE__ */ __exportAll({ default: () => SearchRoute });
-/** Set mode and persist it at event time (no sync effect). */
-function useMode(initial) {
-	const [mode, setMode] = useState(initial);
-	const setModeAndStore = (m) => {
-		setMode(m);
-		localStorage.setItem(MODE_KEY, m);
-	};
-	return [mode, setModeAndStore];
-}
 function SearchRoute() {
 	const { query, route } = useLocation();
 	const q = String(query?.q ?? "");
-	const urlMode = query?.mode === "ai" ? "ai" : "traditional";
 	usePageTitle(q || search_page_title());
 	const aiAvailable = useAiAvailable();
 	const { models, error: modelsError } = useModels();
 	const [input, setInput] = useState(q);
-	const [mode, setMode] = useMode(urlMode);
+	const [mode, setMode] = useSearchMode();
 	const { state, run, loadMore, refresh } = useSearch();
 	const answer = useAnswer();
 	const virtuaRef = useRef(null);
@@ -5752,7 +5790,7 @@ function SearchRoute() {
 	}, [state.results.length, state.loadingMore]);
 	const changeMode = (m) => {
 		setMode(m);
-		if (urlMode !== m) {
+		if ((new URLSearchParams(window.location.search).get("mode") === "ai" ? "ai" : "traditional") !== m) {
 			const extra = {};
 			if (typeof query?.settings === "string") extra.settings = query.settings;
 			route(searchUrl({
@@ -5762,10 +5800,6 @@ function SearchRoute() {
 			}), true);
 		}
 	};
-	useEffect(function rerunOnQueryChange() {
-		setInput(q);
-		if (q && effectiveMode === "traditional") run(q);
-	}, [q]);
 	useEffect(function runAnswerOnQueryOrModeChange() {
 		if (q && effectiveMode === "ai") answer.run(q);
 	}, [q, effectiveMode]);
@@ -5984,7 +6018,6 @@ function SearchRoute() {
 		] })]
 	});
 }
-var MODE_KEY;
 var init_search = __esmMin((() => {
 	init_Header();
 	init_ModeSegments();
@@ -5998,7 +6031,6 @@ var init_search = __esmMin((() => {
 	init_AnswerView();
 	init_useAnswer();
 	init_SearchBox();
-	MODE_KEY = "oxe-mode";
 }));
 //#endregion
 //#region src/app.tsx

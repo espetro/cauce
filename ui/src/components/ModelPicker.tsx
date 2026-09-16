@@ -102,7 +102,7 @@ export function ModelPicker({
           aria-autocomplete="list"
           aria-controls={listId}
           autocomplete="off"
-          class={`input ${h} w-full pr-6 min-w-0`}
+          class={`input ${h} oxe-pill-control w-full pr-6 min-w-0`}
           value={open ? filter : value}
           placeholder={value || m.model_ph_filter()}
           disabled={disabled}

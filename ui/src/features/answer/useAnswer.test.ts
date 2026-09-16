@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { applyAnswerEvent, INITIAL, type AnswerState } from "./useAnswer";
+import { applyAnswerEvent, INITIAL, stripAnswerMeta, type AnswerState } from "./useAnswer";
 
 const step = (label: string) => ({ type: "step" as const, tool: "search", query: "q", label });
 
@@ -69,5 +69,35 @@ describe("applyAnswerEvent", () => {
       cached: false,
     });
     expect(s.text).toBe("partial");
+  });
+});
+
+describe("stripAnswerMeta", () => {
+  const LEAK =
+    '{"confidence": 8, "related_questions": ["what is x?", "how does y work?"], "answer_id": "abc"}';
+
+  test("strips the exact trailing metadata blob leaked into deltas", () => {
+    const s = applyAnswerEvent(
+      applyAnswerEvent(INITIAL, { type: "delta", text: "Here is the answer.\n\n" }),
+      { type: "delta", text: LEAK },
+    );
+    expect(s.text).toBe("Here is the answer.");
+  });
+
+  test("leaves normal text untouched", () => {
+    expect(stripAnswerMeta("just an answer with {braces}")).toBe("just an answer with {braces}");
+  });
+
+  test("done.answer wins over stripped stream text", () => {
+    let s = applyAnswerEvent(INITIAL, { type: "delta", text: `partial ${LEAK}` });
+    s = applyAnswerEvent(s, {
+      type: "done",
+      answer: "clean final",
+      related_questions: ["q"],
+      confidence: 8,
+      cached: false,
+    });
+    expect(s.text).toBe("clean final");
+    expect(s.confidence).toBe(8);
   });
 });

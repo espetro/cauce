@@ -83,6 +83,25 @@ body {
   outline: none;
 }
 
+/* form controls nested inside the search pill: pill-shaped (rounded-full)
+ * so they match the container geometry instead of daisyUI's default radius.
+ * One shared class for every "control inside the pill" surface. */
+.oxe-pill-control {
+  border-radius: calc(infinity * 1px);
+  background-color: var(--color-base-200);
+  border-color: var(--color-base-300);
+}
+.oxe-pill-control:focus {
+  border-color: var(--color-base-content);
+  box-shadow:
+    0 0 0 2px color-mix(in oklab, var(--color-primary) 18%, transparent),
+    0 1px 6px color-mix(in oklab, var(--color-base-content) 12%, transparent);
+  outline: none;
+}
+.oxe-pill-control::placeholder {
+  color: color-mix(in oklab, var(--color-base-content) 45%, transparent);
+}
+
 /* AI morphism: second action row reveals inside the pill.
  * Folded into the generic system: uses the enter keyframe with the
  * small-up modifier values below. */

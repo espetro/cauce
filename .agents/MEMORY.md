@@ -20,3 +20,8 @@
 - DDG html paging: ddgs `page` kwarg works but is aggressively rate-limited ("No results found." on burst). exa_compat retries each backend once after 1.5s; oxe/search.do_search caches page>1 payloads with short `_PAGE_TTL=300`.
 - POST /settings/test + UI "Test connection" button (ui/src/features/settings/SettingsDialog.tsx, lib/ai.ts::testConnection). Settings prefill now hydrates provider/model/base_url/enabled from GET /settings on open (controlled provider select + ModelPicker value; namedItem for uncontrolled fields).
 - Theme contrast: page bg = base-200 (light) / darkened base-300 via oklch rel color (dark) via `--oxe-page` in ui/src/index.css; pill/cards stay base-100. Lightning CSS downlevels oklch-from for old browsers.
+
+## 2026-09-16 AI-mode six-issue audit (ui/)
+- Only real code defect: duplicate `rerunOnQueryChange` effect in ui/src/routes/search.tsx (removed; one copy remained). Rest of interrupted diff was complete: stripAnswerMeta (useAnswer.ts), busy→AiControls reasoning disable, ModelPicker/oxe-pill-control, useSearchMode single-source-of-truth, AnswerView dots-only streaming indicator, en.json copy.
+- Stale-bundle trap: server serves ui/dist from disk; after src edits run `bun run build` in ui/ AND hard-reload. Chunk-name map: search-*.js = /search route + useAnswer + AnswerView; routes-*.js = Home; SearchBox-*.js = useSearchMode/AiControls. Verify with `curl -s :4479/assets/<chunk> | grep <symbol>`.
+- Backend behavior (not a UI bug): SSE `done` for fresh web-search queries can take minutes (ReAct loop, max 5 iters); during the wait reasoning toggle stays disabled (correct). Cached answers return a single done event instantly.

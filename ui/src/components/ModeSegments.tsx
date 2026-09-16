@@ -31,6 +31,32 @@ export function useModels(): {
   return { available, models, error };
 }
 
+const MODE_KEY = "oxe-mode";
+
+/** Single source of truth for the search mode: the URL `mode` param when
+ * present, else the persisted localStorage preference, else "traditional".
+ * Both routes (/, /search) use this so the toggle and the rendered layout
+ * always agree from the first paint (fixes the reload divergence where the
+ * layout came from localStorage but the toggle from the absent URL param).
+ * Setters persist at event time; routes own their URL updates. */
+export function useSearchMode(): [Mode, (m: Mode) => void] {
+  const [mode, setMode] = useState<Mode>(() => {
+    if (typeof window !== "undefined") {
+      const url = new URLSearchParams(window.location.search).get("mode");
+      if (url === "ai" || url === "traditional") return url;
+    }
+    if (typeof localStorage !== "undefined" && localStorage.getItem(MODE_KEY) === "ai") {
+      return "ai";
+    }
+    return "traditional";
+  });
+  const setModeAndStore = (m: Mode) => {
+    setMode(m);
+    localStorage.setItem(MODE_KEY, m);
+  };
+  return [mode, setModeAndStore];
+}
+
 const SEGMENTS: Array<{ v: Mode; label: () => string }> = [
   { v: "traditional", label: m.segments_search },
   { v: "ai", label: m.mode_label_ai },
@@ -139,15 +165,19 @@ const STORE_KEY = "oxe-ai-model";
 const REASONING_KEY = "oxe-ai-reasoning";
 
 /** AI second-row controls: model picker + reasoning toggle chip.
- * Pure UI state (localStorage); request wiring is a backend concern. */
+ * Pure UI state (localStorage); request wiring is a backend concern.
+ * `busy` (answer run in flight) disables the reasoning toggle: switching it
+ * mid-run has no effect on the stream and reads as a broken control. */
 export function AiControls({
   available,
   models,
   modelsError,
+  busy,
 }: {
   available: boolean | null;
   models: string[];
   modelsError?: string | null;
+  busy?: boolean;
 }) {
   const ls = () => (typeof localStorage === "undefined" ? null : localStorage);
   const [storedModel, setStoredModel] = useState(() => ls()?.getItem(STORE_KEY) ?? "");
@@ -182,8 +212,12 @@ export function AiControls({
         type="button"
         role="switch"
         aria-checked={reasoning}
-        class={`btn btn-xs rounded-full shrink-0 self-start sm:self-auto ${reasoning ? "btn-primary btn-soft" : "btn-ghost"}`}
-        onClick={() => setReasoning(!reasoning)}
+        aria-disabled={busy || undefined}
+        disabled={busy}
+        class={`btn btn-xs oxe-pill-control shrink-0 self-start sm:self-auto border ${reasoning ? "btn-primary btn-soft" : "btn-ghost"} ${busy ? "btn-disabled opacity-40" : ""}`}
+        onClick={() => {
+          if (!busy) setReasoning(!reasoning);
+        }}
       >
         {m.ai_label_reasoning()}
       </button>

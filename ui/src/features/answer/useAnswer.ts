@@ -4,6 +4,16 @@ import { useMountEffect } from "../../lib/useMountEffect";
 
 export type AnswerStatus = "idle" | "streaming" | "done" | "error" | "stopped";
 
+/** Trailing metadata the model appends to its final message
+ * ({"confidence": 8, "related_questions": [...]}). The backend's `done`
+ * event carries the parsed fields, but the raw `delta` stream includes the
+ * blob: strip any trailing JSON object of that shape from displayed text. */
+const META_TAIL_RE = /\s*\{\s*"confidence"\s*:\s*\d+[\s\S]*?"related_questions"\s*:[\s\S]*?\}\s*$/;
+
+export function stripAnswerMeta(text: string): string {
+  return text.replace(META_TAIL_RE, "");
+}
+
 export interface AnswerState {
   status: AnswerStatus;
   text: string;
@@ -33,7 +43,7 @@ export function applyAnswerEvent(state: AnswerState, ev: AnswerEvent): AnswerSta
     return { ...state, status: "streaming", steps: [...state.steps, ev.label] };
   }
   if (ev.type === "delta") {
-    return { ...state, status: "streaming", text: state.text + ev.text };
+    return { ...state, status: "streaming", text: stripAnswerMeta(state.text + ev.text) };
   }
   if (ev.type === "sources") {
     return { ...state, status: "streaming", sources: ev.sources };
@@ -41,7 +51,7 @@ export function applyAnswerEvent(state: AnswerState, ev: AnswerEvent): AnswerSta
   if (ev.type === "done") {
     return {
       ...state,
-      text: ev.answer || state.text,
+      text: ev.answer || stripAnswerMeta(state.text),
       status: state.status === "stopped" ? "stopped" : ev.error ? "error" : "done",
       cached: ev.cached ?? false,
       confidence: ev.confidence,
