@@ -5,12 +5,12 @@
 
 @import "@fontsource-variable/plus-jakarta-sans";
 
-/* Self-hosted Apfel Grotesk (OFL, see /fonts/OFL.txt): logotype only. */
+/* Self-hosted Apfel Grotesk (OFL license, see src/fonts/OFL.txt): logotype only. */
 @font-face {
   font-family: "Apfel Grotesk";
   src:
-    url("/fonts/ApfelGrotezk-Regular.woff2") format("woff2"),
-    url("/fonts/ApfelGrotezk-Regular.woff") format("woff");
+    url("./fonts/ApfelGrotezk-Regular.woff2") format("woff2"),
+    url("./fonts/ApfelGrotezk-Regular.woff") format("woff");
   font-weight: 400;
   font-style: normal;
   font-display: swap;
@@ -18,8 +18,8 @@
 @font-face {
   font-family: "Apfel Grotesk";
   src:
-    url("/fonts/ApfelGrotezk-Mittel.woff2") format("woff2"),
-    url("/fonts/ApfelGrotezk-Mittel.woff") format("woff");
+    url("./fonts/ApfelGrotezk-Mittel.woff2") format("woff2"),
+    url("./fonts/ApfelGrotezk-Mittel.woff") format("woff");
   font-weight: 500 600;
   font-style: normal;
   font-display: swap;
