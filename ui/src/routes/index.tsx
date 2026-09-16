@@ -11,7 +11,11 @@ export default function Home() {
   const { route } = useLocation();
   const [q, setQ] = useState("");
   const [mode, setMode] = useState<Mode>(() =>
-    localStorage.getItem(MODE_KEY) === "ai" ? "ai" : "traditional",
+    typeof localStorage === "undefined"
+      ? "traditional"
+      : localStorage.getItem(MODE_KEY) === "ai"
+        ? "ai"
+        : "traditional",
   );
   const { available: aiAvailable, models, error: modelsError } = useModels();
 

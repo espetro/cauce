@@ -45,6 +45,9 @@ export interface SearchResponse {
   _duration_ms?: number | null;
   /** epoch seconds when the entry was cached (cache hits) */
   _cached_at?: number;
+  /** backend-side failure surfaced in a 200 payload (empty results) */
+  _error?: string;
+  _error_kind?: "rate_limited" | "timeout" | "backend_error";
 }
 
 export interface SearchPageState {

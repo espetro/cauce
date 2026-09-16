@@ -5,28 +5,31 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "tsc -b && vite build && vite build --mode prerender && node scripts/prerender.mjs",
     "preview": "vite preview",
     "lint": "oxlint --config .oxlintrc.json src scripts && oxfmt --check src scripts",
     "fmt": "oxfmt src scripts",
-    "check": "tsc -b && vite build && bun scripts/size-budget.ts",
+    "check": "tsc -b && vite build && vite build --mode prerender && node scripts/prerender.mjs && bun scripts/size-budget.ts",
     "test": "bun test src"
   },
   "dependencies": {
-    "@fontsource-variable/geist": "^5.3.0",
     "@fontsource-variable/plus-jakarta-sans": "^5.3.0",
     "preact": "^10.29.8",
     "preact-iso": "^2.12.2",
-    "valibot": "^1.5.0"
+    "valibot": "^1.5.0",
+    "virtua": "^0.51.3"
   },
   "devDependencies": {
     "@preact/preset-vite": "^2.10.6",
     "@tailwindcss/vite": "^4.3.3",
     "@types/bun": "^1.4.2",
     "@types/node": "^24.13.4",
+    "@types/react": "^19",
     "daisyui": "^5.7.38",
     "oxfmt": "^0.68.0",
     "oxlint": "^1.83.0",
+    "react": "^19",
+    "react-dom": "^19",
     "tailwindcss": "^4.3.3",
     "typescript": "~6.0.3",
     "vite": "^8.3.0"

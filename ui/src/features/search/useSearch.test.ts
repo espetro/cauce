@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { metaLine, nextStatus } from "./useSearch";
 import type { SearchResponse } from "../../lib/api";
-import { cachedAgeOf, isCacheHit, pagerLetters } from "./useSearch";
+import { cachedAgeOf, isCacheHit } from "./useSearch";
 
 const payload = (over: Partial<SearchResponse>): SearchResponse => ({
   requestId: "r1",
@@ -26,40 +26,33 @@ describe("cachedAgeOf", () => {
   });
   test("null when absent or in the future", () => {
     expect(cachedAgeOf(payload({}))).toBe(null);
-    expect(cachedAgeOf(payload({ _cached_at: 2_000_000_000 }))).toBe(null);
+    expect(cachedAgeOf(payload({ _cached_at: 2_000_000_000 }), 1_000_000_000)).toBe(null);
   });
 });
 
 describe("metaLine", () => {
-  test("counts results", () => {
-    expect(metaLine(payload({}))).toBe("1 result");
+  test("counts accumulated results", () => {
+    expect(metaLine(payload({}), 1)).toBe("1 result");
   });
   test("pluralizes results", () => {
-    const p = payload({ results: [] });
-    expect(metaLine(p)).toBe("0 results");
+    expect(metaLine(payload({}), 0)).toBe("0 results");
+    expect(metaLine(payload({}), 23)).toBe("23 results");
   });
-  test("empty payload renders nothing", () => {
-    expect(metaLine(null)).toBe("");
-  });
-});
-
-describe("pagerLetters", () => {
-  test("cycles o,x,e letters", () => {
-    expect(pagerLetters(5)).toEqual(["o", "x", "e", "o", "x"]);
-  });
-  test("caps at 10 pages", () => {
-    expect(pagerLetters(50)).toHaveLength(10);
-  });
-  test("zero pages when no results", () => {
-    expect(pagerLetters(0)).toEqual([]);
+  test("no payload and no results renders nothing", () => {
+    expect(metaLine(null, 0)).toBe("");
   });
 });
 
 describe("nextStatus", () => {
   test("empty result list -> empty", () => {
-    expect(nextStatus([])).toBe("empty");
+    expect(nextStatus(payload({ results: [] }))).toBe("empty");
   });
   test("non-empty -> success", () => {
-    expect(nextStatus([{ url: "https://example.com" }])).toBe("success");
+    expect(nextStatus(payload({}))).toBe("success");
+  });
+  test("empty + _error -> error (backend failure, not clean empty)", () => {
+    expect(
+      nextStatus(payload({ results: [], _error: "rate limited", _error_kind: "rate_limited" })),
+    ).toBe("error");
   });
 });

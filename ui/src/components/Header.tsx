@@ -12,9 +12,9 @@ interface NavItem {
 }
 
 const NAV: NavItem[] = [
-  { href: "/", label: "search", exact: true },
-  { href: "/history", label: "history" },
-  { href: "/dashboard", label: "dashboard" },
+  { href: "/", label: "Search", exact: true },
+  { href: "/history", label: "History" },
+  { href: "/dashboard", label: "Dashboard" },
 ];
 
 /** AI-mode availability from GET /v1/models (`ai_available`).
@@ -51,7 +51,7 @@ export function Header() {
     item.exact ? path === item.href : path === item.href || path.startsWith(`${item.href}/`);
   return (
     <header class="navbar bg-base-100 border-b border-base-300 px-4 h-12 min-h-12 flex items-center gap-4">
-      <a href="/" class="font-semibold tracking-tight text-base">
+      <a href="/" class="font-logo font-semibold tracking-tight text-base">
         oxe
       </a>
       <nav class="flex items-center gap-1 flex-wrap text-sm" aria-label="main">
@@ -70,10 +70,10 @@ export function Header() {
         <button
           type="button"
           class="btn btn-ghost btn-xs"
-          aria-label="settings"
+          aria-label="Settings"
           onClick={() => route(`${window.location.pathname}?settings=open`)}
         >
-          settings
+          Settings
         </button>
         <a
           href="https://github.com/espetro/oxe"

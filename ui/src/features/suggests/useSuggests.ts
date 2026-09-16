@@ -21,7 +21,9 @@ export function useSuggests(
 } {
   const [history, setHistory] = useState<string[]>([]);
   const [web, setWeb] = useState<string[]>([]);
-  const [acOn, setAcOnState] = useState(() => localStorage.getItem(AC_KEY) !== "off");
+  const [acOn, setAcOnState] = useState(
+    () => typeof localStorage === "undefined" || localStorage.getItem(AC_KEY) !== "off",
+  );
 
   useEffect(() => {
     const v = query.trim().toLowerCase();

@@ -22,7 +22,7 @@ Scope: everything under `ui/` (Preact + Vite webapp). Repo-wide rules live in th
 
 - No-JS is not required; keep client payload small (budget: 40KB gz JS / 30KB gz CSS, enforced by `mise run check`).
 - Content negotiation is backend behavior; the UI always speaks HTML/routes.
-- Dark mode via token theme (`color-scheme: light dark`); Geist self-hosted. No other fonts.
+- Dark mode via token theme (`color-scheme: light dark`); fonts: Plus Jakarta Sans Variable (body), Apfel Grotesk (logotype, self-hosted), system fallbacks. No Geist.
 - Streaming: the answer view consumes chunked fetch; citation markers `[n]` render as superscript links targeting `<SourceCard>` ids.
 
 ## Responsiveness
@@ -53,7 +53,7 @@ Param contract:
 | Param | Values | Screen/state |
 |---|---|---|
 | `q` | query text | `/search?q=` Search-mode results (works today) |
-| `p` | page number; **absent = page 1** (page-1 links strip `p`) | Search results page N (works today, end to end) |
+| `p` | page number; **absent = page 1** | **deprecated** (continuous scroll): deep links with `p` are ignored/stripped; generated links never carry it |
 | `mode` | `ai` (absent = Search) | AI answer view (works today); unavailable AI stays on Search results with an inline notice |
 | `settings` | `open` / `close` (absent = closed) | settings dialog, valid on any route (works today; stripped on close/save) |
 | `since` | `24`/`168`/`720`/`all` | history time filter (planned) |

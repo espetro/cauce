@@ -149,8 +149,9 @@ export function AiControls({
   models: string[];
   modelsError?: string | null;
 }) {
-  const [model, setModel] = useState(() => localStorage.getItem(STORE_KEY) ?? "");
-  const [reasoning, setReasoning] = useState(() => localStorage.getItem(REASONING_KEY) === "1");
+  const ls = () => (typeof localStorage === "undefined" ? null : localStorage);
+  const [model, setModel] = useState(() => ls()?.getItem(STORE_KEY) ?? "");
+  const [reasoning, setReasoning] = useState(() => ls()?.getItem(REASONING_KEY) === "1");
 
   useEffect(() => {
     localStorage.setItem(STORE_KEY, model);

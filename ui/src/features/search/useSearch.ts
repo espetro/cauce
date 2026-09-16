@@ -1,16 +1,36 @@
-import { useRef, useState } from "preact/hooks";
+import { useCallback, useRef, useState } from "preact/hooks";
 import type { SearchResponse, SearchResult } from "../../lib/api";
 import { deleteCacheRow, search } from "../../lib/api";
 
-export type SearchStatus = "idle" | "loading" | "success" | "empty" | "error" | "refreshing";
+export type SearchStatus = "idle" | "loading" | "refreshing" | "success" | "empty" | "error";
+export type ErrorKind = "rate_limited" | "timeout" | "backend_error";
 
-export interface SearchState {
-  payload: SearchResponse | null;
-  status: SearchStatus;
-  loading: boolean; // derived: status loading|refreshing
-  error: string | null;
+export interface SearchError {
+  message: string;
+  kind?: ErrorKind;
 }
 
+export interface SearchState {
+  /** first-page payload: requestId / cache meta / copy-json source */
+  payload: SearchResponse | null;
+  /** accumulated results across all loaded pages */
+  results: SearchResult[];
+  status: SearchStatus;
+  /** page-1 load or refresh in flight */
+  loading: boolean;
+  error: SearchError | null;
+  /** last successfully fetched page */
+  page: number;
+  /** more pages may exist (backend caps at MAX_PAGES) */
+  hasNext: boolean;
+  /** a next page fetch is in flight */
+  loadingMore: boolean;
+  /** the last next-page fetch failed; stops infinite loading until retry */
+  moreError: boolean;
+}
+
+/** Backend hard cap on ?page=N. */
+export const MAX_PAGES = 10;
 const PAGE_SIZE = 10;
 
 /** Cache-hit when the server served the payload from the SQLite TTL cache. */
@@ -30,56 +50,119 @@ export function cachedAgeOf(
   return age >= 0 ? age : null;
 }
 
-/** Fetch classic results for a query. SearchBox stays fetch-free;
- * the route calls `run` on query/page changes. `refresh` bypasses the
- * cache by deleting the row first (POST /row/{key}/delete) then
- * re-searching; used by the cached badge click. */
+const initial = (): SearchState => ({
+  payload: null,
+  results: [],
+  status: "idle",
+  loading: false,
+  error: null,
+  page: 0,
+  hasNext: false,
+  loadingMore: false,
+  moreError: false,
+});
+
+/** Continuous scroll: `run` loads page 1, `loadMore` appends the next page
+ * as the user nears the end. `refresh` bypasses the cache by deleting the
+ * row first (POST /row/{key}/delete) then re-searching. The `p` URL param
+ * is deprecated: deep links still resolve but page state is not restored. */
 export function useSearch(): {
   state: SearchState;
-  run: (q: string, p?: number) => void;
+  run: (q: string) => void;
+  loadMore: (q: string) => void;
   refresh: (q: string) => void;
 } {
-  const [state, setState] = useState<SearchState>({
-    payload: null,
-    status: "idle",
-    loading: false,
-    error: null,
-  });
+  const [state, setState] = useState<SearchState>(initial);
   const abortRef = useRef<AbortController | null>(null);
+  const reqIdRef = useRef(0);
+  const qRef = useRef("");
 
-  const execute = (q: string, p = 1, refreshing = false) => {
+  const fetchPage = (q: string, p: number, mode: "initial" | "more" | "refresh") => {
+    const reqId = ++reqIdRef.current;
+    qRef.current = q;
     abortRef.current?.abort();
     const ctl = new AbortController();
     abortRef.current = ctl;
-    setState((s: SearchState) => ({
-      ...s,
-      status: refreshing ? "refreshing" : "loading",
-      loading: true,
-      error: null,
-    }));
+    if (mode !== "more") {
+      setState((s) => ({
+        ...s,
+        status: mode === "refresh" ? "refreshing" : "loading",
+        loading: true,
+        error: null,
+      }));
+    } else {
+      setState((s) => ({ ...s, loadingMore: true, moreError: false }));
+    }
     search({ query: q, numResults: PAGE_SIZE, page: p }, ctl.signal)
-      .then((payload: SearchResponse) =>
-        setState({
-          payload,
-          status: nextStatus(payload.results),
-          loading: false,
-          error: null,
-        }),
-      )
+      .then((payload: SearchResponse) => {
+        if (reqId !== reqIdRef.current) return;
+        if (mode === "more") {
+          setState((s) => {
+            // duplicate-page / stale-race guard: same query only
+            if (qRef.current !== q) return s;
+            const seen = new Set(s.results.map((r) => r.id || r.url));
+            const fresh = payload.results.filter((r) => !seen.has(r.id || r.url));
+            return {
+              ...s,
+              results: [...s.results, ...fresh],
+              page: p,
+              hasNext: payload.results.length > 0 && p < MAX_PAGES,
+              loadingMore: false,
+              moreError: false,
+            };
+          });
+        } else {
+          setState({
+            payload,
+            results: payload.results,
+            status: nextStatus(payload),
+            loading: false,
+            error: nextError(payload),
+            page: 1,
+            hasNext: payload.results.length > 0 && 1 < MAX_PAGES,
+            loadingMore: false,
+            moreError: false,
+          });
+        }
+      })
       .catch((e: unknown) => {
+        if (reqId !== reqIdRef.current) return;
         if ((e as Error)?.name === "AbortError") return;
-        setState((s: SearchState) => ({
-          ...s,
-          status: "error",
-          loading: false,
-          error: (e as Error)?.message ?? "search failed",
-        }));
+        const message = (e as Error)?.message ?? "search failed";
+        if (mode === "more") {
+          // keep the loaded results; page-level `error` stays untouched (the
+          // full error block must not replace/overlay accumulated results);
+          // stop infinite loading until the inline retry
+          setState((s) => ({
+            ...s,
+            loadingMore: false,
+            moreError: true,
+          }));
+        } else {
+          setState((s) => ({
+            ...s,
+            status: "error",
+            loading: false,
+            error: { message },
+          }));
+        }
       });
   };
 
-  const run = (q: string, p?: number) => {
-    execute(q, p);
+  const run = (q: string) => {
+    setState(initial());
+    fetchPage(q, 1, "initial");
   };
+
+  const loadMore = useCallback(
+    (q: string) => {
+      if (qRef.current !== q) return;
+      if (!state.hasNext || state.loadingMore) return;
+      // a failed next-page fetch stops auto-loading; retry via loadMore
+      fetchPage(q, state.page + 1, "more");
+    },
+    [state.hasNext, state.loadingMore, state.moreError, state.page],
+  );
 
   const refresh = (q: string) => {
     // Delete the cache entry first so the re-search hits the network;
@@ -89,33 +172,30 @@ export function useSearch(): {
     if (key) {
       deleteCacheRow(key)
         .catch(() => undefined)
-        .finally(() => execute(q, 1, true));
+        .finally(() => fetchPage(q, 1, "refresh"));
     } else {
-      execute(q, 1, true);
+      fetchPage(q, 1, "refresh");
     }
   };
 
-  return { state, run, refresh };
+  return { state, run, loadMore, refresh };
 }
 
-/** Google-letters pager: the word "oxe" where each letter after the
- * first is a page link. Returns pages (1..total, capped 10) with their
- * letter: page 1 -> "o", page 2 -> "x", page 3 -> "e", then "o" again. */
-export function pagerLetters(total: number, cap = 10): string[] {
-  const word = "oxe";
-  const n = Math.max(0, Math.min(total, cap));
-  return Array.from({ length: n }, (_, i) => word[i % word.length]);
+export function metaLine(payload: SearchResponse | null, total: number): string {
+  if (!payload && total === 0) return "";
+  return `${total} result${total === 1 ? "" : "s"}`;
 }
 
-export function metaLine(payload: SearchResponse | null): string {
-  if (!payload) return "";
-  const n = payload.results.length;
-  return `${n} result${n === 1 ? "" : "s"}`;
+/** Terminal status derived from a successful search response: an empty
+ * page carrying `_error` is an error, not a clean empty. */
+export function nextStatus(payload: SearchResponse): "success" | "empty" | "error" {
+  if (payload.results.length === 0 && payload._error) return "error";
+  return payload.results.length === 0 ? "empty" : "success";
 }
 
-/** Terminal status derived from a successful search response. */
-export function nextStatus(results: Array<{ url: string }>): "success" | "empty" {
-  return results.length === 0 ? "empty" : "success";
+export function nextError(payload: SearchResponse): SearchError | null {
+  if (!payload._error) return null;
+  return { message: payload._error, kind: payload._error_kind };
 }
 
 export type { SearchResult };

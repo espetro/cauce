@@ -35,7 +35,7 @@ Canonical base URLs are `/search` (results), `/history`, `/dashboard`, `/`.
 | Param | Values | Checkpoint(s) | Status |
 |---|---|---|---|
 | `q` | query text | search results, AI answer, cached-hit, error states | **works today** |
-| `p` | page number, 1-based; **absent = page 1** (page-1 links strip it) | search classic results page N | **works today**: route reads it and the letters pager navigates end to end |
+| `p` | page number, 1-based | (none) | **deprecated**: continuous scroll replaced the pager. Deep links with `p` are accepted but ignored (stripped from the url); generated links never carry it. Pagination is no longer URL-addressable |
 | `mode` | `ai` (absent = Search) | AI streaming / AI done / AI unavailable | **works today**; canonical url rewrite keeps the param in sync with the in-pill toggle. Unavailable AI + `mode=ai` stays on Search results with an inline notice (no redirect) |
 | `settings` | `open` \| `close` (absent = closed) | settings dialog open on any route | **works today**: header reads `?settings=open`; close/save strips the param |
 | `since` | `24` \| `168` \| `720` \| `all` | history time-filtered | **planned**: filter is client state only (`routes/history.tsx`), URL params ignored on load |
@@ -82,11 +82,14 @@ Non-param checkpoints (no URL state needed or possible):
   Verified live: results list with meta line (`N results`) and the
   `cached · <age>` badge on cache hits.
 
-### 4. Search classic, page N
-- Reach: click a letter or the `→` arrow in the letters pager.
-- URL: **`/search?q=<query>&p=2`** — works end to end: the route reads
-  `p`, the fetch honors it, and the pager renders `o x e o x ...` with
-  the current page darker/bold. Page-1 links strip `p` from the url.
+### 4. Search classic, continuous scroll
+- Reach: submit a query, then scroll near the end of the loaded results.
+- URL: **`/search?q=<query>`** (no `p` param; the old `p=N` deep links are
+  ignored and stripped). Further pages (backend caps at 10) are appended
+  into a virtualized list with a subtle loading indicator at the end; a
+  failed next-page fetch stops auto-loading with an inline retry, and the
+  terminal state shows `end of results`. A `more results` button remains
+  as the keyboard/no-scroll fallback.
 
 ### 5. Search loading / submitting
 - Reach: transient between submit and render.

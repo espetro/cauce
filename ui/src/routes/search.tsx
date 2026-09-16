@@ -1,20 +1,13 @@
-import { useCallback, useEffect, useState } from "preact/hooks";
+import { useCallback, useEffect, useRef, useState } from "preact/hooks";
 import { useLocation } from "preact-iso";
+import { WindowVirtualizer, type WindowVirtualizerHandle } from "virtua";
 import { useAiAvailable, usePageTitle } from "../components/Header";
 import { useModels } from "../components/ModeSegments";
 import { recordClick } from "../lib/api";
 import { toast } from "../components/Toasts";
 import { ResultCard } from "../features/search/ResultCard";
-import {
-  cachedAgeOf,
-  isCacheHit,
-  metaLine,
-  pagerLetters,
-  useSearch,
-} from "../features/search/useSearch";
+import { useSearch, cachedAgeOf, isCacheHit, metaLine } from "../features/search";
 import { searchUrl } from "../features/search/pager";
-
-const MAX_PAGES = 10;
 import { fmtDur } from "../lib/format";
 import { AnswerView } from "../features/answer/AnswerView";
 import { useAnswer } from "../features/answer/useAnswer";
@@ -26,7 +19,7 @@ type Mode = "traditional" | "ai";
 export default function SearchRoute() {
   const { query, route } = useLocation();
   const q = String(query?.q ?? "");
-  const page = Math.max(1, Number(query?.p ?? 1) || 1);
+  // `p` is deprecated (continuous scroll): accepted in deep links, ignored.
   const urlMode = query?.mode === "ai" ? "ai" : "traditional";
   usePageTitle(q || "search");
 
@@ -34,8 +27,9 @@ export default function SearchRoute() {
   const { models, error: modelsError } = useModels();
   const [input, setInput] = useState(q);
   const [mode, setMode] = useState<Mode>(urlMode);
-  const { state, run, refresh } = useSearch();
+  const { state, run, loadMore, refresh } = useSearch();
   const answer = useAnswer();
+  const virtuaRef = useRef<WindowVirtualizerHandle>(null);
 
   useEffect(() => {
     localStorage.setItem(MODE_KEY, mode);
@@ -46,18 +40,52 @@ export default function SearchRoute() {
   const aiModeBlocked = mode === "ai" && aiAvailable === false;
   const effectiveMode: Mode = aiModeBlocked ? "traditional" : mode;
 
+  // strip deprecated `p` from the canonical url (deep links still render)
+  useEffect(() => {
+    if (typeof query?.p === "string") {
+      const sp = new URLSearchParams(window.location.search);
+      sp.delete("p");
+      const qs = sp.toString();
+      route(`${window.location.pathname}${qs ? `?${qs}` : ""}`, true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query?.p]);
+
   useEffect(() => {
     setInput(q);
-    if (q && effectiveMode === "traditional") run(q, page);
+    if (q && effectiveMode === "traditional") run(q);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [q, page]);
+  }, [q]);
+
+  const maybeLoadMore = useCallback(() => {
+    // continuous scroll: fetch the next page when the user is within ~2
+    // item-heights of the list end; refires for every page until MAX_PAGES
+    const v = virtuaRef.current;
+    const n = state.results.length;
+    if (!v || n === 0) return;
+    const last = n - 1;
+    const itemH = v.getItemSize(last) || 140;
+    const listEnd = v.getItemOffset(last) + itemH;
+    const remain = listEnd - (window.scrollY + v.viewportSize);
+    if (remain < 2 * itemH) loadMore(q);
+  }, [state.results.length, loadMore, q]);
+
+  // If page 1 fits the viewport, no scroll event ever fires: re-check after
+  // results arrive so short first pages keep loading. Virtualizer measures
+  // asynchronously, so defer one tick; loadMore guards re-entrancy itself.
+  useEffect(() => {
+    if (state.results.length > 0 && !state.loadingMore) {
+      const t = setTimeout(maybeLoadMore, 0);
+      return () => clearTimeout(t);
+    }
+  }, [state.results.length, state.loadingMore, maybeLoadMore]);
 
   // canonical url: ai mode is expressed via &mode=ai; preserve other params
   useEffect(() => {
     if (urlMode !== mode) {
       const extra: Record<string, string> = {};
       if (typeof query?.settings === "string") extra.settings = query.settings;
-      route(searchUrl({ q, page, mode, extra }), true);
+      route(searchUrl({ q, mode, extra }), true);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, urlMode]);
@@ -88,15 +116,7 @@ export default function SearchRoute() {
     route(`/search?q=${encodeURIComponent(q)}`);
   }, [route, q]);
 
-  const goPage = (p: number) => {
-    const extra: Record<string, string> = {};
-    if (typeof query?.settings === "string") extra.settings = query.settings;
-    if (query?.mode === "ai") extra.mode = "ai";
-    route(searchUrl({ q, page: p, extra }));
-  };
-
-  const { payload, loading, error } = state;
-  const results = payload?.results ?? [];
+  const { payload, loading, error, results } = state;
   const qHash = payload?._q_hash ?? "";
 
   return (
@@ -123,9 +143,11 @@ export default function SearchRoute() {
             AI mode is not configured - set a model in settings
           </p>
         )}
-        {effectiveMode === "traditional" && (results.length > 0 || payload) && (
+        {effectiveMode === "traditional" && results.length > 0 && payload && (
           <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px]">
-            <span class="opacity-60">{metaLine(payload) || (loading ? "searching…" : "")}</span>
+            <span class="opacity-60">
+              {metaLine(payload, results.length) || (loading ? "searching…" : "")}
+            </span>
             {isCacheHit(payload) && (
               <span class="tooltip" data-tip="Actually search the web (refreshes this cache entry)">
                 <button
@@ -161,7 +183,7 @@ export default function SearchRoute() {
                     navigator.clipboard?.writeText(
                       JSON.stringify({
                         requestId: payload.requestId,
-                        results: payload.results,
+                        results,
                         costDollars: payload.costDollars,
                       }),
                     )
@@ -204,14 +226,17 @@ export default function SearchRoute() {
 
           {!loading && error && (
             <div class="py-6 flex flex-col gap-3 animate-in fade-in zoom-in-95 duration-300">
-              <div
-                role="alert"
-                class="alert alert-error text-sm animate-in fade-in zoom-in-95 duration-300"
-              >
-                <span>error: {error}</span>
-              </div>
+              {error.kind === "rate_limited" ? (
+                <div role="alert" class="alert alert-warning text-sm">
+                  <span>search backend rate-limited, retry shortly</span>
+                </div>
+              ) : (
+                <div role="alert" class="alert alert-error text-sm">
+                  <span>search backend failed</span>
+                </div>
+              )}
               <div class="flex gap-2">
-                <button type="button" class="btn btn-sm" onClick={() => run(q, page)}>
+                <button type="button" class="btn btn-sm" onClick={() => run(q)}>
                   retry
                 </button>
                 {aiAvailable === true && (
@@ -235,105 +260,61 @@ export default function SearchRoute() {
           )}
 
           {!loading && results.length > 0 && (
-            <div class="divide-y divide-base-300">
-              {results.map((r, i) => (
-                <div
-                  key={r.id || r.url}
-                  class="animate-in fade-in slide-in-from-bottom-2 duration-300"
-                  style={{ "--i": i, animationDelay: `calc(var(--i) * 40ms)` }}
-                >
-                  <ResultCard
-                    result={r}
-                    queryHash={qHash}
-                    onOpen={(res) =>
-                      recordClick({
-                        query_hash: qHash,
-                        result_id: res.id || res.url,
-                        url: res.url,
-                        title: res.title,
-                      })
-                    }
-                  />
-                </div>
-              ))}
-            </div>
-          )}
+            <>
+              <WindowVirtualizer ref={virtuaRef} data={results} onScroll={maybeLoadMore}>
+                {(r, i) => (
+                  <div
+                    key={r.id || r.url}
+                    class="animate-in fade-in slide-in-from-bottom-2 duration-300"
+                    style={{ "--i": i, animationDelay: `calc(var(--i) * 40ms)` }}
+                  >
+                    <ResultCard
+                      result={r}
+                      queryHash={qHash}
+                      onOpen={(res) =>
+                        recordClick({
+                          query_hash: qHash,
+                          result_id: res.id || res.url,
+                          url: res.url,
+                          title: res.title,
+                        })
+                      }
+                    />
+                  </div>
+                )}
+              </WindowVirtualizer>
 
-          {!loading && results.length > 0 && <Pager q={q} page={page} goPage={goPage} />}
+              {state.loadingMore && (
+                <div class="py-6 flex justify-center" aria-busy="true" role="status">
+                  <span class="loading loading-dots loading-sm opacity-50" aria-label="loading" />
+                </div>
+              )}
+              {!state.hasNext && !state.loadingMore && !state.moreError && (
+                <p class="py-6 text-center text-sm opacity-40">end of results</p>
+              )}
+              {state.moreError && (
+                <div class="py-6 flex flex-col items-center gap-2 text-sm">
+                  <p class="opacity-60">couldn’t load more results</p>
+                  <button type="button" class="btn btn-ghost btn-sm" onClick={() => loadMore(q)}>
+                    retry
+                  </button>
+                </div>
+              )}
+              {state.hasNext && !state.loadingMore && !state.moreError && (
+                <div class="py-6 flex justify-center">
+                  <button
+                    type="button"
+                    class="btn btn-ghost btn-sm opacity-60"
+                    onClick={() => loadMore(q)}
+                  >
+                    more results
+                  </button>
+                </div>
+              )}
+            </>
+          )}
         </>
       )}
     </div>
-  );
-}
-
-/** Google-letters-style pager: the word "oxe" where each letter after
- * the first is a page link; current page is darker/bold. Subtle, token
- * styled. Prev/next arrows at the edges. */
-export function Pager({
-  q,
-  page,
-  goPage,
-}: {
-  q: string;
-  page: number;
-  goPage: (p: number) => void;
-}) {
-  const total = Math.min(page + 1, MAX_PAGES); // next presence is signal enough
-  const letters = pagerLetters(total);
-  return (
-    <nav class="flex items-center justify-center gap-3 py-6 text-sm" aria-label="pagination">
-      {page > 1 && (
-        <a
-          href={searchUrl({ q, page: page - 1 })}
-          onClick={(e) => {
-            e.preventDefault();
-            goPage(page - 1);
-          }}
-          rel="prev"
-          aria-label="previous page"
-          class="opacity-50 hover:opacity-100"
-        >
-          &larr;
-        </a>
-      )}
-      <span class="flex items-baseline gap-1.5 font-mono">
-        {letters.map((letter, i) => {
-          const p = i + 1;
-          const active = p === page;
-          return active ? (
-            <span key={p} class="font-semibold opacity-90" aria-current="page">
-              {letter}
-            </span>
-          ) : (
-            <a
-              key={p}
-              href={searchUrl({ q, page: p })}
-              onClick={(e) => {
-                e.preventDefault();
-                goPage(p);
-              }}
-              class="opacity-40 hover:opacity-90"
-              aria-label={`page ${p}`}
-            >
-              {letter}
-            </a>
-          );
-        })}
-      </span>
-      {page < MAX_PAGES && (
-        <a
-          href={searchUrl({ q, page: page + 1 })}
-          onClick={(e) => {
-            e.preventDefault();
-            goPage(page + 1);
-          }}
-          rel="next"
-          aria-label="next page"
-          class="opacity-50 hover:opacity-100"
-        >
-          &rarr;
-        </a>
-      )}
-    </nav>
   );
 }

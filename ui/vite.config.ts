@@ -1,4 +1,4 @@
-import { defineConfig } from "vite";
+import { defineConfig, type UserConfig } from "vite";
 import preact from "@preact/preset-vite";
 import tailwindcss from "@tailwindcss/vite";
 
@@ -7,7 +7,7 @@ import tailwindcss from "@tailwindcss/vite";
 const isDocument = (req: { headers: Record<string, string | string[] | undefined> }) =>
   (req.headers["sec-fetch-dest"] ?? "") === "document";
 
-export default defineConfig({
+const spaConfig: UserConfig = {
   plugins: [preact(), tailwindcss()],
   server: {
     proxy: {
@@ -37,4 +37,38 @@ export default defineConfig({
       "/mcp": "http://127.0.0.1:4480",
     },
   },
-});
+};
+
+// bundle virtua into the SSR prerender bundle (it imports 'react', which only
+// resolves via the compat alias inside the bundle, not from node)
+const environmentsSsrNoExternal: object = {
+  environments: { ssr: { build: { noExternal: [/virtua/] } } },
+};
+
+// SSG step (post-build): an SSR-only bundle of the prerender entry, consumed
+// by scripts/prerender.mjs. Emitted into dist-ssr (outside dist) so it stays
+// out of the served bundle and the size budget.
+const prerenderConfig: UserConfig = {
+  plugins: [preact()],
+  resolve: {
+    // same alias the client build gets from @preact/preset-vite, needed for
+    // react-facing deps (e.g. virtua) resolved at SSR runtime
+    alias: { react: "preact/compat", "react/": "preact/compat/" },
+  },
+  build: {
+    ssr: "src/entry-prerender.tsx",
+    outDir: "dist-ssr",
+    emptyOutDir: true,
+    ...(environmentsSsrNoExternal as object),
+    rollupOptions: {
+      // bundle react-facing deps (virtua) so the compat alias applies, and
+      // externalize the preact ecosystem so prerender()'s
+      // preact-render-to-string shares the same preact instance as the app
+      // (options hook wiring for suspense/async rendering).
+      external: [/^preact/, /^@preact/],
+      output: { entryFileNames: "entry-prerender.js", inlineDynamicImports: true },
+    },
+  },
+};
+
+export default defineConfig(({ mode }) => (mode === "prerender" ? prerenderConfig : spaConfig));
