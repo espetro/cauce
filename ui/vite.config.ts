@@ -1,6 +1,12 @@
 import { defineConfig, type UserConfig } from "vite";
 import preact from "@preact/preset-vite";
 import tailwindcss from "@tailwindcss/vite";
+import Icons from "unplugin-icons/vite";
+import pkg from "./package.json" with { type: "json" };
+
+// Replace at build time: app version shown in the header.
+const defines = { __APP_VERSION__: JSON.stringify(pkg.version) };
+const iconResolver = Icons({ compiler: "jsx", jsx: "preact" });
 
 // Document navigations must fall through to the SPA (index.html);
 // only fetch/XHR traffic is proxied to the oxe backend.
@@ -8,7 +14,8 @@ const isDocument = (req: { headers: Record<string, string | string[] | undefined
   (req.headers["sec-fetch-dest"] ?? "") === "document";
 
 const spaConfig: UserConfig = {
-  plugins: [preact(), tailwindcss()],
+  define: defines,
+  plugins: [preact(), tailwindcss(), iconResolver],
   server: {
     proxy: {
       "/search": {
@@ -49,7 +56,8 @@ const environmentsSsrNoExternal: object = {
 // by scripts/prerender.mjs. Emitted into dist-ssr (outside dist) so it stays
 // out of the served bundle and the size budget.
 const prerenderConfig: UserConfig = {
-  plugins: [preact()],
+  define: defines,
+  plugins: [preact(), iconResolver],
   resolve: {
     // same alias the client build gets from @preact/preset-vite, needed for
     // react-facing deps (e.g. virtua) resolved at SSR runtime

@@ -91,3 +91,4 @@ contract; keep the two lists in sync.
 - `mise run lint` (oxlint + oxfmt) and `mise run check` (size budgets) must pass.
 - UI polish standard: high-end visual design per `.agents/docs/screens/` specs; when in doubt, fewer boxes, more whitespace, card-less anatomy.
 - Deliberately constrained flexibility: don't invent alternate layouts, extra dependencies, or CSS outside tokens. Go straight to the point.
+- Icons: unplugin-icons with Lucide set (`~icons/lucide/*`), no inline SVGs, no other icon sets.

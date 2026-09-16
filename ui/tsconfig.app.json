@@ -6,7 +6,7 @@
     "target": "esnext",
     "module": "esnext",
     "lib": ["ESNext", "DOM"],
-    "types": ["vite/client", "bun"],
+    "types": ["vite/client", "bun", "unplugin-icons/types/preact"],
     "allowArbitraryExtensions": true,
     "skipLibCheck": true,
     "paths": {
