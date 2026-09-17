@@ -23,6 +23,26 @@ msgstr "{0} results"
 msgid "{clicks24h} clicks in last 24h · {total} total · {oldest} (oldest)"
 msgstr "{clicks24h} clicks in last 24h · {total} total · {oldest} (oldest)"
 
+#: src/components/SettingsDialog.tsx:57
+msgid "AI"
+msgstr "AI"
+
+#: src/components/SettingsDialog.tsx:122
+msgid "AI mode enabled"
+msgstr "AI mode enabled"
+
+#: src/components/SettingsDialog.tsx:88
+msgid "API key"
+msgstr "API key"
+
+#: src/components/SettingsDialog.tsx:99
+msgid "API key env var"
+msgstr "API key env var"
+
+#: src/components/SettingsDialog.tsx:110
+msgid "Base URL"
+msgstr "Base URL"
+
 #: src/routes/dashboard.tsx:76
 msgid "cache"
 msgstr "cache"
@@ -80,7 +100,7 @@ msgstr "copy link"
 msgid "copying"
 msgstr "copying"
 
-#: src/routes/__root.tsx:81
+#: src/routes/__root.tsx:89
 msgid "dashboard"
 msgstr "dashboard"
 
@@ -105,13 +125,25 @@ msgstr "filter by query text..."
 msgid "Filter by time"
 msgstr "Filter by time"
 
-#: src/routes/__root.tsx:77
+#: src/components/SettingsDialog.tsx:84
+msgid "gpt-4o-mini"
+msgstr "gpt-4o-mini"
+
+#: src/routes/__root.tsx:85
 msgid "history"
 msgstr "history"
+
+#: src/components/SettingsDialog.tsx:117
+msgid "https://api.openai.com/v1"
+msgstr "https://api.openai.com/v1"
 
 #: src/routes/search.tsx:170
 msgid "loading more…"
 msgstr "loading more…"
+
+#: src/components/SettingsDialog.tsx:77
+msgid "Model"
+msgstr "Model"
 
 #: src/routes/search.tsx:181
 msgid "more results"
@@ -145,9 +177,17 @@ msgstr "no rows match the current filters."
 msgid "no search log data yet"
 msgstr "no search log data yet"
 
+#: src/components/SettingsDialog.tsx:106
+msgid "OPENAI_API_KEY"
+msgstr "OPENAI_API_KEY"
+
 #: src/routes/dashboard.tsx:37
 msgid "oxe stats"
 msgstr "oxe stats"
+
+#: src/components/SettingsDialog.tsx:61
+msgid "Provider"
+msgstr "Provider"
 
 #: src/routes/history.tsx:172
 msgid "query"
@@ -158,7 +198,15 @@ msgstr "query"
 msgid "retry"
 msgstr "retry"
 
-#: src/routes/__root.tsx:73
+#: src/components/SettingsDialog.tsx:142
+msgid "Save"
+msgstr "Save"
+
+#: src/components/SettingsDialog.tsx:46
+msgid "Saving settings failed"
+msgstr "Saving settings failed"
+
+#: src/routes/__root.tsx:81
 msgid "search"
 msgstr "search"
 
@@ -177,6 +225,10 @@ msgstr "searches per day"
 #: src/routes/search.tsx:59
 msgid "Searching"
 msgstr "Searching"
+
+#: src/components/SettingsDialog.tsx:53
+msgid "Settings"
+msgstr "Settings"
 
 #: src/routes/history.tsx:181
 msgid "src"

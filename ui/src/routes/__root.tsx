@@ -10,8 +10,13 @@ import IconSearch from '~icons/lucide/search'
 import IconSettings from '~icons/lucide/settings'
 import IconSun from '~icons/lucide/sun'
 import { setTheme, THEME_VALUES, useTheme, type Theme } from '../lib/theme.ts'
+import * as v from 'valibot'
+import { settingsSchema } from '../lib/routeSearch.ts'
+import { SettingsDialog } from '../components/SettingsDialog.tsx'
+import { stripSettings } from '../lib/settingsUrl.ts'
 
 export const Route = createRootRoute({
+  validateSearch: v.object({ settings: settingsSchema }),
   component: RootComponent,
 })
 
@@ -60,6 +65,9 @@ function ThemeToggle() {
  * not this foundation task's.
  */
 function RootComponent() {
+  const search = Route.useSearch()
+  const navigate = Route.useNavigate()
+  const settingsOpen = search.settings === 'open'
   return (
     <>
       <header className="navbar border-b border-base-300 px-4">
@@ -88,12 +96,15 @@ function RootComponent() {
             <IconHelpCircle aria-hidden="true" />
           </button>
           {/* Settings is a dialog overlay reachable via the `?settings=open` search param on
-           * any route (userflow-checkpoints.md checkpoint 18), not its own route file. Wiring
-           * this button to actually open the dialog is screen-task work (search.md's settings
-           * section); this is the structural slot for it. */}
-          <button type="button" className="btn btn-ghost btn-sm btn-circle" aria-label="Settings">
+           * any route (userflow-checkpoints.md checkpoint 18), not its own route file. */}
+          <Link
+            to="."
+            search={{ settings: 'open' }}
+            className="btn btn-ghost btn-sm btn-circle"
+            aria-label="Settings"
+          >
             <IconSettings aria-hidden="true" />
-          </button>
+          </Link>
           <a
             href="https://github.com/"
             target="_blank"
@@ -106,6 +117,7 @@ function RootComponent() {
         </div>
       </header>
       <Outlet />
+      <SettingsDialog open={settingsOpen} onClose={() => { void navigate({ search: stripSettings }) }} />
     </>
   )
 }
