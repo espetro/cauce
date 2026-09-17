@@ -100,6 +100,7 @@ AnswerFrame = Annotated[
 ]
 
 _FRAME_COMPONENT_NAME = "AnswerFrame"
+_SSE_ENVELOPE_NAME = "AnswerFrameEvent"
 
 
 def register_answer_frame_schemas(app: FastAPI) -> None:
@@ -124,5 +125,25 @@ def register_answer_frame_schemas(app: FastAPI) -> None:
     defs = cast(JSONDict, frame_schema.pop("$defs", {}))
     schemas.update(defs)
     schemas[_FRAME_COMPONENT_NAME] = frame_schema
+
+    # SSE envelope schema: each ``data:`` event is described by wrapping the
+    # frame union in ``contentMediaType``/``contentSchema`` (JSON Schema's
+    # standard way to type a string that carries an embedded JSON payload).
+    # schemathesis's SSE conformance check validates event data through this
+    # envelope, and openapi-typescript generates the payload type from
+    # ``contentSchema``. Refs stay document-relative
+    # (``#/components/schemas/...``), which is correct once this component
+    # lands inside the OpenAPI document.
+    schemas[_SSE_ENVELOPE_NAME] = {
+        "type": "object",
+        "properties": {
+            "event": {"type": "string", "const": "message"},
+            "data": {
+                "contentMediaType": "application/json",
+                "contentSchema": {"$ref": "#/components/schemas/" + _FRAME_COMPONENT_NAME},
+            },
+        },
+        "required": ["data"],
+    }
 
     app.openapi_schema = schema
