@@ -6,3 +6,23 @@ uv = "latest"
 [tasks.dev]
 description = "Run backend server (placeholder until UI skeleton lands)"
 run = "uv run oxe"
+
+[tasks."dev:ui"]
+description = "Run the UI dev server (Vite)"
+dir = "ui"
+run = "bun run dev"
+
+[tasks."lint:ui"]
+description = "Lint the UI with oxlint (native React Compiler correctness rules)"
+dir = "ui"
+run = "bun run lint"
+
+[tasks.tsc]
+description = "Typecheck the UI (tsc -b, strict + noUncheckedIndexedAccess)"
+dir = "ui"
+run = "bunx tsc -b"
+
+[tasks."build:ui"]
+description = "Build the UI: extract/compile Lingui catalogs, then vite build, then typecheck"
+dir = "ui"
+run = "bun run build"
