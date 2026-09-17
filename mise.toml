@@ -51,12 +51,17 @@ description = "Build the UI: extract/compile Lingui catalogs, then vite build, t
 dir = "ui"
 run = "bun run build"
 
+[tasks."check:ts-types"]
+description = "Fail if src/lib/types.gen.ts is stale (generator-drift gate, day-0 gate 5)"
+dir = "ui"
+run = "bun run gen:types && git diff --exit-code src/lib/types.gen.ts"
+
 # TS types / Lingui catalog drift checks land alongside the UI half of wave 2
 # step 16; validate:full's remaining pieces (size budgets + e2e) land once
 # tests/e2e/ is a real runnable suite (wave 3).
 [tasks.validate]
 description = "Fast merge gate: Python gates + openapi drift + UI lint/build (build:ui runs extract/compile/vite-build/tsc -b as one ordered script)"
-depends = ["lint:py", "fmt:py", "typecheck:py", "test:py", "check:openapi", "lint:ui", "build:ui"]
+depends = ["lint:py", "fmt:py", "typecheck:py", "test:py", "check:openapi", "check:ts-types", "lint:ui", "build:ui"]
 
 # schemathesis's contract test (tests/test_schemathesis_contract.py) runs as
 # part of `test:py` (it is just another pytest file, in-process ASGI, no real
