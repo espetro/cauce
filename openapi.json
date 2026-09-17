@@ -30,6 +30,62 @@
           }
         ]
       },
+      "AnswerFrameEvent": {
+        "properties": {
+          "data": {
+            "contentMediaType": "application/json",
+            "contentSchema": {
+              "$ref": "#/components/schemas/AnswerFrame"
+            }
+          },
+          "event": {
+            "const": "message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
+      "AnswerRequest": {
+        "additionalProperties": false,
+        "description": "Body of ``POST /answer``.",
+        "properties": {
+          "force": {
+            "anyOf": [
+              {
+                "enum": [
+                  "ai-off",
+                  "error",
+                  "empty"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Force"
+          },
+          "mode": {
+            "const": "answer",
+            "default": "answer",
+            "title": "Mode",
+            "type": "string"
+          },
+          "query": {
+            "minLength": 1,
+            "title": "Query",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "title": "AnswerRequest",
+        "type": "object"
+      },
       "AnswerSource": {
         "additionalProperties": false,
         "properties": {
@@ -901,6 +957,47 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/answer": {
+      "post": {
+        "operationId": "answer_answer_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AnswerRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              },
+              "text/event-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnswerFrameEvent"
+                }
+              }
+            },
+            "description": "SSE stream of AnswerFrame events."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "AI answer (SSE stream of typed frames)."
+      }
+    },
     "/api/history": {
       "get": {
         "description": "Click rows newest-first plus the header stats line.\n\n``Query``'s ``ge``/``le`` bounds are a range, not a set, so in-range gap\nvalues (e.g. 48) reach the handler; ``_narrow_since`` turns them into a\n``ValueError``, which FastAPI reports as 500 today. Only the three\nliteral values (24/168/720) are schema-valid for clients, per the\ngenerated OpenAPI ``enum`` -- gap values are caller bugs, not user input.",

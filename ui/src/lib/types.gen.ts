@@ -4,6 +4,23 @@
  */
 
 export interface paths {
+    "/answer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** AI answer (SSE stream of typed frames). */
+        post: operations["answer_answer_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/history": {
         parameters: {
             query?: never;
@@ -91,6 +108,27 @@ export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
         AnswerFrame: components["schemas"]["StepFrame"] | components["schemas"]["DeltaFrame"] | components["schemas"]["SourcesFrame"] | components["schemas"]["DoneFrame"] | components["schemas"]["ErrorFrame"];
+        AnswerFrameEvent: {
+            data: unknown;
+            /** @constant */
+            event?: "message";
+        };
+        /**
+         * AnswerRequest
+         * @description Body of ``POST /answer``.
+         */
+        AnswerRequest: {
+            /** Force */
+            force?: ("ai-off" | "error" | "empty") | null;
+            /**
+             * Mode
+             * @default answer
+             * @constant
+             */
+            mode: "answer";
+            /** Query */
+            query: string;
+        };
         /** AnswerSource */
         AnswerSource: {
             /**
@@ -469,6 +507,40 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    answer_answer_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AnswerRequest"];
+            };
+        };
+        responses: {
+            /** @description SSE stream of AnswerFrame events. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                    "text/event-stream": components["schemas"]["AnswerFrameEvent"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     api_history_api_history_get: {
         parameters: {
             query?: {
