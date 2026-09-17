@@ -69,9 +69,14 @@ depends = ["lint:py", "fmt:py", "typecheck:py", "test:py", "check:openapi", "che
 # slow or too infrastructure-heavy for the fast gate. e2e (Playwright) is not
 # wired here: tests/e2e/ is Wave 1 skip-marked placeholder .md files today,
 # not a runnable suite; it lands in Wave 3 per the plan.
+[tasks."test:e2e"]
+description = "Run the Playwright e2e suite (markdown checkpoints, dual-server: uv run oxe + Vite proxy)"
+dir = "ui"
+run = "bunx playwright test"
+
 [tasks."validate:full"]
 description = "Full merge gate: validate, plus anything slow/heavy (e2e lands in Wave 3, not wired here yet)"
-depends = ["validate"]
+depends = ["validate", "test:e2e"]
 
 [tasks."hooks:install"]
 description = "Point git at the repo's .githooks directory"
