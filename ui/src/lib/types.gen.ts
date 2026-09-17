@@ -86,6 +86,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Current AI config.
+         * @description The persisted ``[ai]`` config; ``api_key`` is never echoed.
+         */
+        get: operations["get_settings_settings_get"];
+        /**
+         * Persist the AI config.
+         * @description Full-replace semantics: the body must carry every field (422 otherwise).
+         */
+        put: operations["put_settings_settings_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -375,6 +399,32 @@ export interface components {
             unresponsive_engines?: components["schemas"]["UnresponsiveEngine"][];
         };
         /**
+         * SettingsPayload
+         * @description Wire mirror of ``AIConfig``; never carries a raw secret outbound.
+         */
+        SettingsPayload: {
+            /** Api Key */
+            api_key?: string | null;
+            /** Api Key Env */
+            api_key_env?: string | null;
+            /**
+             * Api Key Set
+             * @default false
+             */
+            api_key_set: boolean;
+            /** Base Url */
+            base_url?: string | null;
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
+            /** Model */
+            model: string;
+            /** Provider */
+            provider: string;
+        };
+        /**
          * SourcesFrame
          * @description The set of sources the answer drew on, once known.
          */
@@ -618,6 +668,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SearxResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_settings_settings_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SettingsPayload"];
+                };
+            };
+        };
+    };
+    put_settings_settings_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SettingsPayload"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SettingsPayload"];
                 };
             };
             /** @description Validation Error */
