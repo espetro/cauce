@@ -19,18 +19,55 @@ msgstr ""
 msgid "{0} results"
 msgstr "{0} results"
 
+#: src/routes/history.tsx:113
+msgid "{clicks24h} clicks in last 24h · {total} total · {oldest} (oldest)"
+msgstr "{clicks24h} clicks in last 24h · {total} total · {oldest} (oldest)"
+
+#: src/routes/dashboard.tsx:74
+msgid "cache"
+msgstr "cache"
+
+#: src/routes/dashboard.tsx:47
+msgid "cache hit rate"
+msgstr "cache hit rate"
+
 #: src/routes/search.tsx:105
 msgid "cached"
 msgstr "cached"
 
-#: src/routes/history.tsx:33
+#: src/routes/history.tsx:223
+msgid "cached search"
+msgstr "cached search"
+
+#: src/routes/history.tsx:157
+msgid "clear"
+msgstr "clear"
+
+#: src/routes/history.tsx:109
 msgid "Click history"
 msgstr "Click history"
+
+#: src/routes/history.tsx:176
+msgid "clicked"
+msgstr "clicked"
+
+#: src/routes/dashboard.tsx:60
+msgid "client split"
+msgstr "client split"
 
 #: src/components/Dialog.tsx:45
 msgid "Close"
 msgstr "Close"
 
+#: src/routes/history.tsx:266
+msgid "copied"
+msgstr "copied"
+
+#: src/routes/history.tsx:268
+msgid "copy failed"
+msgstr "copy failed"
+
+#: src/routes/history.tsx:270
 #: src/routes/search.tsx:118
 msgid "copy json"
 msgstr "copy json"
@@ -38,6 +75,10 @@ msgstr "copy json"
 #: src/routes/search.tsx:109
 msgid "copy link"
 msgstr "copy link"
+
+#: src/routes/history.tsx:264
+msgid "copying"
+msgstr "copying"
 
 #: src/routes/__root.tsx:81
 msgid "dashboard"
@@ -52,6 +93,18 @@ msgstr "end of results"
 msgid "error: search failed:"
 msgstr "error: search failed:"
 
+#: src/routes/history.tsx:135
+msgid "Filter by query text"
+msgstr "Filter by query text"
+
+#: src/routes/history.tsx:137
+msgid "filter by query text..."
+msgstr "filter by query text..."
+
+#: src/routes/history.tsx:120
+msgid "Filter by time"
+msgstr "Filter by time"
+
 #: src/routes/__root.tsx:77
 msgid "history"
 msgstr "history"
@@ -64,6 +117,14 @@ msgstr "loading more…"
 msgid "more results"
 msgstr "more results"
 
+#: src/routes/dashboard.tsx:50
+msgid "network latency"
+msgstr "network latency"
+
+#: src/routes/history.tsx:164
+msgid "no clicks yet — open a result from the search page."
+msgstr "no clicks yet — open a result from the search page."
+
 #: src/components/SearchBox.tsx:65
 msgid "No matches"
 msgstr "No matches"
@@ -72,9 +133,21 @@ msgstr "No matches"
 msgid "no results"
 msgstr "no results"
 
-#: src/routes/dashboard.tsx:25
+#: src/routes/history.tsx:168
+msgid "no rows match the current filters."
+msgstr "no rows match the current filters."
+
+#: src/routes/dashboard.tsx:87
+msgid "no search log data yet"
+msgstr "no search log data yet"
+
+#: src/routes/dashboard.tsx:37
 msgid "oxe stats"
 msgstr "oxe stats"
+
+#: src/routes/history.tsx:179
+msgid "query"
+msgstr "query"
 
 #: src/routes/search.tsx:74
 #: src/routes/search.tsx:151
@@ -93,10 +166,30 @@ msgstr "Search"
 #~ msgid "Search results"
 #~ msgstr "Search results"
 
+#: src/routes/dashboard.tsx:44
+msgid "searches per day"
+msgstr "searches per day"
+
 #: src/routes/search.tsx:59
 msgid "Searching"
 msgstr "Searching"
 
+#: src/routes/history.tsx:188
+msgid "src"
+msgstr "src"
+
+#: src/routes/history.tsx:182
+msgid "title"
+msgstr "title"
+
+#: src/routes/history.tsx:185
+msgid "url"
+msgstr "url"
+
 #: src/routes/index.tsx:26
 msgid "Welcome to oxe"
 msgstr "Welcome to oxe"
+
+#: src/routes/dashboard.tsx:40
+msgid "window: last 30 days"
+msgstr "window: last 30 days"
