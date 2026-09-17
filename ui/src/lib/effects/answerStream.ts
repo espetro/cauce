@@ -10,7 +10,6 @@
 import { useEffect } from 'react'
 import { client } from '../api.ts'
 import type { AiEvent } from '../aiReducer.ts'
-import type { components } from '../types.gen.ts'
 import { parseSseChunk } from './parseSse.ts'
 
 export interface AnswerStreamProps {
@@ -60,5 +59,6 @@ export function useAnswerStream({ query, force, dispatch }: AnswerStreamProps): 
         message: error instanceof Error ? error.message : String(error),
       })
     })
+  })
 }
 

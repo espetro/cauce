@@ -15,7 +15,7 @@ msgstr ""
 
 #. results count
 #. placeholder {0}: state.results.length
-#: src/routes/search.tsx:102
+#: src/routes/search.tsx:111
 msgid "{0} results"
 msgstr "{0} results"
 
@@ -30,6 +30,16 @@ msgstr "AI"
 #: src/components/SettingsDialog.tsx:140
 msgid "AI mode enabled"
 msgstr "AI mode enabled"
+
+#. shown when the AI backend is off
+#: src/routes/search.tsx:331
+msgid "AI mode is not configured - set a model in settings"
+msgstr "AI mode is not configured - set a model in settings"
+
+#. answer section heading
+#: src/routes/search.tsx:268
+msgid "answer"
+msgstr "answer"
 
 #: src/components/SettingsDialog.tsx:103
 msgid "API key"
@@ -51,7 +61,7 @@ msgstr "cache"
 msgid "cache hit rate"
 msgstr "cache hit rate"
 
-#: src/routes/search.tsx:105
+#: src/routes/search.tsx:114
 msgid "cached"
 msgstr "cached"
 
@@ -79,6 +89,11 @@ msgstr "client split"
 msgid "Close"
 msgstr "Close"
 
+#. answer confidence percentage
+#: src/routes/search.tsx:276
+msgid "confidence:"
+msgstr "confidence:"
+
 #: src/routes/history.tsx:241
 msgid "copied"
 msgstr "copied"
@@ -88,11 +103,11 @@ msgid "copy failed"
 msgstr "copy failed"
 
 #: src/routes/history.tsx:245
-#: src/routes/search.tsx:118
+#: src/routes/search.tsx:127
 msgid "copy json"
 msgstr "copy json"
 
-#: src/routes/search.tsx:109
+#: src/routes/search.tsx:118
 msgid "copy link"
 msgstr "copy link"
 
@@ -104,12 +119,12 @@ msgstr "copying"
 msgid "dashboard"
 msgstr "dashboard"
 
-#: src/routes/search.tsx:189
+#: src/routes/search.tsx:198
 msgid "end of results"
 msgstr "end of results"
 
-#: src/routes/search.tsx:70
-#: src/routes/search.tsx:148
+#: src/routes/search.tsx:75
+#: src/routes/search.tsx:157
 msgid "error: search failed:"
 msgstr "error: search failed:"
 
@@ -125,6 +140,10 @@ msgstr "filter by query text..."
 msgid "Filter by time"
 msgstr "Filter by time"
 
+#: src/routes/search.tsx:272
+msgid "from cache"
+msgstr "from cache"
+
 #: src/components/SettingsDialog.tsx:99
 msgid "gpt-4o-mini"
 msgstr "gpt-4o-mini"
@@ -137,7 +156,7 @@ msgstr "history"
 msgid "https://api.openai.com/v1"
 msgstr "https://api.openai.com/v1"
 
-#: src/routes/search.tsx:170
+#: src/routes/search.tsx:179
 msgid "loading more…"
 msgstr "loading more…"
 
@@ -145,7 +164,7 @@ msgstr "loading more…"
 msgid "Model"
 msgstr "Model"
 
-#: src/routes/search.tsx:181
+#: src/routes/search.tsx:190
 msgid "more results"
 msgstr "more results"
 
@@ -165,7 +184,7 @@ msgstr "no clicks yet — open a result from the search page."
 msgid "No matches"
 msgstr "No matches"
 
-#: src/routes/search.tsx:138
+#: src/routes/search.tsx:147
 msgid "no results"
 msgstr "no results"
 
@@ -176,6 +195,15 @@ msgstr "no rows match the current filters."
 #: src/routes/dashboard.tsx:89
 msgid "no search log data yet"
 msgstr "no search log data yet"
+
+#: src/routes/search.tsx:344
+msgid "no sources found for this query - try fewer words, or"
+msgstr "no sources found for this query - try fewer words, or"
+
+#. open citation source
+#: src/components/CitationPopover.tsx:38
+msgid "open source"
+msgstr "open source"
 
 #: src/components/SettingsDialog.tsx:123
 msgid "OPENAI_API_KEY"
@@ -193,8 +221,14 @@ msgstr "Provider"
 msgid "query"
 msgstr "query"
 
-#: src/routes/search.tsx:74
-#: src/routes/search.tsx:151
+#. related questions section heading
+#: src/routes/search.tsx:414
+msgid "related"
+msgstr "related"
+
+#: src/routes/search.tsx:79
+#: src/routes/search.tsx:160
+#: src/routes/search.tsx:317
 msgid "retry"
 msgstr "retry"
 
@@ -222,7 +256,7 @@ msgstr "Search"
 msgid "searches per day"
 msgstr "searches per day"
 
-#: src/routes/search.tsx:59
+#: src/routes/search.tsx:64
 msgid "Searching"
 msgstr "Searching"
 
@@ -230,9 +264,22 @@ msgstr "Searching"
 msgid "Settings"
 msgstr "Settings"
 
+#. sources section heading
+#: src/routes/search.tsx:402
+msgid "sources"
+msgstr "sources"
+
 #: src/routes/history.tsx:181
 msgid "src"
 msgstr "src"
+
+#: src/routes/search.tsx:313
+msgid "stream interrupted:"
+msgstr "stream interrupted:"
+
+#: src/routes/search.tsx:302
+msgid "streaming…"
+msgstr "streaming…"
 
 #: src/routes/history.tsx:175
 msgid "title"
@@ -246,6 +293,11 @@ msgstr "unchanged"
 msgid "url"
 msgstr "url"
 
+#: src/routes/search.tsx:320
+#: src/routes/search.tsx:347
+msgid "view Search"
+msgstr "view Search"
+
 #: src/routes/index.tsx:26
 msgid "Welcome to oxe"
 msgstr "Welcome to oxe"
@@ -253,7 +305,3 @@ msgstr "Welcome to oxe"
 #: src/routes/dashboard.tsx:40
 msgid "window: last 30 days"
 msgstr "window: last 30 days"
-
-#: src/components/SettingsDialog.tsx:87
-msgid "unchanged"
-msgstr "unchanged"
