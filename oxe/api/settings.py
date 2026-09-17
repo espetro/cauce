@@ -16,7 +16,6 @@ ones is a 422, never a silent partial overwrite.
 """
 
 import asyncio
-
 from typing import Literal
 
 from fastapi import APIRouter
