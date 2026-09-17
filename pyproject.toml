@@ -71,6 +71,7 @@ dev = [
     "ruff>=0.16",
     "httpx2",
     "hypothesis>=6.168.0",
+    "schemathesis>=4.27",
 ]
 
 [tool.ruff]

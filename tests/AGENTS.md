@@ -6,8 +6,10 @@
   redirected tmp dirs `tests/conftest.py` sets up. Today's `tests/test_health.py` is this tier.
 - **Property.** `hypothesis`-driven tests pinning invariants (e.g. the Exa round-trip, cache-key
   stability under reordering) rather than example-by-example assertions. Not landed yet — wave 2.
-- **Contract.** `schemathesis` run against the generated `openapi.json`, checking the live app
-  against its own published spec in both directions. Not landed yet — wave 2.
+- **Contract.** `schemathesis` (`tests/test_schemathesis_contract.py`), run in-process against
+  the live app via ASGI transport (`schemathesis.openapi.from_asgi`), checking the app against
+  its own published spec in both directions. Runs as part of `test:py` since it's just another
+  pytest file.
 - **e2e.** Playwright plus a markdown-file adapter, driven by URL deep links, under `tests/e2e/`.
   One checkpoint file per screen-spec checkpoint. `tests/e2e/` does not exist yet — a parallel
   task is doing the screens surgery on `.agents/docs/screens/` that will populate it.

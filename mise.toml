@@ -20,7 +20,7 @@ description = "basedpyright strict"
 run = "uv run basedpyright"
 
 [tasks."test:py"]
-description = "pytest, ResourceWarning-as-error + pytest-randomly"
+description = "pytest, ResourceWarning-as-error + pytest-randomly (includes schemathesis contract tests)"
 run = "uv run pytest"
 
 [tasks."gen:openapi"]
