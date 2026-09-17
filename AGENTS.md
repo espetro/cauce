@@ -22,8 +22,8 @@ Toolchain is pinned via `mise.toml`: Python 3.12, `uv`, `bun` 1.2. Backend deps 
 ## Enforced
 
 - `mise run validate` is the fast merge gate (ruff lint, ruff format check, basedpyright
-  strict, pytest, oxlint, UI build+tsc) and runs in CI on every branch push, not just PRs.
-  [gate: validate]
+  strict, pytest, openapi.json drift check, oxlint, UI build+tsc) and runs in CI on every
+  branch push, not just PRs. [gate: validate]
 - Git hooks point at `.githooks/pre-push`, which runs the same `mise run validate` gate before
   a push is allowed. Installed via `mise run hooks:install`. [gate: hooks:install]
 - `uv.lock` is committed (not gitignored) so installs are reproducible across machines and CI.

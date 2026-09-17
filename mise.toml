@@ -8,12 +8,12 @@ description = "Run backend server (placeholder until UI dev server is wired into
 run = "uv run oxe"
 
 [tasks."lint:py"]
-description = "Ruff lint, empty ignore list (oxe/ + tests/)"
-run = "uv run ruff check oxe tests"
+description = "Ruff lint, empty ignore list (oxe/ + tests/ + scripts/)"
+run = "uv run ruff check oxe tests scripts"
 
 [tasks."fmt:py"]
-description = "Ruff format check (oxe/ + tests/)"
-run = "uv run ruff format --check oxe tests"
+description = "Ruff format check (oxe/ + tests/ + scripts/)"
+run = "uv run ruff format --check oxe tests scripts"
 
 [tasks."typecheck:py"]
 description = "basedpyright strict"
@@ -22,6 +22,14 @@ run = "uv run basedpyright"
 [tasks."test:py"]
 description = "pytest, ResourceWarning-as-error + pytest-randomly"
 run = "uv run pytest"
+
+[tasks."gen:openapi"]
+description = "Generate openapi.json from the live FastAPI app (oxe.app.create_app)"
+run = "uv run python scripts/generate_openapi.py"
+
+[tasks."check:openapi"]
+description = "Fail if openapi.json is stale (generator-drift gate, day-0 gate 5)"
+run = "uv run python scripts/generate_openapi.py && git diff --exit-code openapi.json"
 
 [tasks."dev:ui"]
 description = "Run the UI dev server (Vite)"
@@ -43,11 +51,12 @@ description = "Build the UI: extract/compile Lingui catalogs, then vite build, t
 dir = "ui"
 run = "bun run build"
 
-# generator drift checks (openapi/types/catalogs) land in wave 2; validate:full
-# (build + size budgets + schemathesis + e2e) lands once those exist.
+# TS types / Lingui catalog drift checks land alongside the UI half of wave 2
+# step 16; validate:full (size budgets + schemathesis + e2e) lands once those
+# exist.
 [tasks.validate]
-description = "Fast merge gate: Python gates + UI lint/build (build:ui runs extract/compile/vite-build/tsc -b as one ordered script)"
-depends = ["lint:py", "fmt:py", "typecheck:py", "test:py", "lint:ui", "build:ui"]
+description = "Fast merge gate: Python gates + openapi drift + UI lint/build (build:ui runs extract/compile/vite-build/tsc -b as one ordered script)"
+depends = ["lint:py", "fmt:py", "typecheck:py", "test:py", "check:openapi", "lint:ui", "build:ui"]
 
 [tasks."hooks:install"]
 description = "Point git at the repo's .githooks directory"

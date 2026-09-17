@@ -19,6 +19,11 @@
   flaky in CI later). [gate: test:py]
 - `tests/conftest.py` redirects `OXE_CACHE_DIR` and `OXE_CONFIG_DIR` to a tmp path before any
   `oxe` module import, so no test touches a real user cache/config dir. [gate: tests/conftest.py]
+- Every operation's 200 response and every mutating method's request body must resolve to a
+  component `$ref` (SSE routes exempt from the response half); `tests/test_openapi_coverage.py`
+  calls `create_app().openapi()` live and fails on the first uncovered operation. [gate: test:py]
+- `openapi.json` at the repo root must match `scripts/generate_openapi.py`'s live output; a
+  stale committed copy fails `mise run validate`. [gate: check:openapi]
 
 ## Conventions
 
