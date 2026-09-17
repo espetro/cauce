@@ -1,8 +1,29 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
+  "plugins": ["react"],
+  "categories": {
+    "correctness": "error"
+  },
   "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
+    "no-restricted-imports": [
+      "error",
+      {
+        "paths": [
+          {
+            "name": "react",
+            "importNames": ["useEffect"],
+            "message": "useEffect is only allowed in src/lib/effects/ (see src/lib/effects/README.md). Prefer the state ladder in ui/AGENTS.md: URL, then non-opaque state, then useReducer FSM, then @xstate/store."
+          }
+        ]
+      }
+    ]
+  },
+  "overrides": [
+    {
+      "files": ["src/lib/effects/**"],
+      "rules": {
+        "no-restricted-imports": "off"
+      }
+    }
+  ]
 }
