@@ -7,6 +7,22 @@ import { LINGUI_SWC_PLUGIN, REACT_COMPILER_ENABLED } from './scripts/swc-options
 
 // https://vite.dev/config/
 export default defineConfig({
+  /* Dev-server proxy: the UI fetches /api and /search same-origin, so Vite
+   * forwards both to the FastAPI backend on 4479 (also used by Playwright).
+   * bypass: SPA navigations to /search want HTML — let Vite serve the app
+   * shell instead of proxying to the backend's search endpoint. */
+  server: {
+    proxy: {
+      '/api': process.env.E2E_BACKEND ?? 'http://127.0.0.1:4479',
+      '/search': {
+        target: process.env.E2E_BACKEND ?? 'http://127.0.0.1:4479',
+        bypass: (req) => {
+          if (req.headers.accept?.includes('text/html')) return req.url
+          return undefined
+        },
+      },
+    },
+  },
   plugins: [
     tanstackRouter({
       target: 'react',
