@@ -7,7 +7,7 @@ import { copyJsonReducer, initialCopyJsonState } from '../lib/copyJson.ts'
 import { settingsSchema } from '../lib/routeSearch.ts'
 import type { components } from '../lib/types.gen.ts'
 
-const SINCE_VALUES = ['24', '168', '720'] as const
+const SINCE_VALUES = [24, 168, 720] as const
 type SinceValue = (typeof SINCE_VALUES)[number]
 
 type HistoryRow = components['schemas']['HistoryRow']
@@ -19,6 +19,10 @@ type HistoryResponse = components['schemas']['HistoryResponse']
  * url per userflow-checkpoints.md). `qf` is the client-side query-text substring filter
  * (named `qf` rather than `q` because the backend's `GET /api/history` `q` param has
  * different semantics).
+ *
+ * `since` is a numeric picklist, not a string one: TanStack Router's default search parser
+ * JSON-parses numeric-looking query values before `validateSearch` ever sees them, so
+ * `?since=24` arrives as the number `24`, not the string `"24"`.
  */
 const historySearchSchema = v.object({
   since: v.optional(v.picklist(SINCE_VALUES)),
@@ -33,7 +37,7 @@ export const Route = createFileRoute('/history')({
     const { data, error } = await client.GET('/api/history', {
       params: {
         query: {
-          since: deps.since ? Number(deps.since) : undefined,
+          since: deps.since,
           q: deps.qf || undefined,
         },
       },
@@ -137,13 +141,13 @@ function FilterControls() {
       <select
         className="select select-sm"
         aria-label={t`Time range`}
-        value={search.since ?? 'all'}
+        value={search.since === undefined ? 'all' : String(search.since)}
         onChange={(event) => {
           const value = event.target.value
           navigate({
             search: (prev) => ({
               ...prev,
-              since: value === 'all' ? undefined : (value as SinceValue),
+              since: value === 'all' ? undefined : (Number(value) as SinceValue),
             }),
             replace: true,
           })
