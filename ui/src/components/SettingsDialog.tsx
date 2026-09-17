@@ -4,33 +4,45 @@
  * or saved by stripping the param back off the url. Look is daisyUI (`modal`, form classes),
  * behavior (portal, focus trap, Escape) is Base UI via the shared `Dialog` primitive --
  * nothing hand-rolled here. Form state is uncontrolled inputs read via FormData (state
- * ladder rung 2); the only async state is the save attempt's outcome.
+ * ladder rung 2) and prefilled from `GET /settings` (loaded by `useSettingsLoad`, the one
+ * legal effect); the only other async state is the save attempt's outcome.
  */
 import { Trans, useLingui } from '@lingui/react/macro'
 import { useState } from 'react'
 import { Dialog } from '../components/Dialog.tsx'
-import { putSettings, type AIConfigPayload } from '../lib/settingsApi.ts'
+import { useSettingsLoad } from '../lib/effects/settingsLoad.ts'
+import { putSettings, type SettingsWritePayload } from '../lib/settingsApi.ts'
+
+const PROVIDERS = ['openai', 'anthropic', 'groq', 'mistral', 'ollama', 'huggingface'] as const
 
 export interface SettingsDialogProps {
   open: boolean
   onClose: () => void
 }
 
-/** Parse the dialog's FormData into the `AIConfig`-shaped PUT payload. */
-export function settingsFormPayload(form: FormData): AIConfigPayload {
+/** Parse the dialog's FormData into a `PUT /settings` body. */
+export function settingsFormPayload(form: FormData): SettingsWritePayload {
   const str = (name: string): string => String(form.get(name) ?? '').trim()
+  // The select only offers PROVIDERS, so an out-of-set value can only come from a tampered
+  // form; falling back to the default keeps the type honest without a blind cast.
+  const rawProvider = str('provider')
+  const provider = PROVIDERS.find((p) => p === rawProvider) ?? 'openai'
   return {
-    provider: str('provider'),
+    provider,
     model: str('model'),
     api_key: str('api_key') || null,
     api_key_env: str('api_key_env') || null,
     base_url: str('base_url') || null,
     enabled: form.get('enabled') !== null,
+    // Server-side the write model defaults this (never client-authoritative), but
+    // openapi-typescript marks the inherited field required, so send the default.
+    api_key_set: false,
   }
 }
 
 export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
   const { t } = useLingui()
+  const { current } = useSettingsLoad(open)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
 
@@ -49,9 +61,11 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
     }
   }
 
+  // `key` remounts the form when the loaded settings arrive, so uncontrolled
+  // defaultValue/defaultChecked pick up the wire truth exactly once per open.
   return (
     <Dialog open={open} onOpenChange={(next) => { if (!next) onClose() }} title={<Trans>Settings</Trans>}>
-      <form onSubmit={(event) => { void handleSave(event) }}>
+      <form key={current === null ? 'blank' : 'loaded'} onSubmit={(event) => { void handleSave(event) }}>
         <fieldset className="fieldset bg-base-200 border border-base-300 rounded-box p-4">
           <legend className="fieldset-legend">
             <Trans>AI</Trans>
@@ -64,9 +78,9 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
             id="settings-provider"
             name="provider"
             className="select select-bordered select-sm w-full"
-            defaultValue="openai"
+            defaultValue={current?.provider ?? 'openai'}
           >
-            {['openai', 'anthropic', 'groq', 'mistral', 'ollama', 'huggingface'].map((p) => (
+            {PROVIDERS.map((p) => (
               <option key={p} value={p}>
                 {p}
               </option>
@@ -81,6 +95,7 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
             name="model"
             type="text"
             className="input input-bordered input-sm w-full"
+            defaultValue={current?.model ?? ''}
             placeholder={t`gpt-4o-mini`}
           />
 
@@ -93,6 +108,7 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
             type="password"
             className="input input-bordered input-sm w-full"
             autoComplete="off"
+            placeholder={current?.api_key_set === true ? t`unchanged` : undefined}
           />
 
           <label className="label" htmlFor="settings-api-key-env">
@@ -103,6 +119,7 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
             name="api_key_env"
             type="text"
             className="input input-bordered input-sm w-full"
+            defaultValue={current?.api_key_env ?? ''}
             placeholder={t`OPENAI_API_KEY`}
           />
 
@@ -114,6 +131,7 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
             name="base_url"
             type="url"
             className="input input-bordered input-sm w-full"
+            defaultValue={current?.base_url ?? ''}
             placeholder={t`https://api.openai.com/v1`}
           />
 
@@ -126,7 +144,7 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
               name="enabled"
               type="checkbox"
               className="toggle toggle-sm"
-              defaultChecked
+              defaultChecked={current?.enabled ?? true}
             />
           </label>
         </fieldset>

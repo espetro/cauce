@@ -23,23 +23,23 @@ msgstr "{0} results"
 msgid "{clicks24h} clicks in last 24h · {total} total · {oldest} (oldest)"
 msgstr "{clicks24h} clicks in last 24h · {total} total · {oldest} (oldest)"
 
-#: src/components/SettingsDialog.tsx:57
+#: src/components/SettingsDialog.tsx:71
 msgid "AI"
 msgstr "AI"
 
-#: src/components/SettingsDialog.tsx:122
+#: src/components/SettingsDialog.tsx:140
 msgid "AI mode enabled"
 msgstr "AI mode enabled"
 
-#: src/components/SettingsDialog.tsx:88
+#: src/components/SettingsDialog.tsx:103
 msgid "API key"
 msgstr "API key"
 
-#: src/components/SettingsDialog.tsx:99
+#: src/components/SettingsDialog.tsx:115
 msgid "API key env var"
 msgstr "API key env var"
 
-#: src/components/SettingsDialog.tsx:110
+#: src/components/SettingsDialog.tsx:127
 msgid "Base URL"
 msgstr "Base URL"
 
@@ -125,7 +125,7 @@ msgstr "filter by query text..."
 msgid "Filter by time"
 msgstr "Filter by time"
 
-#: src/components/SettingsDialog.tsx:84
+#: src/components/SettingsDialog.tsx:99
 msgid "gpt-4o-mini"
 msgstr "gpt-4o-mini"
 
@@ -133,7 +133,7 @@ msgstr "gpt-4o-mini"
 msgid "history"
 msgstr "history"
 
-#: src/components/SettingsDialog.tsx:117
+#: src/components/SettingsDialog.tsx:135
 msgid "https://api.openai.com/v1"
 msgstr "https://api.openai.com/v1"
 
@@ -141,7 +141,7 @@ msgstr "https://api.openai.com/v1"
 msgid "loading more…"
 msgstr "loading more…"
 
-#: src/components/SettingsDialog.tsx:77
+#: src/components/SettingsDialog.tsx:91
 msgid "Model"
 msgstr "Model"
 
@@ -177,7 +177,7 @@ msgstr "no rows match the current filters."
 msgid "no search log data yet"
 msgstr "no search log data yet"
 
-#: src/components/SettingsDialog.tsx:106
+#: src/components/SettingsDialog.tsx:123
 msgid "OPENAI_API_KEY"
 msgstr "OPENAI_API_KEY"
 
@@ -185,7 +185,7 @@ msgstr "OPENAI_API_KEY"
 msgid "oxe stats"
 msgstr "oxe stats"
 
-#: src/components/SettingsDialog.tsx:61
+#: src/components/SettingsDialog.tsx:75
 msgid "Provider"
 msgstr "Provider"
 
@@ -198,11 +198,11 @@ msgstr "query"
 msgid "retry"
 msgstr "retry"
 
-#: src/components/SettingsDialog.tsx:142
+#: src/components/SettingsDialog.tsx:160
 msgid "Save"
 msgstr "Save"
 
-#: src/components/SettingsDialog.tsx:46
+#: src/components/SettingsDialog.tsx:58
 msgid "Saving settings failed"
 msgstr "Saving settings failed"
 
@@ -226,7 +226,7 @@ msgstr "searches per day"
 msgid "Searching"
 msgstr "Searching"
 
-#: src/components/SettingsDialog.tsx:53
+#: src/components/SettingsDialog.tsx:67
 msgid "Settings"
 msgstr "Settings"
 
@@ -237,6 +237,10 @@ msgstr "src"
 #: src/routes/history.tsx:175
 msgid "title"
 msgstr "title"
+
+#: src/components/SettingsDialog.tsx:111
+msgid "unchanged"
+msgstr "unchanged"
 
 #: src/routes/history.tsx:178
 msgid "url"
@@ -249,3 +253,7 @@ msgstr "Welcome to oxe"
 #: src/routes/dashboard.tsx:40
 msgid "window: last 30 days"
 msgstr "window: last 30 days"
+
+#: src/components/SettingsDialog.tsx:87
+msgid "unchanged"
+msgstr "unchanged"

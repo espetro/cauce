@@ -1,26 +1,27 @@
 import { describe, expect, test } from 'vitest'
-import { AI_CONFIG_FIELDS, aiConfigSchema } from './settingsApi.ts'
 import { settingsFormPayload } from '../components/SettingsDialog.tsx'
+import { getSettings, putSettings, type SettingsWritePayload } from './settingsApi.ts'
+import type { components, paths } from './types.gen.ts'
 
-// settingsApi.ts mirrors oxe/config.py's AIConfig dataclass field-for-field. This test is
-// the cheap drift gate the CONTRACT PENDING CODEGEN section leans on: if a field is added
-// to (or removed from) AIConfig, the schema keys must follow.
-describe('settingsApi mirrors AIConfig', () => {
-  test('schema keys equal AIConfig field names exactly', () => {
-    expect(Object.keys(aiConfigSchema.entries).sort()).toEqual([...AI_CONFIG_FIELDS].sort())
-  })
-
-  test('field set is the backend dataclass set', () => {
-    expect([...AI_CONFIG_FIELDS]).toEqual([
-      'provider',
-      'model',
-      'api_key',
-      'api_key_env',
-      'base_url',
-      'enabled',
-    ])
-  })
-})
+// Type-level pins: the wrappers must stay bound to the generated wire types, so drift
+// between settingsApi.ts and types.gen.ts fails tsc, not just a test.
+type Equal<A, B> =
+  (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false
+type _pinGet = Equal<
+  Awaited<ReturnType<typeof getSettings>>,
+  paths['/settings']['get']['responses'][200]['content']['application/json']
+>
+const _pinGet: _pinGet = true
+type _pinPutBody = Equal<
+  Parameters<typeof putSettings>[0],
+  paths['/settings']['put']['requestBody']['content']['application/json']
+>
+const _pinPutBody: _pinPutBody = true
+type _pinPutResponse = Equal<
+  Awaited<ReturnType<typeof putSettings>>,
+  components['schemas']['SettingsPayload']
+>
+const _pinPutResponse: _pinPutResponse = true
 
 describe('settingsFormPayload (checkpoint 19 submit path)', () => {
   test('empty optional fields become null, checkbox becomes boolean', () => {
@@ -36,7 +37,8 @@ describe('settingsFormPayload (checkpoint 19 submit path)', () => {
       api_key_env: 'ANTHROPIC_API_KEY',
       base_url: null,
       enabled: true,
-    })
+      api_key_set: false,
+    } satisfies SettingsWritePayload)
   })
 
   test('unticked checkbox parses as disabled', () => {
@@ -44,5 +46,13 @@ describe('settingsFormPayload (checkpoint 19 submit path)', () => {
     form.set('provider', 'openai')
     form.set('model', 'gpt-4o-mini')
     expect(settingsFormPayload(form).enabled).toBe(false)
+  })
+
+  test('payload is assignable to the PUT body type (provider literal, model required)', () => {
+    const form = new FormData()
+    form.set('provider', 'mistral')
+    form.set('model', 'mistral-small')
+    const body: components['schemas']['SettingsWritePayload'] = settingsFormPayload(form)
+    expect(body.provider).toBe('mistral')
   })
 })
