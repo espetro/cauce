@@ -2,7 +2,7 @@ import { Trans } from '@lingui/react/macro'
 import { createFileRoute } from '@tanstack/react-router'
 import type { ReactNode } from 'react'
 import * as v from 'valibot'
-import { dashboardHasLogData, stats, type CacheStats, type StatsResponse } from '../lib/historyApi.ts'
+import { dashboardHasLogData, stats, type StatsResponse } from '../lib/historyApi.ts'
 import { settingsSchema } from '../lib/routeSearch.ts'
 
 /**
@@ -71,8 +71,10 @@ function DashboardComponent() {
           )}
         </Panel>
         <div className={`${PANEL_GRID_CLASS} col-span-full`}>
+          {/* Backend gap: GET /api/stats ships no `cache` key (rows/unexpired/db size —
+              dashboard.md). Adding it is future backend work; the panel stays muted. */}
           <Panel title={<Trans>cache</Trans>} wide>
-            <CachePanel cache={data.cache} />
+            <CachePanel />
           </Panel>
         </div>
       </div>
@@ -125,36 +127,16 @@ function HitRatePanel({ data }: { data: StatsResponse }) {
   )
 }
 
-/** dashboard.md: cache table — rows, unexpired, db size, newest. */
-function CachePanel({ cache }: { cache: CacheStats }) {
-  const rows: Array<[string, string]> = [
-    ['rows', String(cache.rows)],
-    ['unexpired', String(cache.unexpired_rows)],
-    ['db size', formatBytes(cache.db_size_bytes)],
-    ['newest', cache.newest === null ? '—' : formatTimestamp(cache.newest)],
-  ]
+/**
+ * dashboard.md's cache table (rows, unexpired, db size, newest) is NOT served by
+ * `GET /api/stats` — there is no `cache` key in the wire contract. Adding one is future
+ * backend work; until then this panel renders its muted placeholder unconditionally.
+ */
+function CachePanel() {
   return (
-    <table className="table table-sm">
-      <tbody>
-        {rows.map(([label, value]) => (
-          <tr key={label}>
-            <td className="text-base-content/60">{label}</td>
-            <td className="font-mono text-sm">{value}</td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
+    <p className="text-sm text-base-content/50">
+      <Trans>no cache stats yet — backend does not aggregate cache stats.</Trans>
+    </p>
   )
 }
 
-function formatBytes(bytes: number): string {
-  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
-  if (bytes >= 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  return `${bytes} B`
-}
-
-function formatTimestamp(unixSeconds: number): string {
-  const date = new Date(unixSeconds * 1000)
-  const pad = (n: number) => String(n).padStart(2, '0')
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`
-}

@@ -2,7 +2,7 @@ import { Trans, useLingui } from '@lingui/react/macro'
 import { createFileRoute } from '@tanstack/react-router'
 import { useState } from 'react'
 import * as v from 'valibot'
-import { history, type HistoryItem, type HistoryResponse } from '../lib/historyApi.ts'
+import { history, type ClickItem, type HistoryResponse } from '../lib/historyApi.ts'
 import { settingsSchema } from '../lib/routeSearch.ts'
 
 const SINCE_VALUES = ['24', '168', '720'] as const
@@ -23,22 +23,18 @@ const historySearchSchema = v.object({
 export const Route = createFileRoute('/history')({
   validateSearch: historySearchSchema,
   loaderDeps: ({ search: { since } }) => ({ since }),
-  loader: async ({ deps: { since } }) => {
-    const apiSince = since === undefined ? 'all' : SINCE_TO_API[since]
-    return history({ since: apiSince, limit: HISTORY_LIMIT })
-  },
+  loader: ({ deps: { since } }) => history({ since, limit: HISTORY_LIMIT }),
   component: HistoryComponent,
 })
 
 /** history.md: "Cap of 200 rows per view; use the filters to reach older entries." */
 const HISTORY_LIMIT = 200
 
-/** Map the URL `since` param (hours as string) onto the API's named scopes. */
-const SINCE_TO_API: Record<(typeof SINCE_VALUES)[number], '24h' | '7d' | '30d'> = {
-  '24': '24h',
-  '168': '7d',
-  '720': '30d',
-}
+/**
+ * The URL `since` param (hours as string) matches the API's query-param values exactly —
+ * `GET /api/history?since=` takes the same '24'/'168'/'720' strings the URL carries. The
+ * response echoes `since` back as the numeric enum, not the string.
+ */
 
 const SINCE_LABELS: Record<(typeof SINCE_VALUES)[number] | 'all', string> = {
   all: 'all time',
@@ -61,15 +57,12 @@ function formatTimestamp(unixSeconds: number): string {
 
 /** The stats line (history.md): clicks in last 24h · total · oldest (dash when empty). */
 function statsLine(data: HistoryResponse): { clicks24h: number; total: number; oldest: string } {
-  const nowSeconds = Date.now() / 1000
-  const dayAgo = nowSeconds - 24 * 3600
-  const clicks = data.items.filter((item) => item.kind === 'click')
-  const clicks24h = clicks.filter((item) => item.clicked_at >= dayAgo).length
-  const oldest =
-    clicks.length === 0
-      ? '—'
-      : formatTimestamp(Math.min(...clicks.map((item) => item.clicked_at)))
-  return { clicks24h, total: clicks.length, oldest }
+  const stats = data.stats
+  return {
+    clicks24h: stats.last_24h,
+    total: stats.total,
+    oldest: stats.oldest === null ? '—' : formatTimestamp(stats.oldest),
+  }
 }
 
 /**
@@ -77,7 +70,7 @@ function statsLine(data: HistoryResponse): { clicks24h: number; total: number; o
  * without refetching — the server's `q` param is deliberately not used for it, per
  * checkpoint 17's "`qf` keeps the UI filter distinct and maps to the server-side `q`".
  */
-function filterByQf(items: HistoryItem[], qf: string): HistoryItem[] {
+function filterByQf(items: ClickItem[], qf: string): ClickItem[] {
   const needle = qf.trim().toLowerCase()
   if (needle === '') return items
   return items.filter((item) => item.query.toLowerCase().includes(needle))
@@ -191,44 +184,26 @@ function HistoryComponent() {
               </tr>
             </thead>
             <tbody>
-              {rows.map((item) =>
-                item.kind === 'click' ? (
-                  <tr key={`${item.kind}:${item.clicked_at}:${item.result_id}`}>
-                    <td className="whitespace-nowrap">{formatTimestamp(item.clicked_at)}</td>
-                    <td>
-                      <a href={`/row/${item.query_hash}`} className="link link-hover">
-                        {item.query}
-                      </a>
-                    </td>
-                    <td className="max-w-48 truncate">
-                      <a href={item.url} target="_blank" rel="noreferrer" className="link link-hover">
-                        {item.title === '' ? item.url : item.title}
-                      </a>
-                    </td>
-                    <td className={`${URL_CELL_CLASS} max-w-64 truncate`}>{item.url}</td>
-                    <td>{item.source}</td>
-                    <td>
-                      <CopyJsonButton query={item.query} />
-                    </td>
-                  </tr>
-                ) : (
-                  <tr key={`${item.kind}:${item.created_at}:${item.query_hash}`}>
-                    <td className="whitespace-nowrap">{formatTimestamp(item.created_at)}</td>
-                    <td>
-                      <a href={`/row/${item.query_hash}`} className="link link-hover">
-                        {item.query}
-                      </a>
-                    </td>
-                    <td className="max-w-48 truncate text-base-content/60">
-                      <Trans>cached search</Trans>
-                    </td>
-                    <td>cache</td>
-                    <td>
-                      <CopyJsonButton query={item.query} />
-                    </td>
-                  </tr>
-                ),
-              )}
+              {rows.map((item) => (
+                <tr key={`${item.clicked_at}:${item.result_id}`}>
+                  <td className="whitespace-nowrap">{formatTimestamp(item.clicked_at)}</td>
+                  <td>
+                    <a href={`/row/${item.query_hash}`} className="link link-hover">
+                      {item.query}
+                    </a>
+                  </td>
+                  <td className="max-w-48 truncate">
+                    <a href={item.url} target="_blank" rel="noreferrer" className="link link-hover">
+                      {item.title === '' ? item.url : item.title}
+                    </a>
+                  </td>
+                  <td className={`${URL_CELL_CLASS} max-w-64 truncate`}>{item.url}</td>
+                  <td>{item.source}</td>
+                  <td>
+                    <CopyJsonButton query={item.query} />
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
