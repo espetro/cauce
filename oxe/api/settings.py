@@ -52,11 +52,16 @@ def _to_payload(cfg: AIConfig) -> SettingsPayload:
 
 
 def _get_sync() -> SettingsPayload:
-    """Blocking tail of ``GET /settings``, executed via ``asyncio.to_thread``."""
+    """Blocking tail of ``GET /settings``, executed via ``asyncio.to_thread``.
+
+    No config file yet is not an error: an empty provider/model payload is
+    returned so the settings dialog starts from a blank form (and schemathesis
+    never sees a 5xx from a spec-valid GET). Only a malformed config file
+    raises ``ConfigError``.
+    """
     cfg = load_config()
     if cfg is None:
-        msg = "no [ai] config found; PUT /settings first to configure AI mode"
-        raise ConfigError(msg)
+        return SettingsPayload(provider="", model="")
     return _to_payload(cfg)
 
 

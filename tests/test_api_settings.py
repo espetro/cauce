@@ -80,11 +80,18 @@ def test_get_settings_never_echoes_raw_api_key(config_dir: Path, client: TestCli
     assert r.json()["api_key_set"] is True
 
 
-def test_get_settings_without_config_is_error_envelope(client: TestClient) -> None:
+def test_get_settings_without_config_returns_blank_form(client: TestClient) -> None:
     r = client.get("/settings")
-    assert r.status_code == 500
-    body = r.json()
-    assert body["error"]["code"] == "config_error"
+    assert r.status_code == 200
+    assert r.json() == {
+        "provider": "",
+        "model": "",
+        "api_key": None,
+        "api_key_set": False,
+        "api_key_env": None,
+        "base_url": None,
+        "enabled": True,
+    }
 
 
 def test_put_settings_roundtrip(client: TestClient) -> None:
@@ -106,8 +113,8 @@ def test_put_settings_missing_field_is_422(client: TestClient) -> None:
     body = {k: v for k, v in _FULL_BODY.items() if k != "model"}
     r = client.put("/settings", json=body)
     assert r.status_code == 422
-    # Nothing was persisted: a subsequent GET still reports unconfigured.
-    assert client.get("/settings").status_code == 500
+    # Nothing was persisted: a subsequent GET still returns the blank form.
+    assert client.get("/settings").json()["provider"] == ""
 
 
 def test_put_settings_unknown_field_is_422(client: TestClient) -> None:
@@ -115,4 +122,4 @@ def test_put_settings_unknown_field_is_422(client: TestClient) -> None:
     # the explicit guard.
     r = client.put("/settings", json={**_FULL_BODY, "bogus": "x"})
     assert r.status_code == 422
-    assert client.get("/settings").status_code == 500
+    assert client.get("/settings").json()["provider"] == ""
