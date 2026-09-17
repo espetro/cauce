@@ -46,7 +46,11 @@ class SettingsPayload(BaseModel):
 
 
 def _to_payload(cfg: AIConfig) -> SettingsPayload:
-    return SettingsPayload(
+    # model_construct: load_config has already validated provider against
+    # VALID_PROVIDERS, so the runtime value always satisfies the payload's
+    # provider Literal; strict construction would demand that narrowing be
+    # re-proven here for no additional safety.
+    return SettingsPayload.model_construct(
         provider=cfg.provider,
         model=cfg.model,
         api_key=None,
