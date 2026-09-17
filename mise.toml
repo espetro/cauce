@@ -34,7 +34,7 @@ dir = "ui"
 run = "bun run lint"
 
 [tasks.tsc]
-description = "Typecheck the UI (tsc -b, strict + noUncheckedIndexedAccess)"
+description = "Typecheck the UI (tsc -b, strict + noUncheckedIndexedAccess). Requires codegen (routeTree.gen.ts, compiled Lingui catalog) to already exist — run after build:ui, not standalone on a clean checkout."
 dir = "ui"
 run = "bunx tsc -b"
 
@@ -46,8 +46,8 @@ run = "bun run build"
 # generator drift checks (openapi/types/catalogs) land in wave 2; validate:full
 # (build + size budgets + schemathesis + e2e) lands once those exist.
 [tasks.validate]
-description = "Fast merge gate: Python gates + UI lint/typecheck/build"
-depends = ["lint:py", "fmt:py", "typecheck:py", "test:py", "lint:ui", "tsc", "build:ui"]
+description = "Fast merge gate: Python gates + UI lint/build (build:ui runs extract/compile/vite-build/tsc -b as one ordered script)"
+depends = ["lint:py", "fmt:py", "typecheck:py", "test:py", "lint:ui", "build:ui"]
 
 [tasks."hooks:install"]
 description = "Point git at the repo's .githooks directory"
