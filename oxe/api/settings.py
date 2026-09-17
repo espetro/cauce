@@ -10,31 +10,36 @@ one way ``oxe.config`` already supports (the ``[ai] api_key`` key of
 store is invented here.
 
 Legacy bug guard: legacy's ``PUT /settings`` allowed extra fields silently and
-wiped ``base_url`` for 10h. ``SettingsPayload`` is ``extra="forbid"`` with
+wiped ``base_url`` for 10h. Both directions are ``extra="forbid"`` with
 ``provider``/``model`` required, so a PUT that omits fields or carries unknown
 ones is a 422, never a silent partial overwrite.
+
+Two wire models, one shape: ``SettingsPayload`` (GET/response, unconstrained
+strings) and ``SettingsWritePayload`` (PUT body, provider constrained to
+``VALID_PROVIDERS`` and a non-empty model). The split exists because the
+unconfigured ``GET /settings`` response is a blank form (empty provider/model),
+which must stay schema-valid -- but the same values must never be *saved* via
+PUT, so the write model rejects them at pydantic validation time (422), before
+any handler code runs.
 """
 
 import asyncio
+from typing import Literal
 
 from fastapi import APIRouter
-from fastapi.exceptions import RequestValidationError
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
-from oxe.config import VALID_PROVIDERS, AIConfig, load_config, save_config
+from oxe.config import AIConfig, load_config, save_config
 
 router = APIRouter()
 
+_ProviderLiteral = Literal[
+    "anthropic", "groq", "huggingface", "mistral", "ollama", "openai"
+]
+
 
 class SettingsPayload(BaseModel):
-    """Wire mirror of ``AIConfig``; never carries a raw secret outbound.
-
-    ``provider``/``model`` stay plain ``str`` (no ``Literal``/``min_length``)
-    so the unconfigured blank form (empty strings from ``GET /settings`` when
-    no config exists yet) is a schema-valid response; PUT re-validates the
-    saved state in the handler instead, so an invalid provider or empty model
-    still never reaches ``config.toml`` (see ``_put_sync``).
-    """
+    """Wire mirror of ``AIConfig``; never carries a raw secret outbound."""
 
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
@@ -47,11 +52,30 @@ class SettingsPayload(BaseModel):
     enabled: bool = True
 
 
+class SettingsWritePayload(SettingsPayload):
+    """PUT body: same fields, but blank forms are invalid here.
+
+    ``provider`` is narrowed to the same set as ``oxe.config``'s
+    ``VALID_PROVIDERS`` (which the ``_ProviderLiteral`` literal mirrors) and
+    ``model`` must be non-empty: a value the next ``load_config`` would reject
+    (500 on every later GET) must never be persisted. Response payloads keep
+    the unconstrained ``SettingsPayload`` so the unconfigured blank form stays
+    schema-valid. Narrowing (not redeclaring) the inherited fields keeps the
+    single source of truth for the field list.
+    """
+
+    provider: _ProviderLiteral  # pyright: ignore[reportIncompatibleVariableOverride]
+    model: str = Field(min_length=1)
+
+
 def _to_payload(cfg: AIConfig) -> SettingsPayload:
-    # model_construct: load_config has already validated provider against
-    # VALID_PROVIDERS, so the runtime value always satisfies the payload's
-    # provider Literal; strict construction would demand that narrowing be
-    # re-proven here for no additional safety.
+    """Narrow a validated ``AIConfig`` into the response payload.
+
+    ``model_construct``: ``load_config`` has already validated provider
+    against ``VALID_PROVIDERS``, so the runtime value always satisfies the
+    write model's provider Literal; strict construction would demand that
+    narrowing be re-proven here for no additional safety.
+    """
     return SettingsPayload.model_construct(
         provider=cfg.provider,
         model=cfg.model,
@@ -66,53 +90,19 @@ def _to_payload(cfg: AIConfig) -> SettingsPayload:
 def _get_sync() -> SettingsPayload:
     """Blocking tail of ``GET /settings``, executed via ``asyncio.to_thread``.
 
-    No config file yet is not an error: an empty provider/model payload is
-    returned so the settings dialog starts from a blank form (and schemathesis
-    never sees a 5xx from a spec-valid GET). Only a malformed config file
-    raises ``ConfigError``.
+    No config file yet is not an error: the blank-form payload (empty
+    provider/model) is returned so the settings dialog starts from a blank
+    form and schema-compliant GETs always get a 200. Only a malformed config
+    file raises ``ConfigError``.
     """
     cfg = load_config()
     if cfg is None:
-        # Unconfigured blank form: empty provider/model, always schema-valid
-        # against the plain-str payload above.
         return SettingsPayload(provider="", model="")
     return _to_payload(cfg)
 
 
-def _put_sync(payload: SettingsPayload) -> SettingsPayload:
-    """Blocking tail of ``PUT /settings``, executed via ``asyncio.to_thread``.
-
-    Re-validates provider/model here (not in the pydantic model, whose schema
-    must also admit the GET blank form): a value the next ``load_config``
-    would reject must never be persisted.
-    """
-    if payload.provider not in VALID_PROVIDERS:
-        msg = (
-            f"provider {payload.provider!r} not supported; "
-            f"expected one of {', '.join(sorted(VALID_PROVIDERS))}"
-        )
-        raise RequestValidationError(
-            [
-                {
-                    "type": "value_error",
-                    "loc": ("body", "provider"),
-                    "input": payload.provider,
-                    "ctx": {"error": ValueError(msg)},
-                }
-            ]
-        )
-    if not payload.model.strip():
-        msg = "model must be a non-empty string"
-        raise RequestValidationError(
-            [
-                {
-                    "type": "value_error",
-                    "loc": ("body", "model"),
-                    "input": payload.model,
-                    "ctx": {"error": ValueError(msg)},
-                }
-            ]
-        )
+def _put_sync(payload: SettingsWritePayload) -> SettingsPayload:
+    """Blocking tail of ``PUT /settings``, executed via ``asyncio.to_thread``."""
     cfg = AIConfig(
         provider=payload.provider,
         model=payload.model,
@@ -132,6 +122,6 @@ async def get_settings() -> SettingsPayload:
 
 
 @router.put("/settings", response_model=SettingsPayload, summary="Persist the AI config.")
-async def put_settings(payload: SettingsPayload) -> SettingsPayload:
+async def put_settings(payload: SettingsWritePayload) -> SettingsPayload:
     """Full-replace semantics: the body must carry every field (422 otherwise)."""
     return await asyncio.to_thread(_put_sync, payload)

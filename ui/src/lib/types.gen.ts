@@ -401,12 +401,6 @@ export interface components {
         /**
          * SettingsPayload
          * @description Wire mirror of ``AIConfig``; never carries a raw secret outbound.
-         *
-         *     ``provider``/``model`` stay plain ``str`` (no ``Literal``/``min_length``)
-         *     so the unconfigured blank form (empty strings from ``GET /settings`` when
-         *     no config exists yet) is a schema-valid response; PUT re-validates the
-         *     saved state in the handler instead, so an invalid provider or empty model
-         *     still never reaches ``config.toml`` (see ``_put_sync``).
          */
         SettingsPayload: {
             /** Api Key */
@@ -429,6 +423,43 @@ export interface components {
             model: string;
             /** Provider */
             provider: string;
+        };
+        /**
+         * SettingsWritePayload
+         * @description PUT body: same fields, but blank forms are invalid here.
+         *
+         *     ``provider`` is narrowed to the same set as ``oxe.config``'s
+         *     ``VALID_PROVIDERS`` (which the ``_ProviderLiteral`` literal mirrors) and
+         *     ``model`` must be non-empty: a value the next ``load_config`` would reject
+         *     (500 on every later GET) must never be persisted. Response payloads keep
+         *     the unconstrained ``SettingsPayload`` so the unconfigured blank form stays
+         *     schema-valid. Narrowing (not redeclaring) the inherited fields keeps the
+         *     single source of truth for the field list.
+         */
+        SettingsWritePayload: {
+            /** Api Key */
+            api_key?: string | null;
+            /** Api Key Env */
+            api_key_env?: string | null;
+            /**
+             * Api Key Set
+             * @default false
+             */
+            api_key_set: boolean;
+            /** Base Url */
+            base_url?: string | null;
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
+            /** Model */
+            model: string;
+            /**
+             * Provider
+             * @enum {string}
+             */
+            provider: "anthropic" | "groq" | "huggingface" | "mistral" | "ollama" | "openai";
         };
         /**
          * SourcesFrame
@@ -716,7 +747,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["SettingsPayload"];
+                "application/json": components["schemas"]["SettingsWritePayload"];
             };
         };
         responses: {
