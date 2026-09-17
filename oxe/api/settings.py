@@ -17,8 +17,10 @@ ones is a 422, never a silent partial overwrite.
 
 import asyncio
 
+from typing import Literal
+
 from fastapi import APIRouter
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from oxe.config import AIConfig, load_config, save_config
 
@@ -30,8 +32,13 @@ class SettingsPayload(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
-    provider: str
-    model: str
+    # provider is constrained (Literal) and model min_length=1: an invalid or
+    # empty PUT must be a 422, never something saved that the next load_config
+    # rejects (which would turn every subsequent GET into a 500). The
+    # unconfigured blank form returned by GET is built with model_construct
+    # below, bypassing these bounds on the response side only.
+    provider: Literal["anthropic", "groq", "huggingface", "mistral", "ollama", "openai"]
+    model: str = Field(min_length=1)
     api_key: str | None = None
     api_key_set: bool = False
     api_key_env: str | None = None
@@ -61,7 +68,17 @@ def _get_sync() -> SettingsPayload:
     """
     cfg = load_config()
     if cfg is None:
-        return SettingsPayload(provider="", model="")
+        # Unconfigured blank form; model_construct skips the provider Literal /
+        # model min_length bounds above (response-only escape hatch).
+        return SettingsPayload.model_construct(
+            provider="",
+            model="",
+            api_key=None,
+            api_key_set=False,
+            api_key_env=None,
+            base_url=None,
+            enabled=True,
+        )
     return _to_payload(cfg)
 
 

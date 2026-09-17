@@ -421,8 +421,11 @@ export interface components {
             enabled: boolean;
             /** Model */
             model: string;
-            /** Provider */
-            provider: string;
+            /**
+             * Provider
+             * @enum {string}
+             */
+            provider: "anthropic" | "groq" | "huggingface" | "mistral" | "ollama" | "openai";
         };
         /**
          * SourcesFrame
