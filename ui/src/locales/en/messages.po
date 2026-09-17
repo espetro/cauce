@@ -13,34 +13,207 @@ msgstr ""
 "Language-Team: \n"
 "Plural-Forms: \n"
 
-#: src/routes/history.tsx:33
+#: src/routes/history.tsx:61
+msgid "— (oldest)"
+msgstr "— (oldest)"
+
+#. placeholder {0}: formatLocalTimestamp(stats.oldest)
+#: src/routes/history.tsx:63
+msgid "{0} (oldest)"
+msgstr "{0} (oldest)"
+
+#. placeholder {0}: stats.last_24h
+#: src/routes/history.tsx:58
+msgid "{0} clicks in last 24h"
+msgstr "{0} clicks in last 24h"
+
+#. placeholder {0}: stats.total
+#: src/routes/history.tsx:59
+msgid "{0} total"
+msgstr "{0} total"
+
+#. placeholder {0}: data.cache.total_hits
+#: src/routes/dashboard.tsx:111
+msgid "{0} total hits"
+msgstr "{0} total hits"
+
+#: src/routes/history.tsx:153
+msgid "all time"
+msgstr "all time"
+
+#: src/routes/dashboard.tsx:150
+msgid "cache"
+msgstr "cache"
+
+#: src/routes/dashboard.tsx:104
+msgid "cache hit rate"
+msgstr "cache hit rate"
+
+#: src/routes/history.tsx:187
+msgid "clear"
+msgstr "clear"
+
+#: src/routes/history.tsx:200
 msgid "Click history"
 msgstr "Click history"
+
+#: src/routes/history.tsx:218
+msgid "clicked"
+msgstr "clicked"
+
+#: src/routes/dashboard.tsx:135
+msgid "client split"
+msgstr "client split"
+
+#: src/routes/history.tsx:98
+msgid "clipboard write failed"
+msgstr "clipboard write failed"
 
 #: src/components/Dialog.tsx:45
 msgid "Close"
 msgstr "Close"
 
+#: src/routes/history.tsx:77
+msgid "copied!"
+msgstr "copied!"
+
+#: src/routes/history.tsx:79
+msgid "copy failed"
+msgstr "copy failed"
+
+#: src/routes/history.tsx:80
+msgid "copy json"
+msgstr "copy json"
+
+#: src/routes/history.tsx:86
+msgid "Copy this query's JSON payload"
+msgstr "Copy this query's JSON payload"
+
+#: src/routes/history.tsx:75
+msgid "copying…"
+msgstr "copying…"
+
 #: src/routes/__root.tsx:81
 msgid "dashboard"
 msgstr "dashboard"
+
+#: src/routes/dashboard.tsx:166
+msgid "db size"
+msgstr "db size"
+
+#: src/routes/history.tsx:169
+msgid "Filter by query text"
+msgstr "Filter by query text"
+
+#: src/routes/history.tsx:168
+msgid "filter by query text..."
+msgstr "filter by query text..."
 
 #: src/routes/__root.tsx:77
 msgid "history"
 msgstr "history"
 
-#: src/routes/dashboard.tsx:25
+#: src/routes/history.tsx:156
+msgid "last 24h"
+msgstr "last 24h"
+
+#: src/routes/history.tsx:162
+msgid "last month"
+msgstr "last month"
+
+#: src/routes/history.tsx:159
+msgid "last week"
+msgstr "last week"
+
+#: src/routes/dashboard.tsx:117
+msgid "network latency"
+msgstr "network latency"
+
+#: src/routes/dashboard.tsx:172
+msgid "newest"
+msgstr "newest"
+
+#: src/routes/history.tsx:209
+msgid "no clicks match your filters."
+msgstr "no clicks match your filters."
+
+#: src/routes/history.tsx:207
+msgid "no clicks yet — open a result from the search page."
+msgstr "no clicks yet — open a result from the search page."
+
+#: src/routes/dashboard.tsx:70
+msgid "no search log data yet"
+msgstr "no search log data yet"
+
+#: src/routes/dashboard.tsx:82
 msgid "oxe stats"
 msgstr "oxe stats"
+
+#. placeholder {0}: data.log.latency_ms.p50
+#: src/routes/dashboard.tsx:121
+msgid "p50: {0} ms"
+msgstr "p50: {0} ms"
+
+#. placeholder {0}: data.log.latency_ms.p90
+#: src/routes/dashboard.tsx:124
+msgid "p90: {0} ms"
+msgstr "p90: {0} ms"
+
+#. placeholder {0}: data.log.latency_ms.p99
+#: src/routes/dashboard.tsx:127
+msgid "p99: {0} ms"
+msgstr "p99: {0} ms"
+
+#: src/routes/history.tsx:221
+msgid "query"
+msgstr "query"
+
+#: src/routes/dashboard.tsx:154
+msgid "rows"
+msgstr "rows"
 
 #: src/routes/__root.tsx:73
 msgid "search"
 msgstr "search"
 
+#: src/routes/history.tsx:93
+#: src/routes/history.tsx:101
+msgid "search request failed"
+msgstr "search request failed"
+
 #: src/routes/search.tsx:37
 msgid "Search results"
 msgstr "Search results"
 
+#: src/routes/dashboard.tsx:89
+msgid "searches per day"
+msgstr "searches per day"
+
+#: src/routes/history.tsx:230
+msgid "source"
+msgstr "source"
+
+#: src/routes/history.tsx:139
+msgid "Time range"
+msgstr "Time range"
+
+#: src/routes/history.tsx:224
+msgid "title"
+msgstr "title"
+
+#: src/routes/dashboard.tsx:160
+msgid "unexpired"
+msgstr "unexpired"
+
+#: src/routes/history.tsx:227
+msgid "url"
+msgstr "url"
+
 #: src/routes/index.tsx:26
 msgid "Welcome to oxe"
 msgstr "Welcome to oxe"
+
+#. placeholder {0}: data.log.days
+#: src/routes/dashboard.tsx:85
+msgid "window: last {0} days"
+msgstr "window: last {0} days"
