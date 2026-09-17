@@ -42,12 +42,16 @@ const searchSearchSchema = v.object({
 
 export const Route = createFileRoute('/search')({
   validateSearch: searchSearchSchema,
-  loaderDeps: ({ search: s }) => ({ q: s.q, force: s.force }),
+  loaderDeps: ({ search: s }) => ({ q: s.q, mode: s.mode, force: s.force }),
   loader: async ({ deps }) => {
     if (!deps.q) {
       return null
     }
-    const forceParams = deps.force ? `&force=${deps.force}` : ''
+    // In AI mode force belongs to POST /answer (checkpoints 13/14); passing it
+    // here would make the web-search loader throw ForcedSearchError / return
+    // the canned empty payload before the answer surface even mounts.
+    const classicForce = deps.mode === 'ai' ? null : deps.force
+    const forceParams = classicForce ? `&force=${classicForce}` : ''
     return await search({ q: deps.q }, new URLSearchParams(`q=${encodeURIComponent(deps.q)}${forceParams}`))
   },
   component: SearchComponent,
@@ -97,6 +101,9 @@ function SearchComponent() {
     return <AiAnswerSurface query={q} force={force ?? null} />
   }
 
+  // Classic mode only: force=error/empty here are the web-search fixtures
+  // (checkpoints 7/8). In AI mode (above) force is the /answer SSE fixture, so
+  // the loader must not short-circuit the answer surface (checkpoints 13/14).
   return (
     <main className="mx-auto max-w-2xl px-4 py-8">
       <div className="mb-6">

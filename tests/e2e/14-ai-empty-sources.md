@@ -1,6 +1,6 @@
 # E2E checkpoint 14: AI empty sources
 
-status: skip
+status: active
 spec: .agents/docs/screens/userflow-checkpoints.md, checkpoint 14
 
 Skip-marked placeholder scaffolded in wave 1 (day-0 gate 7 / step 10 of the

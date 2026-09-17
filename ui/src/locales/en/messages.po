@@ -15,7 +15,7 @@ msgstr ""
 
 #. results count
 #. placeholder {0}: state.results.length
-#: src/routes/search.tsx:111
+#: src/routes/search.tsx:118
 msgid "{0} results"
 msgstr "{0} results"
 
@@ -32,12 +32,12 @@ msgid "AI mode enabled"
 msgstr "AI mode enabled"
 
 #. shown when the AI backend is off
-#: src/routes/search.tsx:331
+#: src/routes/search.tsx:338
 msgid "AI mode is not configured - set a model in settings"
 msgstr "AI mode is not configured - set a model in settings"
 
 #. answer section heading
-#: src/routes/search.tsx:268
+#: src/routes/search.tsx:275
 msgid "answer"
 msgstr "answer"
 
@@ -61,7 +61,7 @@ msgstr "cache"
 msgid "cache hit rate"
 msgstr "cache hit rate"
 
-#: src/routes/search.tsx:114
+#: src/routes/search.tsx:121
 msgid "cached"
 msgstr "cached"
 
@@ -90,7 +90,7 @@ msgid "Close"
 msgstr "Close"
 
 #. answer confidence percentage
-#: src/routes/search.tsx:276
+#: src/routes/search.tsx:283
 msgid "confidence:"
 msgstr "confidence:"
 
@@ -103,11 +103,11 @@ msgid "copy failed"
 msgstr "copy failed"
 
 #: src/routes/history.tsx:245
-#: src/routes/search.tsx:127
+#: src/routes/search.tsx:134
 msgid "copy json"
 msgstr "copy json"
 
-#: src/routes/search.tsx:118
+#: src/routes/search.tsx:125
 msgid "copy link"
 msgstr "copy link"
 
@@ -119,12 +119,12 @@ msgstr "copying"
 msgid "dashboard"
 msgstr "dashboard"
 
-#: src/routes/search.tsx:198
+#: src/routes/search.tsx:205
 msgid "end of results"
 msgstr "end of results"
 
-#: src/routes/search.tsx:75
-#: src/routes/search.tsx:157
+#: src/routes/search.tsx:79
+#: src/routes/search.tsx:164
 msgid "error: search failed:"
 msgstr "error: search failed:"
 
@@ -140,7 +140,7 @@ msgstr "filter by query text..."
 msgid "Filter by time"
 msgstr "Filter by time"
 
-#: src/routes/search.tsx:272
+#: src/routes/search.tsx:279
 msgid "from cache"
 msgstr "from cache"
 
@@ -156,7 +156,7 @@ msgstr "history"
 msgid "https://api.openai.com/v1"
 msgstr "https://api.openai.com/v1"
 
-#: src/routes/search.tsx:179
+#: src/routes/search.tsx:186
 msgid "loading more…"
 msgstr "loading more…"
 
@@ -164,7 +164,7 @@ msgstr "loading more…"
 msgid "Model"
 msgstr "Model"
 
-#: src/routes/search.tsx:190
+#: src/routes/search.tsx:197
 msgid "more results"
 msgstr "more results"
 
@@ -184,7 +184,7 @@ msgstr "no clicks yet — open a result from the search page."
 msgid "No matches"
 msgstr "No matches"
 
-#: src/routes/search.tsx:147
+#: src/routes/search.tsx:154
 msgid "no results"
 msgstr "no results"
 
@@ -196,7 +196,7 @@ msgstr "no rows match the current filters."
 msgid "no search log data yet"
 msgstr "no search log data yet"
 
-#: src/routes/search.tsx:344
+#: src/routes/search.tsx:351
 msgid "no sources found for this query - try fewer words, or"
 msgstr "no sources found for this query - try fewer words, or"
 
@@ -222,13 +222,13 @@ msgid "query"
 msgstr "query"
 
 #. related questions section heading
-#: src/routes/search.tsx:414
+#: src/routes/search.tsx:421
 msgid "related"
 msgstr "related"
 
-#: src/routes/search.tsx:79
-#: src/routes/search.tsx:160
-#: src/routes/search.tsx:317
+#: src/routes/search.tsx:83
+#: src/routes/search.tsx:167
+#: src/routes/search.tsx:324
 msgid "retry"
 msgstr "retry"
 
@@ -256,7 +256,7 @@ msgstr "Search"
 msgid "searches per day"
 msgstr "searches per day"
 
-#: src/routes/search.tsx:64
+#: src/routes/search.tsx:68
 msgid "Searching"
 msgstr "Searching"
 
@@ -265,7 +265,7 @@ msgid "Settings"
 msgstr "Settings"
 
 #. sources section heading
-#: src/routes/search.tsx:402
+#: src/routes/search.tsx:409
 msgid "sources"
 msgstr "sources"
 
@@ -273,11 +273,11 @@ msgstr "sources"
 msgid "src"
 msgstr "src"
 
-#: src/routes/search.tsx:313
+#: src/routes/search.tsx:320
 msgid "stream interrupted:"
 msgstr "stream interrupted:"
 
-#: src/routes/search.tsx:302
+#: src/routes/search.tsx:309
 msgid "streaming…"
 msgstr "streaming…"
 
@@ -293,8 +293,8 @@ msgstr "unchanged"
 msgid "url"
 msgstr "url"
 
-#: src/routes/search.tsx:320
-#: src/routes/search.tsx:347
+#: src/routes/search.tsx:327
+#: src/routes/search.tsx:354
 msgid "view Search"
 msgstr "view Search"
 

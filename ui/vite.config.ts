@@ -14,6 +14,7 @@ export default defineConfig({
   server: {
     proxy: {
       '/api': process.env.E2E_BACKEND ?? 'http://127.0.0.1:4479',
+      '/answer': process.env.E2E_BACKEND ?? 'http://127.0.0.1:4479',
       '/search': {
         target: process.env.E2E_BACKEND ?? 'http://127.0.0.1:4479',
         bypass: (req) => {

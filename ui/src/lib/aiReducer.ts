@@ -103,15 +103,21 @@ function applyFrame(state: AiState, frame: AnswerFrame): AiState {
     }
     case 'done':
       return doneState(frame, state)
-    case 'error':
+    case 'error': {
       // Standalone error frame: a failure that aborted the stream before `done`
       // (oxe/api/ai_frames.py). Partial text kept, like a transport failure.
+      // Never clobbers a terminal state: force=ai-off seeds `unavailable` and
+      // the backend's ErrorFrame (checkpoint 12) must not knock it into `failed`.
+      if (state.status === 'done' || state.status === 'unavailable') {
+        return state
+      }
       return {
         status: 'failed',
         message: frame.message,
         partialText: state.status === 'streaming' ? state.text : '',
         sources: state.status === 'stepping' || state.status === 'streaming' ? state.sources : [],
       }
+    }
     default: {
       const exhaustive: never = frame
       return exhaustive
