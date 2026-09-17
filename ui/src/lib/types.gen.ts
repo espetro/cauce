@@ -4,6 +4,40 @@
  */
 
 export interface paths {
+    "/api/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get History */
+        get: operations["get_history_api_history_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/stats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Dashboard */
+        get: operations["get_dashboard_api_stats_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health": {
         parameters: {
             query?: never;
@@ -55,6 +89,35 @@ export interface components {
             title: string;
             /** Url */
             url: string;
+        };
+        /** CacheStatsOut */
+        CacheStatsOut: {
+            /** Db Size Bytes */
+            db_size_bytes: number;
+            /** Newest */
+            newest: number | null;
+            /** Oldest Unexpired */
+            oldest_unexpired: number | null;
+            /** Rows */
+            rows: number;
+            /** Total Hits */
+            total_hits: number;
+            /** Unexpired Rows */
+            unexpired_rows: number;
+        };
+        /** ClientSplit */
+        ClientSplit: {
+            /** Client */
+            client: string;
+            /** Count */
+            count: number;
+        };
+        /** DashboardResponse */
+        DashboardResponse: {
+            cache: components["schemas"]["CacheStatsOut"];
+            /** Hit Rate Pct */
+            hit_rate_pct: number | null;
+            log: components["schemas"]["StatsSummary"];
         };
         /**
          * DeltaFrame
@@ -121,6 +184,49 @@ export interface components {
             /** Status */
             status: string;
         };
+        /** HistoryResponse */
+        HistoryResponse: {
+            /** Rows */
+            rows: components["schemas"]["HistoryRow"][];
+            stats: components["schemas"]["HistoryStats"];
+        };
+        /** HistoryRow */
+        HistoryRow: {
+            /** Clicked At */
+            clicked_at: number;
+            /** Id */
+            id: number;
+            /** Query */
+            query: string;
+            /** Query Hash */
+            query_hash: string;
+            /** Result Id */
+            result_id: string;
+            /** Source */
+            source: string;
+            /** Title */
+            title: string;
+            /** Url */
+            url: string;
+        };
+        /** HistoryStats */
+        HistoryStats: {
+            /** Last 24H */
+            last_24h: number;
+            /** Oldest */
+            oldest: number | null;
+            /** Total */
+            total: number;
+        };
+        /** HitRate */
+        HitRate: {
+            /** Cache Hits */
+            cache_hits: number;
+            /** Rate */
+            rate: number | null;
+            /** Total */
+            total: number;
+        };
         /**
          * Infobox
          * @description SearXNG infobox entry (Wikipedia-style side panel content).
@@ -149,6 +255,15 @@ export interface components {
             title: string;
             /** Url */
             url: string;
+        };
+        /** LatencyMs */
+        LatencyMs: {
+            /** P50 */
+            p50: number | null;
+            /** P90 */
+            p90: number | null;
+            /** P99 */
+            p99: number | null;
         };
         /**
          * SearchRequest
@@ -217,6 +332,17 @@ export interface components {
             /** Url */
             url: string;
         };
+        /** SearchesPerDay */
+        SearchesPerDay: {
+            /** Cache */
+            cache: number;
+            /** Day */
+            day: string;
+            /** Network */
+            network: number;
+            /** Total */
+            total: number;
+        };
         /**
          * SearxResponse
          * @description The canonical SearXNG-shaped search response.
@@ -262,6 +388,21 @@ export interface components {
              */
             type: "sources";
         };
+        /** StatsSummary */
+        StatsSummary: {
+            /** Client Split */
+            client_split: components["schemas"]["ClientSplit"][];
+            /** Days */
+            days: number;
+            hit_rate: components["schemas"]["HitRate"];
+            latency_ms: components["schemas"]["LatencyMs"];
+            /** Searches Per Day */
+            searches_per_day: components["schemas"]["SearchesPerDay"][];
+            /** Top Queries */
+            top_queries: components["schemas"]["TopQuery"][];
+            /** Zero Result Queries */
+            zero_result_queries: components["schemas"]["ZeroResultQuery"][];
+        };
         /**
          * StepFrame
          * @description A tool call the model is making (e.g. a web search) is starting.
@@ -278,6 +419,13 @@ export interface components {
              * @enum {string}
              */
             type: "step";
+        };
+        /** TopQuery */
+        TopQuery: {
+            /** Count */
+            count: number;
+            /** Query */
+            query: string;
         };
         /**
          * UnresponsiveEngine
@@ -306,6 +454,13 @@ export interface components {
             /** Error Type */
             type: string;
         };
+        /** ZeroResultQuery */
+        ZeroResultQuery: {
+            /** Last Seen */
+            last_seen: number;
+            /** Query */
+            query: string;
+        };
     };
     responses: never;
     parameters: never;
@@ -315,6 +470,60 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    get_history_api_history_get: {
+        parameters: {
+            query?: {
+                /** @description Hours to look back (the UI only ever sends 24/168/720, but this route does not itself restrict to that set); absent means all time. */
+                since?: number | null;
+                /** @description Substring filter against the click's query text. */
+                q?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HistoryResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_dashboard_api_stats_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DashboardResponse"];
+                };
+            };
+        };
+    };
     health_health_get: {
         parameters: {
             query?: never;
