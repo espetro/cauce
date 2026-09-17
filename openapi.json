@@ -61,6 +61,70 @@
         "title": "AnswerSource",
         "type": "object"
       },
+      "ClickItem": {
+        "additionalProperties": false,
+        "description": "One click row, newest-first in ``HistoryResponse.items``.",
+        "properties": {
+          "clicked_at": {
+            "title": "Clicked At",
+            "type": "integer"
+          },
+          "query": {
+            "title": "Query",
+            "type": "string"
+          },
+          "query_hash": {
+            "title": "Query Hash",
+            "type": "string"
+          },
+          "result_id": {
+            "title": "Result Id",
+            "type": "string"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "clicked_at",
+          "query_hash",
+          "query",
+          "result_id",
+          "url",
+          "title",
+          "source"
+        ],
+        "title": "ClickItem",
+        "type": "object"
+      },
+      "ClientSplit": {
+        "additionalProperties": false,
+        "properties": {
+          "client": {
+            "title": "Client",
+            "type": "string"
+          },
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "client",
+          "count"
+        ],
+        "title": "ClientSplit",
+        "type": "object"
+      },
       "DeltaFrame": {
         "additionalProperties": false,
         "description": "One chunk of streamed answer text.",
@@ -186,6 +250,112 @@
         "title": "HealthStatus",
         "type": "object"
       },
+      "HistoryResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ClickItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "since": {
+            "anyOf": [
+              {
+                "enum": [
+                  24,
+                  168,
+                  720
+                ],
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Since"
+          },
+          "stats": {
+            "$ref": "#/components/schemas/HistoryStats"
+          }
+        },
+        "required": [
+          "items",
+          "stats",
+          "limit",
+          "since"
+        ],
+        "title": "HistoryResponse",
+        "type": "object"
+      },
+      "HistoryStats": {
+        "additionalProperties": false,
+        "description": "The stats line above the history table (history.md).",
+        "properties": {
+          "last_24h": {
+            "title": "Last 24H",
+            "type": "integer"
+          },
+          "oldest": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oldest"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "last_24h",
+          "total",
+          "oldest"
+        ],
+        "title": "HistoryStats",
+        "type": "object"
+      },
+      "HitRate": {
+        "additionalProperties": false,
+        "properties": {
+          "cache_hits": {
+            "title": "Cache Hits",
+            "type": "integer"
+          },
+          "rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rate"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total",
+          "cache_hits",
+          "rate"
+        ],
+        "title": "HitRate",
+        "type": "object"
+      },
       "Infobox": {
         "additionalProperties": false,
         "description": "SearXNG infobox entry (Wikipedia-style side panel content).",
@@ -253,6 +423,51 @@
           "url"
         ],
         "title": "InfoboxUrl",
+        "type": "object"
+      },
+      "LatencyMs": {
+        "additionalProperties": false,
+        "properties": {
+          "p50": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "P50"
+          },
+          "p90": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "P90"
+          },
+          "p99": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "P99"
+          }
+        },
+        "required": [
+          "p50",
+          "p90",
+          "p99"
+        ],
+        "title": "LatencyMs",
         "type": "object"
       },
       "SearchRequest": {
@@ -383,6 +598,35 @@
         "title": "SearchResult",
         "type": "object"
       },
+      "SearchesPerDay": {
+        "additionalProperties": false,
+        "properties": {
+          "cache": {
+            "title": "Cache",
+            "type": "integer"
+          },
+          "day": {
+            "title": "Day",
+            "type": "string"
+          },
+          "network": {
+            "title": "Network",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "day",
+          "cache",
+          "network",
+          "total"
+        ],
+        "title": "SearchesPerDay",
+        "type": "object"
+      },
       "SearxResponse": {
         "additionalProperties": false,
         "description": "The canonical SearXNG-shaped search response.\n\nTwo of these three rules from the plan's \"search contract\" section are\nenforced here as shape; the third (unresponsive_engines-with-no-results\nmust raise, never be returned) is a service-level invariant, enforced in\n``oxe/search/service.py`` rather than at the model layer, since a\nfreshly-constructed response legitimately passes through this state\nwhile an engine is still composing partial results.",
@@ -466,6 +710,60 @@
         "title": "SourcesFrame",
         "type": "object"
       },
+      "StatsSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "client_split": {
+            "items": {
+              "$ref": "#/components/schemas/ClientSplit"
+            },
+            "title": "Client Split",
+            "type": "array"
+          },
+          "days": {
+            "title": "Days",
+            "type": "integer"
+          },
+          "hit_rate": {
+            "$ref": "#/components/schemas/HitRate"
+          },
+          "latency_ms": {
+            "$ref": "#/components/schemas/LatencyMs"
+          },
+          "searches_per_day": {
+            "items": {
+              "$ref": "#/components/schemas/SearchesPerDay"
+            },
+            "title": "Searches Per Day",
+            "type": "array"
+          },
+          "top_queries": {
+            "items": {
+              "$ref": "#/components/schemas/TopQuery"
+            },
+            "title": "Top Queries",
+            "type": "array"
+          },
+          "zero_result_queries": {
+            "items": {
+              "$ref": "#/components/schemas/ZeroResultQuery"
+            },
+            "title": "Zero Result Queries",
+            "type": "array"
+          }
+        },
+        "required": [
+          "days",
+          "searches_per_day",
+          "hit_rate",
+          "latency_ms",
+          "top_queries",
+          "zero_result_queries",
+          "client_split"
+        ],
+        "title": "StatsSummary",
+        "type": "object"
+      },
       "StepFrame": {
         "additionalProperties": false,
         "description": "A tool call the model is making (e.g. a web search) is starting.",
@@ -495,6 +793,25 @@
           "label"
         ],
         "title": "StepFrame",
+        "type": "object"
+      },
+      "TopQuery": {
+        "additionalProperties": false,
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "query": {
+            "title": "Query",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query",
+          "count"
+        ],
+        "title": "TopQuery",
         "type": "object"
       },
       "UnresponsiveEngine": {
@@ -556,6 +873,25 @@
         ],
         "title": "ValidationError",
         "type": "object"
+      },
+      "ZeroResultQuery": {
+        "additionalProperties": false,
+        "properties": {
+          "last_seen": {
+            "title": "Last Seen",
+            "type": "integer"
+          },
+          "query": {
+            "title": "Query",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query",
+          "last_seen"
+        ],
+        "title": "ZeroResultQuery",
+        "type": "object"
       }
     }
   },
@@ -565,6 +901,131 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/history": {
+      "get": {
+        "description": "Click rows newest-first plus the header stats line.\n\n``Query``'s ``ge``/``le`` bounds are a range, not a set, so in-range gap\nvalues (e.g. 48) reach the handler; ``_narrow_since`` turns them into a\n``ValueError``, which FastAPI reports as 500 today. Only the three\nliteral values (24/168/720) are schema-valid for clients, per the\ngenerated OpenAPI ``enum`` -- gap values are caller bugs, not user input.",
+        "operationId": "api_history_api_history_get",
+        "parameters": [
+          {
+            "description": "Hours back: 24=day, 168=week, 720=month; absent = all time.",
+            "in": "query",
+            "name": "since",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "pattern": "^(24|168|720)$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Hours back: 24=day, 168=week, 720=month; absent = all time.",
+              "title": "Since"
+            }
+          },
+          {
+            "description": "Query-text substring filter.",
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Query-text substring filter.",
+              "title": "Q"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HistoryResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Click history feed."
+      }
+    },
+    "/api/stats": {
+      "get": {
+        "description": "Aggregates over the search log (searches/day, hit rate, latency\npercentiles, top and zero-result queries, client split).",
+        "operationId": "api_stats_api_stats_get",
+        "parameters": [
+          {
+            "description": "Aggregation window in days.",
+            "in": "query",
+            "name": "days",
+            "required": false,
+            "schema": {
+              "default": 14,
+              "description": "Aggregation window in days.",
+              "maximum": 90,
+              "minimum": 1,
+              "title": "Days",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatsSummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Dashboard aggregates."
+      }
+    },
     "/health": {
       "get": {
         "operationId": "health_health_get",

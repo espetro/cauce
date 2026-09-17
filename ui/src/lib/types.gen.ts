@@ -4,6 +4,53 @@
  */
 
 export interface paths {
+    "/api/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Click history feed.
+         * @description Click rows newest-first plus the header stats line.
+         *
+         *     ``Query``'s ``ge``/``le`` bounds are a range, not a set, so in-range gap
+         *     values (e.g. 48) reach the handler; ``_narrow_since`` turns them into a
+         *     ``ValueError``, which FastAPI reports as 500 today. Only the three
+         *     literal values (24/168/720) are schema-valid for clients, per the
+         *     generated OpenAPI ``enum`` -- gap values are caller bugs, not user input.
+         */
+        get: operations["api_history_api_history_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/stats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Dashboard aggregates.
+         * @description Aggregates over the search log (searches/day, hit rate, latency
+         *     percentiles, top and zero-result queries, client split).
+         */
+        get: operations["api_stats_api_stats_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health": {
         parameters: {
             query?: never;
@@ -55,6 +102,33 @@ export interface components {
             title: string;
             /** Url */
             url: string;
+        };
+        /**
+         * ClickItem
+         * @description One click row, newest-first in ``HistoryResponse.items``.
+         */
+        ClickItem: {
+            /** Clicked At */
+            clicked_at: number;
+            /** Query */
+            query: string;
+            /** Query Hash */
+            query_hash: string;
+            /** Result Id */
+            result_id: string;
+            /** Source */
+            source: string;
+            /** Title */
+            title: string;
+            /** Url */
+            url: string;
+        };
+        /** ClientSplit */
+        ClientSplit: {
+            /** Client */
+            client: string;
+            /** Count */
+            count: number;
         };
         /**
          * DeltaFrame
@@ -121,6 +195,37 @@ export interface components {
             /** Status */
             status: string;
         };
+        /** HistoryResponse */
+        HistoryResponse: {
+            /** Items */
+            items: components["schemas"]["ClickItem"][];
+            /** Limit */
+            limit: number;
+            /** Since */
+            since: (24 | 168 | 720) | null;
+            stats: components["schemas"]["HistoryStats"];
+        };
+        /**
+         * HistoryStats
+         * @description The stats line above the history table (history.md).
+         */
+        HistoryStats: {
+            /** Last 24H */
+            last_24h: number;
+            /** Oldest */
+            oldest: number | null;
+            /** Total */
+            total: number;
+        };
+        /** HitRate */
+        HitRate: {
+            /** Cache Hits */
+            cache_hits: number;
+            /** Rate */
+            rate: number | null;
+            /** Total */
+            total: number;
+        };
         /**
          * Infobox
          * @description SearXNG infobox entry (Wikipedia-style side panel content).
@@ -149,6 +254,15 @@ export interface components {
             title: string;
             /** Url */
             url: string;
+        };
+        /** LatencyMs */
+        LatencyMs: {
+            /** P50 */
+            p50: number | null;
+            /** P90 */
+            p90: number | null;
+            /** P99 */
+            p99: number | null;
         };
         /**
          * SearchRequest
@@ -217,6 +331,17 @@ export interface components {
             /** Url */
             url: string;
         };
+        /** SearchesPerDay */
+        SearchesPerDay: {
+            /** Cache */
+            cache: number;
+            /** Day */
+            day: string;
+            /** Network */
+            network: number;
+            /** Total */
+            total: number;
+        };
         /**
          * SearxResponse
          * @description The canonical SearXNG-shaped search response.
@@ -262,6 +387,21 @@ export interface components {
              */
             type: "sources";
         };
+        /** StatsSummary */
+        StatsSummary: {
+            /** Client Split */
+            client_split: components["schemas"]["ClientSplit"][];
+            /** Days */
+            days: number;
+            hit_rate: components["schemas"]["HitRate"];
+            latency_ms: components["schemas"]["LatencyMs"];
+            /** Searches Per Day */
+            searches_per_day: components["schemas"]["SearchesPerDay"][];
+            /** Top Queries */
+            top_queries: components["schemas"]["TopQuery"][];
+            /** Zero Result Queries */
+            zero_result_queries: components["schemas"]["ZeroResultQuery"][];
+        };
         /**
          * StepFrame
          * @description A tool call the model is making (e.g. a web search) is starting.
@@ -278,6 +418,13 @@ export interface components {
              * @enum {string}
              */
             type: "step";
+        };
+        /** TopQuery */
+        TopQuery: {
+            /** Count */
+            count: number;
+            /** Query */
+            query: string;
         };
         /**
          * UnresponsiveEngine
@@ -306,6 +453,13 @@ export interface components {
             /** Error Type */
             type: string;
         };
+        /** ZeroResultQuery */
+        ZeroResultQuery: {
+            /** Last Seen */
+            last_seen: number;
+            /** Query */
+            query: string;
+        };
     };
     responses: never;
     parameters: never;
@@ -315,6 +469,73 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    api_history_api_history_get: {
+        parameters: {
+            query?: {
+                /** @description Hours back: 24=day, 168=week, 720=month; absent = all time. */
+                since?: string | null;
+                /** @description Query-text substring filter. */
+                q?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HistoryResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_stats_api_stats_get: {
+        parameters: {
+            query?: {
+                /** @description Aggregation window in days. */
+                days?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StatsSummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     health_health_get: {
         parameters: {
             query?: never;
