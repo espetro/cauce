@@ -27,6 +27,13 @@ export type SearchQuery = paths['/search']['get']['parameters']['query']
 
 const baseUrl = import.meta.env.VITE_API_BASE_URL ?? ''
 
+/**
+ * Base URL for hand-rolled `fetch` calls in `historyApi.ts` (endpoints not yet in the
+ * generated `paths`). Kept in sync with `baseUrl` by construction — this is the same value,
+ * exported once so the two fetch paths cannot drift apart.
+ */
+export const API_BASE_URL = baseUrl
+
 export const client = createClient<paths>({ baseUrl })
 
 /** Thrown by `search()` when `force=error` is active (day-0 gate 6, checkpoints 8 and 13). */
