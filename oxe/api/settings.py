@@ -20,7 +20,7 @@ import asyncio
 from fastapi import APIRouter
 from pydantic import BaseModel, ConfigDict
 
-from oxe.config import AIConfig, ConfigError, load_config, save_config
+from oxe.config import AIConfig, load_config, save_config
 
 router = APIRouter()
 
