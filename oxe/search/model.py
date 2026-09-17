@@ -20,7 +20,7 @@ being omitted from the type.
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class InfoboxUrl(BaseModel):
@@ -118,3 +118,25 @@ class SearchRequest(BaseModel):
     language: str = "all"
     time_range: Literal["day", "week", "month", "year"] | None = None
     safesearch: Literal[0, 1, 2] = 0
+
+    @field_validator("safesearch", mode="before")
+    @classmethod
+    def _reject_bool_safesearch(cls, value: object) -> object:
+        """``bool`` is a subclass of ``int`` in Python, so ``False``/``True``
+        equal ``0``/``1`` and pydantic's ``Literal`` matching -- unlike its
+        scalar ``int`` type coercion -- accepts them even under
+        ``strict=True`` (verified: ``SearchRequest(safesearch=False)``
+        passes strict validation otherwise). That silently lets a JSON
+        ``false``/``true`` body value through as a wire-schema violation the
+        published ``openapi.json`` forbids (schemathesis's contract check
+        catches exactly this). Reject bools explicitly before ``Literal``
+        matching runs. Raises ``ValueError``, not ``TypeError``: pydantic v2
+        field validators only convert ``ValueError``/``AssertionError`` into
+        a proper ``ValidationError`` (422 through FastAPI); a ``TypeError``
+        propagates unhandled instead (confirmed -- schemathesis's contract
+        test caught this too, as an uncaught exception rather than a 422).
+        """
+        if isinstance(value, bool):
+            msg = "safesearch must be an int (0, 1 or 2), not a bool"
+            raise ValueError(msg)  # noqa: TRY004 -- pydantic requires ValueError here, see above
+        return value
