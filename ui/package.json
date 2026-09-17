@@ -7,7 +7,8 @@
     "dev": "vite",
     "extract": "lingui extract --workers 1",
     "compile": "lingui compile --typescript --namespace es --workers 1",
-    "build": "bun run extract && bun run compile && vite build && tsc -b",
+    "gen:types": "openapi-typescript ../openapi.json -o src/lib/types.gen.ts",
+    "build": "bun run gen:types && bun run extract && bun run compile && vite build && tsc -b",
     "lint": "oxlint",
     "preview": "vite preview",
     "test": "vitest run",
@@ -18,8 +19,10 @@
     "@lingui/core": "6.7.0",
     "@lingui/react": "6.7.0",
     "@tanstack/react-router": "1.170.38",
+    "openapi-fetch": "^0.17.0",
     "react": "^19.2.8",
-    "react-dom": "^19.2.8"
+    "react-dom": "^19.2.8",
+    "valibot": "^1.5.0"
   },
   "devDependencies": {
     "@lingui/cli": "6.7.0",
@@ -31,6 +34,7 @@
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.7",
     "@vitejs/plugin-react-swc": "4.3.3",
+    "openapi-typescript": "^7.13.0",
     "oxlint": "1.83.0",
     "typescript": "~6.0.2",
     "vite": "^8.3.0",
