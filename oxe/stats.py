@@ -4,9 +4,9 @@ Usage: oxe stats [--db PATH] [--out DIR] [--days N]
 Writes a single self-contained index.html with inline SVG charts, no JS.
 """
 
+import contextlib
 import html
 import sqlite3
-import statistics
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -98,7 +98,8 @@ def panel_searches_per_day(rows, days) -> str:
         f'<text x="{pad_l}" y="{H - 6}" class="axis">{_day_keys(days)[0][5:]}</text>'
     )
     parts.append(
-        f'<text x="{W - 8}" y="{H - 6}" class="axis" text-anchor="end">{_day_keys(days)[-1][5:]}</text>'
+        f'<text x="{W - 8}" y="{H - 6}" class="axis"'
+        f' text-anchor="end">{_day_keys(days)[-1][5:]}</text>'
     )
     parts.append(
         f'<rect x="{pad_l}" y="{pad_t - 2}" width="10" height="10" class="bar-cache"/>'
@@ -134,7 +135,10 @@ def panel_hit_rate(rows, days) -> str:
             f'class="line-p50" fill="none"/>'
         )
     big = f'<div class="bignum">{rate}%</div>'
-    return f'{big}<svg viewBox="0 0 {W} {H}" role="img" aria-label="cache hit rate trend">{spark}</svg>'
+    return (
+        f'{big}<svg viewBox="0 0 {W} {H}" role="img" aria-label="cache hit rate trend">'
+        f'{spark}</svg>'
+    )
 
 
 def _percentile(sorted_vals, p):
@@ -182,10 +186,10 @@ def panel_latency(rows, days) -> str:
         f'<text x="{pad}" y="{pad + 8}" class="axis">{ymax:.0f} ms</text>'
     )
     legend = (
-        '<line x1="' + f"{pad}" + '" y1="' + f"{pad}" + '" x2="' + f"{pad + 24}" + '" y2="' + f"{pad}" + '" class="line-p50"/>'
-        '<text x="' + f"{pad + 30}" + '" y="' + f"{pad + 4}" + '" class="axis">p50</text>'
-        '<line x1="' + f"{pad + 80}" + '" y1="' + f"{pad}" + '" x2="' + f"{pad + 104}" + '" y2="' + f"{pad}" + '" class="line-p95"/>'
-        '<text x="' + f"{pad + 110}" + '" y="' + f"{pad + 4}" + '" class="axis">p95</text>'
+        f'<line x1="{pad}" y1="{pad}" x2="{pad + 24}" y2="{pad}" class="line-p50"/>'
+        f'<text x="{pad + 30}" y="{pad + 4}" class="axis">p50</text>'
+        f'<line x1="{pad + 80}" y1="{pad}" x2="{pad + 104}" y2="{pad}" class="line-p95"/>'
+        f'<text x="{pad + 110}" y="{pad + 4}" class="axis">p95</text>'
     )
     return (
         f'<svg viewBox="0 0 {W} {H}" role="img" aria-label="network latency">'
@@ -204,7 +208,10 @@ def _fetch_top_queries(conn, days, limit=20):
 def panel_top_queries(rows) -> str:
     if not rows:
         return '<p class="empty">no data yet</p>'
-    out = ['<table class="ptable"><thead><tr><th>#</th><th>query</th><th>count</th></tr></thead><tbody>']
+    out = [
+        '<table class="ptable"><thead>'
+        '<tr><th>#</th><th>query</th><th>count</th></tr></thead><tbody>'
+    ]
     for i, (text, count) in enumerate(rows, 1):
         out.append(
             f"<tr><td>{i}</td><td>{html.escape(text or '(empty)')}</td><td>{count}</td></tr>"
@@ -259,10 +266,11 @@ svg line.grid { stroke: var(--grid); }
 .ptable { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
 .ptable th { text-align: left; color: var(--muted); font-weight: 500; }
 .ptable th, .ptable td { padding: 0.3rem 0.5rem; border-bottom: 1px solid var(--grid); }
+/* ptable right-align handled by td:last-child */
 .ptable td:last-child, .ptable th:last-child { text-align: right; }
 .hbar-row { display: flex; align-items: center; gap: 0.6rem; margin: 0.5rem 0; }
 .hbar-label { width: 3.5rem; font-size: 0.85rem; }
-.hbar-track { flex: 1; height: 0.9rem; background: var(--grid); border-radius: 4px; overflow: hidden; }
+.hbar-track { flex: 1; height: 0.9rem; background: var(--grid); border-radius: 4px; }
 .hbar-fill { display: block; height: 100%; background: var(--accent); border-radius: 4px; }
 .hbar-pct { width: 3rem; text-align: right; font-size: 0.85rem; color: var(--muted); }
 @media (max-width: 700px) { .grid { grid-template-columns: 1fr; } }
@@ -287,16 +295,85 @@ def _render_page(panels, days, generated) -> str:
     )
 
 
+def build_json(db_path: str, days: int = 14) -> dict:
+    """Return dashboard aggregates as JSON-ready dict (sister of build())."""
+    try:
+        with contextlib.closing(
+            sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=5)
+        ) as conn:
+            if not _has_search_log(conn):
+                daily_rows = top_queries = zero_result = client_split = []
+            else:
+                daily_rows = _fetch_daily(conn, days)
+                top_queries = _fetch_top_queries(conn, days)
+                zero_result = _fetch_zero_result(conn, days)
+                client_split = _fetch_client_split(conn, days)
+    except sqlite3.OperationalError:
+        daily_rows = top_queries = zero_result = client_split = []
+
+    per_day: dict[str, dict] = {d: {"cache": 0, "network": 0} for d in _day_keys(days)}
+    for ts, src, _ms in daily_rows:
+        d = _ts_day(ts)
+        if d in per_day:
+            per_day[d]["cache" if src == "cache" else "network"] += 1
+    total = len(daily_rows)
+    hits = sum(1 for _, s, _ in daily_rows if s == "cache")
+    lats = sorted(ms for _, _, ms in daily_rows if ms is not None)
+
+    return {
+        "days": days,
+        "searches_per_day": [
+            {"day": d, **v, "total": v["cache"] + v["network"]}
+            for d, v in per_day.items()
+        ],
+        "hit_rate": {
+            "total": total,
+            "cache_hits": hits,
+            "rate": round(100 * hits / total, 1) if total else None,
+        },
+        "latency_ms": {
+            "p50": round(_percentile(lats, 50), 1) if lats else None,
+            "p90": round(_percentile(lats, 90), 1) if lats else None,
+            "p99": round(_percentile(lats, 99), 1) if lats else None,
+        },
+        "top_queries": [{"query": t, "count": c} for t, c in top_queries],
+        "zero_result_queries": [
+            {"query": t, "last_seen": ts} for t, ts in zero_result
+        ],
+        "client_split": [{"client": cl, "count": n} for cl, n in client_split],
+    }
+
+
 def build(db_path: str, out_dir: str, days: int = 30) -> str:
     """Build the dashboard and return the path of the written index.html."""
     generated = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")
-    try:
-        conn = _connect(db_path)
-    except sqlite3.OperationalError:
-        conn = None
-
     panels = []
-    if conn is None or not _has_search_log(conn):
+    try:
+        with contextlib.closing(_connect(db_path)) as conn:
+            if not _has_search_log(conn):
+                empty = '<p class="empty">no data yet</p>'
+                panels = [
+                    _panel("searches per day", empty),
+                    _panel("cache hit rate", empty),
+                    _panel("network latency", empty),
+                    _panel("client split", empty),
+                    _panel("top queries", empty, wide=True),
+                    _panel("zero-result queries", empty, wide=True),
+                ]
+            else:
+                rows = _fetch_daily(conn, days)
+                top = _fetch_top_queries(conn, days)
+                zeros = _fetch_zero_result(conn, days)
+                clients = _fetch_client_split(conn, days)
+                panels = [
+                    _panel("searches per day", panel_searches_per_day(rows, days)),
+                    _panel("cache hit rate", panel_hit_rate(rows, days)),
+                    _panel("network latency", panel_latency(rows, days)),
+                    _panel("client split", panel_client_split_rows(clients)),
+                    _panel("top queries", panel_top_queries(top), wide=True),
+                    _panel("zero-result queries", panel_zero_result(zeros), wide=True),
+                ]
+    except sqlite3.OperationalError:
         empty = '<p class="empty">no data yet</p>'
         panels = [
             _panel("searches per day", empty),
@@ -306,30 +383,12 @@ def build(db_path: str, out_dir: str, days: int = 30) -> str:
             _panel("top queries", empty, wide=True),
             _panel("zero-result queries", empty, wide=True),
         ]
-    else:
-        try:
-            rows = _fetch_daily(conn, days)
-            top = _fetch_top_queries(conn, days)
-            zeros = _fetch_zero_result(conn, days)
-            clients = _fetch_client_split(conn, days)
-        finally:
-            conn.close()
-        panels = [
-            _panel("searches per day", panel_searches_per_day(rows, days)),
-            _panel("cache hit rate", panel_hit_rate(rows, days)),
-            _panel("network latency", panel_latency(rows, days)),
-            _panel("client split", panel_client_split_rows(clients)),
-            _panel("top queries", panel_top_queries(top), wide=True),
-            _panel("zero-result queries", panel_zero_result(zeros), wide=True),
-        ]
 
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     path = out / "index.html"
     path.write_text(_render_page(panels, days, generated), encoding="utf-8")
     return str(path)
-
-
 def _fetch_client_split(conn, days):
     return list(_run(sqlload.queries().stat_client_split, conn, cutoff=_since_clause(days)))
 
@@ -346,7 +405,8 @@ def panel_client_split_rows(rows) -> str:
         pct = 100 * counts[client] / total
         parts.append(
             f'<div class="hbar-row"><span class="hbar-label">{client}</span>'
-            f'<span class="hbar-track"><span class="hbar-fill" style="width:{pct:.0f}%"></span></span>'
+            f'<span class="hbar-track"><span class="hbar-fill" style="width:{pct:.0f}%">'
+            f'</span></span>'
             f'<span class="hbar-pct">{pct:.0f}%</span></div>'
         )
     return "".join(parts)

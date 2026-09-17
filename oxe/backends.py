@@ -26,7 +26,8 @@ do_search(..., backend=...).
 """
 
 import logging
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutTimeoutError
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FutTimeoutError
 from typing import Protocol, runtime_checkable
 
 log = logging.getLogger(__name__)
@@ -160,7 +161,9 @@ class FanoutBackend:
     def __init__(self, backends: list):
         self.backends = list(backends)
         self.name = "fo:" + ",".join(getattr(b, "name", str(b)) for b in self.backends)
-        self.timeout = max(getattr(b, "timeout", 10.0) for b in self.backends) if self.backends else 10.0
+        self.timeout = (
+            max(getattr(b, "timeout", 10.0) for b in self.backends) if self.backends else 10.0
+        )
 
     def search(self, req: dict) -> dict:
         if not self.backends:

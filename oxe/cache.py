@@ -10,7 +10,8 @@ from . import sqlload
 
 # Faster-than-LIKE fuzzy matching for history/cache search; optional dep.
 try:
-    from rapidfuzz import fuzz, process as rz_process
+    from rapidfuzz import fuzz
+    from rapidfuzz import process as rz_process
 
     _FUZZ = True
 except ImportError:
@@ -27,6 +28,10 @@ class TTLCache:
         self._conn = sqlite3.connect(self.db_path, check_same_thread=False, isolation_level=None)
         self._conn.row_factory = sqlite3.Row
         self._conn.executescript(sqlload.schema_sql())
+        try:
+            self._conn.execute("ALTER TABLE cache ADD COLUMN created_at INTEGER")
+        except sqlite3.OperationalError:
+            pass  # column already exists
         self._conn.execute("PRAGMA optimize;")
         self._all_queries: list[str] | None = None
 
@@ -56,13 +61,27 @@ class TTLCache:
                 text=value.get("_q", ""),
                 response=payload,
                 expires_at=expires_at,
+                created_at=int(time.time()),
             )
             self._conn.execute("DELETE FROM cache WHERE expires_at < ?", (expires_at - ttl - 1,))
 
+    def get_with_meta(self, key: str) -> tuple[dict, int | None] | None:
+        """Like get() but returns (payload, created_at). No hits bump avoided: counts too."""
+        row = self._q("get_cache")(self._conn, key=key)
+        if row is None or row["expires_at"] < int(time.time()):
+            return None
+        try:
+            payload = gzip.decompress(row["response"])
+        except (OSError, gzip.BadGzipFile):
+            return None
+        self._q("hits_bump")(self._conn, key=key)
+        return json.loads(payload), row["created_at"]
+
     def invalidate(self) -> int:
         with self._lock:
-            cur = self._conn.execute("DELETE FROM cache")
-            return cur.rowcount
+            n = self._conn.execute("DELETE FROM cache").rowcount
+            n += self._conn.execute("DELETE FROM answers").rowcount
+            return n
 
     def _fuzzy_query_ids(self, q: str) -> list[str]:
         """Hashes of queries close to q; rapidfuzz when available, difflib otherwise."""
@@ -116,6 +135,7 @@ class TTLCache:
                 "hash": r["hash"],
                 "query": r["query"],
                 "expires_at": r["expires_at"],
+                "created_at": r["created_at"],
                 "hits": r["hits"],
                 "size_bytes": r["size_bytes"],
                 "expired": r["expires_at"] < now if now else r["expires_at"] < int(time.time()),
@@ -147,6 +167,39 @@ class TTLCache:
     def close(self) -> None:
         self._conn.close()
 
+    # -- answers table (completed AI answers) --------------------------------
+
+    def get_answer(self, key: str) -> dict | None:
+        row = self._q("get_answer")(self._conn, key=key)
+        if row is None or row["expires_at"] < int(time.time()):
+            return None
+        try:
+            payload = gzip.decompress(row["response"])
+        except (OSError, gzip.BadGzipFile):
+            return None
+        self._q("answer_hits_bump")(self._conn, key=key)
+        return json.loads(payload)
+
+    def put_answer(self, key: str, query: str, value: dict, ttl: int, model: str = "") -> None:
+        payload = gzip.compress(json.dumps(value, separators=(",", ":")).encode("utf-8"))
+        now = int(time.time())
+        with self._lock:
+            self._q("put_answer")(
+                self._conn,
+                key=key,
+                text=(query or "")[:200],
+                response=payload,
+                model=model,
+                created_at=now,
+                expires_at=now + ttl,
+            )
+            self._q("prune_answers")(self._conn, now=now)
+
+    def answer_stats(self) -> dict:
+        db_size = os.path.getsize(self.db_path) if os.path.exists(self.db_path) else 0
+        n = self._conn.execute("SELECT COUNT(*) FROM answers").fetchone()[0]
+        return {"rows": n, "db_size_bytes": db_size}
+
     # -- clicks -------------------------------------------------------------
 
     def record_click(
@@ -176,9 +229,7 @@ class TTLCache:
         limit: int = 50,
         since_hours: int | None = None,
     ) -> list[dict]:
-        since = (
-            0 if since_hours is None else int(time.time()) - int(since_hours) * 3600
-        )
+        since = 0 if since_hours is None else int(time.time()) - int(since_hours) * 3600
         like = f"%{query_text}%" if query_text else None
         rows = self._q("get_clicks")(
             self._conn,
@@ -241,6 +292,12 @@ class TTLCache:
             )
             return cur or 0
 
+    def suggest_queries(self, prefix: str, limit: int = 3) -> list[str]:
+        """Recency-then-frequency ranked unique queries starting with prefix."""
+        esc = (prefix or "").replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_").lower()
+        rows = self._q("suggest_queries")(self._conn, prefix=f"{esc}%", limit=limit)
+        return [r["query_text"] for r in rows]
+
     def get_search_log(self, limit: int = 100) -> list[dict]:
         rows = self._q("get_search_log")(self._conn, limit=limit)
         return [
@@ -277,9 +334,7 @@ class TTLCache:
             if scope == "all":
                 cur = self._q("delete_clicks_all")(self._conn)
             elif scope == "24h":
-                cur = self._q("delete_clicks_since")(
-                    self._conn, since=int(time.time()) - 86400
-                )
+                cur = self._q("delete_clicks_since")(self._conn, since=int(time.time()) - 86400)
             else:
                 return 0
             return cur

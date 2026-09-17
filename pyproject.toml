@@ -4,12 +4,12 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "oxe"
-version = "0.3.1"
+version = "0.4.0"
 description = "Local web-search proxy and cache for AI agents. Exa-compatible HTTP API + MCP, DuckDuckGo backend, SQLite TTL."
 readme = "README.md"
 requires-python = ">=3.10"
-license = { text = "MIT" }
-authors = [{ name = "espetro" }]
+license = { text = "Apache-2.0" }
+authors = [{ name = "Quino Terrasa" }]
 keywords = [
     "duckduckgo",
     "duckduckgo-search",
@@ -28,7 +28,7 @@ keywords = [
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
+    "License :: OSI Approved :: Apache Software License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
@@ -49,6 +49,7 @@ dependencies = [
 
 [project.optional-dependencies]
 fuzzy = ["rapidfuzz>=3.14.5"]
+ai = ["aisuite[openai,anthropic]~=0.1.14"]
 
 [project.urls]
 Homepage = "https://github.com/espetro/oxe"
@@ -63,4 +64,30 @@ where = ["."]
 include = ["oxe*"]
 
 [tool.setuptools.package-data]
-oxe = ["static/*", "sql/*.sql"]
+oxe = ["sql/*.sql", "ui_dist/*", "ui_dist/assets/*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "SIM", "RUF", "C4", "UP", "BLE", "TRY"]
+ignore = [
+    "UP045", # Optional[X] -> X | None churn in pre-existing code
+    "UP035",
+    "BLE001", # broad except at API boundaries is intentional
+    "TRY003", # long exception messages in HTTP handlers are fine here
+    "TRY401",
+    "B904",
+    "C408",
+    "RUF012",
+    "RUF022",
+    "SIM102",
+    "SIM105",
+    "SIM108",
+    "E741",
+    "B905",
+    "TRY300",
+    "C416",
+    "E402",
+]

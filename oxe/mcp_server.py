@@ -1,5 +1,5 @@
-from typing import Any
 import logging
+from typing import Any
 
 from mcp.server.mcpserver import MCPServer
 
@@ -32,7 +32,7 @@ mcp = MCPServer(
 @mcp.tool(name="exa_search", description=(
     "Search the web via DuckDuckGo and return Exa-shaped JSON. "
     "Args: query (required), num_results (1-30, default 10), type ('auto'|'instant'; "
-    "deep variants ignored), contents_highlights, contents_text, include_domains, "
+    "deep variants ignored), source ('web'|'history'|'cache'; default 'web'), "
     "exclude_domains, category ('news' for last 24h, else ''). "
     "Returns {requestId, searchType, results, costDollars, _source}."
 ))
@@ -45,6 +45,7 @@ def exa_search(
     include_domains: list[str] | None = None,
     exclude_domains: list[str] | None = None,
     category: str = "",
+    source: str = "web",
 ) -> dict:
     req: dict[str, Any] = {
         "query": query,
@@ -57,10 +58,15 @@ def exa_search(
         req["includeDomains"] = include_domains
     if exclude_domains:
         req["excludeDomains"] = exclude_domains
+    source = source if source in ("web", "history", "cache") else "web"
+    if source == "history":
+        rows = _cache.get_clicks(query_text=query, limit=num_results) if _cache else []
+        return {"query": query, "tool_source": "history", "results": rows}
     if _cache is None:
         return exa_compat.search(req)
     from .search import do_search
     out, duration_ms = do_search(_cache, req, with_duration=True)
+    out["tool_source"] = source
     try:
         _cache.log_search(
             query_text=(query or "")[:200],

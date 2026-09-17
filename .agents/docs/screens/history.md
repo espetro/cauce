@@ -8,24 +8,21 @@ the user and their agents can see what was already read for a query.
 
 ```
 +------------------------------------------------------------------+
-| oxe   search   [history]  cache   health   api           v0.3.x  |
+| oxe   search   [history]  dashboard   (?)  settings  [gh] v0.4.0 |
 +------------------------------------------------------------------+
-| 12 clicks in last 24h - 340 total - 2026-09-01 08:12:33 (oldest) |
+| Click history                                                    |
+| 12 clicks in last 24h · 340 total · 2026-09-01 08:12 (oldest)    |
 |                                                                  |
-| filter: [ all time v ]   [query filter______]        clear       |
+| [ all time v ]  [filter by query text...]  [clear]               |
 |                                                                  |
-| | 2026-09-14 19:42 | python asyncio | Understanding asyncio    | |
-| |                  |               | realpython.com/asyncio... | |
-| |                  |               |  [copy json]       web-ui | |
-| |----------------------------------------------------------------|
-|                    ^ table separator (68 cols)                  |
-| | 2026-09-14 18:05 | rust tokio   | Tokio tutorial            | |
-| |                  |              | tokio.rs/tokio/tutorial   | |
-| |                  |              |  [copy json]          mcp | |
-| (newest first, one row per click; query links to the cached      |
-|  response row; title+url open the page in a new tab; copy json   |
-|  shares that query's Exa-shaped cached payload)                  |
-|                                                                  |
+| clicked        query            title        url       src       |
+| 2026-09-14    python asyncio    Understand~  realpyth~ web-ui  |
+|  19:42        (link to /row)                             [copy json] |
+| 2026-09-14    rust tokio        Tokio tutor  tokio.rs~ mcp     |
+|  18:05                                                  [copy json] |
+| (newest first, one row per click; query links to /row/<hash>;    |
+|  title+url open the page in a new tab; url column hidden below   |
+|  ~768px; copy json shares that query's Exa-shaped payload)       |
 +------------------------------------------------------------------+
 ```
 
@@ -33,42 +30,45 @@ Empty state:
 
 ```
 +------------------------------------------------------------------+
-| oxe   search   [history]  cache   health   api           v0.3.x  |
+| oxe   search   [history]  dashboard   (?)  settings  [gh] v0.4.0 |
 +------------------------------------------------------------------+
-| 0 clicks in last 24h - 0 total - - (oldest)                      |
+| 0 clicks in last 24h · 0 total · —                               |
 |                                                                  |
-| no clicks yet - open a result from the search page.              |
-|                                                                  |
+| no clicks yet — open a result from the search page.              |
 +------------------------------------------------------------------+
 ```
 
 ## Behavior
 
-- Per-row `copy json` affordance: copies the Exa-shaped cached payload
-  for that query (same contract as `POST /search`), so a past search
-  can be handed to an agent without re-running it. Tiny vanilla JS,
-  `navigator.clipboard`; degrades to nothing without JS.
+- Per-row `copy json` affordance: re-fetches the query from the search
+  endpoint (`Accept: application/json`) and copies the Exa-shaped
+  payload to the clipboard (same contract as `POST /search`), so a
+  past search can be handed to an agent without re-running it.
 - Otherwise read-only; the other interactive bits are the filter
-  controls, the `clear` link (only when a filter is active) and the
-  links themselves.
-- Rows are recorded on click from the search page (`POST /click` from
-  `app.js`) and from MCP agents calling `POST /click` directly, so
-  agent exploration shows up next to human browsing.
+  controls, the `clear` button (only when a filter is active) and the
+  links themselves. A loading dots state covers fetches; fetch errors
+  render an inline error line.
+- Rows are recorded on click from the search page (`POST /click`) and
+  from MCP agents calling `POST /click` directly, so agent exploration
+  shows up next to human browsing.
 - Query cell links to the cached response row (`/row/<query_hash>`) so
   the user can see the full result set the click came from.
-- Filter select offers 24h / 7d / 30d / all time (`since_hours` query
-  param); query text filter narrows by `query_text` substring.
+- Filter select offers all time / last 24h / last week / last month
+  (backed by the `since` hours param on `GET /history`); query text
+  filter narrows the fetched rows client-side by query substring.
+  Filters are client state only, not url-addressable today (see
+  userflow-checkpoints.md for the planned `since`/`qf` params).
 - Stats line above the table: clicks in last 24h, total, oldest
-  timestamp (dash when empty).
+  timestamp (dash when empty). Local time format `YYYY-MM-DD HH:MM`.
 - Source column distinguishes `web-ui` clicks from `mcp` agent clicks.
+- Cap of 200 rows per view; use the filters to reach older entries.
 
 ## Responsive
 
-- Table columns (timestamp, query, title, url, source) collapse in
-  priority order: url truncates first, then title; timestamp and query
-  always visible.
-- On narrow screens rows can wrap into stacked key-value style; no
-  horizontal scroll required below ~360px.
+- Table columns (clicked, query, title, url, source): the url column
+  hides below ~768px; titles and urls truncate with ellipsis.
+- Table container scrolls horizontally as a last resort on very
+  narrow screens.
 
 ## Notes
 
@@ -76,9 +76,6 @@ Empty state:
   (default 30). Expect the "oldest" timestamp to roll forward; old rows
   disappearing is retention, not data loss.
 - Share-first: `copy json` is the history-screen twin of the search
-  page's share row; both emit identical payloads for the same query
-  hash.
+  page's share row; both emit Exa-shaped payloads.
 - `exa_user_history` MCP tool reads this same table so agents can avoid
   re-researching URLs the user already opened.
-- Cap of 200 rows returned per view; the filter is the way to reach
-  older entries within the retention window.

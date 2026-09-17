@@ -9,10 +9,10 @@ CREATE TABLE IF NOT EXISTS cache (
   query_text  TEXT NOT NULL,
   response    BLOB NOT NULL,
   expires_at  INTEGER NOT NULL,
-  hits        INTEGER NOT NULL DEFAULT 0
+  hits        INTEGER NOT NULL DEFAULT 0,
+  created_at  INTEGER
 ) WITHOUT ROWID;
 CREATE INDEX IF NOT EXISTS expires_idx ON cache(expires_at);
-
 CREATE TABLE IF NOT EXISTS clicks (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   query_hash TEXT    NOT NULL,
@@ -38,3 +38,14 @@ CREATE TABLE IF NOT EXISTS search_log (
 );
 CREATE INDEX IF NOT EXISTS search_log_ts_idx   ON search_log(ts);
 CREATE INDEX IF NOT EXISTS search_log_query_idx ON search_log(query_hash);
+
+CREATE TABLE IF NOT EXISTS answers (
+  answer_hash TEXT PRIMARY KEY,
+  query_text  TEXT    NOT NULL,
+  response    BLOB    NOT NULL,
+  model       TEXT    NOT NULL DEFAULT '',
+  created_at  INTEGER NOT NULL,
+  expires_at  INTEGER NOT NULL,
+  hits        INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS answers_expiry_idx ON answers(expires_at);

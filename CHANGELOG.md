@@ -5,6 +5,37 @@ All notable changes to oxe are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-09-15
+
+### Added
+
+- Web UI rewritten as a Preact SPA in a new `ui/` workspace (Vite + daisyUI), served by the Python server from the built bundle. AI answer mode with SSE streaming (tool steps, sources, related queries), DDG-style pill search bar with segmented Search/AI toggle, letters pager, theme switcher, cache badge with web-refresh, pagination, `?settings=open` URL state.
+- AI answers end to end: `POST /answer` (SSE), `GET /v1/models` (provider model listing via lazy SDK imports), answer caching. `oxe[ai]` optional extra (aisuite with openai/anthropic).
+- `GET /settings` / `PUT /settings`: read and write the `[ai]` section of `config.toml` (api_key redacted on read, preserved on write when omitted). `{env.NAME}` interpolation in config string values and `.env` loading from the working directory (`oxe.config`).
+- `GET /ac`: DuckDuckGo autocomplete proxy for UI suggestions; `GET /suggest`: OpenSearch suggestions over own query history.
+- Search pagination end to end (`page` in the cache key and DDGS page kwarg); `_cached_at` on cached payloads and a `_refresh` flag to force network refresh.
+- Dev observability: `OXE_DEV=1` emits structured JSON events (search, suggest, ac, answer, models); `mise run logs` tails the dev server log.
+- `POST /row/{key}/delete` is idempotent: 204 for non-HTML clients on an already-deleted row (UI refresh flow), 303 redirect for browsers.
+- `GET /api/history` (merged click-history view) and `GET /api/stats` (dashboard metrics: searches per day, cache hit rate, latency percentiles, client split), plus a `/dashboard` SPA shell that renders them.
+- Pydantic contract models for the typed endpoints with a JSON error envelope, and an OpenAPI export pipeline (`/docs`).
+- Error states for search: backend failures are distinguished from genuinely empty results via `_error` and `_error_kind` payload fields and an `X-Cache: HIT/MISS` response header; failed searches are not cached.
+- `POST /settings/test` to verify AI provider credentials; env-template-preserving saves and conf-gated answer caching with greeting guard.
+- Web UI: self-hosted fonts (Plus Jakarta Sans + Apfel Grotesk), i18n via paraglide (EN-only), motion system with status state machines and error boundaries, virtualized continuous-scroll result list, openapi-generated types with a single typed request helper.
+
+### Changed
+
+- `oxe/server.py` split into an `oxe/server/` package of APIRouters grouped by resource.
+- Relicensed from MIT to Apache 2.0 (Copyright Quino Terrasa).
+
+### Changed
+
+- The server serves the SPA from a built bundle resolved as `$OXE_UI_DIST`, `./ui/dist` (repo checkout), then packaged `oxe/ui_dist`. When no bundle exists, `/` serves a minimal inline page explaining how to get the UI; the JSON API and MCP work regardless.
+- The legacy server-rendered UI was removed: `oxe/ui.py` and `oxe/static/` are gone. Content negotiation on `/search` is unchanged (HTML browsers get the SPA or the no-UI page, `Accept: application/json` clients get Exa JSON).
+- `mise run build:ui` builds `ui/dist` and copies it to `oxe/ui_dist` for packaging; package-data ships `ui_dist` when present.
+- Ruff configuration now lives in `pyproject.toml` (select E,F,W,I,B,SIM,RUF,C4,UP,BLE,TRY with pragmatic ignores); `mise run lint:py` is clean.
+- AI clients are closed per request and managed with context managers; readonly stats connections are closed deterministically.
+- UI size budgets raised to 45KB gzipped JS / 35KB gzipped CSS for feature headroom.
+
 ## [0.3.1] - 2026-09-15
 
 ### Added

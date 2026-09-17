@@ -1,0 +1,139 @@
+[tools]
+python = "3.12"
+bun = "1.2"
+uv = "latest"
+
+[tasks.dev]
+description = "Run backend server + UI dev server"
+depends = ["dev:server", "dev:ui"]
+
+[tasks."dev:server"]
+description = "Run the oxe backend (uv run oxe); port must match the vite proxy target in ui/vite.config.ts (127.0.0.1:4480). Writes to /tmp/oxe-dev.log (tail with: mise run logs)"
+run = """
+#!/usr/bin/env bash
+set -euo pipefail
+mkdir -p /tmp
+export OXE_PORT=4480
+export OXE_DEV=1
+echo "=== oxe dev server starting $(date) ===" >> /tmp/oxe-dev.log
+exec uv run oxe 2>&1 | tee -a /tmp/oxe-dev.log
+"""
+
+[tasks.logs]
+description = "Tail the dev backend log (/tmp/oxe-dev.log) with structured JSON events"
+run = "tail -f /tmp/oxe-dev.log"
+
+[tasks."dev:ui"]
+description = "Run the Vite dev server (ui/)"
+dir = "ui"
+run = "bun run dev"
+
+[tasks.build]
+description = "Build static UI into dist/"
+dir = "ui"
+run = "bun run build"
+
+[tasks."build:ui"]
+description = "Build the UI and copy it into oxe/ui_dist for packaging"
+run = """
+#!/usr/bin/env bash
+set -euo pipefail
+bun run --cwd ui build
+rm -rf oxe/ui_dist
+cp -R ui/dist oxe/ui_dist
+echo "copied ui/dist -> oxe/ui_dist ($(find oxe/ui_dist -type f | wc -l | tr -d ' ') files)"
+"""
+
+[tasks.serve]
+description = "Serve production build via the Python server"
+run = "uv run oxe"
+
+[tasks.check]
+description = "Typecheck + build + size budgets"
+dir = "ui"
+run = "bun run check"
+
+[tasks.openapi]
+description = "Regenerate openapi.json at repo root from the FastAPI app"
+run = "uv run python scripts/export_openapi.py"
+
+[tasks.lint]
+description = "Lint everything (python + ui)"
+depends = ["lint:py", "lint:ui"]
+
+[tasks."lint:py"]
+description = "Lint the Python package"
+run = "uv run --with ruff ruff check oxe"
+
+[tasks."openapi:ts"]
+description = "Regenerate openapi.json then the UI's generated types (run after backend schema changes)"
+run = """
+mise run openapi
+bun run --cwd ui gen:types
+"""
+
+[tasks."lint:ui"]
+description = "Lint the UI workspace (oxlint + oxfmt)"
+dir = "ui"
+run = "bun run lint"
+
+[tasks.test]
+description = "Run all tests"
+depends = ["test:py"]
+
+[tasks."test:py"]
+description = "Run Python tests"
+run = "uv run --with pytest pytest"
+
+# ---- fast validation gate ----
+# validate: ~20s layered gate (ruff, pytest -x, ui lint, tsc, bun test)
+# validate:full: full ui build incl. prerender + size budgets
+
+[tasks.validate]
+description = "Fast validation gate: ruff + pytest -x + ui lint + tsc + bun test (~20s)"
+run = """
+#!/usr/bin/env bash
+set -uo pipefail
+start=$(date +%s)
+fail=0
+
+step() { # label, then command...
+  local label="$1" t0 ts; shift
+  t0=$(date +%s)
+  if "$@" > /tmp/oxe-validate-step.log 2>&1; then
+    ts=$(( $(date +%s) - t0 ))
+    echo "OK $label (${ts}s)"
+  else
+    echo "FAIL $label"
+    cat /tmp/oxe-validate-step.log
+    fail=1
+  fi
+}
+
+step ruff       uv run --with ruff ruff check oxe tests
+step pytest     uv run --with pytest pytest -x -q
+step ui-lint    bun run --cwd ui lint
+step tsc        bash -c 'cd ui && bun x tsc -b'
+step bun-test   bun test --cwd ui src
+
+total=$(( $(date +%s) - start ))
+if [ "$fail" -eq 0 ]; then
+  echo "total ${total}s"
+else
+  echo "FAIL total ${total}s"
+  exit 1
+fi
+"""
+
+[tasks."validate:full"]
+description = "Full validation: validate gate + complete ui build (tsc, vite, prerender, size budgets)"
+run = """
+#!/usr/bin/env bash
+set -euo pipefail
+mise run validate
+start=$(date +%s)
+bun run --cwd ui check
+echo "OK ui-build ($(( $(date +%s) - start ))s, prerendered dist + size budgets)"
+test -s ui/dist/index.html && [ "$(wc -c < ui/dist/index.html)" -gt 2048 ] \\
+  || { echo "FAIL prerendered dist/index.html missing or too small"; exit 1; }
+"""

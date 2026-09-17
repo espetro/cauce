@@ -11,6 +11,7 @@ downloads/
 eggs/
 .eggs/
 lib/
+!ui/src/lib/
 lib64/
 parts/
 sdist/
@@ -43,6 +44,9 @@ uv.lock
 *.db-wal
 *.db-shm
 
+# Packaged UI build (created by `mise run build:ui`)
+oxe/ui_dist/
+
 # Editor / OS
 .DS_Store
 .vscode/
@@ -50,3 +54,5 @@ uv.lock
 *.swp
 *.swo
 uv.lock
+.playwright-cli/
+.agents/docs/screens/references/

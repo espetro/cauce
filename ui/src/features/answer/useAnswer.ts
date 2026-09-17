@@ -1,0 +1,103 @@
+import { useCallback, useRef, useState } from "preact/hooks";
+import { streamAnswer, type AiSource, type AnswerEvent } from "../../lib/ai";
+import { useMountEffect } from "../../lib/useMountEffect";
+
+export type AnswerStatus = "idle" | "streaming" | "done" | "error" | "stopped";
+
+/** Trailing metadata the model appends to its final message
+ * ({"confidence": 8, "related_questions": [...]}). The backend's `done`
+ * event carries the parsed fields, but the raw `delta` stream includes the
+ * blob: strip any trailing JSON object of that shape from displayed text. */
+const META_TAIL_RE = /\s*\{\s*"confidence"\s*:\s*\d+[\s\S]*?"related_questions"\s*:[\s\S]*?\}\s*$/;
+
+export function stripAnswerMeta(text: string): string {
+  return text.replace(META_TAIL_RE, "");
+}
+
+export interface AnswerState {
+  status: AnswerStatus;
+  text: string;
+  steps: string[];
+  sources: AiSource[];
+  cached: boolean;
+  confidence: number;
+  relatedQuestions: string[];
+  error: string | null;
+}
+
+export const INITIAL: AnswerState = {
+  status: "idle",
+  text: "",
+  steps: [],
+  sources: [],
+  cached: false,
+  confidence: 0,
+  relatedQuestions: [],
+  error: null,
+};
+
+/** Pure SSE event reducer so event handling is testable without a stream.
+ * The first event transitions idle -> streaming; done/error terminalize. */
+export function applyAnswerEvent(state: AnswerState, ev: AnswerEvent): AnswerState {
+  if (ev.type === "step") {
+    return { ...state, status: "streaming", steps: [...state.steps, ev.label] };
+  }
+  if (ev.type === "delta") {
+    return { ...state, status: "streaming", text: stripAnswerMeta(state.text + ev.text) };
+  }
+  if (ev.type === "sources") {
+    return { ...state, status: "streaming", sources: ev.sources };
+  }
+  if (ev.type === "done") {
+    return {
+      ...state,
+      text: ev.answer || stripAnswerMeta(state.text),
+      status: state.status === "stopped" ? "stopped" : ev.error ? "error" : "done",
+      cached: ev.cached ?? false,
+      confidence: ev.confidence,
+      relatedQuestions: ev.related_questions ?? [],
+      error: ev.error ?? null,
+    };
+  }
+  const _exhaustive: never = ev;
+  return _exhaustive;
+}
+
+/** Owns the SSE answer stream lifecycle for one query run. */
+export function useAnswer() {
+  const [state, setState] = useState<AnswerState>(INITIAL);
+  const abortRef = useRef<AbortController | null>(null);
+  const stoppedRef = useRef(false);
+
+  useMountEffect(function abortStreamOnUnmount() {
+    return () => abortRef.current?.abort();
+  });
+
+  const run = useCallback(function runAnswerStream(query: string) {
+    abortRef.current?.abort();
+    const ctl = new AbortController();
+    abortRef.current = ctl;
+    stoppedRef.current = false;
+    setState(INITIAL);
+
+    const on = (ev: AnswerEvent) => {
+      setState((s) => applyAnswerEvent(s, ev));
+    };
+
+    streamAnswer(query, on, ctl.signal).catch((e: unknown) => {
+      if ((e as Error)?.name === "AbortError") {
+        setState((s) => (stoppedRef.current ? s : { ...s, status: "stopped" }));
+        return;
+      }
+      setState((s) => ({ ...s, status: "error", error: (e as Error)?.message ?? "answer failed" }));
+    });
+  }, []);
+
+  const stop = useCallback(function stopAnswerStream() {
+    stoppedRef.current = true;
+    abortRef.current?.abort();
+    setState((s) => ({ ...s, status: "stopped" }));
+  }, []);
+
+  return { state, run, stop };
+}

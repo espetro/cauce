@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- oxe logotype: "oxe" set in Apfel Grotesk (Mittel), OFL license (ui/public/fonts/OFL.txt).
+     Text converted to outlines so no font is needed at render time.
+     Regenerate with fontTools: extract glyph paths from the woff2 for "oxe",
+     compose with per-glyph advance widths (total 1605 units at upm 1000),
+     wrap in scale(0.1) with a y-flip group transform. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 161 52" fill="currentColor">
+  <g transform="scale(0.1 -0.1) translate(0 -512)">
+    <path transform="translate(0 0)" d="M281 -12C428 -12 533 97 533 250C533 403 428 512 281 512C134 512 30 403 30 250C30 97 134 -12 281 -12ZM281 91C198 91 139 157 139 250C139 345 198 412 281 412C364 412 424 345 424 250C424 157 364 91 281 91Z"/>
+<path transform="translate(562 0)" d="M1 0H139L250 173L367 0H501L313 255L487 500H354L251 339L142 500H8L189 255Z"/>
+<path transform="translate(1064 0)" d="M280 -12C388 -12 477 46 503 131L396 169C384 122 338 90 281 90C209 90 155 141 142 217H510C524 376 432 512 273 512C131 512 30 403 30 250C30 97 133 -12 280 -12ZM143 295C157 365 207 412 273 412C338 412 390 365 400 295Z"/>
+  </g>
+</svg>

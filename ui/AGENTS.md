@@ -1,0 +1,133 @@
+# ui/ — agent guidelines
+
+Scope: everything under `ui/` (Preact + Vite webapp). Repo-wide rules live in the root `AGENTS.md`; screen specs in `.agents/docs/screens/` are the behavioral source of truth.
+
+## Design tokens
+
+- Design token system: daisyUI (on Tailwind CSS 4). Everywhere else in these docs, "design tokens" refers to this system. If it is swapped, only this one line changes.
+- NEVER write vanilla HTML styling. Every surface uses design tokens (daisyUI component classes + theme custom properties). Raw `btn`, `card`, `input`, `tabs` primitives come from the token system; project components compose them.
+- Prefer premade design-token components as-is. Only build a custom component when:
+  1. the needed logic doesn't exist in the token set, or
+  2. inlining token classes becomes too verbose/repeated across files.
+  In that case, modularize: one component, built ON TOP of token components, in `ui/src/components/`.
+
+## Architecture
+
+- File-based routing: `ui/src/routes/` mirrors URLs (`index.tsx` → `/`, `search.tsx` → `/search`, `history.tsx` → `/history`). One route file per spec screen.
+- Feature-driven grouping where a feature spans multiple components: `ui/src/features/<feature>/` (e.g. `suggests/` owns the dropdown + hook + endpoint client).
+- Components follow SRP: one component = one job. `<SearchBox>` does not fetch; `<SuggestionsDropdown>` does not submit; data flow is props down, callbacks up.
+- Shared primitives live in `ui/src/components/`; feature-specific ones stay inside their feature folder. Do not hoist prematurely.
+
+## Hard constraints (from the stack decision)
+
+- No-JS is not required; keep client payload small (budget: 45KB gz JS / 35KB gz CSS, kept ~5-10KB above current usage for feature headroom, enforced by `mise run check`).
+- Content negotiation is backend behavior; the UI always speaks HTML/routes.
+- Dark mode via token theme (`color-scheme: light dark`); fonts: Plus Jakarta Sans Variable (body), Apfel Grotesk (logotype, self-hosted), system fallbacks. No Geist.
+- Streaming: the answer view consumes chunked fetch; citation markers `[n]` render as superscript links targeting `<SourceCard>` ids.
+
+## Responsiveness
+
+- Every screen must work at ≈390px, 768px, and desktop. Mobile-first styling.
+- Before declaring UI work done: screenshot at mobile viewport and compare against the spec's `## Responsive` section.
+
+## Design references
+
+- Any image the owner shares as a design reference MUST be copied to
+  `.agents/docs/screens/references/` (gitignored) with a descriptive filename
+  (e.g. `ddg-dark-pill.png`, `google-ai-mode-morph.png`), then cited from the
+  relevant screen spec in `.agents/docs/screens/<screen>.md`.
+- Before implementing or validating UI work, ALWAYS check that folder first:
+  it accumulates the owner's reference designs (search engines, UI patterns)
+  and is the single place where design references live for every agent,
+  including subagents. Do not rely on paths under /var/folders or ~/Documents
+  surviving between sessions.
+
+## URL state & QA checkpoints
+
+URL-addressable state is the app's reproducibility contract: every meaningful
+UI state should be deep-linkable. Full checkpoint list, status, and rationale
+lives in `.agents/docs/screens/userflow-checkpoints.md`.
+
+Param contract:
+
+| Param | Values | Screen/state |
+|---|---|---|
+| `q` | query text | `/search?q=` Search-mode results (works today) |
+| `p` | page number; **absent = page 1** | **deprecated** (continuous scroll): deep links with `p` are ignored/stripped; generated links never carry it |
+| `mode` | `ai` (absent = Search) | AI answer view (works today); unavailable AI stays on Search results with an inline notice |
+| `settings` | `open` / `close` (absent = closed) | settings dialog, valid on any route (works today; stripped on close/save) |
+| `since` | `24`/`168`/`720`/`all` | history time filter (works today) |
+| `qf` | substring | history query-text filter (works today) |
+| `suggest` | `1` (+`q`) | suggestions dropdown open, QA-only (planned) |
+| `force` | `error`/`ai-off`/`empty` | stub error/notice/empty states, QA-only (planned) |
+
+`suggest=1` and `force=*` are planned/questionable: they are listed so QA
+agents know the intended contract, but they do not work yet and must not
+be relied on until implemented. `since` and `qf` work today
+(`routes/history.tsx`); `all` (absent param) is the default and is
+stripped from the url. Theme and mode persist
+in `localStorage` (`oxe-theme`, `oxe-mode`), deliberately not URLs.
+
+State library: nanostores is the approved store layer, in two cases only:
+routing (`lib/routes.ts` is the canonical pattern) and UI-shared atoms like
+toasts (`lib/toasts.ts`). preact-iso stays only for lazy/hydrate/prerender.
+Do NOT move URL-contract state (the param table above) or fetch state
+machines into stores; those stay in custom hooks / route components. JS
+budget stays 45KB gz.
+
+QA agent convention: (a) drive states via URL deep links, not
+click-throughs, whenever a URL recipe exists; (b) when you find a new key
+checkpoint while testing, name it, make it reproducible via URL state
+(propose or implement the param), and update both the table above and
+`.agents/docs/screens/userflow-checkpoints.md` — this convention is the
+contract; keep the two lists in sync.
+
+## Copy & i18n
+
+All user-visible copy lives in `ui/messages/en.json`, compiled by
+@inlang/paraglide-js at build time. Components import messages from one
+place only: `import * as m from "../lib/i18n"` (which re-exports the
+generated `src/paraglide/messages.js`), then call `m.key()` or
+`m.key({ param })`.
+
+- Casing/tone: existing screen copy is lowercase sentence style
+  ("nothing here", "copy json"); brand name "oxe" and acronyms (AI, MCP,
+  API, URL) keep their casing. Match the screen's existing voice; do not
+  introduce Title Case or sentence-cased UI copy.
+- Params, not concatenation: never build user-visible text with template
+  strings across components. Pass params: `m.history_error({ e })`.
+- Plurals: the message-format plugin has no ICU inline plural in the
+  string syntax. Use the object form with an exact-match key:
+  `"search_meta_results": [{ "match": { "n=1": "{n} result", "n=*": "{n} results" } }]`.
+- What migrates: headings, labels, buttons, option text, empty states,
+  error lines, toasts, placeholders, aria-labels, `data-tip` tooltips,
+  `usePageTitle` args.
+- What does NOT migrate: wire values (`provider` ids like "openai",
+  mode values "ai"/"traditional", localStorage keys, env names),
+  `console.*` output, format.ts units (known debt), the logotype "oxe",
+  and the `aria-label="main"` nav landmark.
+- Guardrail: `bun scripts/no-raw-copy.ts` (in the `check` chain after the
+  size budget) fails on raw JSX text nodes and `label:/title:/placeholder:/
+  aria-label:/data-tip="…"` literals under `ui/src`. Intentional
+  exceptions live in the allowlist at the top of the script.
+- EN-only today: `vite.config.ts` pins `experimentalStaticLocale: '"en"'`
+  and aliases the paraglide runtime to `src/lib/paraglide-runtime-shim.js`
+  in the client build so locale-detection machinery stays out of the
+  bundle (budget!). The shim mirrors the generated runtime's internal
+  import surface (what compiled messages import) and MUST be
+  re-verified on any `@inlang/paraglide-js` version bump — messages'
+  imports are the contract. Adding a locale means removing that alias
+  and revisiting the size budget first.
+
+## Quality loop
+
+- Dev port: `mise run dev` runs the backend on **4480** (must match the vite
+  proxy target in `ui/vite.config.ts`); the production/preview server is
+  **4479**. When testing against a server you started yourself, check which
+  port it's on before blaming CORS/502s — a stale instance on the other port
+  is the usual culprit.
+
+- `mise run lint` (oxlint + oxfmt) and `mise run check` (size budgets) must pass.
+- UI polish standard: high-end visual design per `.agents/docs/screens/` specs; when in doubt, fewer boxes, more whitespace, card-less anatomy.
+- Deliberately constrained flexibility: don't invent alternate layouts, extra dependencies, or CSS outside tokens. Go straight to the point.
+- Icons: unplugin-icons with Lucide set (`~icons/lucide/*`), no inline SVGs, no other icon sets.
