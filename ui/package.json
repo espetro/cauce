@@ -10,7 +10,9 @@
     "build": "bun run extract && bun run compile && vite build && tsc -b",
     "lint": "oxlint",
     "preview": "vite preview",
-    "test": "vitest run"
+    "test": "vitest run",
+    "size": "bun run scripts/size-budget.ts",
+    "check": "bun run build && bun run size"
   },
   "dependencies": {
     "@lingui/core": "6.7.0",
