@@ -16,28 +16,30 @@ ones is a 422, never a silent partial overwrite.
 """
 
 import asyncio
-from typing import Literal
 
 from fastapi import APIRouter
-from pydantic import BaseModel, ConfigDict, Field
+from fastapi.exceptions import RequestValidationError
+from pydantic import BaseModel, ConfigDict
 
-from oxe.config import AIConfig, load_config, save_config
+from oxe.config import VALID_PROVIDERS, AIConfig, load_config, save_config
 
 router = APIRouter()
 
 
 class SettingsPayload(BaseModel):
-    """Wire mirror of ``AIConfig``; never carries a raw secret outbound."""
+    """Wire mirror of ``AIConfig``; never carries a raw secret outbound.
+
+    ``provider``/``model`` stay plain ``str`` (no ``Literal``/``min_length``)
+    so the unconfigured blank form (empty strings from ``GET /settings`` when
+    no config exists yet) is a schema-valid response; PUT re-validates the
+    saved state in the handler instead, so an invalid provider or empty model
+    still never reaches ``config.toml`` (see ``_put_sync``).
+    """
 
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
-    # provider is constrained (Literal) and model min_length=1: an invalid or
-    # empty PUT must be a 422, never something saved that the next load_config
-    # rejects (which would turn every subsequent GET into a 500). The
-    # unconfigured blank form returned by GET is built with model_construct
-    # below, bypassing these bounds on the response side only.
-    provider: Literal["anthropic", "groq", "huggingface", "mistral", "ollama", "openai"]
-    model: str = Field(min_length=1)
+    provider: str
+    model: str
     api_key: str | None = None
     api_key_set: bool = False
     api_key_env: str | None = None
@@ -71,22 +73,46 @@ def _get_sync() -> SettingsPayload:
     """
     cfg = load_config()
     if cfg is None:
-        # Unconfigured blank form; model_construct skips the provider Literal /
-        # model min_length bounds above (response-only escape hatch).
-        return SettingsPayload.model_construct(
-            provider="",
-            model="",
-            api_key=None,
-            api_key_set=False,
-            api_key_env=None,
-            base_url=None,
-            enabled=True,
-        )
+        # Unconfigured blank form: empty provider/model, always schema-valid
+        # against the plain-str payload above.
+        return SettingsPayload(provider="", model="")
     return _to_payload(cfg)
 
 
 def _put_sync(payload: SettingsPayload) -> SettingsPayload:
-    """Blocking tail of ``PUT /settings``, executed via ``asyncio.to_thread``."""
+    """Blocking tail of ``PUT /settings``, executed via ``asyncio.to_thread``.
+
+    Re-validates provider/model here (not in the pydantic model, whose schema
+    must also admit the GET blank form): a value the next ``load_config``
+    would reject must never be persisted.
+    """
+    if payload.provider not in VALID_PROVIDERS:
+        msg = (
+            f"provider {payload.provider!r} not supported; "
+            f"expected one of {', '.join(sorted(VALID_PROVIDERS))}"
+        )
+        raise RequestValidationError(
+            [
+                {
+                    "type": "value_error",
+                    "loc": ("body", "provider"),
+                    "input": payload.provider,
+                    "ctx": {"error": ValueError(msg)},
+                }
+            ]
+        )
+    if not payload.model.strip():
+        msg = "model must be a non-empty string"
+        raise RequestValidationError(
+            [
+                {
+                    "type": "value_error",
+                    "loc": ("body", "model"),
+                    "input": payload.model,
+                    "ctx": {"error": ValueError(msg)},
+                }
+            ]
+        )
     cfg = AIConfig(
         provider=payload.provider,
         model=payload.model,

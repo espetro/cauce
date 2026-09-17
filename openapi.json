@@ -691,7 +691,7 @@
       },
       "SettingsPayload": {
         "additionalProperties": false,
-        "description": "Wire mirror of ``AIConfig``; never carries a raw secret outbound.",
+        "description": "Wire mirror of ``AIConfig``; never carries a raw secret outbound.\n\n``provider``/``model`` stay plain ``str`` (no ``Literal``/``min_length``)\nso the unconfigured blank form (empty strings from ``GET /settings`` when\nno config exists yet) is a schema-valid response; PUT re-validates the\nsaved state in the handler instead, so an invalid provider or empty model\nstill never reaches ``config.toml`` (see ``_put_sync``).",
         "properties": {
           "api_key": {
             "anyOf": [
@@ -737,19 +737,10 @@
             "type": "boolean"
           },
           "model": {
-            "minLength": 1,
             "title": "Model",
             "type": "string"
           },
           "provider": {
-            "enum": [
-              "anthropic",
-              "groq",
-              "huggingface",
-              "mistral",
-              "ollama",
-              "openai"
-            ],
             "title": "Provider",
             "type": "string"
           }

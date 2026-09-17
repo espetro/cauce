@@ -401,6 +401,12 @@ export interface components {
         /**
          * SettingsPayload
          * @description Wire mirror of ``AIConfig``; never carries a raw secret outbound.
+         *
+         *     ``provider``/``model`` stay plain ``str`` (no ``Literal``/``min_length``)
+         *     so the unconfigured blank form (empty strings from ``GET /settings`` when
+         *     no config exists yet) is a schema-valid response; PUT re-validates the
+         *     saved state in the handler instead, so an invalid provider or empty model
+         *     still never reaches ``config.toml`` (see ``_put_sync``).
          */
         SettingsPayload: {
             /** Api Key */
@@ -421,11 +427,8 @@ export interface components {
             enabled: boolean;
             /** Model */
             model: string;
-            /**
-             * Provider
-             * @enum {string}
-             */
-            provider: "anthropic" | "groq" | "huggingface" | "mistral" | "ollama" | "openai";
+            /** Provider */
+            provider: string;
         };
         /**
          * SourcesFrame
