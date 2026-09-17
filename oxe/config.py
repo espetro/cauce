@@ -28,6 +28,13 @@ log = logging.getLogger(__name__)
 
 VALID_PROVIDERS = frozenset({"openai", "anthropic", "groq", "mistral", "ollama", "huggingface"})
 
+# Tool-loop cap for the AI answer pipeline (oxe.ai.stream_answer): the model
+# gets at most this many provider rounds to either answer or stop calling tools.
+MAX_ITERATIONS = 5
+# Answers below this confidence are streamed to the user but never cached
+# (low-confidence / greeting replies poisoning the cache for 24h).
+CACHE_MIN_CONFIDENCE = 4
+
 _KNOWN_AI_KEYS = frozenset({"provider", "model", "api_key", "api_key_env", "base_url", "enabled"})
 _ENV_RE = re.compile(r"^\{env\.([A-Za-z_][A-Za-z0-9_]*)\}$")
 

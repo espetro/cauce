@@ -8,7 +8,7 @@ Wave 2 scope: ``/health`` plus the canonical search router
 from fastapi import FastAPI
 from pydantic import BaseModel
 
-from oxe.api import history, searx, settings, stats
+from oxe.api import answer, history, searx, settings, stats
 from oxe.api.ai_frames import register_answer_frame_schemas
 from oxe.api.errors import backend_error_handler, config_error_handler
 from oxe.cache import TTLCache
@@ -44,6 +44,7 @@ def create_app() -> FastAPI:
     app.include_router(stats.router)
     app.include_router(history.router)
     app.include_router(settings.router)
+    app.include_router(answer.router)
 
     @app.get("/health", response_model=HealthStatus)
     async def health() -> HealthStatus:
