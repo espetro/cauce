@@ -51,8 +51,7 @@ def test_checkpoint_count_matches_plan() -> None:
     """The plan names ~20 checkpoints; guard against silent drift either way."""
     checkpoints = _checkpoints_from_spec()
     assert len(checkpoints) == 20, (
-        f"expected 20 checkpoints per the v0.5.0 archive-rebuild plan, "
-        f"found {len(checkpoints)}"
+        f"expected 20 checkpoints per the v0.5.0 archive-rebuild plan, found {len(checkpoints)}"
     )
 
 
@@ -60,12 +59,9 @@ def test_every_checkpoint_has_an_e2e_file() -> None:
     checkpoints = _checkpoints_from_spec()
     e2e_stems = _e2e_file_stems()
 
-    missing = {
-        n: stem for n, stem in checkpoints.items() if n not in e2e_stems
-    }
+    missing = {n: stem for n, stem in checkpoints.items() if n not in e2e_stems}
     assert not missing, (
-        "checkpoints with no tests/e2e/<n>-<slug>.md file: "
-        f"{sorted(missing.values())}"
+        f"checkpoints with no tests/e2e/<n>-<slug>.md file: {sorted(missing.values())}"
     )
 
     mismatched = {
