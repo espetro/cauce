@@ -1,3 +1,17 @@
+@import 'tailwindcss';
+
+/*
+ * daisyUI 5 theme pair: `light` / `dark`, both built-in daisyUI themes.
+ * `--prefersdark` on the `dark` theme means it activates automatically when
+ * `data-theme` is unset and the OS prefers dark -- that's the "System" rung of
+ * the theme control (see src/lib/theme.ts). Explicit "Light"/"Dark" selections
+ * set `data-theme="light"` / `data-theme="dark"` on <html>, which overrides the
+ * OS preference; "System" clears the attribute and lets `--prefersdark` decide.
+ */
+@plugin "daisyui" {
+  themes: light --default, dark --prefersdark;
+}
+
 :root {
   --text: #6b6375;
   --text-h: #08060d;
