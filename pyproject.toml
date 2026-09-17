@@ -45,6 +45,7 @@ dependencies = [
     "aiosql>=15.0",
     "rapidfuzz>=3.14.5",
     "ddgs>=9.16.0",
+    "mcp>=2.2.0",
 ]
 
 [project.urls]
@@ -69,6 +70,7 @@ dev = [
     "basedpyright>=1.40.1",
     "ruff>=0.16",
     "httpx2",
+    "hypothesis>=6.168.0",
 ]
 
 [tool.ruff]
