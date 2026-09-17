@@ -52,11 +52,21 @@ dir = "ui"
 run = "bun run build"
 
 # TS types / Lingui catalog drift checks land alongside the UI half of wave 2
-# step 16; validate:full (size budgets + schemathesis + e2e) lands once those
-# exist.
+# step 16; validate:full's remaining pieces (size budgets + e2e) land once
+# tests/e2e/ is a real runnable suite (wave 3).
 [tasks.validate]
 description = "Fast merge gate: Python gates + openapi drift + UI lint/build (build:ui runs extract/compile/vite-build/tsc -b as one ordered script)"
 depends = ["lint:py", "fmt:py", "typecheck:py", "test:py", "check:openapi", "lint:ui", "build:ui"]
+
+# schemathesis's contract test (tests/test_schemathesis_contract.py) runs as
+# part of `test:py` (it is just another pytest file, in-process ASGI, no real
+# server) -- so validate:full's own job is to add the checks that are too
+# slow or too infrastructure-heavy for the fast gate. e2e (Playwright) is not
+# wired here: tests/e2e/ is Wave 1 skip-marked placeholder .md files today,
+# not a runnable suite; it lands in Wave 3 per the plan.
+[tasks."validate:full"]
+description = "Full merge gate: validate, plus anything slow/heavy (e2e lands in Wave 3, not wired here yet)"
+depends = ["validate"]
 
 [tasks."hooks:install"]
 description = "Point git at the repo's .githooks directory"
