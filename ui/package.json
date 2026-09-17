@@ -1,0 +1,40 @@
+{
+  "name": "ui",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "extract": "lingui extract --workers 1",
+    "compile": "lingui compile --typescript --namespace es --workers 1",
+    "build": "bun run extract && bun run compile && vite build && tsc -b",
+    "lint": "oxlint",
+    "preview": "vite preview",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@lingui/core": "6.7.0",
+    "@lingui/react": "6.7.0",
+    "@tanstack/react-router": "1.170.38",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
+  },
+  "devDependencies": {
+    "@lingui/cli": "6.7.0",
+    "@lingui/message-utils": "6.7.0",
+    "@lingui/swc-plugin": "6.7.0",
+    "@swc/core": "1.16.2",
+    "@tanstack/router-plugin": "^1.168.40",
+    "@types/node": "^24.13.3",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.7",
+    "@vitejs/plugin-react-swc": "4.3.3",
+    "oxlint": "1.83.0",
+    "typescript": "~6.0.2",
+    "vite": "^8.3.0",
+    "vitest": "^5.0.1"
+  },
+  "trustedDependencies": [
+    "@swc/core"
+  ]
+}
