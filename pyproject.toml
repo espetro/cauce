@@ -92,3 +92,6 @@ max-complexity = 10
 [tool.basedpyright]
 include = ["oxe", "tests"]
 typeCheckingMode = "strict"
+
+[tool.pytest.ini_options]
+filterwarnings = ["error::ResourceWarning"]
