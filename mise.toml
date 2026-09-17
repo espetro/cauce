@@ -4,7 +4,7 @@ bun = "1.2"
 uv = "latest"
 
 [tasks.dev]
-description = "Run backend server (placeholder until UI skeleton lands)"
+description = "Run backend server (placeholder until UI dev server is wired into a combined task)"
 run = "uv run oxe"
 
 [tasks."lint:py"]
@@ -23,13 +23,31 @@ run = "uv run basedpyright"
 description = "pytest, ResourceWarning-as-error + pytest-randomly"
 run = "uv run pytest"
 
-# `validate` currently runs the Python gates only. The UI half (oxlint, tsc,
-# bun test, generator drift checks) lands in a parallel wave-1 pass and will
-# be merged into this task then — see
-# .agents/plans/2026-09-17-v0.5.0-archive-rebuild.md, "Day-0 gates" #1 and #10.
+[tasks."dev:ui"]
+description = "Run the UI dev server (Vite)"
+dir = "ui"
+run = "bun run dev"
+
+[tasks."lint:ui"]
+description = "Lint the UI with oxlint (native React Compiler correctness rules)"
+dir = "ui"
+run = "bun run lint"
+
+[tasks.tsc]
+description = "Typecheck the UI (tsc -b, strict + noUncheckedIndexedAccess)"
+dir = "ui"
+run = "bunx tsc -b"
+
+[tasks."build:ui"]
+description = "Build the UI: extract/compile Lingui catalogs, then vite build, then typecheck"
+dir = "ui"
+run = "bun run build"
+
+# generator drift checks (openapi/types/catalogs) land in wave 2; validate:full
+# (build + size budgets + schemathesis + e2e) lands once those exist.
 [tasks.validate]
-description = "Fast merge gate (Python-only for now; UI checks land separately)"
-depends = ["lint:py", "fmt:py", "typecheck:py", "test:py"]
+description = "Fast merge gate: Python gates + UI lint/typecheck/build"
+depends = ["lint:py", "fmt:py", "typecheck:py", "test:py", "lint:ui", "tsc", "build:ui"]
 
 [tasks."hooks:install"]
 description = "Point git at the repo's .githooks directory"
