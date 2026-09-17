@@ -63,6 +63,8 @@ const cacheItemSchema = v.object({
 
 /** v0.4.0 `ClickItem`. */
 export type ClickItem = v.InferOutput<typeof clickItemSchema>
+/** v0.4.0 `ClickItem` or `CacheItem` (the discriminated union history returns). */
+export type HistoryItem = ClickItem | CacheItem
 /** v0.4.0 `CacheItem`. */
 export type CacheItem = v.InferOutput<typeof cacheItemSchema>
 /** v0.4.0 `ApiHistoryResponse`. Newest first, capped at `limit` (<= 200). */
