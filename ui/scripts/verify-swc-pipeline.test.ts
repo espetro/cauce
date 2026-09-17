@@ -27,7 +27,18 @@ describe('SWC pipeline composition (React Compiler + @lingui/swc-plugin)', () =>
 
 describe('end-to-end build (extract -> compile -> vite build -> tsc)', () => {
   test('bun run build succeeds and the emitted dist bundle carries the same message id', () => {
-    execFileSync('bun', ['run', 'build'], { cwd: uiRoot, stdio: 'inherit' })
+    // Vitest sets NODE_ENV=test on its own process; without overriding it here, that leaks
+    // into this spawned `vite build` and disables production dead-code elimination (React's
+    // dev-mode branches ship unminified), inflating the dist bundle ~70KB gz for no reason
+    // tied to the actual app. `bun run size` must be run against a real `bun run build`
+    // (NODE_ENV=production, vite's own default for the build command) to get a meaningful
+    // number -- this test only asserts the pipeline composes, not the bundle size, but it
+    // still writes real dist/ output as a side effect, so keep that output representative.
+    execFileSync('bun', ['run', 'build'], {
+      cwd: uiRoot,
+      stdio: 'inherit',
+      env: { ...process.env, NODE_ENV: 'production' },
+    })
 
     const distAssetsDir = path.join(uiRoot, 'dist', 'assets')
     const jsFiles = readdirSync(distAssetsDir).filter((file) => file.endsWith('.js'))

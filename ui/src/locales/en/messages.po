@@ -13,6 +13,34 @@ msgstr ""
 "Language-Team: \n"
 "Plural-Forms: \n"
 
-#: src/routes/index.tsx:12
+#: src/routes/history.tsx:33
+msgid "Click history"
+msgstr "Click history"
+
+#: src/components/Dialog.tsx:45
+msgid "Close"
+msgstr "Close"
+
+#: src/routes/__root.tsx:81
+msgid "dashboard"
+msgstr "dashboard"
+
+#: src/routes/__root.tsx:77
+msgid "history"
+msgstr "history"
+
+#: src/routes/dashboard.tsx:25
+msgid "oxe stats"
+msgstr "oxe stats"
+
+#: src/routes/__root.tsx:73
+msgid "search"
+msgstr "search"
+
+#: src/routes/search.tsx:37
+msgid "Search results"
+msgstr "Search results"
+
+#: src/routes/index.tsx:26
 msgid "Welcome to oxe"
 msgstr "Welcome to oxe"
