@@ -7,7 +7,7 @@
 <p align="center">
   <a href="https://pypi.org/project/oxe/"><img src="https://img.shields.io/pypi/v/oxe?color=blue" alt="PyPI" /></a>
   <a href="https://github.com/espetro/oxe"><img src="https://img.shields.io/badge/github-espetro%2Foxe-black" alt="GitHub" /></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue.svg" alt="Apache 2.0" /></a>
   <img src="https://img.shields.io/badge/python-3.10+-blue.svg" alt="Python 3.10+" />
   <img src="https://img.shields.io/badge/MCP-compatible-green.svg" alt="MCP" />
 </p>
@@ -364,4 +364,4 @@ The logotype is set in [Apfel Grotesk](https://github.com/kkoutnas/typo_apfel_gr
 
 ## License
 
-[MIT](LICENSE).
+[Apache 2.0](LICENSE).

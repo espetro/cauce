@@ -25,7 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - `oxe/server.py` split into an `oxe/server/` package of APIRouters grouped by resource.
-- The server serves per-route prerendered SPA shells with a root fallback for faster first paint.
+- Relicensed from MIT to Apache 2.0 (Copyright Quino Terrasa).
 
 ### Changed
 
