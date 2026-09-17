@@ -25,3 +25,45 @@
 - Only real code defect: duplicate `rerunOnQueryChange` effect in ui/src/routes/search.tsx (removed; one copy remained). Rest of interrupted diff was complete: stripAnswerMeta (useAnswer.ts), busy→AiControls reasoning disable, ModelPicker/oxe-pill-control, useSearchMode single-source-of-truth, AnswerView dots-only streaming indicator, en.json copy.
 - Stale-bundle trap: server serves ui/dist from disk; after src edits run `bun run build` in ui/ AND hard-reload. Chunk-name map: search-*.js = /search route + useAnswer + AnswerView; routes-*.js = Home; SearchBox-*.js = useSearchMode/AiControls. Verify with `curl -s :4479/assets/<chunk> | grep <symbol>`.
 - Backend behavior (not a UI bug): SSE `done` for fresh web-search queries can take minutes (ReAct loop, max 5 iters); during the wait reasoning toggle stays disabled (correct). Cached answers return a single done event instantly.
+
+## 2026-09-17 v0.5.0 plan (research complete, awaiting owner answers)
+
+9 research notes in `.agents/drafts/research/2026-09-17-*.md`: architecture-audit, ai-chat-ui-libs, headless-ui-libs, chat-ui-patterns, framework-migration-scoring (take 6), fastapi-frontend-api, fsm-options, local-app-js-budget, dependency-coupling. Plan at `.agents/plans/2026-09-17-v0.5.0-plan.md` (6 streams, 17 atomic commits).
+
+**Size budget re-derived** (`ui/scripts/size-budget.ts`): JS_TARGET 100 KB gz, JS_BUDGET 150 KB gz, RECALIBRATE 130 KB gz (WARN), CSS_BUDGET 60 KB gz. Old 45 KB cap was a mobile-3G heuristic; localhost SPA on 2026 desktop has vastly more headroom. Current built SPA = ~37 KB gz JS, ~22 KB gz CSS.
+
+**Framework verdict (take 6, final)**: **stay on Preact + Vite (3/10 to migrate)**. Scored against 5 frameworks out of ~80 surveyed. Lifting Preact-loyalty constraint + widening budget does NOT flip the math. React migration is mechanical (~2843 LOC across 21 files, ~3-5 dev-weeks); question is whether React's chat-lib ecosystem justifies it -- today no.
+
+**FastAPI app.frontend() swap** (6/10 win, framework-independent): ship in FastAPI 0.138.0 (2026-06-20, PR #15800). ~60-75 LOC removable from `oxe/server/system.py` and `cache_admin.py`. Two commits: pin bump + frontend swap.
+
+**FSM pick for v0.5.0**: **useReducer + discriminated unions (8/10)**. Zero dep, sufficient for 3-5 state widgets. xstate v5 = 6/10 (~15-17 KB gz). `@xstate/fsm` deprecated in v5. ReScript = 1/10.
+
+**Headless UI pick**: **Zag.js** for popover/tooltip/combobox/dialog (+4-6 KB gz). Radix/Ark rejected (Radix unsupported on Preact via official channel). Keep nanostores + virtua.
+
+**AI chat UI**: roll-your-own minimal state machine + transport adapter (38/40) beats Vercel AI SDK (20), assistant-ui, NLUX, TanStack AI (29). Current SSE format: `step | delta | sources | done`.
+
+**Architecture bugs confirmed (Stream 2)**:
+- `delete_clicks` only deletes `clicks` table, not `search_log` -> dashboard stays stale after "delete all"
+- `7d` and `30d` scopes return 0 silently -- bug in `oxe/cache.py:331-340`
+- History rows link to `/search?q=...` without mode -> mode-preservation lost on click
+- `search_log` has `source` column but no `mode` -- needs schema addition
+- Dashboard reads `search_log` (via `/api/stats`), History reads `clicks` -- unsynced data planes
+
+**Repo size**: ui/ = 17,065 LOC / 384 files excl node_modules+dist. Of 167 .js files in ui/src/, 161 are generated `ui/src/paraglide/messages/` i18n files. Real hand-written JS = ~1 file.
+
+**10 owner questions blocking execution** (see plan section 4):
+1. Delete scope semantics
+2. x-cache* headers on `/search` HTML branch
+3. JSON 404 envelope shape
+4. AI-mode logging (extend search_log.source vs new answer_log table)
+5. `/cache` page scope (admin-only or per-row delete for all)
+6. Tools toggle default for first-time AI users
+7. Auto-title LLM call (separate cheap call vs derive from first user message)
+8. Tab persistence (localStorage vs sessionStorage)
+9. Multi-turn caching (last-N turns vs final-answer-only)
+10. Branch/regenerate scope (v0.5.0 or v0.6)
+
+**Workflow conventions**:
+- `.agents/research/` is DEPRECATED -- use `.agents/drafts/research/` (gitignored), `.agents/plans/`, `.agents/docs/` only
+- For narrow delegation, use `model_tier: weak` to avoid timeouts
+- No em-dashes in docs (rule 7 of global AGENTS.md)

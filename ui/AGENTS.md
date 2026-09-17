@@ -20,7 +20,7 @@ Scope: everything under `ui/` (Preact + Vite webapp). Repo-wide rules live in th
 
 ## Hard constraints (from the stack decision)
 
-- No-JS is not required; keep client payload small (budget: 45KB gz JS / 35KB gz CSS, kept ~5-10KB above current usage for feature headroom, enforced by `mise run check`).
+- No-JS is not required; keep client payload small. JS ceiling 150KB gz / target 100KB gz, CSS 60KB gz (`ui/scripts/size-budget.ts`). Dynamic band: aim ~100KB, recalibrate the ceiling when the build crosses 130KB gz (WARN before FAIL). v0.4.0 baseline is ~37KB gz JS / ~22KB gz CSS; derivation at `.agents/plans/2026-09-17-v0.5.0-plan.md`. Enforced by `mise run check`.
 - Content negotiation is backend behavior; the UI always speaks HTML/routes.
 - Dark mode via token theme (`color-scheme: light dark`); fonts: Plus Jakarta Sans Variable (body), Apfel Grotesk (logotype, self-hosted), system fallbacks. No Geist.
 - Streaming: the answer view consumes chunked fetch; citation markers `[n]` render as superscript links targeting `<SourceCard>` ids.
@@ -73,7 +73,7 @@ routing (`lib/routes.ts` is the canonical pattern) and UI-shared atoms like
 toasts (`lib/toasts.ts`). preact-iso stays only for lazy/hydrate/prerender.
 Do NOT move URL-contract state (the param table above) or fetch state
 machines into stores; those stay in custom hooks / route components. JS
-budget stays 45KB gz.
+budget stays inside the 100-150KB gz band (see "Hard constraints" above).
 
 QA agent convention: (a) drive states via URL deep links, not
 click-throughs, whenever a URL recipe exists; (b) when you find a new key
