@@ -42,6 +42,8 @@ dependencies = [
     "fastapi>=0.138",
     "uvicorn>=0.27",
     "pydantic>=2.0",
+    "aiosql>=15.0",
+    "rapidfuzz>=3.14.5",
 ]
 
 [project.urls]
@@ -91,6 +93,7 @@ max-complexity = 10
 
 [tool.basedpyright]
 include = ["oxe", "tests"]
+stubPath = "typings"
 typeCheckingMode = "strict"
 
 [tool.pytest.ini_options]
