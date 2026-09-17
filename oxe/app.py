@@ -5,6 +5,9 @@ Wave 2 scope: ``/health`` plus the canonical search router
 ``.agents/plans/2026-09-17-v0.5.0-archive-rebuild.md``).
 """
 
+import os
+from pathlib import Path
+
 from fastapi import FastAPI
 from pydantic import BaseModel
 
@@ -51,6 +54,10 @@ def create_app() -> FastAPI:
         return HealthStatus(status="ok")
 
     register_answer_frame_schemas(app)
+
+    dist_dir = os.environ.get("OXE_DIST_DIR")
+    if dist_dir and Path(dist_dir).is_dir():
+        app.frontend("/", directory=Path(dist_dir), fallback="index.html")
     return app
 
 
