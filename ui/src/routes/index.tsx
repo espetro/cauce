@@ -1,3 +1,4 @@
+import { Trans } from '@lingui/react/macro'
 import { createFileRoute } from '@tanstack/react-router'
 
 export const Route = createFileRoute('/')({
@@ -7,7 +8,9 @@ export const Route = createFileRoute('/')({
 function HomeComponent() {
   return (
     <main>
-      <h1>Welcome to oxe</h1>
+      <h1>
+        <Trans>Welcome to oxe</Trans>
+      </h1>
     </main>
   )
 }

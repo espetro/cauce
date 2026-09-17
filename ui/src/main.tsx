@@ -1,6 +1,8 @@
+import { I18nProvider } from '@lingui/react'
 import { createRouter, RouterProvider } from '@tanstack/react-router'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
+import { i18n } from './lib/i18n'
 import './index.css'
 import { routeTree } from './routeTree.gen'
 
@@ -19,6 +21,8 @@ if (!rootElement) {
 
 createRoot(rootElement).render(
   <StrictMode>
-    <RouterProvider router={router} />
+    <I18nProvider i18n={i18n}>
+      <RouterProvider router={router} />
+    </I18nProvider>
   </StrictMode>,
 )
