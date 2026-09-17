@@ -65,6 +65,11 @@ class SearchService:
         self._cache = cache
         self._ttl = ttl
 
+    @property
+    def cache(self) -> TTLCache:
+        """The process-wide cache/db, exposed for history/stats route reads."""
+        return self._cache
+
     async def search(self, req: SearchRequest) -> SearxResponse:
         key = cache_key(req)
         cached = self._cache.get(key)
