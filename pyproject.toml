@@ -58,3 +58,37 @@ include = ["oxe*"]
 
 [tool.setuptools.package-data]
 oxe = ["sql/*.sql"]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "pytest-randomly>=3.15",
+    "basedpyright>=1.40.1",
+    "ruff>=0.16",
+    "httpx2",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = [
+    "E", "W", "F", "I", "B", "SIM", "RUF", "C4", "UP", "BLE", "TRY", "ANN",
+    "ASYNC", "S", "PT", "DTZ", "PTH", "LOG", "G", "TID", "ERA", "FBT", "N",
+    "C90", "PL", "RET", "ARG", "EM", "ISC", "PIE", "SLF", "INP",
+]
+ignore = []
+
+[tool.ruff.lint.pylint]
+max-args = 6
+
+[tool.ruff.lint.mccabe]
+max-complexity = 10
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "PLR2004"]
+
+[tool.basedpyright]
+include = ["oxe", "tests"]
+typeCheckingMode = "strict"
