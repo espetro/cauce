@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest'
 import { dashboardHasLogData } from './historyApi.ts'
-import type { CacheItem, ClickItem, HistoryResponse, StatsResponse } from './historyApi.ts'
+import type { ClickItem, HistoryResponse, StatsResponse } from './historyApi.ts'
 
 // Pure helpers are inlined in the route files for the screen; the invariant-relevant pure
 // logic they share (stats line, qf substring filter, has-log-data gate) is exercised here
@@ -8,7 +8,6 @@ import type { CacheItem, ClickItem, HistoryResponse, StatsResponse } from './his
 
 function click(partial: Partial<ClickItem>): ClickItem {
   return {
-    kind: 'click',
     clicked_at: 1_700_000_000,
     query_hash: 'h1',
     query: 'python asyncio',
@@ -20,59 +19,33 @@ function click(partial: Partial<ClickItem>): ClickItem {
   }
 }
 
-function cacheRow(partial: Partial<CacheItem>): CacheItem {
-  return {
-    kind: 'cache',
-    created_at: 1_700_000_000,
-    query_hash: 'h2',
-    query: 'rust tokio',
-    expires_at: 1_700_086_400,
-    hits: 2,
-    size_bytes: 1024,
-    ...partial,
-  }
-}
-
 const DAY = 24 * 3600
 
-// Mirrors statsLine() in routes/history.tsx: keep in sync (route-local because it formats
-// via Lingui-sensitive display strings; the numbers are what the checkpoints assert).
-function historyStats(data: HistoryResponse, nowSeconds: number) {
-  const clicks = data.items.filter((item) => item.kind === 'click')
-  return {
-    clicks24h: clicks.filter((item) => item.kind === 'click' && item.clicked_at >= nowSeconds - DAY)
-      .length,
-    total: clicks.length,
-  }
+// Mirrors the HistoryResponse shape: stats come from the backend (`stats.last_24h`,
+// `stats.total`, `stats.oldest`), not from scanning items client-side.
+function historyResponse(items: ClickItem[], stats: HistoryResponse['stats']): HistoryResponse {
+  return { items, stats, limit: 200, since: null }
 }
 
 describe('history stats line (checkpoint 15)', () => {
-  test('counts clicks in last 24h and total, ignoring cache rows', () => {
+  // The route reads stats.last_24h / stats.total / stats.oldest straight off the response;
+  // these fixtures pin the wire shape those reads depend on.
+  test('backend stats line fields are surfaced as-is', () => {
     const now = 1_700_100_000
-    const data: HistoryResponse = {
-      items: [
-        click({ clicked_at: now - 3600 }),
-        click({ clicked_at: now - 2 * DAY, query: 'old query' }),
-        click({ clicked_at: now - 3600, source: 'mcp' }),
-        cacheRow({}),
-      ],
-      clicks: 3,
-      cache_rows: 1,
-      limit: 200,
-      since: 'all',
-    }
-    expect(historyStats(data, now)).toEqual({ clicks24h: 2, total: 3 })
+    const data = historyResponse(
+      [click({ clicked_at: now - 3600 }), click({ clicked_at: now - 2 * DAY })],
+      { last_24h: 1, total: 2, oldest: now - 2 * DAY },
+    )
+    expect(data.stats.last_24h).toBe(1)
+    expect(data.stats.total).toBe(2)
+    expect(data.stats.oldest).not.toBeNull()
   })
 
-  test('zero clicks -> the empty-state predicate (dash oldest)', () => {
-    const data: HistoryResponse = {
-      items: [cacheRow({})],
-      clicks: 0,
-      cache_rows: 1,
-      limit: 200,
-      since: 'all',
-    }
-    expect(historyStats(data, 1_700_100_000)).toEqual({ clicks24h: 0, total: 0 })
+  test('zero clicks -> oldest is null (the dash state)', () => {
+    const data = historyResponse([], { last_24h: 0, total: 0, oldest: null })
+    expect(data.stats.last_24h).toBe(0)
+    expect(data.stats.total).toBe(0)
+    expect(data.stats.oldest).toBeNull()
   })
 })
 
@@ -84,17 +57,17 @@ describe('qf substring filter (checkpoint 17)', () => {
     return items.filter((item) => item.query.toLowerCase().includes(needle))
   }
 
-  const items = [click({}), click({ query: 'Rust Tokio tutorial' }), cacheRow({})]
+  const items = [click({}), click({ query: 'Rust Tokio tutorial' })]
 
   test('case-insensitive substring match', () => {
-    expect(filterByQf(items, 'TOKIO')).toHaveLength(2)
+    expect(filterByQf(items, 'TOKIO')).toHaveLength(1)
     expect(filterByQf(items, 'asyncio')).toHaveLength(1)
     expect(filterByQf(items, 'TUTORIAL')).toHaveLength(1)
   })
 
   test('empty/whitespace qf keeps all rows', () => {
-    expect(filterByQf(items, '')).toHaveLength(3)
-    expect(filterByQf(items, '   ')).toHaveLength(3)
+    expect(filterByQf(items, '')).toHaveLength(2)
+    expect(filterByQf(items, '   ')).toHaveLength(2)
   })
 
   test('no match -> empty (the "no rows match" state)', () => {
@@ -112,14 +85,6 @@ describe('dashboard log-data gate (checkpoint 20)', () => {
       top_queries: [],
       zero_result_queries: [],
       client_split: [],
-      cache: {
-        rows: 0,
-        unexpired_rows: 0,
-        db_size_bytes: 0,
-        total_hits: 0,
-        oldest_unexpired: null,
-        newest: null,
-      },
     }
   }
 
