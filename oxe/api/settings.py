@@ -33,9 +33,7 @@ from oxe.config import AIConfig, load_config, save_config
 
 router = APIRouter()
 
-_ProviderLiteral = Literal[
-    "anthropic", "groq", "huggingface", "mistral", "ollama", "openai"
-]
+_ProviderLiteral = Literal["anthropic", "groq", "huggingface", "mistral", "ollama", "openai"]
 
 
 class SettingsPayload(BaseModel):
