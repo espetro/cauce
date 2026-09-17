@@ -1,0 +1,8 @@
+[tools]
+python = "3.12"
+bun = "1.2"
+uv = "latest"
+
+[tasks.dev]
+description = "Run backend server (placeholder until UI skeleton lands)"
+run = "uv run oxe"

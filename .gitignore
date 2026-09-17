@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+build/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.basedpyright_cache/
+
+# UI build output — never tracked
+dist/
+dist-ssr/
+node_modules/
+
+# caches / local state
+.playwright-cli/
+.DS_Store
+*.log
+
+# secrets
+.env
+.env.*
+
+# plans are intentionally tracked here even though a global gitignore
+# silences .agents/plans/ everywhere else
+!.agents/plans/
