@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# Runs the same fast gate as CI before allowing a push.
+# Installed via `mise run hooks:install`.
+set -euo pipefail
+
+mise run validate
