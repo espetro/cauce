@@ -13,9 +13,11 @@ from pydantic import BaseModel, ConfigDict
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
+from oxe.config import ConfigError
 from oxe.search.errors import BackendError
 
 BACKEND_ERROR_STATUS = 502
+CONFIG_ERROR_STATUS = 500
 
 
 class ErrorDetail(BaseModel):
@@ -44,3 +46,14 @@ async def backend_error_handler(request: Request, exc: Exception) -> JSONRespons
         raise exc
     envelope = ErrorEnvelope(error=ErrorDetail(code="backend_error", message=str(exc)))
     return JSONResponse(status_code=BACKEND_ERROR_STATUS, content=envelope.model_dump())
+
+
+async def config_error_handler(request: Request, exc: Exception) -> JSONResponse:
+    """Maps ``ConfigError`` (malformed config.toml, or settings read before any
+    config exists) onto a 500 envelope, the same pattern as
+    ``backend_error_handler`` for the settings domain."""
+    del request
+    if not isinstance(exc, ConfigError):  # pragma: no cover - defensive, see docstring
+        raise exc
+    envelope = ErrorEnvelope(error=ErrorDetail(code="config_error", message=str(exc)))
+    return JSONResponse(status_code=CONFIG_ERROR_STATUS, content=envelope.model_dump())
