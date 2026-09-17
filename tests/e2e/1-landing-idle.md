@@ -1,6 +1,6 @@
 # E2E checkpoint 1: Landing idle
 
-status: skip
+status: active
 spec: .agents/docs/screens/userflow-checkpoints.md, checkpoint 1
 
 Skip-marked placeholder scaffolded in wave 1 (day-0 gate 7 / step 10 of the
