@@ -61,6 +61,107 @@
         "title": "AnswerSource",
         "type": "object"
       },
+      "CacheStatsOut": {
+        "additionalProperties": false,
+        "properties": {
+          "db_size_bytes": {
+            "title": "Db Size Bytes",
+            "type": "integer"
+          },
+          "newest": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Newest"
+          },
+          "oldest_unexpired": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oldest Unexpired"
+          },
+          "rows": {
+            "title": "Rows",
+            "type": "integer"
+          },
+          "total_hits": {
+            "title": "Total Hits",
+            "type": "integer"
+          },
+          "unexpired_rows": {
+            "title": "Unexpired Rows",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "rows",
+          "unexpired_rows",
+          "db_size_bytes",
+          "total_hits",
+          "oldest_unexpired",
+          "newest"
+        ],
+        "title": "CacheStatsOut",
+        "type": "object"
+      },
+      "ClientSplit": {
+        "additionalProperties": false,
+        "properties": {
+          "client": {
+            "title": "Client",
+            "type": "string"
+          },
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "client",
+          "count"
+        ],
+        "title": "ClientSplit",
+        "type": "object"
+      },
+      "DashboardResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "cache": {
+            "$ref": "#/components/schemas/CacheStatsOut"
+          },
+          "hit_rate_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hit Rate Pct"
+          },
+          "log": {
+            "$ref": "#/components/schemas/StatsSummary"
+          }
+        },
+        "required": [
+          "cache",
+          "hit_rate_pct",
+          "log"
+        ],
+        "title": "DashboardResponse",
+        "type": "object"
+      },
       "DeltaFrame": {
         "additionalProperties": false,
         "description": "One chunk of streamed answer text.",
@@ -186,6 +287,138 @@
         "title": "HealthStatus",
         "type": "object"
       },
+      "HistoryResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/HistoryRow"
+            },
+            "title": "Rows",
+            "type": "array"
+          },
+          "stats": {
+            "$ref": "#/components/schemas/HistoryStats"
+          }
+        },
+        "required": [
+          "rows",
+          "stats"
+        ],
+        "title": "HistoryResponse",
+        "type": "object"
+      },
+      "HistoryRow": {
+        "additionalProperties": false,
+        "properties": {
+          "clicked_at": {
+            "title": "Clicked At",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "query": {
+            "title": "Query",
+            "type": "string"
+          },
+          "query_hash": {
+            "title": "Query Hash",
+            "type": "string"
+          },
+          "result_id": {
+            "title": "Result Id",
+            "type": "string"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "query_hash",
+          "query",
+          "result_id",
+          "url",
+          "title",
+          "clicked_at",
+          "source"
+        ],
+        "title": "HistoryRow",
+        "type": "object"
+      },
+      "HistoryStats": {
+        "additionalProperties": false,
+        "properties": {
+          "last_24h": {
+            "title": "Last 24H",
+            "type": "integer"
+          },
+          "oldest": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oldest"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total",
+          "last_24h",
+          "oldest"
+        ],
+        "title": "HistoryStats",
+        "type": "object"
+      },
+      "HitRate": {
+        "additionalProperties": false,
+        "properties": {
+          "cache_hits": {
+            "title": "Cache Hits",
+            "type": "integer"
+          },
+          "rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rate"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total",
+          "cache_hits",
+          "rate"
+        ],
+        "title": "HitRate",
+        "type": "object"
+      },
       "Infobox": {
         "additionalProperties": false,
         "description": "SearXNG infobox entry (Wikipedia-style side panel content).",
@@ -253,6 +486,51 @@
           "url"
         ],
         "title": "InfoboxUrl",
+        "type": "object"
+      },
+      "LatencyMs": {
+        "additionalProperties": false,
+        "properties": {
+          "p50": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "P50"
+          },
+          "p90": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "P90"
+          },
+          "p99": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "P99"
+          }
+        },
+        "required": [
+          "p50",
+          "p90",
+          "p99"
+        ],
+        "title": "LatencyMs",
         "type": "object"
       },
       "SearchRequest": {
@@ -383,6 +661,35 @@
         "title": "SearchResult",
         "type": "object"
       },
+      "SearchesPerDay": {
+        "additionalProperties": false,
+        "properties": {
+          "cache": {
+            "title": "Cache",
+            "type": "integer"
+          },
+          "day": {
+            "title": "Day",
+            "type": "string"
+          },
+          "network": {
+            "title": "Network",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "day",
+          "cache",
+          "network",
+          "total"
+        ],
+        "title": "SearchesPerDay",
+        "type": "object"
+      },
       "SearxResponse": {
         "additionalProperties": false,
         "description": "The canonical SearXNG-shaped search response.\n\nTwo of these three rules from the plan's \"search contract\" section are\nenforced here as shape; the third (unresponsive_engines-with-no-results\nmust raise, never be returned) is a service-level invariant, enforced in\n``oxe/search/service.py`` rather than at the model layer, since a\nfreshly-constructed response legitimately passes through this state\nwhile an engine is still composing partial results.",
@@ -466,6 +773,60 @@
         "title": "SourcesFrame",
         "type": "object"
       },
+      "StatsSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "client_split": {
+            "items": {
+              "$ref": "#/components/schemas/ClientSplit"
+            },
+            "title": "Client Split",
+            "type": "array"
+          },
+          "days": {
+            "title": "Days",
+            "type": "integer"
+          },
+          "hit_rate": {
+            "$ref": "#/components/schemas/HitRate"
+          },
+          "latency_ms": {
+            "$ref": "#/components/schemas/LatencyMs"
+          },
+          "searches_per_day": {
+            "items": {
+              "$ref": "#/components/schemas/SearchesPerDay"
+            },
+            "title": "Searches Per Day",
+            "type": "array"
+          },
+          "top_queries": {
+            "items": {
+              "$ref": "#/components/schemas/TopQuery"
+            },
+            "title": "Top Queries",
+            "type": "array"
+          },
+          "zero_result_queries": {
+            "items": {
+              "$ref": "#/components/schemas/ZeroResultQuery"
+            },
+            "title": "Zero Result Queries",
+            "type": "array"
+          }
+        },
+        "required": [
+          "days",
+          "searches_per_day",
+          "hit_rate",
+          "latency_ms",
+          "top_queries",
+          "zero_result_queries",
+          "client_split"
+        ],
+        "title": "StatsSummary",
+        "type": "object"
+      },
       "StepFrame": {
         "additionalProperties": false,
         "description": "A tool call the model is making (e.g. a web search) is starting.",
@@ -495,6 +856,25 @@
           "label"
         ],
         "title": "StepFrame",
+        "type": "object"
+      },
+      "TopQuery": {
+        "additionalProperties": false,
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "query": {
+            "title": "Query",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query",
+          "count"
+        ],
+        "title": "TopQuery",
         "type": "object"
       },
       "UnresponsiveEngine": {
@@ -556,6 +936,25 @@
         ],
         "title": "ValidationError",
         "type": "object"
+      },
+      "ZeroResultQuery": {
+        "additionalProperties": false,
+        "properties": {
+          "last_seen": {
+            "title": "Last Seen",
+            "type": "integer"
+          },
+          "query": {
+            "title": "Query",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query",
+          "last_seen"
+        ],
+        "title": "ZeroResultQuery",
+        "type": "object"
       }
     }
   },
@@ -565,6 +964,91 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/history": {
+      "get": {
+        "operationId": "get_history_api_history_get",
+        "parameters": [
+          {
+            "description": "Hours to look back (the UI only ever sends 24/168/720, but this route does not itself restrict to that set); absent means all time.",
+            "in": "query",
+            "name": "since",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Hours to look back (the UI only ever sends 24/168/720, but this route does not itself restrict to that set); absent means all time.",
+              "title": "Since"
+            }
+          },
+          {
+            "description": "Substring filter against the click's query text.",
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Substring filter against the click's query text.",
+              "title": "Q"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HistoryResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get History"
+      }
+    },
+    "/api/stats": {
+      "get": {
+        "operationId": "get_dashboard_api_stats_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DashboardResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Dashboard"
+      }
+    },
     "/health": {
       "get": {
         "operationId": "health_health_get",

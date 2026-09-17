@@ -8,7 +8,7 @@ Wave 2 scope: ``/health`` plus the canonical search router
 from fastapi import FastAPI
 from pydantic import BaseModel
 
-from oxe.api import searx
+from oxe.api import dashboard, history, searx
 from oxe.api.ai_frames import register_answer_frame_schemas
 from oxe.api.errors import backend_error_handler
 from oxe.cache import TTLCache
@@ -32,14 +32,23 @@ def create_app() -> FastAPI:
     Constructs exactly one ``TTLCache`` (pointed at ``OXE_CACHE_DIR`` via
     ``oxe.config.cache_db_path``) and one engine (resolved from
     ``OXE_BACKENDS``, defaulting to plain DuckDuckGo) per process, wired into
-    one ``SearchService`` on ``app.state``. Route handlers reach it via the
-    ``oxe.api.searx.get_search_service`` dependency rather than a module
-    global, so tests can swap ``app.state.search_service`` for a fake.
+    one ``SearchService`` on ``app.state``. The same ``TTLCache`` instance is
+    also exposed directly as ``app.state.cache``, so ``oxe.api.history`` and
+    ``oxe.api.dashboard`` (which read clicks/search-log/cache-table rows,
+    not search results) share the one connection to the db file rather than
+    opening a second one. Route handlers reach either via their own
+    dependency (``oxe.api.searx.get_search_service``,
+    ``oxe.api.history.get_cache``, ``oxe.api.dashboard.get_cache``) rather
+    than a module global, so tests can swap ``app.state`` for fakes.
     """
     app = FastAPI(title="oxe")
-    app.state.search_service = SearchService(build_from_env(), TTLCache(cache_db_path()))
+    cache = TTLCache(cache_db_path())
+    app.state.cache = cache
+    app.state.search_service = SearchService(build_from_env(), cache)
     app.add_exception_handler(BackendError, backend_error_handler)
     app.include_router(searx.router)
+    app.include_router(history.router)
+    app.include_router(dashboard.router)
 
     @app.get("/health", response_model=HealthStatus)
     async def health() -> HealthStatus:
