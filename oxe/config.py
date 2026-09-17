@@ -139,6 +139,18 @@ def config_path() -> Path:
     return config_dir() / "config.toml"
 
 
+def cache_dir() -> Path:
+    """``OXE_CACHE_DIR``, defaulting to ``~/.cache/oxe`` (same default as legacy
+    ``oxe/__main__.py``'s ``_default_db``). ``tests/conftest.py`` redirects this
+    env var to a tmp path before any ``oxe`` module import."""
+    d = os.getenv("OXE_CACHE_DIR", str(Path.home() / ".cache" / "oxe"))
+    return Path(d)
+
+
+def cache_db_path() -> Path:
+    return cache_dir() / "cache.db"
+
+
 def _as_object_dict(value: object, ctx: str) -> dict[str, object]:
     """Narrow an arbitrary (TOML-decoded) value into a str-keyed dict, or raise.
 
