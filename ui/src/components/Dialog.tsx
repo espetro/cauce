@@ -32,18 +32,22 @@ export function Dialog({ open, onOpenChange, title, children }: DialogProps) {
         {/* Base UI part (backdrop presence/animation state) rendered as a daisyUI-styled
          * host element via `render`, instead of Base UI's default unstyled <div>. */}
         <BaseDialog.Backdrop render={<div className="modal-backdrop bg-black/50" />} />
-        <BaseDialog.Popup
-          className="modal-box"
-          render={<div className="modal-box" />}
-        >
-          <BaseDialog.Title className="text-lg font-bold">{title}</BaseDialog.Title>
-          <div className="py-4">{children}</div>
-          <div className="modal-action">
-            {/* daisyUI's `btn` look on Base UI's Close part (keyboard + click dismissal,
+        {/* daisyUI 5's `.modal-box` ships `opacity: 0` and only becomes visible under a
+         * `.modal`/`.modal-open` ancestor, so the popup is rendered as a daisyUI
+         * `<dialog className="modal modal-open">` wrapping the modal-box (the same
+         * markup daisyUI's own open-modal example produces). Base UI still owns the
+         * ARIA/behavior via the Popup part; daisyUI owns the look. */}
+        <BaseDialog.Popup render={<dialog className="modal modal-open" />}>
+          <div className="modal-box">
+            <BaseDialog.Title className="text-lg font-bold">{title}</BaseDialog.Title>
+            <div className="py-4">{children}</div>
+            <div className="modal-action">
+              {/* daisyUI's `btn` look on Base UI's Close part (keyboard + click dismissal,
              * focus restore) via `render`. */}
-            <BaseDialog.Close render={<button type="button" className="btn" />}>
-              <Trans>Close</Trans>
-            </BaseDialog.Close>
+              <BaseDialog.Close render={<button type="button" className="btn" />}>
+                <Trans>Close</Trans>
+              </BaseDialog.Close>
+            </div>
           </div>
         </BaseDialog.Popup>
       </BaseDialog.Portal>
