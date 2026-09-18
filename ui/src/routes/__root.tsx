@@ -76,7 +76,7 @@ function RootComponent() {
             oxe
           </Link>
           <nav className="flex items-center gap-3 text-sm">
-            <Link to="/" className="flex items-center gap-1" activeOptions={{ exact: true }}>
+            <Link to="/search" className="flex items-center gap-1">
               <IconSearch aria-hidden="true" />
               <Trans>search</Trans>
             </Link>
