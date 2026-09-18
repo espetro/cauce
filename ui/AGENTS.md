@@ -83,3 +83,6 @@ No literal strings in JSX. Copy goes through Lingui macros against catalogs unde
 - The size budget script exists and can be run by hand, but is not yet wired into `mise run
   validate` or a `validate:full` task (that task doesn't exist yet) — running it is a
   convention until it's part of a gate.
+- UI work runs as a (generator, evaluator) loop with maxIterations=5: a generator subagent
+  implements a fix/feature, an evaluator subagent reviews it against the screen specs and the
+  visual references before it is accepted.
