@@ -59,7 +59,7 @@ function loadCheckpoints(): Checkpoint[] {
 /** Checkpoint 1 "Landing idle": / renders the idle landing headline. */
 async function landingIdle(page: Page): Promise<void> {
   await page.goto('/')
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Welcome to oxe')
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('oxe')
 }
 
 /**
@@ -84,7 +84,7 @@ async function searchClassicResultsPage1(page: Page): Promise<void> {
  */
 async function landingAiModeSelected(page: Page): Promise<void> {
   await page.goto('/?mode=ai')
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Welcome to oxe')
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('oxe')
   expect(new URL(page.url()).searchParams.get('mode')).toBe('ai')
 }
 
