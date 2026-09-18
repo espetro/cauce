@@ -24,6 +24,7 @@ msgid "{clicks24h} clicks in last 24h · {total} total · {oldest} (oldest)"
 msgstr "{clicks24h} clicks in last 24h · {total} total · {oldest} (oldest)"
 
 #: src/components/SettingsDialog.tsx:71
+#: src/routes/index.tsx:86
 msgid "AI"
 msgstr "AI"
 
@@ -48,6 +49,10 @@ msgstr "API key"
 #: src/components/SettingsDialog.tsx:115
 msgid "API key env var"
 msgstr "API key env var"
+
+#: src/routes/index.tsx:60
+msgid "Ask anything privately"
+msgstr "Ask anything privately"
 
 #: src/components/SettingsDialog.tsx:127
 msgid "Base URL"
@@ -85,7 +90,7 @@ msgstr "clicked"
 msgid "client split"
 msgstr "client split"
 
-#: src/components/Dialog.tsx:45
+#: src/components/Dialog.tsx:48
 msgid "Close"
 msgstr "Close"
 
@@ -159,6 +164,10 @@ msgstr "https://api.openai.com/v1"
 #: src/routes/search.tsx:186
 msgid "loading more…"
 msgstr "loading more…"
+
+#: src/routes/index.tsx:63
+msgid "Mode"
+msgstr "Mode"
 
 #: src/components/SettingsDialog.tsx:91
 msgid "Model"
@@ -245,8 +254,18 @@ msgid "search"
 msgstr "search"
 
 #: src/components/SearchBox.tsx:55
+#: src/routes/index.tsx:74
+#: src/routes/index.tsx:89
 msgid "Search"
 msgstr "Search"
+
+#: src/routes/index.tsx:60
+msgid "Search privately"
+msgstr "Search privately"
+
+#: src/routes/index.tsx:59
+msgid "Search query"
+msgstr "Search query"
 
 #: src/routes/search.tsx:37
 #~ msgid "Search results"
@@ -299,9 +318,14 @@ msgid "view Search"
 msgstr "view Search"
 
 #: src/routes/index.tsx:26
-msgid "Welcome to oxe"
-msgstr "Welcome to oxe"
+#~ msgid "Welcome to oxe"
+#~ msgstr "Welcome to oxe"
 
 #: src/routes/dashboard.tsx:40
 msgid "window: last 30 days"
 msgstr "window: last 30 days"
+
+#. landing tagline
+#: src/routes/index.tsx:49
+msgid "your local web intel layer"
+msgstr "your local web intel layer"
