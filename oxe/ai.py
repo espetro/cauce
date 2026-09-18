@@ -400,7 +400,11 @@ async def stream_answer(
 
         if not reply.tool_calls:
             answer, confidence, related = parse_final_answer(reply.text)
-            yield DeltaFrame(text=reply.text)
+            # The model is prompted to append its metadata JSON tail to the
+            # answer body; the tail belongs in DoneFrame fields only. The delta
+            # carries the stripped body so raw JSON never reaches the stream
+            # (the UI renders deltas verbatim while streaming).
+            yield DeltaFrame(text=answer)
             yield SourcesFrame(sources=sources)
             yield DoneFrame(
                 answer=answer,

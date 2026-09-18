@@ -25,7 +25,13 @@ from oxe.ai import (
     parse_final_answer,
     stream_answer,
 )
-from oxe.api.ai_frames import AnswerFrame, DoneFrame, ErrorFrame, SourcesFrame
+from oxe.api.ai_frames import (
+    AnswerFrame,
+    DeltaFrame,
+    DoneFrame,
+    ErrorFrame,
+    SourcesFrame,
+)
 from oxe.api.answer import (  # pyright: ignore[reportPrivateUsage]
     AI_OFF_MESSAGE,
     AnswerRequest,
@@ -208,6 +214,31 @@ def test_stream_answer_tool_loop_cap(tmp_path: Path, monkeypatch: pytest.MonkeyP
     assert isinstance(done[0], DoneFrame)
     assert done[0].error is not None
     assert "max iterations" in done[0].error
+
+
+def test_stream_answer_delta_excludes_json_tail(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The delta frame carries the answer body with the metadata JSON tail
+    stripped: the UI renders deltas verbatim mid-stream, so a raw
+    ``{"confidence": ..., "related_questions": [...]}`` footer must never
+    ride along. Metadata travels in the done frame only."""
+    fake = _FakeUrlopen([_final_message(8)])
+    monkeypatch.setattr("oxe.ai.urllib.request.urlopen", fake)
+    cfg = AIConfig(provider="openai", model="m", api_key="k")
+    cache = TTLCache(tmp_path / "db")
+    frames = _run(_collect(stream_answer("cats", cfg, _tools(cache))))
+    cache.close()
+    deltas = [f for f in frames if f.type == "delta"]
+    dones = [f for f in frames if f.type == "done"]
+    assert len(deltas) == 1
+    assert len(dones) == 1
+    delta, done = deltas[0], dones[0]
+    assert isinstance(delta, DeltaFrame)
+    assert isinstance(done, DoneFrame)
+    assert "confidence" not in delta.text
+    assert delta.text == done.answer == "Cats are great."
+    assert done.related_questions == ["r1"]
 
 
 def test_stream_answer_frame_order_after_tool_round(
