@@ -117,6 +117,47 @@
         "title": "AnswerSource",
         "type": "object"
       },
+      "CacheSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "db_size_bytes": {
+            "title": "Db Size Bytes",
+            "type": "integer"
+          },
+          "newest": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Newest"
+          },
+          "rows": {
+            "title": "Rows",
+            "type": "integer"
+          },
+          "total_hits": {
+            "title": "Total Hits",
+            "type": "integer"
+          },
+          "unexpired": {
+            "title": "Unexpired",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "rows",
+          "unexpired",
+          "total_hits",
+          "db_size_bytes",
+          "newest"
+        ],
+        "title": "CacheSummary",
+        "type": "object"
+      },
       "ClickItem": {
         "additionalProperties": false,
         "description": "One click row, newest-first in ``HistoryResponse.items``.",
@@ -904,6 +945,9 @@
       "StatsSummary": {
         "additionalProperties": false,
         "properties": {
+          "cache": {
+            "$ref": "#/components/schemas/CacheSummary"
+          },
           "client_split": {
             "items": {
               "$ref": "#/components/schemas/ClientSplit"
@@ -950,7 +994,8 @@
           "latency_ms",
           "top_queries",
           "zero_result_queries",
-          "client_split"
+          "client_split",
+          "cache"
         ],
         "title": "StatsSummary",
         "type": "object"

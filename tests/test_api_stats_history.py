@@ -62,6 +62,22 @@ def test_api_stats_returns_summary(cache: TTLCache, client: TestClient) -> None:
     assert body["top_queries"][0]["query"] == "python asyncio"
 
 
+def test_api_stats_cache_shape(cache: TTLCache, client: TestClient) -> None:
+    _seed(cache)
+    body = client.get("/api/stats").json()
+    assert set(body["cache"]) == {"rows", "unexpired", "total_hits", "db_size_bytes", "newest"}
+    assert body["cache"]["rows"] == 2
+    assert body["cache"]["unexpired"] == 2
+    assert body["cache"]["db_size_bytes"] > 0
+    assert isinstance(body["cache"]["newest"], int)
+
+
+def test_api_stats_cache_empty(client: TestClient) -> None:
+    body = client.get("/api/stats").json()
+    assert body["cache"]["rows"] == 0
+    assert body["cache"]["newest"] is None
+
+
 def test_api_stats_days_param(cache: TTLCache, client: TestClient) -> None:
     _seed(cache)
     assert client.get("/api/stats", params={"days": 7}).json()["days"] == 7

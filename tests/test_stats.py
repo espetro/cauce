@@ -5,6 +5,7 @@ Legacy's test_api_stats.py drove this through the /api/stats HTTP endpoint
 later wave-2 step). This file tests the aggregation itself.
 """
 
+import sqlite3
 from pathlib import Path
 
 from oxe.cache import SearchLogMeta, TTLCache
@@ -81,6 +82,50 @@ def test_stats_empty_db(tmp_path: Path) -> None:
     assert summary.hit_rate.rate is None
     assert summary.latency_ms.p50 is None
     assert summary.top_queries == []
+    cache.close()
+
+
+def test_stats_cache_empty_db(tmp_path: Path) -> None:
+    cache = TTLCache(tmp_path / "db")
+    summary = build_json(cache.db_path)
+    assert summary.cache.rows == 0
+    assert summary.cache.unexpired == 0
+    assert summary.cache.total_hits == 0
+    assert summary.cache.newest is None
+    assert summary.cache.db_size_bytes > 0
+    cache.close()
+
+
+def test_stats_cache_missing_db(tmp_path: Path) -> None:
+    summary = build_json(str(tmp_path / "absent.db"))
+    assert summary.cache.model_dump() == {
+        "rows": 0,
+        "unexpired": 0,
+        "total_hits": 0,
+        "db_size_bytes": 0,
+        "newest": None,
+    }
+    assert not (tmp_path / "absent.db").exists()
+
+
+def test_stats_cache_mixed_expiry(tmp_path: Path) -> None:
+    cache = TTLCache(tmp_path / "db")
+    cache.set("live1", {"_q": "a"}, ttl=3600)
+    cache.set("live2", {"_q": "b"}, ttl=3600)
+    cache.set("dead", {"_q": "c"}, ttl=3600)
+    assert cache.get("live1") is not None
+    assert cache.get("live1") is not None
+    assert cache.get("live2") is not None
+    with sqlite3.connect(cache.db_path) as conn:
+        conn.execute("UPDATE cache SET expires_at = 1, created_at = 100 WHERE query_hash = 'dead'")
+        conn.execute("UPDATE cache SET created_at = 500 WHERE query_hash = 'live1'")
+        conn.execute("UPDATE cache SET created_at = 900 WHERE query_hash = 'live2'")
+    summary = build_json(cache.db_path)
+    assert summary.cache.rows == 3
+    assert summary.cache.unexpired == 2
+    assert summary.cache.total_hits == 3
+    assert summary.cache.newest == 900
+    assert summary.cache.db_size_bytes == Path(cache.db_path).stat().st_size
     cache.close()
 
 

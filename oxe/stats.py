@@ -99,6 +99,16 @@ class ClientSplit(BaseModel):
     count: int
 
 
+class CacheSummary(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    rows: int
+    unexpired: int
+    total_hits: int
+    db_size_bytes: int
+    newest: int | None
+
+
 class StatsSummary(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
@@ -109,6 +119,7 @@ class StatsSummary(BaseModel):
     top_queries: list[TopQuery]
     zero_result_queries: list[ZeroResultQuery]
     client_split: list[ClientSplit]
+    cache: CacheSummary
 
 
 def _connect(db_path: str) -> sqlite3.Connection:
@@ -478,6 +489,24 @@ def _fetch_all(
     )
 
 
+def _fetch_cache(conn: sqlite3.Connection, db_path: str) -> CacheSummary:
+    row = cast(
+        tuple[int, int, int, int | None],
+        _run(sqlload.query("stat_cache"), conn, now=int(time.time())),
+    )
+    return CacheSummary(
+        rows=row[0],
+        unexpired=row[1],
+        total_hits=row[2],
+        db_size_bytes=Path(db_path).stat().st_size,
+        newest=row[3],
+    )
+
+
+def _empty_cache() -> CacheSummary:
+    return CacheSummary(rows=0, unexpired=0, total_hits=0, db_size_bytes=0, newest=None)
+
+
 def build_json(db_path: str, days: int = 14) -> StatsSummary:
     """Return dashboard aggregates as a typed summary (sister of build())."""
     try:
@@ -485,8 +514,10 @@ def build_json(db_path: str, days: int = 14) -> StatsSummary:
             sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=5)
         ) as conn:
             daily_rows, top_queries, zero_result, client_split = _fetch_all(conn, days)
-    except sqlite3.OperationalError:
+            cache_summary = _fetch_cache(conn, db_path)
+    except (sqlite3.OperationalError, OSError):
         daily_rows, top_queries, zero_result, client_split = _empty_aggregates()
+        cache_summary = _empty_cache()
 
     per_day: dict[str, dict[str, int]] = {d: {"cache": 0, "network": 0} for d in _day_keys(days)}
     for row in daily_rows:
@@ -520,4 +551,5 @@ def build_json(db_path: str, days: int = 14) -> StatsSummary:
             ZeroResultQuery(query=z.query, last_seen=z.last_seen) for z in zero_result
         ],
         client_split=[ClientSplit(client=c.client, count=c.count) for c in client_split],
+        cache=cache_summary,
     )

@@ -36,6 +36,13 @@ SELECT COUNT(*) AS rows,
        MAX(expires_at) AS newest
 FROM cache;
 
+-- name: stat-cache(now)^
+SELECT COUNT(*) AS rows,
+       COALESCE(SUM(CASE WHEN expires_at >= :now THEN 1 ELSE 0 END), 0) AS unexpired,
+       COALESCE(SUM(hits), 0) AS total_hits,
+       MAX(created_at) AS newest
+FROM cache;
+
 -- name: lookup-query-text-cache(key)^
 SELECT query_text FROM cache WHERE query_hash = :key;
 
