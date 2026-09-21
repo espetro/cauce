@@ -63,7 +63,7 @@ export function SearchBox({
         }}
       >
         <Autocomplete.InputGroup
-          className="flex h-14 w-full items-center gap-2 rounded-full border border-base-300 bg-base-100 pl-6 pr-2 shadow-sm transition-colors focus-within:border-primary"
+          className="group flex h-14 w-full items-center gap-2 rounded-full border border-base-300 bg-base-100 pl-6 pr-2 shadow-sm transition-colors focus-within:border-primary"
         >
           <Autocomplete.Input
             name="q"
@@ -105,7 +105,7 @@ export function SearchBox({
               <Trans>AI</Trans>
             </button>
           </div>
-          <button type="submit" className="btn btn-neutral btn-circle shrink-0" aria-label={t`Search`}>
+          <button type="submit" className="btn btn-neutral btn-circle shrink-0 transition-opacity group-has-[input:placeholder-shown]:opacity-40" aria-label={t`Search`}>
             <IconSearch aria-hidden="true" />
           </button>
         </Autocomplete.InputGroup>

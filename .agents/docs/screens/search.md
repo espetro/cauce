@@ -269,6 +269,16 @@ flag their absence. Each moves into the spec body when it is scheduled.
 - Cache transparency panel over the results, device-side and undoable, in the
   interaction grammar of Brave Goggles; also carries the "served locally, cached on
   your machine" copy.
+- Two-line result snippet and the collapsed `cached page text preview` row. Needs the
+  backend to return snippets (the Wikipedia test engine has none) and cached page text.
+- Cache age in the `cached` badge (`cached · <age>`). Needs an age field in the
+  `/search` JSON.
+- Drop the leading glyph on the zero-result and empty-source lines, and settle whether
+  the empty-source answer header keeps its `confidence` readout (checkpoint 14 asserts it).
+- Below ~700px, stack the mode toggle under the input. Today the toggle stays inside
+  the pill on one row at 390px.
+- In real (non-fixture) AI-off, keep classic results under the notice; the loader skips
+  classic search in AI mode.
 
 ## Design references
 
