@@ -296,9 +296,9 @@ def test_force_ai_off_fixture(client: TestClient) -> None:
 
 def test_force_error_fixture(client: TestClient) -> None:
     frames = _post(client, {"query": "q", "force": "error"})
-    assert len(frames) == 1
-    assert isinstance(frames[0], ErrorFrame)
-    assert frames[0].message != AI_OFF_MESSAGE
+    assert [f.type for f in frames] == ["delta", "error"]
+    assert isinstance(frames[1], ErrorFrame)
+    assert frames[1].message != AI_OFF_MESSAGE
 
 
 def test_force_empty_fixture(client: TestClient) -> None:

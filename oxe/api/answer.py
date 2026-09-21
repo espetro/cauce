@@ -31,7 +31,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 
 from oxe.ai import answer_cache_key, build_toolset, stream_answer
-from oxe.api.ai_frames import AnswerFrame, DoneFrame, ErrorFrame, SourcesFrame
+from oxe.api.ai_frames import AnswerFrame, DeltaFrame, DoneFrame, ErrorFrame, SourcesFrame
 from oxe.api.searx import SearchServiceDep
 from oxe.api.stats import CacheDep
 from oxe.cache import TTLCache
@@ -44,6 +44,7 @@ ANSWER_TTL_S = 24 * 3600
 
 AI_OFF_MESSAGE = "AI unavailable - no AI provider is configured in settings"
 ERROR_FIXTURE_MESSAGE = "simulated provider error (force=error QA fixture)"
+ERROR_FIXTURE_PARTIAL = "The asyncio event loop schedules coroutines and"
 
 _FRAME_ADAPTER: TypeAdapter[AnswerFrame] = TypeAdapter(AnswerFrame)
 
@@ -88,6 +89,7 @@ async def _fixture_frames(req: AnswerRequest) -> AsyncGenerator[AnswerFrame, Non
     if req.force == "ai-off":
         yield ErrorFrame(message=AI_OFF_MESSAGE)
     elif req.force == "error":
+        yield DeltaFrame(text=ERROR_FIXTURE_PARTIAL)
         yield ErrorFrame(message=ERROR_FIXTURE_MESSAGE)
     else:  # force == "empty"
         yield SourcesFrame(sources=[])
