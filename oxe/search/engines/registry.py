@@ -11,6 +11,7 @@ callable type instead of ``object``.
 import json
 import logging
 import os
+import re
 from collections.abc import Callable
 from importlib.metadata import EntryPoint, entry_points
 from typing import cast
@@ -18,6 +19,7 @@ from typing import cast
 from oxe.search.engines.compose import FallbackEngine, FanoutEngine
 from oxe.search.engines.ddgs import DDGS_ENGINES, DdgsEngine
 from oxe.search.engines.protocol import SearchEngine
+from oxe.search.engines.wikipedia import WikipediaEngine
 from oxe.search.errors import BackendError
 
 log = logging.getLogger(__name__)
@@ -30,6 +32,7 @@ _COMPOSITORS: dict[str, Compositor] = {
     "fanout": FanoutEngine,
 }
 _MAX_SPEC_DEPTH = 8
+_BARE_NAME_RE = re.compile(r"[A-Za-z][A-Za-z0-9_-]*")
 
 
 class _NamedDdgsFactory:
@@ -48,6 +51,7 @@ def _builtin_engines() -> dict[str, EngineFactory]:
         if name == "ddg":
             continue
         engines[name] = _NamedDdgsFactory(name)
+    engines["wikipedia-opensearch"] = WikipediaEngine
     return engines
 
 
@@ -120,6 +124,8 @@ def build_from_env() -> SearchEngine:
     raw = os.getenv("OXE_BACKENDS", "").strip()
     if not raw:
         return DdgsEngine()
+    if _BARE_NAME_RE.fullmatch(raw):
+        return resolve(raw)
     try:
         spec = cast(object, json.loads(raw))
     except json.JSONDecodeError as e:

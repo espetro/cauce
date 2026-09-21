@@ -13,6 +13,7 @@ import pytest
 from oxe.search.engines.compose import FallbackEngine, FanoutEngine
 from oxe.search.engines.ddgs import DdgsEngine
 from oxe.search.engines.registry import build_from_env, discover, resolve
+from oxe.search.engines.wikipedia import WikipediaEngine
 from oxe.search.errors import BackendError
 
 
@@ -62,6 +63,9 @@ def test_build_from_env() -> None:
         b = build_from_env()
         assert isinstance(b, FallbackEngine)
         assert b.name == "fb:ddg"
+
+        os.environ["OXE_BACKENDS"] = "wikipedia-opensearch"  # bare name, not JSON
+        assert build_from_env().name == "wikipedia-opensearch"
     finally:
         if old is not None:
             os.environ["OXE_BACKENDS"] = old
@@ -71,8 +75,18 @@ def test_build_from_env() -> None:
 
 def test_entry_point_discovery_builtins_present() -> None:
     d = discover()
-    for k in ("ddg", "bing", "brave"):
+    for k in ("ddg", "bing", "brave", "wikipedia", "wikipedia-opensearch"):
         assert k in d
+
+
+def test_resolve_named_wikipedia_engine() -> None:
+    b = resolve("wikipedia-opensearch")
+    assert isinstance(b, WikipediaEngine)
+    assert b.name == "wikipedia-opensearch"
+    # The misleading ddgs-routed entry stays a separate, coexisting engine.
+    ddgs_wiki = resolve("wikipedia")
+    assert isinstance(ddgs_wiki, DdgsEngine)
+    assert ddgs_wiki.name == "wikipedia"
 
 
 def test_resolve_depth_limit_raises() -> None:
