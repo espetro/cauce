@@ -13,6 +13,11 @@ msgstr ""
 "Language-Team: \n"
 "Plural-Forms: \n"
 
+#. placeholder {0}: data.cache.total_hits
+#: src/routes/dashboard.tsx:127
+msgid "({0} total hits)"
+msgstr "({0} total hits)"
+
 #. results count
 #. placeholder {0}: state.results.length
 #: src/routes/search.tsx:141
@@ -33,12 +38,12 @@ msgid "AI mode enabled"
 msgstr "AI mode enabled"
 
 #. shown when the AI backend is off
-#: src/routes/search.tsx:391
+#: src/routes/search.tsx:396
 msgid "AI mode is not configured - set a model in settings"
 msgstr "AI mode is not configured - set a model in settings"
 
 #. answer section heading
-#: src/routes/search.tsx:328
+#: src/routes/search.tsx:333
 msgid "answer"
 msgstr "answer"
 
@@ -62,11 +67,11 @@ msgstr "Ask anything privately"
 msgid "Base URL"
 msgstr "Base URL"
 
-#: src/routes/dashboard.tsx:77
+#: src/routes/dashboard.tsx:80
 msgid "cache"
 msgstr "cache"
 
-#: src/routes/dashboard.tsx:48
+#: src/routes/dashboard.tsx:53
 msgid "cache hit rate"
 msgstr "cache hit rate"
 
@@ -90,7 +95,7 @@ msgstr "Click history"
 msgid "clicked"
 msgstr "clicked"
 
-#: src/routes/dashboard.tsx:61
+#: src/routes/dashboard.tsx:66
 msgid "client split"
 msgstr "client split"
 
@@ -99,7 +104,7 @@ msgid "Close"
 msgstr "Close"
 
 #. answer confidence percentage
-#: src/routes/search.tsx:336
+#: src/routes/search.tsx:341
 msgid "confidence:"
 msgstr "confidence:"
 
@@ -128,9 +133,13 @@ msgstr "copy link"
 msgid "copying"
 msgstr "copying"
 
-#: src/routes/__root.tsx:90
+#: src/routes/__root.tsx:106
 msgid "dashboard"
 msgstr "dashboard"
+
+#: src/routes/dashboard.tsx:179
+msgid "db size"
+msgstr "db size"
 
 #: src/routes/search.tsx:242
 msgid "end of results"
@@ -153,7 +162,7 @@ msgstr "filter by query text..."
 msgid "Filter by time"
 msgstr "Filter by time"
 
-#: src/routes/search.tsx:332
+#: src/routes/search.tsx:337
 msgid "from cache"
 msgstr "from cache"
 
@@ -161,7 +170,7 @@ msgstr "from cache"
 msgid "gpt-4o-mini"
 msgstr "gpt-4o-mini"
 
-#: src/routes/__root.tsx:86
+#: src/routes/__root.tsx:102
 msgid "history"
 msgstr "history"
 
@@ -185,13 +194,21 @@ msgstr "Model"
 msgid "more results"
 msgstr "more results"
 
-#: src/routes/dashboard.tsx:51
+#: src/routes/dashboard.tsx:56
 msgid "network latency"
 msgstr "network latency"
 
+#: src/routes/dashboard.tsx:185
+msgid "newest"
+msgstr "newest"
+
 #: src/routes/dashboard.tsx:139
-msgid "no cache stats yet — backend does not aggregate cache stats."
-msgstr "no cache stats yet — backend does not aggregate cache stats."
+#~ msgid "no cache stats yet — backend does not aggregate cache stats."
+#~ msgstr "no cache stats yet — backend does not aggregate cache stats."
+
+#: src/routes/dashboard.tsx:136
+msgid "no cached searches yet"
+msgstr "no cached searches yet"
 
 #: src/routes/history.tsx:158
 msgid "no clicks yet — open a result from the search page."
@@ -209,11 +226,11 @@ msgstr "no results"
 msgid "no rows match the current filters."
 msgstr "no rows match the current filters."
 
-#: src/routes/dashboard.tsx:90
+#: src/routes/dashboard.tsx:93
 msgid "no search log data yet"
 msgstr "no search log data yet"
 
-#: src/routes/search.tsx:404
+#: src/routes/search.tsx:409
 msgid "no sources found for this query - try fewer words, or"
 msgstr "no sources found for this query - try fewer words, or"
 
@@ -226,7 +243,7 @@ msgstr "open source"
 msgid "OPENAI_API_KEY"
 msgstr "OPENAI_API_KEY"
 
-#: src/routes/dashboard.tsx:38
+#: src/routes/dashboard.tsx:43
 msgid "oxe stats"
 msgstr "oxe stats"
 
@@ -239,15 +256,19 @@ msgid "query"
 msgstr "query"
 
 #. related questions section heading
-#: src/routes/search.tsx:476
+#: src/routes/search.tsx:481
 msgid "related"
 msgstr "related"
 
 #: src/routes/search.tsx:74
 #: src/routes/search.tsx:202
-#: src/routes/search.tsx:377
+#: src/routes/search.tsx:382
 msgid "retry"
 msgstr "retry"
+
+#: src/routes/dashboard.tsx:167
+msgid "rows"
+msgstr "rows"
 
 #: src/components/SettingsDialog.tsx:160
 msgid "Save"
@@ -257,7 +278,7 @@ msgstr "Save"
 msgid "Saving settings failed"
 msgstr "Saving settings failed"
 
-#: src/routes/__root.tsx:82
+#: src/routes/__root.tsx:98
 msgid "search"
 msgstr "search"
 
@@ -278,7 +299,7 @@ msgstr "Search query"
 #~ msgid "Search results"
 #~ msgstr "Search results"
 
-#: src/routes/dashboard.tsx:45
+#: src/routes/dashboard.tsx:50
 msgid "searches per day"
 msgstr "searches per day"
 
@@ -291,7 +312,7 @@ msgid "Settings"
 msgstr "Settings"
 
 #. sources section heading
-#: src/routes/search.tsx:464
+#: src/routes/search.tsx:469
 msgid "sources"
 msgstr "sources"
 
@@ -299,11 +320,11 @@ msgstr "sources"
 msgid "src"
 msgstr "src"
 
-#: src/routes/search.tsx:373
+#: src/routes/search.tsx:378
 msgid "stream interrupted:"
 msgstr "stream interrupted:"
 
-#: src/routes/search.tsx:362
+#: src/routes/search.tsx:367
 msgid "streaming…"
 msgstr "streaming…"
 
@@ -315,12 +336,16 @@ msgstr "title"
 msgid "unchanged"
 msgstr "unchanged"
 
+#: src/routes/dashboard.tsx:173
+msgid "unexpired"
+msgstr "unexpired"
+
 #: src/routes/history.tsx:179
 msgid "url"
 msgstr "url"
 
-#: src/routes/search.tsx:380
-#: src/routes/search.tsx:407
+#: src/routes/search.tsx:385
+#: src/routes/search.tsx:412
 msgid "view Search"
 msgstr "view Search"
 
@@ -328,7 +353,7 @@ msgstr "view Search"
 #~ msgid "Welcome to oxe"
 #~ msgstr "Welcome to oxe"
 
-#: src/routes/dashboard.tsx:41
+#: src/routes/dashboard.tsx:46
 msgid "window: last 30 days"
 msgstr "window: last 30 days"
 

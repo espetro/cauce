@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { dashboardHasLogData } from './historyApi.ts'
+import { cacheHitRatePercent, dashboardHasLogData } from './historyApi.ts'
 import type { ClickItem, HistoryResponse, StatsResponse } from './historyApi.ts'
 
 // Pure helpers are inlined in the route files for the screen; the invariant-relevant pure
@@ -85,6 +85,7 @@ describe('dashboard log-data gate (checkpoint 20)', () => {
       top_queries: [],
       zero_result_queries: [],
       client_split: [],
+      cache: { rows: 0, unexpired: 0, total_hits: 0, db_size_bytes: 0, newest: null },
     }
   }
 
@@ -94,5 +95,30 @@ describe('dashboard log-data gate (checkpoint 20)', () => {
 
   test('any logged searches -> real panels', () => {
     expect(dashboardHasLogData(makeStats(7))).toBe(true)
+  })
+})
+
+describe('cacheHitRatePercent', () => {
+  function withCache(rows: number, unexpired: number): StatsResponse {
+    const base: StatsResponse = {
+      days: 30,
+      searches_per_day: [],
+      hit_rate: { total: 0, cache_hits: 0, rate: null },
+      latency_ms: { p50: null, p90: null, p99: null },
+      top_queries: [],
+      zero_result_queries: [],
+      client_split: [],
+      cache: { rows, unexpired, total_hits: 0, db_size_bytes: 0, newest: null },
+    }
+    return base
+  }
+
+  test('empty cache -> null', () => {
+    expect(cacheHitRatePercent(withCache(0, 0))).toBeNull()
+  })
+
+  test('unexpired over rows, rounded', () => {
+    expect(cacheHitRatePercent(withCache(340, 280))).toBe(82)
+    expect(cacheHitRatePercent(withCache(4, 0))).toBe(0)
   })
 })

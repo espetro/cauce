@@ -50,10 +50,9 @@ export async function history(query: HistoryQuery): Promise<HistoryResponse> {
 }
 
 /**
- * Fetch the dashboard aggregates from `GET /api/stats`. The backend does not serve a
- * `cache` key (rows/unexpired/db size — dashboard.md's cache panel) yet, so screens must
- * treat missing/log-less deployments as the normal case, not an error — see
- * `dashboardHasLogData()`.
+ * Fetch the dashboard aggregates from `GET /api/stats`. `cache` (rows/unexpired/db size/newest)
+ * feeds dashboard.md's cache panels; the log-derived fields can be empty on log-less
+ * deployments, which is the normal case, not an error — see `dashboardHasLogData()`.
  */
 export async function stats(days = 14): Promise<StatsResponse> {
   const { data, error } = await client.GET('/api/stats', { params: { query: { days } } })
@@ -61,6 +60,12 @@ export async function stats(days = 14): Promise<StatsResponse> {
     throw new Error(`/api/stats failed (${JSON.stringify(error)})`)
   }
   return data
+}
+
+/** dashboard.md: cache hit-rate percentage is unexpired/rows; null when the cache is empty. */
+export function cacheHitRatePercent(stats: StatsResponse): number | null {
+  const { rows, unexpired } = stats.cache
+  return rows > 0 ? Math.round((unexpired / rows) * 100) : null
 }
 
 /**

@@ -2,7 +2,12 @@ import { Trans } from '@lingui/react/macro'
 import { createFileRoute } from '@tanstack/react-router'
 import type { ReactNode } from 'react'
 import * as v from 'valibot'
-import { dashboardHasLogData, stats, type StatsResponse } from '../lib/historyApi.ts'
+import {
+  cacheHitRatePercent,
+  dashboardHasLogData,
+  stats,
+  type StatsResponse,
+} from '../lib/historyApi.ts'
 import { settingsSchema } from '../lib/routeSearch.ts'
 import { Shell } from '../components/Shell.tsx'
 
@@ -51,8 +56,8 @@ function DashboardComponent() {
         <Panel title={<Trans>network latency</Trans>}>
           {hasLogData ? (
             <p className="text-sm">
-              p50 {data.latency_ms.p50 ?? '—'} · p90 {data.latency_ms.p90 ?? '—'} · p99{' '}
-              {data.latency_ms.p99 ?? '—'} ms
+              p50 {data.latency_ms.p50 ?? 'n/a'} · p90 {data.latency_ms.p90 ?? 'n/a'} · p99{' '}
+              {data.latency_ms.p99 ?? 'n/a'} ms
             </p>
           ) : (
             <NoLogData />
@@ -72,10 +77,8 @@ function DashboardComponent() {
           )}
         </Panel>
         <div className={`${PANEL_GRID_CLASS} col-span-full`}>
-          {/* Backend gap: GET /api/stats ships no `cache` key (rows/unexpired/db size —
-              dashboard.md). Adding it is future backend work; the panel stays muted. */}
           <Panel title={<Trans>cache</Trans>} wide>
-            <CachePanel />
+            <CachePanel data={data} />
           </Panel>
         </div>
       </div>
@@ -111,33 +114,78 @@ function Panel({
   )
 }
 
-/** dashboard.md: hit-rate percentage (cache_hits / total across the window) + total hits. */
+/** dashboard.md: hit-rate percentage (unexpired/rows) + total hits, both from the cache table. */
 function HitRatePanel({ data }: { data: StatsResponse }) {
-  const rate =
-    data.hit_rate.total > 0
-      ? `${Math.round(((data.hit_rate.cache_hits ?? 0) / data.hit_rate.total) * 100)}%`
-      : null
-  if (rate === null) {
-    return <NoLogData />
+  const percent = cacheHitRatePercent(data)
+  if (percent === null) {
+    return <NoCacheRows />
   }
   return (
     <p className="text-sm">
-      <span className="text-2xl font-semibold">{rate}</span>{' '}
-      <span className="text-base-content/60">({data.hit_rate.total} total hits)</span>
+      <span className="text-2xl font-semibold">{percent}%</span>{' '}
+      <span className="text-base-content/60">
+        <Trans>({data.cache.total_hits} total hits)</Trans>
+      </span>
     </p>
   )
 }
 
-/**
- * dashboard.md's cache table (rows, unexpired, db size, newest) is NOT served by
- * `GET /api/stats` — there is no `cache` key in the wire contract. Adding one is future
- * backend work; until then this panel renders its muted placeholder unconditionally.
- */
-function CachePanel() {
+function NoCacheRows() {
   return (
     <p className="text-sm text-base-content/60">
-      <Trans>no cache stats yet — backend does not aggregate cache stats.</Trans>
+      <Trans>no cached searches yet</Trans>
     </p>
   )
 }
 
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) {
+    return `${bytes} B`
+  }
+  const units = ['KB', 'MB', 'GB']
+  let value = bytes / 1024
+  let unit = 0
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024
+    unit += 1
+  }
+  return `${value.toFixed(1)} ${units[unit]}`
+}
+
+/** dashboard.md mockup: "2026-09-14 19:42" (UTC). */
+function formatNewest(ts: number | null): string {
+  return ts === null ? 'n/a' : new Date(ts * 1000).toISOString().slice(0, 16).replace('T', ' ')
+}
+
+/** dashboard.md cache table: rows, unexpired, db size, newest. */
+function CachePanel({ data }: { data: StatsResponse }) {
+  const { rows, unexpired, db_size_bytes: dbSize, newest } = data.cache
+  return (
+    <dl className="grid grid-cols-2 gap-x-6 gap-y-1 text-sm">
+      <div className="flex gap-2">
+        <dt className="text-base-content/60">
+          <Trans>rows</Trans>
+        </dt>
+        <dd>{rows}</dd>
+      </div>
+      <div className="flex gap-2">
+        <dt className="text-base-content/60">
+          <Trans>unexpired</Trans>
+        </dt>
+        <dd>{unexpired}</dd>
+      </div>
+      <div className="flex gap-2">
+        <dt className="text-base-content/60">
+          <Trans>db size</Trans>
+        </dt>
+        <dd>{formatBytes(dbSize)}</dd>
+      </div>
+      <div className="flex gap-2">
+        <dt className="text-base-content/60">
+          <Trans>newest</Trans>
+        </dt>
+        <dd>{formatNewest(newest)}</dd>
+      </div>
+    </dl>
+  )
+}

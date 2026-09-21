@@ -165,6 +165,19 @@ export interface components {
             /** Url */
             url: string;
         };
+        /** CacheSummary */
+        CacheSummary: {
+            /** Db Size Bytes */
+            db_size_bytes: number;
+            /** Newest */
+            newest: number | null;
+            /** Rows */
+            rows: number;
+            /** Total Hits */
+            total_hits: number;
+            /** Unexpired */
+            unexpired: number;
+        };
         /**
          * ClickItem
          * @description One click row, newest-first in ``HistoryResponse.items``.
@@ -514,6 +527,7 @@ export interface components {
         };
         /** StatsSummary */
         StatsSummary: {
+            cache: components["schemas"]["CacheSummary"];
             /** Client Split */
             client_split: components["schemas"]["ClientSplit"][];
             /** Days */
