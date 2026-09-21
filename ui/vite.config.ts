@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import tailwindcss from '@tailwindcss/vite'
 import { tanstackRouter } from '@tanstack/router-plugin/vite'
 import react from '@vitejs/plugin-react-swc'
@@ -5,8 +6,13 @@ import { defineConfig } from 'vite'
 import Icons from 'unplugin-icons/vite'
 import { LINGUI_SWC_PLUGIN, REACT_COMPILER_ENABLED } from './scripts/swc-options.ts'
 
+const pyproject = readFileSync(new URL('../pyproject.toml', import.meta.url), 'utf8')
+const appVersion = /^version\s*=\s*"([^"]+)"/m.exec(pyproject)?.[1]
+if (appVersion === undefined) throw new Error('version not found in pyproject.toml')
+
 // https://vite.dev/config/
 export default defineConfig({
+  define: { __APP_VERSION__: JSON.stringify(appVersion) },
   /* Dev-server proxy: the UI fetches /api and /search same-origin, so Vite
    * forwards both to the FastAPI backend on 4479 (also used by Playwright).
    * bypass: SPA navigations to /search want HTML — let Vite serve the app

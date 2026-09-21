@@ -1,5 +1,5 @@
 import { Trans } from '@lingui/react/macro'
-import { createRootRoute, Link, Outlet } from '@tanstack/react-router'
+import { createRootRoute, Link, Outlet, useLocation } from '@tanstack/react-router'
 import IconGithub from '~icons/lucide/github'
 import IconHelpCircle from '~icons/lucide/circle-question-mark'
 import IconHistory from '~icons/lucide/history'
@@ -14,6 +14,7 @@ import * as v from 'valibot'
 import { settingsSchema } from '../lib/routeSearch.ts'
 import { SettingsDialog } from '../components/SettingsDialog.tsx'
 import { stripSettings } from '../lib/settingsUrl.ts'
+import { APP_VERSION } from '../lib/version.ts'
 
 export const Route = createRootRoute({
   validateSearch: v.object({ settings: settingsSchema }),
@@ -58,6 +59,21 @@ function ThemeToggle() {
   )
 }
 
+type NavTo = '/search' | '/history' | '/dashboard'
+
+/** Bracket-marks the current page's link per landing.md; the landing route `/` marks `search`. */
+function NavLink({ to, children }: { to: NavTo; children: React.ReactNode }) {
+  const pathname = useLocation({ select: (l) => l.pathname })
+  const active = pathname.startsWith(to) || (to === '/search' && pathname === '/')
+  return (
+    <Link to={to} className="flex items-center gap-1" aria-current={active ? 'page' : undefined}>
+      {active && <span aria-hidden="true">[</span>}
+      {children}
+      {active && <span aria-hidden="true">]</span>}
+    </Link>
+  )
+}
+
 /**
  * Root layout: the persistent header/nav every screen spec assumes is present (landing.md,
  * search.md, history.md, dashboard.md all show the same `oxe / search / history / dashboard
@@ -77,18 +93,18 @@ function RootComponent() {
             oxe
           </Link>
           <nav className="flex items-center gap-3 text-sm">
-            <Link to="/search" className="flex items-center gap-1">
+            <NavLink to="/search">
               <IconSearch aria-hidden="true" />
               <Trans>search</Trans>
-            </Link>
-            <Link to="/history" className="flex items-center gap-1">
+            </NavLink>
+            <NavLink to="/history">
               <IconHistory aria-hidden="true" />
               <Trans>history</Trans>
-            </Link>
-            <Link to="/dashboard" className="flex items-center gap-1">
+            </NavLink>
+            <NavLink to="/dashboard">
               <IconLayoutDashboard aria-hidden="true" />
               <Trans>dashboard</Trans>
-            </Link>
+            </NavLink>
           </nav>
         </div>
         <div className="flex items-center gap-3">
@@ -115,6 +131,7 @@ function RootComponent() {
           >
             <IconGithub aria-hidden="true" />
           </a>
+          <span className="hidden text-xs opacity-70 sm:inline">v{APP_VERSION}</span>
         </div>
       </header>
       <Outlet />
