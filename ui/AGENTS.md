@@ -83,6 +83,17 @@ No literal strings in JSX. Copy goes through Lingui macros against catalogs unde
 - The size budget script exists and can be run by hand, but is not yet wired into `mise run
   validate` or a `validate:full` task (that task doesn't exist yet) — running it is a
   convention until it's part of a gate.
-- UI work runs as a (generator, evaluator) loop with maxIterations=5: a generator subagent
-  implements a fix/feature, an evaluator subagent reviews it against the screen specs and the
-  visual references before it is accepted.
+- UI work runs as the generator/evaluator loop defined in `~/UILOOP.md`, capped at **3**
+  iterations, not open-ended: a 4th failed pass stops the loop, writes the anti-oscillation
+  ledger, and escalates to a human instead of auto-shipping. The evaluator is a fresh subagent
+  on a different model family from the generator and never sees the generator's diff,
+  rationale, or prior verdict text — it receives only the screenshots, the screen spec, the
+  reference docs, the rubric, and the console/axe/e2e evidence. Before the rubric is read, the
+  deterministic gates in `~/UILOOP.md`'s hard-gates section must all be green (console errors,
+  console warnings, network 5xx, axe critical/serious, layout collapse at 3 viewports, e2e
+  checkpoint) — any red there is an automatic FAIL, no judgment call. An approved iteration
+  updates the screen spec and the baseline screenshot in the same commit as the code; a pass
+  that doesn't update both is not a pass. Rubric: `.agents/docs/screens/rubric.md`. Reference
+  docs: `.agents/docs/screens/references/`. Token source of truth:
+  `.agents/docs/screens/references/tokens.md`. This is a convention, not a `[gate:]` — the
+  baseline/parity check infrastructure it depends on does not exist yet.

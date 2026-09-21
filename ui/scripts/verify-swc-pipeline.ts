@@ -10,7 +10,7 @@
  * fingerprints:
  *
  *   1. `import { c as _c } from "react/compiler-runtime"` — proves React Compiler ran.
- *   2. The Lingui-extracted message id for "Welcome to oxe", computed the same way
+ *   2. The Lingui-extracted message id for "your local web intel layer", computed the same way
  *      `@lingui/swc-plugin` computes it (`@lingui/message-utils/generateMessageId`) —
  *      proves the macro was expanded, not passed through as literal JSX.
  *
@@ -25,7 +25,7 @@ import { transform } from '@swc/core'
 import { generateMessageId } from '@lingui/message-utils/generateMessageId'
 import { LINGUI_SWC_PLUGIN, REACT_COMPILER_ENABLED } from './swc-options.ts'
 
-export const SOURCE_MESSAGE = 'Welcome to oxe'
+export const SOURCE_MESSAGE = 'your local web intel layer'
 export const EXPECTED_MESSAGE_ID = generateMessageId(SOURCE_MESSAGE)
 export const COMPILER_RUNTIME_MARKER = 'react/compiler-runtime'
 

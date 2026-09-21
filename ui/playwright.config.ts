@@ -1,4 +1,11 @@
+import { mkdtempSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { defineConfig } from '@playwright/test'
+
+// Throwaway cache dir: the cache key ignores the engine, so the developer's real cache would leak
+// into baselines. Wikipedia is the default e2e engine (keyless, no DuckDuckGo rate limit).
+const e2eCacheDir = mkdtempSync(join(tmpdir(), 'oxe-e2e-cache-'))
 
 /**
  * e2e config: testDir points at the repo's tests/e2e/ markdown checkpoints.
@@ -19,6 +26,11 @@ export default defineConfig({
     {
       command: 'uv run uvicorn oxe.app:app --host 127.0.0.1 --port 4577',
       cwd: '..',
+      env: {
+        ...process.env,
+        OXE_BACKENDS: process.env.OXE_BACKENDS ?? 'wikipedia-opensearch',
+        OXE_CACHE_DIR: e2eCacheDir,
+      },
       url: 'http://127.0.0.1:4577/health',
       reuseExistingServer: false,
       // Dedicated port: the developer's long-running oxe (the local search
