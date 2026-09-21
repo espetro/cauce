@@ -13,13 +13,13 @@ const SIZE_CLASS: Record<ShellSize, string> = {
 interface ShellProps extends ComponentPropsWithoutRef<'main'> {
   size?: ShellSize
   align?: ShellAlign
-  /** Landing hero: pill block lands near 43% of the viewport height (patterns-layout-grid.md). */
+  /** Landing hero: pill centre at 43.5% of viewport height; offset = above-pill stack (9.25rem) + header (4.06rem, 6.4rem when wrapped below sm). */
   hero?: boolean
 }
 
 export function Shell({ size = 'lg', align = 'center', hero = false, className = '', children, ...rest }: ShellProps) {
   if (hero) {
-    const classes = ['flex min-h-[calc(100vh-4rem)] flex-col items-center justify-start px-4 pt-[max(2rem,calc(43vh-14.6rem))]', className]
+    const classes = ['flex min-h-[calc(100vh-4rem)] flex-col items-center justify-start px-4 pt-[max(2rem,calc(43.5vh-15.7rem))] sm:pt-[max(2rem,calc(43.5vh-13.3rem))]', className]
       .filter(Boolean)
       .join(' ')
     return (
