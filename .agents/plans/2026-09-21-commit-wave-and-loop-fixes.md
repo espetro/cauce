@@ -39,7 +39,7 @@ does NOT start servers, does NOT touch e2e baselines, and does NOT commit (orche
 - B1 title underline: `ui/src/routes/search.tsx` result title link and AI source cards: no resting underline, underline on hover and focus-visible.
 - B2 hero anchor: `ui/src/components/Shell.tsx` hero padding so the pill centre lands at 42-45% of viewport at 1280x720, 768x1024, 390x844. Measure by formula, verify in Phase C.
 - B3 header chrome: `ui/src/routes/__root.tsx` active nav link marked (brackets per `landing.md` Behavior "Header nav") and the version label at >=640px; version source must be the real package/app version, not a literal invented in the component.
-- B4 dashboard cache panels: `ui/src/routes/dashboard.tsx` bind cache hit-rate and cache table to `GET /api/stats` per `dashboard.md`; keep placeholders only for log-derived panels. May add to `ui/src/lib/` fetch code, not to the Python backend.
+- B4 dashboard cache panels: `GET /api/stats` ships no `cache` key today (found while planning), so this is backend plus UI. Add a `cache` object (rows, unexpired, db size, newest) to the stats summary in `oxe/` with pytest coverage, regenerate `ui/src/lib/types.gen.ts` via the repo's own generator, and bind the hit-rate and cache panels in `ui/src/routes/dashboard.tsx` per `dashboard.md`. Placeholders stay only for log-derived panels. Owns: `oxe/**` stats code, `tests/**` for it, `ui/src/lib/types.gen.ts`, `ui/src/lib/historyApi.ts`, `dashboard.tsx`.
 
 Explicitly queued, not attempted: result snippet and cached preview (backend data), cache age (backend), zero/empty-source glyph and confidence meta (needs a checkpoint 14 decision).
 
