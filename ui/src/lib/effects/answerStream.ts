@@ -59,6 +59,11 @@ export function useAnswerStream({ query, force, dispatch }: AnswerStreamProps): 
         message: error instanceof Error ? error.message : String(error),
       })
     })
-  })
+
+    return () => {
+      cancelled = true
+      controller.abort()
+    }
+  }, [query, force, dispatch])
 }
 
