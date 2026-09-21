@@ -253,8 +253,13 @@ function ResultRow({ result }: { result: SearchResult }) {
         <img src={favicon} alt="" width={16} height={16} loading="lazy" className="inline-block" />
         {domain}
       </p>
-      <h2 className="text-lg leading-snug">
-        <a href={result.url} target="_blank" rel="noreferrer" className="link link-primary">
+      <h2 className="line-clamp-2 text-lg leading-snug">
+        <a
+          href={result.url}
+          target="_blank"
+          rel="noreferrer"
+          className="text-primary hover:underline focus-visible:underline"
+        >
           {result.title}
         </a>
       </h2>
