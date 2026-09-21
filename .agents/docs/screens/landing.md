@@ -169,6 +169,32 @@ State 5: suggestions dropdown open (typing, input focused, >=2 chars).
   toggle is purely client-side state plus the `mode` url param, so
   curl-able urls stay stable.
 
+## Queued improvements
+
+Harvested from `references/insights/`; not part of the conformance contract above.
+
+- Composer morph: animate the same pill from its hero position to the results
+  header in one motion. The pill lands at the top of the column, never bottom-pinned.
+- Model picker annotations (context length, tool support) in the dropdown. Needs
+  model metadata the backend does not expose yet.
+
+## Design references
+
+- [`references/tokens.md`](references/tokens.md) - canonical type scale,
+  spacing, radii, color roles, motion durations behind everything on this
+  screen.
+- [`references/patterns-search-input.md`](references/patterns-search-input.md)
+  - hero pill placement/sizing, placeholder copy, mode toggle placement,
+  keyboard affordances, focus state, and the `## Hybrid (classic + AI)`
+  section governing the shared `<SearchBox>` and suggestions dropdown.
+- [`references/patterns-typography.md`](references/patterns-typography.md)
+  - wordmark and tagline type scale.
+- [`references/patterns-motion.md`](references/patterns-motion.md) -
+  suggestions dropdown open/close motion.
+- [`references/patterns-layout-grid.md`](references/patterns-layout-grid.md)
+  - hero column placement (~42-45% viewport height), header anchoring,
+  breakpoints.
+
 ## User flow checkpoints
 
 ```

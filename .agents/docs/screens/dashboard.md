@@ -52,6 +52,14 @@ chart.
 - Panel grid: `repeat(auto-fit, minmax(20rem, 1fr))` — multi-column on
   desktop, single column stacked below ~700px. Always full width.
 
+## Design references
+
+- [`references/tokens.md`](references/tokens.md) - canonical type scale,
+  spacing, color roles behind the panel grid.
+- [`references/patterns-layout-grid.md`](references/patterns-layout-grid.md)
+  - panel grid (`repeat(auto-fit, minmax(20rem, 1fr))`), header anchoring,
+  the ~700px single-column breakpoint.
+
 ## Notes
 
 - No params planned: the dashboard window is a build-time constant, not

@@ -70,6 +70,24 @@ Empty state:
 - Table container scrolls horizontally as a last resort on very
   narrow screens.
 
+## Queued improvements
+
+Harvested from `references/insights/`; not part of the conformance contract above.
+
+- A quiet "served locally, cached on your machine" line, mirroring DuckDuckGo's
+  privacy chrome placement.
+
+## Design references
+
+- [`references/tokens.md`](references/tokens.md) - canonical type scale,
+  spacing, color roles behind the table and stats line.
+- [`references/patterns-states.md`](references/patterns-states.md) -
+  the empty state (`no clicks yet...`) and the loading-dots/inline-error
+  states for the table fetch.
+- [`references/patterns-layout-grid.md`](references/patterns-layout-grid.md)
+  - table container width/gutters, header anchoring, the ~768px
+  breakpoint where the url column hides.
+
 ## Notes
 
 - Retention: rows are pruned after `OXE_CLICK_RETENTION_DAYS`

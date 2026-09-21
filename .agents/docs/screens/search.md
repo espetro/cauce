@@ -252,6 +252,53 @@ segment disabled in place.
 - Vite emits hashed asset filenames, so stale clients self-heal after
   upgrades.
 
+## Queued improvements
+
+Harvested from `references/insights/` (ledger: `references/insights/dispositions.md`).
+Not built and not part of the conformance contract above; the evaluator must not
+flag their absence. Each moves into the spec body when it is scheduled.
+
+- Favicon citation chip with overflow counter (`favicon + domain +1`) in place of
+  bare `[n]`, falling back to `[n]` when no favicon is available.
+- `Show all` expansion on the horizontal source-card row.
+- Grounding chips above the answer listing the queries the backend ran. Needs the
+  answer stream to expose them first.
+- Stale cache on throttle: when a fetch fails and a cached set exists, render it with
+  an age notice (see `references/patterns-states.md`, `## Failure naming and stale
+  results`). Needs the service to keep expired rows readable.
+- Cache transparency panel over the results, device-side and undoable, in the
+  interaction grammar of Brave Goggles; also carries the "served locally, cached on
+  your machine" copy.
+
+## Design references
+
+- [`references/tokens.md`](references/tokens.md) - canonical type scale,
+  spacing, radii, color roles, motion durations behind both modes.
+- [`references/patterns-search-input.md`](references/patterns-search-input.md)
+  - results-header pill (shares `<SearchBox>` with landing), mode toggle,
+  suggestions dropdown.
+- [`references/patterns-answer-streaming.md`](references/patterns-answer-streaming.md)
+  - AI phase model, order of reveal, streaming contract, citations
+  (Mockup B streaming, Mockup B2 completed).
+- [`references/patterns-typography.md`](references/patterns-typography.md)
+  - result title/snippet type, AI answer body/headings.
+- [`references/patterns-states.md`](references/patterns-states.md) -
+  loading affordances (Mockups A/B) and the shared empty/error states
+  (Mockup C), including the `## Hybrid (classic + AI)` escape-hatch
+  contract.
+- [`references/patterns-motion.md`](references/patterns-motion.md) -
+  streaming cursor, skeleton shimmer, source-card hover-lift, sources
+  collapse/expand.
+- [`references/patterns-hybrid-serp.md`](references/patterns-hybrid-serp.md)
+  - the mode-switch convention itself and how Search/AI share (or don't
+  share) layout and navigation.
+- [`references/patterns-layout-grid.md`](references/patterns-layout-grid.md)
+  - content column widths per mode, header anchoring, fixed vs. scrolling
+  regions.
+- [`references/patterns-result-list.md`](references/patterns-result-list.md)
+  - classic result anatomy for Mockup A: favicon/domain line, title link,
+  snippet clamp, metadata row, vertical rhythm.
+
 ## User flow checkpoints
 
 Search mode:
