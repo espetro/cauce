@@ -4,6 +4,7 @@ import { useState } from 'react'
 import * as v from 'valibot'
 import { history, type ClickItem, type HistoryResponse } from '../lib/historyApi.ts'
 import { settingsSchema } from '../lib/routeSearch.ts'
+import { Shell } from '../components/Shell.tsx'
 
 const SINCE_VALUES = ['24', '168', '720'] as const
 
@@ -97,7 +98,7 @@ function HistoryComponent() {
   }
 
   return (
-    <main className="mx-auto max-w-5xl px-4 py-8">
+    <Shell size="lg">
       <h1 className="text-xl font-semibold">
         <Trans>Click history</Trans>
       </h1>
@@ -208,7 +209,7 @@ function HistoryComponent() {
           </table>
         </div>
       )}
-    </main>
+    </Shell>
   )
 }
 

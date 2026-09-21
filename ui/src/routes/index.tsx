@@ -10,12 +10,12 @@
  * only arms the mode -- the morphed second row (model picker, reasoning chip) is search.md
  * surface work, not this screen's.
  */
-import IconSparkles from '~icons/lucide/sparkles'
-import IconSearch from '~icons/lucide/search'
-import { Trans, useLingui } from '@lingui/react/macro'
+import { Trans } from '@lingui/react/macro'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import * as v from 'valibot'
 import { modeSchema, settingsSchema } from '../lib/routeSearch.ts'
+import { SearchBox } from '../components/SearchBox.tsx'
+import { Shell } from '../components/Shell.tsx'
 
 const landingSearchSchema = v.object({
   mode: modeSchema,
@@ -28,68 +28,24 @@ export const Route = createFileRoute('/')({
 })
 
 function HomeComponent() {
-  const { t } = useLingui()
   const { mode, settings } = Route.useSearch()
   const navigate = useNavigate()
-  const aiMode = mode === 'ai'
-
-  const submit = (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    const q = String(new FormData(event.currentTarget).get('q') ?? '').trim()
-    if (q.length === 0) {
-      return
-    }
-    void navigate({ to: '/search', search: aiMode ? { q, mode: 'ai' } : { q } })
-  }
 
   return (
-    <main className="flex min-h-[calc(100vh-4rem)] flex-col items-center justify-center px-4">
+    <Shell hero>
       <h1 className="text-5xl font-semibold">oxe</h1>
       <p className="mt-3 text-sm text-base-content/60">
         <Trans comment="landing tagline">your local web intel layer</Trans>
       </p>
-      <form
-        onSubmit={submit}
-        className="mt-10 flex h-14 w-full max-w-2xl items-center gap-2 rounded-full border border-base-300 bg-base-100 pl-6 pr-2 shadow-sm focus-within:border-primary transition-colors"
-      >
-        <input
-          name="q"
-          type="search"
-          autoFocus
-          aria-label={t`Search query`}
-          placeholder={aiMode ? t`Ask anything privately` : t`Search privately`}
-          className="flex-1 bg-transparent outline-none placeholder:text-base-content/50"
-        />
-        <div className="join rounded-full bg-base-200 p-1" role="radiogroup" aria-label={t`Mode`}>
-          <button
-            type="button"
-            role="radio"
-            aria-checked={!aiMode}
-            className={`btn btn-xs join-item rounded-full ${!aiMode ? 'btn-neutral' : 'btn-ghost'}`}
-            onClick={() => {
-              void navigate({ to: '.', search: settings ? { settings } : {} })
-            }}
-          >
-            <IconSearch aria-hidden="true" />
-            <Trans>Search</Trans>
-          </button>
-          <button
-            type="button"
-            role="radio"
-            aria-checked={aiMode}
-            className={`btn btn-xs join-item rounded-full ${aiMode ? 'btn-neutral' : 'btn-ghost'}`}
-            onClick={() => {
-              void navigate({ to: '.', search: settings ? { mode: 'ai', settings } : { mode: 'ai' } })
-            }}
-          >
-            <IconSparkles aria-hidden="true" />
-            <Trans>AI</Trans>
-          </button>
-        </div>
-        <button type="submit" className="btn btn-neutral btn-circle" aria-label={t`Search`}>
-          <IconSearch aria-hidden="true" />
-        </button>
-      </form>
-    </main>
+      <SearchBox
+        className="mt-10 max-w-2xl"
+        mode={mode}
+        autoFocus
+        onModeChange={(next) => {
+          const keep = settings ? { settings } : {}
+          void navigate({ to: '.', search: next ? { mode: next, ...keep } : keep })
+        }}
+      />
+    </Shell>
   )
 }

@@ -44,6 +44,7 @@ function ThemeToggle() {
             type="button"
             role="radio"
             aria-checked={theme === value}
+            aria-label={value}
             className={`btn btn-xs join-item ${theme === value ? 'btn-active' : ''}`}
             onClick={() => {
               setTheme(value)
@@ -70,7 +71,7 @@ function RootComponent() {
   const settingsOpen = search.settings === 'open'
   return (
     <>
-      <header className="navbar border-b border-base-300 px-4">
+      <header className="navbar flex-wrap gap-y-2 border-b border-base-300 px-4">
         <div className="flex-1 gap-4">
           <Link to="/" className="text-lg font-semibold">
             oxe

@@ -14,13 +14,14 @@ import IconLoaderCircle from '~icons/lucide/loader-circle'
 import IconRotateCcw from '~icons/lucide/rotate-ccw'
 import IconSearchX from '~icons/lucide/search-x'
 import { Trans } from '@lingui/react/macro'
-import { createFileRoute, Link } from '@tanstack/react-router'
-import { useReducer } from 'react'
+import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
+import { useReducer, type ReactNode } from 'react'
 import * as v from 'valibot'
 import { CitationPopover } from '../components/CitationPopover.tsx'
 import { SearchBox } from '../components/SearchBox.tsx'
+import { Shell } from '../components/Shell.tsx'
 import { aiReducer, seedAiState } from '../lib/aiReducer.ts'
-import { search } from '../lib/api.ts'
+import { loadSearchPage } from '../lib/searchLoader.ts'
 import { forcedStateSchema, suggestSchema } from '../lib/fixtures.ts'
 import { errorMessage, useContinuousScroll } from '../lib/effects/continuousScroll.ts'
 import { useAnswerStream } from '../lib/effects/answerStream.ts'
@@ -43,17 +44,7 @@ const searchSearchSchema = v.object({
 export const Route = createFileRoute('/search')({
   validateSearch: searchSearchSchema,
   loaderDeps: ({ search: s }) => ({ q: s.q, mode: s.mode, force: s.force }),
-  loader: async ({ deps }) => {
-    if (!deps.q) {
-      return null
-    }
-    // In AI mode force belongs to POST /answer (checkpoints 13/14); passing it
-    // here would make the web-search loader throw ForcedSearchError / return
-    // the canned empty payload before the answer surface even mounts.
-    const classicForce = deps.mode === 'ai' ? null : deps.force
-    const forceParams = classicForce ? `&force=${classicForce}` : ''
-    return await search({ q: deps.q }, new URLSearchParams(`q=${encodeURIComponent(deps.q)}${forceParams}`))
-  },
+  loader: ({ deps }) => loadSearchPage(deps),
   component: SearchComponent,
   pendingComponent: SearchPending,
   errorComponent: SearchErrorScreen,
@@ -61,21 +52,21 @@ export const Route = createFileRoute('/search')({
 
 function SearchPending() {
   return (
-    <main className="mx-auto max-w-2xl px-4 py-8" aria-busy="true">
+    <Shell size="sm" aria-busy="true">
       <div className="flex items-center gap-2 text-base-content/60" data-testid="search-loading">
         <IconLoaderCircle className="animate-spin" aria-hidden="true" />
         <p>
           <Trans>Searching</Trans>…
         </p>
       </div>
-    </main>
+    </Shell>
   )
 }
 
 function SearchErrorScreen({ error }: { error: unknown }) {
   return (
-    <main className="mx-auto max-w-2xl px-4 py-8" data-testid="search-error">
-      <p role="alert" className="text-error">
+    <Shell size="sm" data-testid="search-error">
+      <p role="alert" className="text-error-strong">
         <Trans>error: search failed:</Trans> {errorMessage(error)}
       </p>
       <div className="mt-3 flex gap-2">
@@ -83,8 +74,18 @@ function SearchErrorScreen({ error }: { error: unknown }) {
           <IconRotateCcw aria-hidden="true" /> <Trans>retry</Trans>
         </a>
       </div>
-    </main>
+    </Shell>
   )
+}
+
+function useModeChange(q: string) {
+  const navigate = useNavigate()
+  return (next: 'ai' | undefined, typed: string) => {
+    const query = typed || q
+    if (query.length > 0) {
+      void navigate({ to: '/search', search: next ? { q: query, mode: next } : { q: query } })
+    }
+  }
 }
 
 function SearchComponent() {
@@ -92,25 +93,47 @@ function SearchComponent() {
   const loaderData = Route.useLoaderData()
   const [state, dispatch] = useReducer(searchReducer, loaderData, seedSearchState)
   useContinuousScroll({ state, dispatch, query: q })
+  const onModeChange = useModeChange(q)
 
+  // Classic mode only: force=error/empty here are the web-search fixtures
+  // (checkpoints 7/8). In AI mode force is the /answer SSE fixture, so the loader
+  // must not short-circuit the answer surface (checkpoints 13/14).
+  const classicBody = <ClassicBody q={q} state={state} dispatch={dispatch} />
+
+  if (mode === 'ai') {
+    return (
+      <AiAnswerSurface query={q} force={force ?? null} onModeChange={onModeChange} classicBody={classicBody} />
+    )
+  }
+
+  return (
+    <Shell size="sm">
+      <h1 className="sr-only">{q}</h1>
+      <div className="mb-6">
+        <SearchBox initialQuery={q} onModeChange={onModeChange} />
+      </div>
+      {classicBody}
+    </Shell>
+  )
+}
+
+function ClassicBody({
+  q,
+  state,
+  dispatch,
+}: {
+  q: string
+  state: ReturnType<typeof seedSearchState>
+  dispatch: (event: { type: 'moreRequested' }) => void
+}) {
   const copyLink = () => {
     void navigator.clipboard.writeText(window.location.href)
   }
 
-  if (mode === 'ai') {
-    return <AiAnswerSurface query={q} force={force ?? null} />
-  }
-
-  // Classic mode only: force=error/empty here are the web-search fixtures
-  // (checkpoints 7/8). In AI mode (above) force is the /answer SSE fixture, so
-  // the loader must not short-circuit the answer surface (checkpoints 13/14).
   return (
-    <main className="mx-auto max-w-2xl px-4 py-8">
-      <div className="mb-6">
-        <SearchBox initialQuery={q} />
-      </div>
-      {state.status === 'empty' ? <EmptySurface /> : null}
-      {state.status === 'error' ? <ErrorSurface message={state.message} /> : null}
+    <>
+      {state.status === 'empty' ? <EmptySurface q={q} /> : null}
+      {state.status === 'error' ? <ErrorSurface q={q} message={state.message} /> : null}
       {state.status === 'ready' ? (
         <>
           <div className="flex items-center gap-2 text-sm text-base-content/60">
@@ -142,30 +165,44 @@ function SearchComponent() {
           <ContinuousScrollFooter state={state} dispatch={dispatch} />
         </>
       ) : null}
-    </main>
+    </>
   )
 }
 
-function EmptySurface() {
+function AskAiLink({ q }: { q: string }) {
+  return (
+    <Link className="btn btn-ghost btn-sm" to="/search" search={{ q, mode: 'ai' }}>
+      <Trans>ask AI instead</Trans>
+    </Link>
+  )
+}
+
+function EmptySurface({ q }: { q: string }) {
   return (
     <div className="py-8" data-testid="search-empty">
       <p className="flex items-center gap-2">
         <IconSearchX aria-hidden="true" />
         <Trans>no results</Trans>
       </p>
+      <div className="mt-3">
+        <AskAiLink q={q} />
+      </div>
     </div>
   )
 }
 
-function ErrorSurface({ message }: { message: string }) {
+function ErrorSurface({ q, message }: { q: string; message: string }) {
   return (
     <div className="py-8" data-testid="search-error">
-      <p role="alert" className="text-error">
+      <p role="alert" className="text-error-strong">
         <Trans>error: search failed:</Trans> {message}
       </p>
-      <a className="btn btn-sm mt-3" href="">
-        <IconRotateCcw aria-hidden="true" /> <Trans>retry</Trans>
-      </a>
+      <div className="mt-3 flex gap-2">
+        <a className="btn btn-sm" href="">
+          <IconRotateCcw aria-hidden="true" /> <Trans>retry</Trans>
+        </a>
+        <AskAiLink q={q} />
+      </div>
     </div>
   )
 }
@@ -236,27 +273,43 @@ function ResultRow({ result }: { result: SearchResult }) {
 function AiAnswerSurface({
   query,
   force,
+  onModeChange,
+  classicBody,
 }: {
   query: string
   force: 'ai-off' | 'error' | 'empty' | null
+  onModeChange: (next: 'ai' | undefined, typed: string) => void
+  classicBody: ReactNode
 }) {
   const [state, dispatch] = useReducer(aiReducer, force, seedAiState)
   useAnswerStream({ query, force, dispatch })
 
   return (
-    <main className="mx-auto max-w-2xl px-4 py-8" data-testid="ai-surface">
+    <Shell size="sm" data-testid="ai-surface">
+      <h1 className="sr-only">{query}</h1>
       <div className="mb-6">
-        <SearchBox initialQuery={query} />
+        <SearchBox
+          initialQuery={query}
+          mode="ai"
+          onModeChange={onModeChange}
+          aiDisabled={state.status === 'unavailable'}
+        />
       </div>
-      {state.status === 'unavailable' ? <AiUnavailableNotice /> : null}
+      {state.status === 'unavailable' ? (
+        <>
+          <AiUnavailableNotice />
+          {classicBody}
+        </>
+      ) : null}
       {state.status === 'stepping' || state.status === 'streaming' ? (
         <AiStreaming text={state.status === 'streaming' ? state.text : ''} steps={state.steps} />
       ) : null}
       {state.status === 'failed' ? (
-        <AiFailed message={state.message} partialText={state.partialText} />
+        <AiFailed query={query} message={state.message} partialText={state.partialText} />
       ) : null}
       {state.status === 'done' ? (
         <AiDone
+          query={query}
           answer={state.answer}
           sources={state.sources}
           relatedQuestions={state.relatedQuestions}
@@ -264,7 +317,7 @@ function AiAnswerSurface({
           cached={state.cached}
         />
       ) : null}
-    </main>
+    </Shell>
   )
 }
 
@@ -312,18 +365,18 @@ function AiStreaming({ text, steps }: { text: string; steps: string[] }) {
   )
 }
 
-function AiFailed({ message, partialText }: { message: string; partialText: string }) {
+function AiFailed({ query, message, partialText }: { query: string; message: string; partialText: string }) {
   return (
     <section data-testid="ai-failed">
       {partialText ? <p className="mb-3 whitespace-pre-wrap opacity-70">{partialText}</p> : null}
-      <p role="alert" className="text-error">
+      <p role="alert" className="text-error-strong">
         <Trans>stream interrupted:</Trans> {message}
       </p>
       <div className="mt-3 flex gap-2">
         <a className="btn btn-sm" href="">
           <IconRotateCcw aria-hidden="true" /> <Trans>retry</Trans>
         </a>
-        <Link className="btn btn-ghost btn-sm" to="/search" search={{ q: '' }} data-testid="ai-view-search">
+        <Link className="btn btn-ghost btn-sm" to="/search" search={{ q: query }} data-testid="ai-view-search">
           <Trans>view Search</Trans>
         </Link>
       </div>
@@ -333,7 +386,7 @@ function AiFailed({ message, partialText }: { message: string; partialText: stri
 
 function AiUnavailableNotice() {
   return (
-    <div className="py-8" data-testid="ai-unavailable">
+    <div className="pb-6" data-testid="ai-unavailable">
       <p className="text-base-content/60" role="status">
         <Trans comment="shown when the AI backend is off">
           AI mode is not configured - set a model in settings
@@ -343,14 +396,14 @@ function AiUnavailableNotice() {
   )
 }
 
-function AiEmptySources() {
+function AiEmptySources({ query }: { query: string }) {
   return (
     <div className="py-6" data-testid="ai-empty-sources">
       <p className="flex items-center gap-2">
         <IconSearchX aria-hidden="true" />
         <Trans>no sources found for this query - try fewer words, or</Trans>
       </p>
-      <Link className="btn btn-ghost btn-sm mt-2" to="/search" search={{ q: '' }}>
+      <Link className="btn btn-ghost btn-sm mt-2" to="/search" search={{ q: query }}>
         <Trans>view Search</Trans>
       </Link>
     </div>
@@ -384,12 +437,14 @@ function SourceCard({ source, index }: { source: AnswerSource; index: number }) 
 }
 
 function AiDone({
+  query,
   answer,
   sources,
   relatedQuestions,
   confidence,
   cached,
 }: {
+  query: string
   answer: string
   sources: AnswerSource[]
   relatedQuestions: string[]
@@ -402,7 +457,7 @@ function AiDone({
       {answer ? (
         <p className="whitespace-pre-wrap leading-relaxed">{renderAnswerWithCitations(answer, sources)}</p>
       ) : null}
-      {answer && sources.length === 0 ? <AiEmptySources /> : null}
+      {sources.length === 0 ? <AiEmptySources query={query} /> : null}
       {sources.length > 0 ? (
         <>
           <p className="mt-6 mb-2 text-sm font-semibold text-base-content/60">

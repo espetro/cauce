@@ -46,9 +46,12 @@ function hasMore(pageno: number, results: SearchResult[]): boolean {
   return results.length > 0 && pageno < MAX_PAGES
 }
 
-export function seedSearchState(response: SearxResponse | null): SearchState {
+export function seedSearchState(response: SearxResponse | { loadError: string } | null): SearchState {
   if (!response) {
     return { status: 'idle' }
+  }
+  if ('loadError' in response) {
+    return searchReducer({ status: 'idle' }, { type: 'failed', message: response.loadError })
   }
   return searchReducer({ status: 'idle' }, { type: 'loaded', response })
 }

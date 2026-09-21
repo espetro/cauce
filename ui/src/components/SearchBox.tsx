@@ -13,47 +13,100 @@
  */
 import { Autocomplete } from '@base-ui/react/autocomplete'
 import IconSearch from '~icons/lucide/search'
-import { Trans } from '@lingui/react/macro'
+import IconSparkles from '~icons/lucide/sparkles'
+import { Trans, useLingui } from '@lingui/react/macro'
 import { useNavigate } from '@tanstack/react-router'
+import { useRef } from 'react'
 import { Route } from '../routes/__root.tsx'
 import { fixturesEnabled } from '../lib/fixtures.ts'
 
 export interface SearchBoxProps {
   initialQuery?: string
   forceDropdownOpen?: boolean
+  mode?: 'ai'
+  onModeChange: (next: 'ai' | undefined, typedQuery: string) => void
+  aiDisabled?: boolean
+  autoFocus?: boolean
+  className?: string
 }
 
-export function SearchBox({ initialQuery = '', forceDropdownOpen }: SearchBoxProps) {
+export function SearchBox({
+  initialQuery = '',
+  forceDropdownOpen,
+  mode,
+  onModeChange,
+  aiDisabled = false,
+  autoFocus,
+  className = '',
+}: SearchBoxProps) {
+  const { t } = useLingui()
   const navigate = useNavigate()
+  const formRef = useRef<HTMLFormElement>(null)
   const routeSuggest = Route.useSearch({
     select: (s) => ('suggest' in s ? s.suggest : false),
   })
   const dropdownOpen = (forceDropdownOpen ?? routeSuggest) && fixturesEnabled()
+  const aiMode = mode === 'ai'
+  const typedQuery = () => String(new FormData(formRef.current ?? undefined).get('q') ?? '').trim()
 
   return (
-    <Autocomplete.Root items={[]} defaultOpen={dropdownOpen}>
+    <Autocomplete.Root items={[]} defaultOpen={dropdownOpen} defaultValue={initialQuery}>
       <form
+        ref={formRef}
+        className={`w-full ${className}`}
         onSubmit={(event) => {
           event.preventDefault()
-          const formData = new FormData(event.currentTarget)
-          const q = String(formData.get('q') ?? '').trim()
+          const q = typedQuery()
           if (q.length > 0) {
-            void navigate({ to: '/search', search: { q } })
+            void navigate({ to: '/search', search: aiMode ? { q, mode: 'ai' } : { q } })
           }
         }}
       >
-        <Autocomplete.InputGroup className="join w-full">
+        <Autocomplete.InputGroup
+          className="flex h-14 w-full items-center gap-2 rounded-full border border-base-300 bg-base-100 pl-6 pr-2 shadow-sm transition-colors focus-within:border-primary"
+        >
           <Autocomplete.Input
             name="q"
-            aria-label="Search query"
-            placeholder="Search the web"
-            render={<input className="input input-bordered join-item flex-1" defaultValue={initialQuery} />}
+            aria-label={t`Search query`}
+            placeholder={aiMode ? t`Ask anything privately` : t`Search privately`}
+            autoFocus={autoFocus}
+            render={
+              <input
+                type="search"
+                className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-base-content/50"
+              />
+            }
           />
-          <button type="submit" className="btn btn-neutral join-item" aria-label="Search">
-            <IconSearch aria-hidden="true" />
-            <span className="sr-only">
+          <div className="join shrink-0 rounded-full bg-base-200 p-1" role="radiogroup" aria-label={t`Mode`}>
+            <button
+              type="button"
+              role="radio"
+              aria-checked={!aiMode}
+              className={`btn btn-xs join-item rounded-full ${!aiMode ? 'btn-neutral' : 'btn-ghost'}`}
+              onClick={() => {
+                onModeChange(undefined, typedQuery())
+              }}
+            >
+              <IconSearch aria-hidden="true" />
               <Trans>Search</Trans>
-            </span>
+            </button>
+            <button
+              type="button"
+              role="radio"
+              aria-checked={aiMode}
+              disabled={aiDisabled}
+              title={aiDisabled ? t`Configure a model in settings` : undefined}
+              className={`btn btn-xs join-item rounded-full ${aiMode ? 'btn-neutral' : 'btn-ghost'}`}
+              onClick={() => {
+                onModeChange('ai', typedQuery())
+              }}
+            >
+              <IconSparkles aria-hidden="true" />
+              <Trans>AI</Trans>
+            </button>
+          </div>
+          <button type="submit" className="btn btn-neutral btn-circle shrink-0" aria-label={t`Search`}>
+            <IconSearch aria-hidden="true" />
           </button>
         </Autocomplete.InputGroup>
         <Autocomplete.Portal>

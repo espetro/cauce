@@ -4,6 +4,7 @@ import type { ReactNode } from 'react'
 import * as v from 'valibot'
 import { dashboardHasLogData, stats, type StatsResponse } from '../lib/historyApi.ts'
 import { settingsSchema } from '../lib/routeSearch.ts'
+import { Shell } from '../components/Shell.tsx'
 
 /**
  * `/dashboard` (dashboard.md, checkpoint 20): live SPA route fetching aggregate usage and
@@ -32,7 +33,7 @@ function DashboardComponent() {
   const hasLogData = dashboardHasLogData(data)
 
   return (
-    <main className="mx-auto max-w-6xl px-4 py-8">
+    <Shell size="xl">
       <h1 className="text-xl font-semibold">
         <Trans>oxe stats</Trans>
       </h1>
@@ -78,14 +79,14 @@ function DashboardComponent() {
           </Panel>
         </div>
       </div>
-    </main>
+    </Shell>
   )
 }
 
 /** dashboard.md: muted flat placeholder line for panels the backend does not aggregate yet. */
 function NoLogData() {
   return (
-    <p className="text-sm text-base-content/50">
+    <p className="text-sm text-base-content/60">
       <Trans>no search log data yet</Trans>
     </p>
   )
@@ -134,7 +135,7 @@ function HitRatePanel({ data }: { data: StatsResponse }) {
  */
 function CachePanel() {
   return (
-    <p className="text-sm text-base-content/50">
+    <p className="text-sm text-base-content/60">
       <Trans>no cache stats yet — backend does not aggregate cache stats.</Trans>
     </p>
   )

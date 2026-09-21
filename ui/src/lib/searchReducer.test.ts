@@ -27,6 +27,10 @@ function responseWith(count: number, query = 'test'): SearxResponse {
 }
 
 describe('seedSearchState', () => {
+  test('a loader failure seeds the error state', () => {
+    expect(seedSearchState({ loadError: 'boom' })).toEqual({ status: 'error', message: 'boom' })
+  })
+
   test('null loader data seeds idle', () => {
     expect(seedSearchState(null)).toEqual({ status: 'idle' })
   })
