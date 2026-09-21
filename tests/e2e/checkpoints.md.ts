@@ -60,6 +60,7 @@ function loadCheckpoints(): Checkpoint[] {
 async function landingIdle(page: Page): Promise<void> {
   await page.goto('/')
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('oxe')
+  await expect(page).toHaveScreenshot('1-landing-idle.png')
 }
 
 /**
@@ -72,6 +73,10 @@ async function searchClassicResultsPage1(page: Page): Promise<void> {
   await expect(meta).toBeVisible()
   const text = (await meta.textContent()) ?? ''
   expect(parseInt(text, 10)).toBeGreaterThan(0)
+  // Live encyclopedia rows drift; mask their text and compare the frame/layout only.
+  await expect(page).toHaveScreenshot('3-search-classic-results-page-1.png', {
+    mask: [page.locator('article')],
+  })
 }
 
 /**
@@ -86,6 +91,7 @@ async function landingAiModeSelected(page: Page): Promise<void> {
   await page.goto('/?mode=ai')
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('oxe')
   expect(new URL(page.url()).searchParams.get('mode')).toBe('ai')
+  await expect(page).toHaveScreenshot('2-landing-ai-mode-selected.png')
 }
 
 /**
@@ -98,6 +104,7 @@ async function aiModeUnavailable(page: Page): Promise<void> {
   await expect(page.getByTestId('ai-surface')).toBeVisible()
   const notice = page.getByTestId('ai-unavailable')
   await expect(notice).toContainText('AI mode is not configured')
+  await expect(page).toHaveScreenshot('12-ai-mode-unavailable.png')
 }
 
 /**
@@ -112,6 +119,7 @@ async function aiStreamFailedMidStream(page: Page): Promise<void> {
   await expect(failed).toContainText('simulated provider error')
   await expect(failed.getByRole('link', { name: 'retry' })).toBeVisible()
   await expect(page.getByTestId('ai-view-search')).toBeVisible()
+  await expect(page).toHaveScreenshot('13-ai-stream-failed-mid-stream.png')
 }
 
 /**
@@ -126,6 +134,7 @@ async function aiEmptySources(page: Page): Promise<void> {
   await expect(page.getByTestId('ai-done')).toBeVisible()
   await expect(page.getByTestId('ai-confidence')).toContainText('0%')
   await expect(page.getByTestId('ai-source-card')).toHaveCount(0)
+  await expect(page).toHaveScreenshot('14-ai-empty-sources.png')
 }
 
 const BEHAVIORS: Record<string, (page: Page) => Promise<void>> = {
