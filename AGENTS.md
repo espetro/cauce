@@ -18,8 +18,22 @@ GitHub Project: https://github.com/users/espetro/projects/23/views/1
 
 All work is linked to a refined task there (EPIC per wave, one issue per subplan step) before
 implementation starts. A task is refined when it has Iteration, effort (S/M/L/XL), start and
-target dates, and a classification label (`feature` / `bug` / `cosmetic` / `infra`). Use
-`ghx` to manage it.
+target dates, and a classification label (`feature` / `bug` / `cosmetic` / `infra` /
+`documentation`). Use `ghx` to manage it.
+
+## How to pick up a step
+
+Full procedure: `.agents/plans/v3/README.md`. Short form:
+
+1. Pick an issue titled `W<n>-<nn> ...` whose dependencies are `Completed`; move it to `WIP`.
+2. Read the parent plan sections 4 to 7, the wave file's "Settled inputs", then the step.
+3. Worktree `~/.worktrees/oxe-<step-id>` on branch `v3/<step-id>-<slug>` from `main`.
+4. Implement only the step's "Do"; its "Acceptance" list is the PR's test list; the golden
+   path stays green; commits signed off (`-s`).
+5. PR `Closes #<issue>`; on merge, move to `Completed` and read the step's "Follow-up".
+
+If a step cannot be done without changing a settled contract, stop and comment on the issue
+with the proposed amendment to the parent plan. Do not improvise the contract.
 
 ## Layout (target, see the plan's section 4.1)
 
@@ -34,6 +48,12 @@ sdk/python               exec-protocol SDK + ddgs reference engine (Apache-2.0)
 tests/e2e                golden path integration tests
 .agents/                 plans/, decisions.md, MEMORY.md, notes/, docs/
 ```
+
+## Modes and budgets
+
+One binary: `oxe serve` (full: UI + API + MCP, < 80 MB idle), `oxe serve --headless` (API +
+MCP, < 50 MB), `oxe mcp` (stdio only, < 40 MB). Cargo features `ui mcp ai archive semantic
+postgres otlp`. Port 4479, loopback by default.
 
 ## Enforced
 
