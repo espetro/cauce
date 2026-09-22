@@ -1,0 +1,225 @@
+<!doctype html>
+<!-- This Source Code Form is subject to the terms of the Mozilla Public
+     License, v. 2.0. If a copy of the MPL was not distributed with this
+     file, You can obtain one at https://mozilla.org/MPL/2.0/. -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ crate::strings::dashboard::TITLE }} · cauce</title>
+  <style>{{ style_css|safe }}</style>
+  <style>
+    header.nav { display: flex; gap: 1rem; align-items: baseline; margin-bottom: 1rem; }
+    header.nav a { color: var(--accent); text-decoration: none; }
+    .window a { color: var(--accent); }
+    .window a[aria-current] { font-weight: 700; color: var(--fg); text-decoration: none; }
+    .panels { display: grid; grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr)); gap: 0.75rem; margin-bottom: 0.75rem; }
+    .panel { border: 1px solid var(--border); border-radius: var(--radius); padding: 0.75rem; }
+    .panel h2 { margin: 0 0 0.5rem; font-size: 0.9rem; font-weight: 600; color: var(--muted); text-transform: lowercase; }
+    .panel .big { font-size: 1.6rem; font-weight: 700; }
+    .muted { color: var(--muted); }
+    ul.flat { list-style: none; margin: 0; padding: 0; font-size: 0.875rem; }
+    ul.flat li { display: flex; justify-content: space-between; gap: 0.75rem; }
+    ul.flat li + li { border-top: 1px solid var(--border); }
+    table.stats { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+    table.stats th, table.stats td { text-align: left; padding: 0.25rem 0.4rem; border-bottom: 1px solid var(--border); }
+    table.stats th { color: var(--muted); font-weight: 600; }
+    svg.bars { width: 100%; height: auto; display: block; }
+    svg.bars rect.cache { fill: var(--accent); }
+    svg.bars rect.network { fill: var(--muted); opacity: 0.45; }
+    svg.bars text { fill: var(--muted); font-size: 8px; }
+    .legend { font-size: 0.75rem; color: var(--muted); display: flex; gap: 0.75rem; }
+    .legend i { display: inline-block; width: 0.6em; height: 0.6em; border-radius: 1px; margin-right: 0.25em; }
+    .legend i.c { background: var(--accent); }
+    .legend i.n { background: var(--muted); opacity: 0.45; }
+    dl.kv { display: grid; grid-template-columns: auto 1fr; gap: 0.15rem 1rem; margin: 0; font-size: 0.875rem; }
+    dl.kv dt { color: var(--muted); }
+    dl.kv dd { margin: 0; }
+    footer.meta { margin-top: 1.5rem; }
+  </style>
+</head>
+<body>
+  <header class="nav">
+    <a href="/">cauce</a>
+    <strong>{{ crate::strings::dashboard::TITLE }}</strong>
+  </header>
+  <p class="meta window">{{ crate::strings::dashboard::WINDOW }}:
+    <a href="/dashboard?days=7"{% if days == 7 %} aria-current="true"{% endif %}>{{ crate::strings::dashboard::DAYS_7 }}</a>
+    ·
+    <a href="/dashboard?days=30"{% if days == 30 %} aria-current="true"{% endif %}>{{ crate::strings::dashboard::DAYS_30 }}</a>
+  </p>
+
+  <div class="panels">
+    <section class="panel">
+      <h2>{{ crate::strings::dashboard::SEARCHES_PER_DAY }}</h2>
+      {% if bars.is_empty() %}
+      <p class="muted">{{ crate::strings::dashboard::NO_DATA }}</p>
+      {% else %}
+      <svg class="bars" viewBox="0 0 {{ chart_w }} {{ chart_h }}" role="img">
+        {% for bar in bars %}
+        <rect class="network" x="{{ bar.x }}" y="{{ bar.net_y }}" width="{{ bar.w }}" height="{{ bar.net_h }}"><title>{{ bar.title }}</title></rect>
+        <rect class="cache" x="{{ bar.x }}" y="{{ bar.cache_y }}" width="{{ bar.w }}" height="{{ bar.cache_h }}"><title>{{ bar.title }}</title></rect>
+        <text x="{{ bar.x }}" y="{{ chart_h }}">{{ bar.tick }}</text>
+        {% endfor %}
+      </svg>
+      <p class="legend"><span><i class="c"></i>{{ crate::strings::dashboard::LEGEND_CACHE }}</span><span><i class="n"></i>{{ crate::strings::dashboard::LEGEND_NETWORK }}</span></p>
+      {% endif %}
+    </section>
+
+    <section class="panel">
+      <h2>{{ crate::strings::dashboard::HIT_RATE }}</h2>
+      {% if !has_data %}
+      <p class="muted">{{ crate::strings::dashboard::NO_DATA }}</p>
+      {% else %}
+      <p class="big">{{ hit_rate_pct }}</p>
+      <p class="muted">{{ total_hits }} / {{ total_searches }}</p>
+      {% if !tier_rows.is_empty() %}
+      <ul class="flat">
+        {% for t in tier_rows %}
+        <li><span>tier {{ t.tier }}</span><span>{{ t.hits }} · {{ t.pct }}</span></li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+      {% endif %}
+    </section>
+
+    <section class="panel">
+      <h2>{{ crate::strings::dashboard::LATENCY }}</h2>
+      {% if !has_latency && !has_ttfr %}
+      <p class="muted">{{ crate::strings::dashboard::NO_DATA }}</p>
+      {% else %}
+      <dl class="kv">
+        {% if has_ttfr %}
+        <dt>{{ crate::strings::dashboard::TTFR }}</dt>
+        <dd>p50 {{ ttfr.p50_ms }} ms · p90 {{ ttfr.p90_ms }} ms · p99 {{ ttfr.p99_ms }} ms</dd>
+        {% endif %}
+        {% if has_latency %}
+        <dt>{{ crate::strings::dashboard::FULL }}</dt>
+        <dd>p50 {{ lat.p50_ms }} ms · p90 {{ lat.p90_ms }} ms · p99 {{ lat.p99_ms }} ms</dd>
+        {% endif %}
+      </dl>
+      {% endif %}
+    </section>
+
+    <section class="panel">
+      <h2>{{ crate::strings::dashboard::CLIENTS }}</h2>
+      {% if clients.is_empty() %}
+      <p class="muted">{{ crate::strings::dashboard::NO_DATA }}</p>
+      {% else %}
+      <ul class="flat">
+        {% for c in clients %}
+        <li><span>{{ c.name }}</span><span>{{ c.count }} · {{ c.pct }}</span></li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+    </section>
+
+    <section class="panel">
+      <h2>{{ crate::strings::dashboard::OUTCOMES }}</h2>
+      {% if outcomes.is_empty() %}
+      <p class="muted">{{ crate::strings::dashboard::NO_DATA }}</p>
+      {% else %}
+      <ul class="flat">
+        {% for o in outcomes %}
+        <li><span>{{ o.name }}</span><span>{{ o.count }} · {{ o.pct }}</span></li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+    </section>
+
+    <section class="panel">
+      <h2>{{ crate::strings::dashboard::RELIABILITY }}</h2>
+      {% if !has_data && deadline_hits == 0 && stale_served == 0 && admission_rejected == 0 %}
+      <p class="muted">{{ crate::strings::dashboard::NO_DATA }}</p>
+      {% else %}
+      <dl class="kv">
+        <dt>{{ crate::strings::dashboard::DEADLINE_HITS }}</dt>
+        <dd>{{ deadline_hits }} · {{ deadline_rate }}</dd>
+        <dt>{{ crate::strings::dashboard::STALE_SERVED }}</dt>
+        <dd>{{ stale_served }} · {{ stale_rate }}</dd>
+        <dt>{{ crate::strings::dashboard::ADMISSION_REJECTED }}</dt>
+        <dd>{{ admission_rejected }}</dd>
+      </dl>
+      {% endif %}
+    </section>
+
+    <section class="panel">
+      <h2>{{ crate::strings::dashboard::TOP_QUERIES }}</h2>
+      {% if top_queries.is_empty() %}
+      <p class="muted">{{ crate::strings::dashboard::NO_DATA }}</p>
+      {% else %}
+      <ul class="flat">
+        {% for q in top_queries %}
+        <li><span>{{ q.query }}</span><span>{{ q.searches }}</span></li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+    </section>
+
+    <section class="panel">
+      <h2>{{ crate::strings::dashboard::ZERO_RESULTS }}</h2>
+      {% if zero_queries.is_empty() %}
+      <p class="muted">{{ crate::strings::dashboard::NO_DATA }}</p>
+      {% else %}
+      <ul class="flat">
+        {% for q in zero_queries %}
+        <li><span>{{ q }}</span></li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+    </section>
+  </div>
+
+  <section class="panel">
+    <h2>{{ crate::strings::dashboard::ENGINES }}</h2>
+    {% if engines.is_empty() %}
+    <p class="muted">{{ crate::strings::dashboard::NO_ENGINES }}</p>
+    {% else %}
+    <table class="stats">
+      <thead>
+        <tr>
+          <th>{{ crate::strings::dashboard::COL_ENGINE }}</th>
+          <th>{{ crate::strings::dashboard::COL_BREAKER }}</th>
+          <th>{{ crate::strings::dashboard::COL_RELIABILITY }}</th>
+          <th>{{ crate::strings::dashboard::COL_CALLS }}</th>
+          <th>{{ crate::strings::dashboard::COL_TOTAL }}</th>
+          <th>{{ crate::strings::dashboard::COL_HTTP }}</th>
+          <th>{{ crate::strings::dashboard::COL_PARSE }}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for e in engines %}
+        <tr>
+          <td><a href="/engines">{{ e.id }}</a></td>
+          <td>{{ e.breaker }}</td>
+          <td>{{ e.reliability }}</td>
+          <td>{{ e.requests }}</td>
+          <td>{{ e.total }}</td>
+          <td>{{ e.http }}</td>
+          <td>{{ e.parse }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+  </section>
+
+  <section class="panel">
+    <h2>{{ crate::strings::dashboard::CACHE }}</h2>
+    <dl class="kv">
+      <dt>{{ crate::strings::dashboard::CACHE_ROWS }}</dt>
+      <dd>{{ cache_rows }} ({{ cache_expired }} expired)</dd>
+      <dt>{{ crate::strings::dashboard::CACHE_UNEXPIRED }}</dt>
+      <dd>{{ cache_unexpired }}</dd>
+      <dt>{{ crate::strings::dashboard::CACHE_DB_SIZE }}</dt>
+      <dd>{{ cache_db }}</dd>
+      <dt>{{ crate::strings::dashboard::CACHE_NEWEST }}</dt>
+      <dd>{{ cache_newest }}</dd>
+    </dl>
+  </section>
+
+  <footer class="meta">
+    <span class="request-id" title="{{ request_id }}">{{ short_request_id }}</span>
+  </footer>
+</body>
+</html>

@@ -25,6 +25,8 @@ use tokio::net::TcpListener;
 
 #[cfg(feature = "ui")]
 use crate::cache_page;
+#[cfg(feature = "ui")]
+use crate::dashboard;
 use crate::error::ApiError;
 use crate::handlers;
 #[cfg(feature = "ui")]
@@ -235,6 +237,8 @@ fn handler_for(spec: &RouteSpec, state: &AppState) -> Option<MethodRouter<AppSta
         ("GET", "/opensearch.xml", RouteKind::Html) => Some(get(html::opensearch)),
         #[cfg(feature = "ui")]
         ("GET", "/favicon.ico", RouteKind::Static) => Some(get(html::favicon)),
+        #[cfg(feature = "ui")]
+        ("GET", "/dashboard", RouteKind::Html) => Some(get(dashboard::dashboard)),
         ("GET", "/api/search", RouteKind::Json) => Some(get(handlers::search)),
         ("GET", "/api/history", RouteKind::Json) => Some(get(handlers::history)),
         ("POST", "/api/click", RouteKind::Json) => Some(post(handlers::click)),
