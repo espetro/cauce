@@ -31,7 +31,7 @@ use std::time::Duration;
 
 use crate::engine::{EngineError, EngineId, Tier};
 use crate::request::ClientKind;
-use crate::store::{AdmissionStats, BreakerState, PhaseStats};
+use crate::store::{AdmissionStats, BreakerState, LatencyPercentiles, PhaseStats};
 
 /// Rolling-window size for per-engine/per-queue latency samples. Bounded so
 /// a long-running process does not grow the aggregates without limit; the
@@ -164,8 +164,13 @@ struct RegistryInner {
     rejected_by_reason: BTreeMap<String, u64>,
     deadline_hits: u64,
     stale_served: u64,
+    /// Rolling `cauce_ttfr_ms` samples for `/api/stats`'s TTFR percentiles
+    /// (the exposition histogram is fixed-bucket; the dashboard needs
+    /// nearest-rank p50/p90/p99, same rolling-window convention as the
+    /// engine percentiles).
+    ttfr_ms: VecDeque<u32>,
     // --- exposition series --------------------------------------------------
-    /// `cauce_search_requests_total{client,source,tier}`.
+    /// `cauce_search_requests_total{client,source,tier,outcome}`.
     search_requests: BTreeMap<Labels, u64>,
     /// `cauce_search_duration_ms{source}`.
     search_duration: BTreeMap<Labels, Hist>,
@@ -194,6 +199,7 @@ impl Default for RegistryInner {
             rejected_by_reason: BTreeMap::new(),
             deadline_hits: 0,
             stale_served: 0,
+            ttfr_ms: VecDeque::new(),
             search_requests: BTreeMap::new(),
             search_duration: BTreeMap::new(),
             ttfr: Hist::new(MS_BUCKETS),
@@ -292,6 +298,43 @@ pub fn engine_stats() -> Vec<EngineMetricStats> {
         })
         .collect();
     out.sort_by(|a, b| a.engine.cmp(&b.engine));
+    out
+}
+
+/// Nearest-rank p50/p90/p99 of an unsorted sample list (`search_log`-style
+/// full-latency percentiles; [`percentiles`] covers the median/p80/p95
+/// convention engine and admission rows use).
+fn latency_percentiles(window: &VecDeque<u32>) -> Option<LatencyPercentiles> {
+    if window.is_empty() {
+        return None;
+    }
+    let mut sorted: Vec<u32> = window.iter().copied().collect();
+    sorted.sort_unstable();
+    let n = sorted.len() as u64;
+    let pick = |p: u64| sorted[((n * p).div_ceil(100).max(1) - 1) as usize];
+    Some(LatencyPercentiles {
+        p50_ms: pick(50),
+        p90_ms: pick(90),
+        p99_ms: pick(99),
+    })
+}
+
+/// TTFR percentiles for `/api/stats` (W2-03): the `cauce_ttfr_ms` rolling
+/// window as p50/p90/p99, `None` before the first network search.
+pub fn ttfr_percentiles() -> Option<LatencyPercentiles> {
+    latency_percentiles(&registry().ttfr_ms)
+}
+
+/// `cauce_search_requests_total` folded down to its `outcome` label
+/// (`ok` / `error` / `rejected`), for `/api/stats`'s outcome split (W2-03).
+pub fn search_outcome_counts() -> BTreeMap<String, u64> {
+    let reg = registry();
+    let mut out: BTreeMap<String, u64> = BTreeMap::new();
+    for (ls, v) in &reg.search_requests {
+        if let Some((_, outcome)) = ls.iter().find(|(k, _)| k == "outcome") {
+            *out.entry(outcome.clone()).or_insert(0) += v;
+        }
+    }
     out
 }
 
@@ -528,15 +571,20 @@ pub fn render_prometheus() -> String {
 pub struct Metrics;
 
 impl Metrics {
-    /// `cauce_search_requests_total{client,source,tier}` +
+    /// `cauce_search_requests_total{client,source,tier,outcome}` +
     /// `cauce_search_duration_ms{source}`. `source` is `"cache"` or
     /// `"network"`; `tier` is the serving cache tier for hits, `None` on the
     /// network path (labelled `"none"` so the set stays rectangular).
+    /// `outcome` is `"ok"`, `"error"` or `"rejected"` (W2-03 amendment):
+    /// the pipeline records it in the `shared_response` arms — `rejected`
+    /// is the admission-rejected 429 (`PipelineError::RateLimited`), every
+    /// other failure is `error`.
     pub fn record_search(
         &self,
         client: &ClientKind,
         source: &'static str,
         tier: Option<Tier>,
+        outcome: &'static str,
         elapsed: Duration,
     ) {
         let mut reg = registry();
@@ -549,6 +597,7 @@ impl Metrics {
                     tier.map(|t| t.as_u8().to_string())
                         .unwrap_or_else(|| "none".to_string()),
                 ),
+                ("outcome", outcome.to_string()),
             ]))
             .or_insert(0) += 1;
         reg.search_duration
@@ -560,7 +609,9 @@ impl Metrics {
     /// `cauce_ttfr_ms` — call once per search with the latency of the first
     /// successful engine response.
     pub fn record_ttfr(&self, d: Duration) {
-        registry().ttfr.observe(ms_f64(d));
+        let mut reg = registry();
+        reg.ttfr.observe(ms_f64(d));
+        push(&mut reg.ttfr_ms, ms_u32(d));
     }
 
     /// One completed engine call: `cauce_engine_requests_total{engine,outcome}`,
