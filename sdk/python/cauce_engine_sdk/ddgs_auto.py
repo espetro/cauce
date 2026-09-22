@@ -34,17 +34,20 @@ def search(req: Request) -> Response:
         if "ratelimit" in msg or "429" in msg or "too many" in msg:
             return Response(error="rate_limited")
         return Response(error=f"transport:{exc}")
-    return Response(
-        results=[
-            Result(
-                title=hit.get("title") or "",
-                url=hit.get("href") or "",
-                snippet=hit.get("body") or "",
-            )
-            for hit in hits or []
-            if hit.get("href")
-        ]
-    )
+    results = [
+        Result(
+            title=hit.get("title") or "",
+            url=hit.get("href") or "",
+            snippet=hit.get("body") or "",
+        )
+        for hit in hits or []
+        if hit.get("href")
+    ]
+    # An empty page is `no_results`, not `Ok([])`: the pipeline still treats
+    # it as an answer, but the report must not read as a healthy `Ok` (#120).
+    if not results:
+        return Response(error="no_results")
+    return Response(results=results)
 
 
 if __name__ == "__main__":
