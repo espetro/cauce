@@ -13,6 +13,7 @@ pub mod config;
 #[cfg(feature = "conformance")]
 pub mod conformance;
 mod engine;
+mod health;
 mod normalize;
 mod pipeline;
 mod request;
@@ -25,6 +26,9 @@ pub use config::{
     Resources, SearchConfig, ServerConfig,
 };
 pub use engine::{Engine, EngineError, EngineId, Tier};
+pub use health::{
+    Admission, EWMA_ALPHA, EngineHealth, HealthPolicy, HealthTracker, PERSIST_DEBOUNCE, ProbeGuard,
+};
 pub use normalize::normalize_url;
 pub use pipeline::{
     DEFAULT_DEADLINE, DEFAULT_TTL, DEFAULT_TTL_CAP, PipelineError, SearchOpts, SearchPipeline,
