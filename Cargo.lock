@@ -796,6 +796,7 @@ version = "0.0.0"
 dependencies = [
  "oxe-core",
  "oxe-engines",
+ "oxe-server",
  "tokio",
 ]
 

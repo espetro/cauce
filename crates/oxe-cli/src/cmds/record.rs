@@ -11,8 +11,7 @@ use oxe_core::Engine;
 use oxe_engines::exec::{ExecEngine, ExecSpec};
 use oxe_engines::{Replay, record};
 
-const USAGE: &str =
-    "usage: oxe record --engine <id> --query <q> [--out-dir <engines/fixtures>]";
+const USAGE: &str = "usage: oxe record --engine <id> --query <q> [--out-dir <engines/fixtures>]";
 
 /// Entry point for the `record` subcommand. Returns the process exit code.
 pub fn run(args: &[String]) -> i32 {
@@ -34,7 +33,9 @@ fn engine_for(id: &str) -> Result<Box<dyn Engine>, String> {
     match id {
         "replay" => Ok(Box::new(Replay::from_env())),
         "ddgs" => Ok(Box::new(ExecEngine::new(ExecSpec::ddgs(repo_root())))),
-        other => Err(format!("unknown engine {other:?} (supported: ddgs, replay)")),
+        other => Err(format!(
+            "unknown engine {other:?} (supported: ddgs, replay)"
+        )),
     }
 }
 
