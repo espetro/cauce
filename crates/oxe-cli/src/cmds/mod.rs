@@ -5,6 +5,7 @@
 //! file, You can obtain one at <https://mozilla.org/MPL/2.0/>.
 
 pub mod config;
+pub mod mcp;
 pub mod record;
 pub mod serve;
 pub mod trace;
