@@ -30,7 +30,7 @@ use crate::routes::{ROUTES, RouteKind, RouteSpec};
 
 /// The wave this build implements; the routes-table test pins
 /// `wave <= CURRENT_WAVE` declarations to mounted handlers.
-pub const CURRENT_WAVE: u8 = 0;
+pub const CURRENT_WAVE: u8 = 1;
 
 /// Shared handler state: the search pipeline, the store, the live config
 /// (`PUT /api/config` swaps it under the lock) and the W1-09 metrics
