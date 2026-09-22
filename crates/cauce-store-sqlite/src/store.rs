@@ -365,8 +365,8 @@ impl Store for SqliteStore {
             conn.execute(
                 "INSERT INTO search_log
                     (ts, query_hash, query, client, source, tier, latency_ms,
-                     result_count, engines_json, deadline_hit)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                     result_count, engines_json, deadline_hit, query_raw)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
                 params![
                     rows::to_ms(&row.ts),
                     row.query_hash.as_str(),
@@ -378,6 +378,7 @@ impl Store for SqliteStore {
                     i64::from(row.result_count),
                     rows::engines_to_json(&row.engines)?,
                     row.deadline_hit,
+                    row.query_raw,
                 ],
             )
             .map_err(sql_err)?;
@@ -416,7 +417,8 @@ impl Store for SqliteStore {
             let mut stmt = conn
                 .prepare(
                     "SELECT id, ts, query_hash, query, client, source, tier,
-                            latency_ms, result_count, engines_json, deadline_hit
+                            latency_ms, result_count, engines_json, deadline_hit,
+                            query_raw
                        FROM search_log
                       WHERE (?1 IS NULL OR ts >= ?1)
                         AND (?2 IS NULL OR query LIKE ?2 ESCAPE '\\')
