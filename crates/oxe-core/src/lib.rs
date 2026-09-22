@@ -17,6 +17,7 @@ pub mod config;
 pub mod conformance;
 mod engine;
 pub mod http;
+pub mod metrics;
 mod normalize;
 mod pipeline;
 mod request;
@@ -31,6 +32,7 @@ pub use config::{
     ServerConfig, is_loopback_host,
 };
 pub use engine::{Engine, EngineError, EngineId, Tier};
+pub use metrics::{EngineMetricStats, EnginePhase, Metrics};
 pub use normalize::normalize_url;
 pub use pipeline::{
     DEFAULT_DEADLINE, DEFAULT_TTL, DEFAULT_TTL_CAP, PipelineError, SearchOpts, SearchPipeline,
@@ -38,7 +40,7 @@ pub use pipeline::{
 pub use request::{ClientKind, SafeSearch, SearchRequest, TimeRange};
 pub use response::{EngineReport, EngineStatus, SearchMeta, SearchResponse, SearchResult, Source};
 pub use store::{
-    AuditFilter, AuditRow, BreakerState, ClickRow, ClientCount, DayCount, EngineHealthRow,
-    HistoryFilter, HistoryItem, LatencyPercentiles, LogSource, SearchLogRow, StatsSnapshot, Store,
-    StoreError, StoreTuning,
+    AdmissionStats, AuditFilter, AuditRow, BreakerState, ClickRow, ClientCount, DayCount,
+    EngineHealthRow, EngineStatsRow, HistoryFilter, HistoryItem, LatencyPercentiles, LogSource,
+    PhaseStats, SearchLogRow, StatsSnapshot, Store, StoreError, StoreTuning,
 };

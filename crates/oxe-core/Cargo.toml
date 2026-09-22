@@ -19,6 +19,9 @@ chrono = { version = "0.4", features = ["serde"] }
 futures-util = "0.3"
 # Per-engine token bucket (http.rs).
 governor = "0.10"
+# W1-09 metrics facade: instruments only (no SDK). Noop until oxe-server
+# installs a meter provider.
+opentelemetry = "0.32"
 # Engine egress client (http.rs). `default-tls` in reqwest 0.13 is rustls
 # (platform verifier + aws-lc-rs); `system-proxy` stays off so egress is
 # only what `[engines.<id>.egress]` says it is.

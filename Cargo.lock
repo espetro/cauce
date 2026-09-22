@@ -1581,6 +1581,7 @@ dependencies = [
  "chrono",
  "futures-util",
  "governor",
+ "opentelemetry",
  "oxe-engines",
  "proptest",
  "reqwest",
