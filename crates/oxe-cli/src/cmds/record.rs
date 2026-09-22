@@ -59,12 +59,8 @@ fn engine_for(cfg: &Config, id: &str) -> Result<Arc<dyn Engine>, String> {
             .join(", ");
         format!("unknown engine {id:?} (known: {known})")
     })?;
-    build_engine(entry).ok_or_else(|| {
-        format!(
-            "engine {id:?} is not runnable in wave 0 (kind {:?})",
-            entry.kind
-        )
-    })
+    build_engine(entry, cfg.config_dir())
+        .ok_or_else(|| format!("engine {id:?} is not runnable (kind {:?})", entry.kind))
 }
 
 fn run_inner(opts: RecordArgs) -> Result<PathBuf, String> {

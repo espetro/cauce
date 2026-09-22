@@ -1010,7 +1010,11 @@ fn interpolate_tree(
 
 /// Interpolate one string value: `${env:...}`, `${file:...}`, `$$` escape.
 /// A bare `$` not followed by `$` or `{` is literal.
-fn interpolate_str(raw: &str, env: &EnvMap, path: &str) -> Result<String, ConfigError> {
+///
+/// Public so engine spec loaders (oxe-engines `declarative`) can run the
+/// same `${env:NAME}`/`${file:PATH}` contract on `request.headers` values.
+/// `path` is the dotted location used in error messages.
+pub fn interpolate_str(raw: &str, env: &EnvMap, path: &str) -> Result<String, ConfigError> {
     let mut out = String::with_capacity(raw.len());
     let mut rest = raw;
     while let Some(pos) = rest.find('$') {
