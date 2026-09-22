@@ -42,14 +42,23 @@ pub async fn search(
     Extension(ctx): Extension<RequestCtx>,
     uri: Uri,
 ) -> Result<Json<SearchResponse>, ApiError> {
-    let params = QueryParams::parse(uri.query(), &ctx)?;
+    search_inner(&state, &ctx, &uri).await.map(Json)
+}
+
+/// Shared search execution used by `GET /api/search` and the HTML/HTMX page.
+pub(crate) async fn search_inner(
+    state: &AppState,
+    ctx: &RequestCtx,
+    uri: &Uri,
+) -> Result<SearchResponse, ApiError> {
+    let params = QueryParams::parse(uri.query(), ctx)?;
     params.allow(
-        &ctx,
+        ctx,
         &["q", "page", "lang", "time_range", "safesearch", "engines"],
     )?;
     let req = SearchRequest {
-        q: params.required(&ctx, "q")?.to_string(),
-        page: params.page(&ctx)?,
+        q: params.required(ctx, "q")?.to_string(),
+        page: params.page(ctx)?,
         lang: params.get("lang").map(str::to_string),
         time_range: params
             .get("time_range")
@@ -77,7 +86,7 @@ pub async fn search(
         .search_with_id(&req, ctx.request_id.as_uuid())
         .await
     {
-        Ok(resp) => Ok(Json(resp)),
+        Ok(resp) => Ok(resp),
         // A pin that selected nothing is the client's error; an empty
         // configured set is the operator's.
         Err(PipelineError::NoEngines) if req.engines.is_some() => Err(ctx.err(
@@ -422,10 +431,10 @@ fn cache_key(ctx: &RequestCtx, raw: &str) -> Result<CacheKey, ApiError> {
 /// A query string decoded into ordered `(key, value)` pairs. Decoding is
 /// `url::form_urlencoded` (percent-escapes, `+` for space); duplicates and
 /// unknown keys are 400s instead of silent surprises.
-struct QueryParams(Vec<(String, String)>);
+pub(crate) struct QueryParams(Vec<(String, String)>);
 
 impl QueryParams {
-    fn parse(raw: Option<&str>, ctx: &RequestCtx) -> Result<Self, ApiError> {
+    pub(crate) fn parse(raw: Option<&str>, ctx: &RequestCtx) -> Result<Self, ApiError> {
         let mut pairs = Vec::new();
         for (k, v) in url::form_urlencoded::parse(raw.unwrap_or_default().as_bytes()) {
             if pairs.iter().any(|(seen, _)| *seen == k) {
@@ -438,7 +447,7 @@ impl QueryParams {
 
     /// 400 when a key outside `allowed` is present (the inbound
     /// `deny_unknown_fields` contract applied to the query string).
-    fn allow(&self, ctx: &RequestCtx, allowed: &[&str]) -> Result<(), ApiError> {
+    pub(crate) fn allow(&self, ctx: &RequestCtx, allowed: &[&str]) -> Result<(), ApiError> {
         for (k, _) in &self.0 {
             if !allowed.contains(&k.as_str()) {
                 return Err(ctx.bad_request(format!("unknown query parameter {k:?}")));
@@ -447,7 +456,7 @@ impl QueryParams {
         Ok(())
     }
 
-    fn get(&self, key: &str) -> Option<&str> {
+    pub(crate) fn get(&self, key: &str) -> Option<&str> {
         self.0
             .iter()
             .find(|(k, _)| k == key)
@@ -455,13 +464,13 @@ impl QueryParams {
     }
 
     /// Present and non-empty.
-    fn required<'a>(&'a self, ctx: &RequestCtx, key: &str) -> Result<&'a str, ApiError> {
+    pub(crate) fn required<'a>(&'a self, ctx: &RequestCtx, key: &str) -> Result<&'a str, ApiError> {
         self.get(key)
             .filter(|v| !v.is_empty())
             .ok_or_else(|| ctx.bad_request(format!("missing required parameter {key:?}")))
     }
 
-    fn u32(&self, ctx: &RequestCtx, key: &str, default: u32) -> Result<u32, ApiError> {
+    pub(crate) fn u32(&self, ctx: &RequestCtx, key: &str, default: u32) -> Result<u32, ApiError> {
         match self.get(key) {
             None => Ok(default),
             Some(v) => v
@@ -471,7 +480,7 @@ impl QueryParams {
     }
 
     /// `page` is 1-based; `page=0` and non-numeric values are 400s.
-    fn page(&self, ctx: &RequestCtx) -> Result<u8, ApiError> {
+    pub(crate) fn page(&self, ctx: &RequestCtx) -> Result<u8, ApiError> {
         match self.get("page") {
             None => Ok(1),
             Some(v) => v
@@ -484,7 +493,7 @@ impl QueryParams {
 
     /// Presence-style flag: `?expired`, `?expired=true|1|yes` are true;
     /// `?expired=false|0|no` is false; anything else is a 400.
-    fn flag(&self, ctx: &RequestCtx, key: &str) -> Result<bool, ApiError> {
+    pub(crate) fn flag(&self, ctx: &RequestCtx, key: &str) -> Result<bool, ApiError> {
         match self.get(key) {
             None => Ok(false),
             Some(v) => match v.to_ascii_lowercase().as_str() {
@@ -497,7 +506,11 @@ impl QueryParams {
 
     /// `since` accepts RFC 3339 (`2026-10-01T12:00:00Z`) or a bare
     /// `YYYY-MM-DD` date (interpreted as that UTC midnight).
-    fn since(&self, ctx: &RequestCtx, key: &str) -> Result<Option<DateTime<Utc>>, ApiError> {
+    pub(crate) fn since(
+        &self,
+        ctx: &RequestCtx,
+        key: &str,
+    ) -> Result<Option<DateTime<Utc>>, ApiError> {
         let Some(v) = self.get(key) else {
             return Ok(None);
         };
