@@ -383,12 +383,8 @@ impl SearchPipeline {
                 elapsed_ms = resp.meta.elapsed_ms,
                 "search complete"
             );
-            self.metrics.record_search(
-                &req.client,
-                "cache",
-                Some(Tier::T2),
-                started.elapsed(),
-            );
+            self.metrics
+                .record_search(&req.client, "cache", Some(Tier::T2), started.elapsed());
             return Ok(resp);
         }
 
