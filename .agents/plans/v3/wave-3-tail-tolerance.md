@@ -7,7 +7,7 @@ Parent: `../2026-09-21-v3-rust-core.md`. Index: `README.md`. Previous: `wave-2-u
 
 The scheduler stops treating every engine equally: P90-triggered hedging to tier 2,
 stale-while-revalidate, and a nightly signal that tells us when a
-parser silently degrades. This is the wave that makes oxe measurably different from SearXNG
+parser silently degrades. This is the wave that makes cauce measurably different from SearXNG
 on latency and reliability, and every knob is configurable because the owner's numbers
 (Bing 1.8-3.1 s, Brave 0.4-0.5 s) will not be everyone's.
 
@@ -40,7 +40,7 @@ on latency and reliability, and every knob is configurable because the owner's n
 - Do: scheduler keeps a rolling latency histogram per engine (HDR-style, in
   `EngineHealth`); at `t = clamp(P90(tier1), floor, ceiling)` if fewer than `min_results`
   merged results have arrived, fire healthy tier-2 engines with the remaining budget;
-  `meta.hedged`, `meta.hedge_at_ms`; metric `oxe_hedge_total{reason=slow|few}`; settings
+  `meta.hedged`, `meta.hedge_at_ms`; metric `cauce_hedge_total{reason=slow|few}`; settings
   fields wired.
 - Acceptance: exit criterion 1; with tier-1 fast (`latency_ms=100`, 10 results) tier 2 is
   never called.
@@ -51,14 +51,14 @@ on latency and reliability, and every knob is configurable because the owner's n
 - Depends on: W3-01
 - Do: expired tier-1 rows within `cache.stale_grace_s` (default 6 h) are served immediately
   as `Source::Cache{stale:true}` while a background refresh runs (deduped by singleflight);
-  `evict_expired` respects the grace window; metric `oxe_stale_served_total{reason=grace|
+  `evict_expired` respects the grace window; metric `cauce_stale_served_total{reason=grace|
   admission}`; the UI badge says `stale · refreshing`; three cache-hygiene rules: (a) never
   `put` a response whose `results` is empty (an all-NoResults fan-out must not be cached —
   a wedged exec engine returning `[]` would otherwise poison the cache for the full TTL);
   (b) `cache.degraded_ttl_s` (default 60) applies when any engine `Failed` or
   `deadline_hit` — a partial response doesn't earn the full TTL; (c) when a stale row is
   served while ALL pinned engines are unhealthy (breaker open or in `skipped`), emit a warn
-  event and bump `oxe_stale_served_total{reason=engines_unhealthy}` so 'everything is down,
+  event and bump `cauce_stale_served_total{reason=engines_unhealthy}` so 'everything is down,
   serving only stale' is an aggregate signal, not a per-response footnote.
 - Acceptance: expire a row in the temp DB, search returns stale in < 5 ms, a second search
   200 ms later returns fresh `Network`-derived cache; a replay engine returning `[]`
@@ -80,20 +80,20 @@ on latency and reliability, and every knob is configurable because the owner's n
 ### W3-05 Engine relevance evals (nightly)
 - Issue #48 · Effort M · Label infra · Team Systems · Branch `v3/w3-05-relevance-evals`
 - Depends on: W3-03
-- Do: `oxe eval engines evals/engines/*.jsonl --live` runs each case against the named
+- Do: `cauce eval engines evals/engines/*.jsonl --live` runs each case against the named
   engines (politeness applies), scores domain-hit@5 per engine, writes
   `evals/results/<date>-engines.json`; nightly workflow runs it with 15 cases total (5 per
   engine) and uploads the artifact; `/api/stats` exposes the last run when the file exists;
   dashboard panel "engine relevance (nightly)". Threshold in one file (`evals/thresholds.toml`);
   below threshold the workflow opens/updates a single tracking issue, never fails merges.
-- Acceptance: `oxe eval engines` on replay cassettes scores 100 % for a case whose cassette
+- Acceptance: `cauce eval engines` on replay cassettes scores 100 % for a case whose cassette
   contains the expected domain; the workflow file exists and is `cron` only.
 - Follow-up: W3-06.
 
 ### W3-06 `--live` canary (nightly)
 - Issue #49 · Effort S · Label infra · Team Systems · Branch `v3/w3-06-drift-canary`
 - Depends on: W3-05
-- Do: nightly `oxe engine test --live` for every shipped spec: fetch once, parse, exit
+- Do: nightly `cauce engine test --live` for every shipped spec: fetch once, parse, exit
   non-zero on zero results, `Parse` errors, or field fill-rate < 50 % versus the committed
   fixture. The failed nightly run is the report; no markdown drift-report generator and no
   tracking-issue automation. The `--live` canary additionally fetches `page=2` for each

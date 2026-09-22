@@ -1,6 +1,6 @@
 # Screen: Dashboard (`/dashboard`)
 
-`/dashboard` is a live SPA route sharing the app header (oxe / search /
+`/dashboard` is a live SPA route sharing the app header (cauce / search /
 history / dashboard / (?) / settings / GitHub / version). It fetches
 aggregate usage and cache stats from `GET /api/stats` and renders a
 responsive panel grid. Panels for data the backend does not yet aggregate
@@ -11,9 +11,9 @@ chart.
 
 ```
 +------------------------------------------------------------------+
-| oxe   search   history  [dashboard]  (?)  settings  [gh] v0.5.0  |
+| cauce   search   history  [dashboard]  (?)  settings  [gh] v0.5.0  |
 +------------------------------------------------------------------+
-| oxe stats                                                        |
+| cauce stats                                                        |
 | window: last 30 days                                             |
 |                                                                  |
 | +---------------------------+  +--------------------------------+|
@@ -64,6 +64,6 @@ chart.
 
 - No params planned: the dashboard window is a build-time constant, not
   URL state.
-- The v0.2 static, no-JS `oxe stats build` CLI and its `GET /cache/stats`
+- The v0.2 static, no-JS `cauce stats build` CLI and its `GET /cache/stats`
   endpoint are gone; `/dashboard` is the only dashboard surface in the
   v0.5.0 app, served like every other route.

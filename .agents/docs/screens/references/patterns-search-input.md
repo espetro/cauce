@@ -13,7 +13,7 @@ pill shared by `search.md`.
 
 - Landing: input is the hero, centered at ~38-42% viewport height, max-width 640-680px.
 - Results: query echoes at top of page (Google AI Mode lists the query at top and moves the input to a chat-style "Ask a follow up..." field pinned at the bottom). Perplexity keeps a compact pill at the bottom of the answer column.
-- Rule for oxe: two anchor points. Hero input pre-search; compact sticky follow-up input below the answer once results render. Never scroll the input out of view (smoothui.dev "input always visible" contract).
+- Rule for cauce: two anchor points. Hero input pre-search; compact sticky follow-up input below the answer once results render. Never scroll the input out of view (smoothui.dev "input always visible" contract).
 
 ## Sizing and shape
 
@@ -45,13 +45,13 @@ pill shared by `search.md`.
 
 ## Hybrid (classic + AI)
 
-- oxe runs one input for both modes, not two separate composers: the same
+- cauce runs one input for both modes, not two separate composers: the same
   `<SearchBox>` renders on `landing.md` and on the results-header pill in
   `search.md`, with a segmented Search/AI toggle built into the pill
-  itself rather than a page-level tab. This is oxe's own decision, closer
-  to duck.ai's and the oxe-mock composer screenshots
-  (`shots/oxe-mock-pill-light-segmented-idle.png`,
-  `shots/oxe-mock-pill-dark-segmented-idle.png`) than to Google's
+  itself rather than a page-level tab. This is cauce's own decision, closer
+  to duck.ai's and the cauce-mock composer screenshots
+  (`shots/cauce-mock-pill-light-segmented-idle.png`,
+  `shots/cauce-mock-pill-dark-segmented-idle.png`) than to Google's
   AI Mode, which ships the mode switch as a peer nav tab next to
   All/Images/Videos, not inside the composer (see
   `patterns-hybrid-serp.md` for the full cross-product comparison).
@@ -84,4 +84,4 @@ pill shared by `search.md`.
 - https://blog.google/products-and-platforms/products/search/ai-mode-development/
 - https://9to5google.com/2025/03/05/google-search-ai-mode-announcement/
 - https://skills.smoothui.dev/docs/ai-chat
-- `landing.md`, `search.md` (oxe's own hybrid input contract)
+- `landing.md`, `search.md` (cauce's own hybrid input contract)

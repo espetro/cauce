@@ -1,5 +1,5 @@
-# Copyright (c) 2026 Joaquin Terrasa and oxe contributors. Apache-2.0.
-"""Protocol-level unit tests for oxe_engine_sdk.run (stdlib unittest only).
+# Copyright (c) 2026 Joaquin Terrasa and cauce contributors. Apache-2.0.
+"""Protocol-level unit tests for cauce_engine_sdk.run (stdlib unittest only).
 
 Run: `python3 sdk/python/tests/test_sdk.py` or
 `python3 -m unittest` from this directory.
@@ -13,7 +13,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from oxe_engine_sdk import Request, Response, Result, run  # noqa: E402
+from cauce_engine_sdk import Request, Response, Result, run  # noqa: E402
 
 
 def run_loop(stdin_text: str, fn) -> list[dict]:

@@ -1,6 +1,6 @@
-# oxe-engine-sdk (Python)
+# cauce-engine-sdk (Python)
 
-Python SDK for the oxe exec-engine protocol plus `ddgs_auto.py`, the
+Python SDK for the cauce exec-engine protocol plus `ddgs_auto.py`, the
 reference engine that bridges DuckDuckGo while native engine specs land.
 
 Protocol v1 is one JSON object per line on stdio, in each direction:
@@ -10,7 +10,7 @@ Protocol v1 is one JSON object per line on stdio, in each direction:
 <- {"v":1,"results":[{"title":"...","url":"...","snippet":"..."}],"error":null}
 ```
 
-`oxe_engine_sdk.run(fn)` reads `Request`s from stdin until EOF and writes
+`cauce_engine_sdk.run(fn)` reads `Request`s from stdin until EOF and writes
 one `Response` line each. Malformed lines and handler exceptions become
 error responses instead of crashes. `error` is a short snake_case code
 (`rate_limited`, `blocked`, `no_results`, `parse:<msg>`,
@@ -20,7 +20,7 @@ runs under a bare `python3`.
 ## Writing an engine
 
 ```python
-from oxe_engine_sdk import Request, Response, Result, run
+from cauce_engine_sdk import Request, Response, Result, run
 
 def search(req: Request) -> Response:
     hits = my_backend(req.query, page=req.page)
@@ -45,7 +45,7 @@ args = ["/path/to/myengine.py"]
 
 ## The ddgs reference engine
 
-`oxe_engine_sdk/ddgs_auto.py` runs `DDGS().text(..., backend="auto")` over
+`cauce_engine_sdk/ddgs_auto.py` runs `DDGS().text(..., backend="auto")` over
 the protocol and is the built-in `ddgs` config entry (tier 2, enabled).
 It needs the `ddgs` extra:
 
@@ -74,12 +74,12 @@ web engines. Two engines exist exactly for this:
 
 - `replay`: deterministic synthetic results, fully offline. It is a
   built-in entry that ships disabled; enable it for a run with
-  `OXE_ENGINES=replay` (what the golden-path tests do) or pin
+  `CAUCE_ENGINES=replay` (what the golden-path tests do) or pin
   `engines=["replay"]` once enabled.
 
 Try either spec directly without a server:
 
 ```bash
-oxe engine test engines/wikipedia.yaml                # recorded fixtures
-oxe engine test engines/wikipedia.yaml --live "rust"  # one real fetch
+cauce engine test engines/wikipedia.yaml                # recorded fixtures
+cauce engine test engines/wikipedia.yaml --live "rust"  # one real fetch
 ```

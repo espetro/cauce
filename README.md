@@ -1,4 +1,4 @@
-# oxe
+# cauce
 
 Local metasearch for humans and agents: one web UI, one HTTP API, one MCP server, one shared
 TTL cache. Tail-tolerant fan-out over pluggable search engines, SQLite storage, single binary.

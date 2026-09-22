@@ -1,14 +1,14 @@
 # Pattern: Hybrid SERP (classic results + AI answer, one surface)
 
 How classic result lists and AI answers coexist on one product across the products that
-actually ship both, rather than modelling oxe on an answer-only product with no classic half.
+actually ship both, rather than modelling cauce on an answer-only product with no classic half.
 This is the core gap the original five reference docs left open: they were researched almost
 entirely against Perplexity, which has no classic SERP at all.
 
 ## Applies to
 
 `search.md` Mockup A (Search mode) and Mockups B/B2 (AI mode) — checkpoints 3, 4, 9, 10, 11,
-13, 14 in `userflow-checkpoints.md`. Governs the mode switch itself, and how oxe's two modes
+13, 14 in `userflow-checkpoints.md`. Governs the mode switch itself, and how cauce's two modes
 share (or don't share) layout and navigation with each other.
 
 ## The mode-switch convention
@@ -36,7 +36,7 @@ share (or don't share) layout and navigation with each other.
 Two shapes recur: **inline block above organic results** (DuckDuckGo Search Assist, Brave
 Answer with AI, Kagi Quick Answer — the AI content is a peer element on the same page as the
 links) and **separate peer surface** (Google AI Mode, Bing Copilot, Duck.ai — the AI content
-replaces the whole view, reachable by a tab or distinct entry point). oxe's own `mode=ai` on the
+replaces the whole view, reachable by a tab or distinct entry point). cauce's own `mode=ai` on the
 same route is closer to the second shape (a distinct surface) but reached via URL param rather
 than a visible tab row — worth flagging as a divergence from both shapes: neither harvested
 product switches modes via a value in the search-box's own query params.
@@ -49,7 +49,7 @@ product switches modes via a value in the search-box's own query params.
   switches into these; the default experience is the classic SERP.
 - **Always-on (no classic mode exists)**: Perplexity, Gemini — the answer-only extreme, kept in
   this directory only as a comparison point, not a target.
-- oxe: `mode=ai` is opt-in (default is Search mode), which puts it in the second bucket, aligned
+- cauce: `mode=ai` is opt-in (default is Search mode), which puts it in the second bucket, aligned
   with Google AI Mode / Bing Copilot rather than the always-on inline-block products.
 
 ## Placement relative to organic results
@@ -69,11 +69,11 @@ product switches modes via a value in the search-box's own query params.
 - Distinct-surface products: an explicit navigation action is required. Google AI Mode: switch
   tabs back to `All`. Bing Copilot: switch pane/tab back to Search. Duck.ai: navigate back to
   duckduckgo.com.
-- oxe's contract (per `search.md` and `patterns-states.md`'s Hybrid section) gives both
+- cauce's contract (per `search.md` and `patterns-states.md`'s Hybrid section) gives both
   directions an explicit escape hatch even on failure states: `ask AI instead` from a classic
   zero-result or error state, `view Search` from an AI empty-sources or mid-stream-failure
   state. This is closer in spirit to the always-reachable link list of the inline-block products
-  than to the tab-switch of the distinct-surface products, even though oxe's mode switch itself
+  than to the tab-switch of the distinct-surface products, even though cauce's mode switch itself
   behaves like a distinct surface. That combination (distinct surface, but always-available
   lateral escape hatch on failure) has no single competitor precedent — it borrows the safety
   net of the inline-block products without their layout constraint of always showing links.
@@ -88,4 +88,4 @@ product switches modes via a value in the search-box's own query params.
 - https://www.nngroup.com/articles/google-ai-mode/ (AI Mode vs AI Overviews distinction)
 - `patterns-layout-grid.md` (column-width consequence of the two placement shapes)
 - `patterns-states.md` (the Hybrid escape-hatch contract this doc's last section cites)
-- `search.md` (oxe's own `mode=ai` contract)
+- `search.md` (cauce's own `mode=ai` contract)

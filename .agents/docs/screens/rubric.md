@@ -77,7 +77,7 @@ belong here; raise it as a new reference-doc finding instead.
 | 4.3 | Answer body / echoed query: query echo is LARGER than the answer body (20-28px/600 vs 15-16px/400) | P1 | `references/patterns-typography.md` ## Rules "Question/echoed query is LARGER" |
 | 4.4 | Negative tracking (-0.01 to -0.02em) only on headings; body/small text stays normal tracking | P2 | `references/patterns-typography.md` ## Rules |
 | 4.5 | Landing wordmark is `text-4xl md:text-5xl font-semibold` scale, tagline is muted/small | P1 | `landing.md` Behavior "Hero layout"; `references/tokens.md` ## Type scale "Display hero" |
-| 4.6 | Source-card domain text: 11-12px, mono, uppercase, tracking-wide, reduced opacity | P2 | `references/patterns-typography.md` ## daisyUI mapping for oxe; `references/tokens.md` ## Type scale |
+| 4.6 | Source-card domain text: 11-12px, mono, uppercase, tracking-wide, reduced opacity | P2 | `references/patterns-typography.md` ## daisyUI mapping for cauce; `references/tokens.md` ## Type scale |
 
 ## 5. Layout
 

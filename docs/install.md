@@ -1,38 +1,38 @@
 # Install
 
-v3 is a single Rust binary, `oxe`. There is no package release yet; install
+v3 is a single Rust binary, `cauce`. There is no package release yet; install
 from a checkout.
 
 ## Build and install
 
 ```bash
-git clone https://github.com/espetro/oxe
-cd oxe
+git clone https://github.com/espetro/cauce
+cd cauce
 mise install            # Rust toolchain + cargo-deny + cargo-nextest
-cargo install --locked --path crates/oxe-cli
+cargo install --locked --path crates/cauce-cli
 ```
 
-`cargo install` puts `oxe` on `~/.cargo/bin`. Verify:
+`cargo install` puts `cauce` on `~/.cargo/bin`. Verify:
 
 ```bash
-oxe serve --help
+cauce serve --help
 ```
 
 ## Run
 
 ```bash
-oxe serve                # UI + API + MCP on http://127.0.0.1:4479
-oxe serve --headless     # API + MCP only
-oxe mcp                  # stdio MCP transport, no HTTP listener
+cauce serve                # UI + API + MCP on http://127.0.0.1:4479
+cauce serve --headless     # API + MCP only
+cauce mcp                  # stdio MCP transport, no HTTP listener
 ```
 
 Defaults: loopback bind on port 4479 (`--bind`/`--port` or
-`OXE_SERVER_HOST`/`OXE_SERVER_PORT` override), config at
-`~/.config/oxe/config.toml`, data and logs under `~/.local/share/oxe/`.
+`CAUCE_SERVER_HOST`/`CAUCE_SERVER_PORT` override), config at
+`~/.config/cauce/config.toml`, data and logs under `~/.local/share/cauce/`.
 
 The default engine set is the `ddgs` exec bridge plus every enabled
 declarative spec (`bing`, `brave`; `wikipedia` ships `enabled: false`).
-Pin a set with `OXE_ENGINES=bing,brave` or `[[engines]]` entries in
+Pin a set with `CAUCE_ENGINES=bing,brave` or `[[engines]]` entries in
 `config.toml`, e.g. to enable wikipedia:
 
 ```toml
@@ -50,8 +50,8 @@ entries. Replace the v2 entry (`command = ".../uv/tools/oxe/bin/oxe"`) in
 
 ```toml
 [[apps]]
-name = "oxe"
-command = "/Users/<you>/.cargo/bin/oxe serve"
+name = "cauce"
+command = "/Users/<you>/.cargo/bin/cauce serve"
 restart_policy = "always"
 crash_restart_limit = 5
 stop_timeout = 10
@@ -69,11 +69,11 @@ Notes:
   portless alias below keep working.
 - The v2 entry's `env = { OXE_BACKENDS = ... }` can be dropped; v3
   ignores it.
-- The bundled `ddgs` exec engine only works when `oxe` runs from the
+- The bundled `ddgs` exec engine only works when `cauce` runs from the
   repo checkout (its relative `sdk/python/...` path resolves by walking
   up from the process cwd) and its `uv` venv exists (`uv sync --project
   sdk/python --extra ddgs`). Under supervision, disable it in
-  `~/.config/oxe/config.toml`:
+  `~/.config/cauce/config.toml`:
 
   ```toml
   [[engines]]
@@ -81,10 +81,10 @@ Notes:
   kind = "exec"
   enabled = false
   command = "python3"
-  args = ["sdk/python/oxe_engine_sdk/ddgs_auto.py"]
+  args = ["sdk/python/cauce_engine_sdk/ddgs_auto.py"]
   ```
 
-  (`OXE_ENGINES` cannot name `bing`/`brave`: the pin validates against
+  (`CAUCE_ENGINES` cannot name `bing`/`brave`: the pin validates against
   `[[engines]]` entries and built-ins, and embedded specs are only
   auto-registered when the pin is unset.) To keep ddgs instead, give its
   `[[engines]]` block absolute `command`/`args` pointing at the venv's
@@ -93,7 +93,7 @@ Notes:
 Apply the single app (never restart the daemon for a per-app change):
 
 ```bash
-oxmgr apply ~/.config/oxmgr/oxfile.toml --only oxe
+oxmgr apply ~/.config/oxmgr/oxfile.toml --only cauce
 curl -fsS http://127.0.0.1:4479/health
 ```
 

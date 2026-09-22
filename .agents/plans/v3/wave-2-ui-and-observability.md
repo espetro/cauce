@@ -73,12 +73,12 @@ results over SSE. The owner uses the UI daily for a week and files findings.
   (ui/api/mcp names), top queries, zero-result queries, deadline-hit and stale-served rates,
   engine table (median/p80/p95 http vs parse, reliability, breaker state) linking to
   `/engines`, cache panel (rows, unexpired, db size, newest). Window selector 7/30 days;
-  add an `outcome` label (`ok|error|rejected`) to `oxe_search_requests_total`, recorded in
+  add an `outcome` label (`ok|error|rejected`) to `cauce_search_requests_total`, recorded in
   the shared_response/error arms of the pipeline run; the dashboard surfaces the
   error/rejected split.
 - Acceptance: page test after mixed replay traffic shows non-zero hit rate and the engine
   rows; "no data yet" states render on an empty DB; a forced 502 response increments
-  `oxe_search_requests_total{outcome=error}`.
+  `cauce_search_requests_total{outcome=error}`.
 - Follow-up: W2-10.
 
 ### W2-04 Cache page
@@ -107,7 +107,7 @@ results over SSE. The owner uses the UI daily for a week and files findings.
 - Issue #38 · Effort S · Label feature · Team Product Builders · Branch `v3/w2-06-audit-page`
 - Depends on: W1-11
 - Do: `/audit` from `/api/audit`: newest first, filters by actor and action, details
-  expandable, `request_id` link to `/trace/<id>` which renders the `oxe trace` timeline as
+  expandable, `request_id` link to `/trace/<id>` which renders the `cauce trace` timeline as
   HTML (new route, same code path as the CLI).
 - Acceptance: a cache delete from W2-04's test appears with actor `ui`; `/trace/<id>` of a
   replay search lists the engine span.
@@ -137,10 +137,10 @@ results over SSE. The owner uses the UI daily for a week and files findings.
   (checked manually).
 - Follow-up: W2-10.
 
-### W2-09 `oxe tail`
+### W2-09 `cauce tail`
 - Issue #41 · Effort S · Label feature · Team Systems · Branch `v3/w2-09-tail`
 - Depends on: W0-05
-- Do: `oxe tail [--follow] [--request <id>] [--level warn] [--engine bing]` pretty-prints
+- Do: `cauce tail [--follow] [--request <id>] [--level warn] [--engine bing]` pretty-prints
   the JSONL logs with colour, one line per event, spans collapsed to `engine=bing 640ms ok`.
 - Acceptance: unit test renders a fixture JSONL and asserts the collapsed engine line.
 - Follow-up: none (tooling complete for v3.0).
@@ -155,15 +155,15 @@ results over SSE. The owner uses the UI daily for a week and files findings.
 - Acceptance: the note exists and every filed issue is triaged (`Scheduled` or closed).
 - Follow-up: W3-01.
 
-### W2-11 OpenSearch descriptor and `oxe search` CLI formats
+### W2-11 OpenSearch descriptor and `cauce search` CLI formats
 - Issue #43 · Effort S · Label feature · Team Product Builders · Branch `v3/w2-11-opensearch-cli`
 - Depends on: W1-12
 - Do: `GET /opensearch.xml` (routes table) with `/search?q={searchTerms}` and a
   suggestions URL placeholder; `<link rel="search">` in the page head so browsers offer
-  "add search engine"; `oxe search "<q>" [--json|--table|--urls] [--engines ...]` calling
+  "add search engine"; `cauce search "<q>" [--json|--table|--urls] [--engines ...]` calling
   the pipeline in-process (no server needed, shares the DB) with the `request_id` printed to
   stderr.
-- Acceptance: `oxe search --json x` on replay prints a `SearchResponse`; `/opensearch.xml`
+- Acceptance: `cauce search --json x` on replay prints a `SearchResponse`; `/opensearch.xml`
   validates against the OpenSearch 1.1 schema in a test.
 - Follow-up: none.
 

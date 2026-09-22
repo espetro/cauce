@@ -7,7 +7,7 @@ wave is one issue, one branch, one PR.
 
 | Wave | File | Iteration | Dates | Priority | Exit criterion |
 |---|---|---|---|---|---|
-| W0 | `wave-0-skeleton.md` | 1 | 2026-09-22 to 10-05 | P0 | golden path green on `replay`; `oxe serve` returns real results through the `ddgs` exec bridge; every request traceable by id |
+| W0 | `wave-0-skeleton.md` | 1 | 2026-09-22 to 10-05 | P0 | golden path green on `replay`; `cauce serve` returns real results through the `ddgs` exec bridge; every request traceable by id |
 | W1 | `wave-1-engines-and-agents.md` | 2 | 10-06 to 10-19 | P0 | Bing + Brave native; MCP over HTTP and stdio; `~/SEARCH.md` wiring cut over to v3 on 4479 |
 | W2 | `wave-2-ui-and-observability.md` | 3 | 10-20 to 11-02 | P1 | all HTMX pages usable; owner uses it daily for a week |
 | W3 | `wave-3-tail-tolerance.md` | 4 | 11-03 to 11-16 | P1 | hedging, stale-while-revalidate, nightly relevance evals (6 steps) |
@@ -44,12 +44,12 @@ believe a dependency is wrong, comment on the issue; do not start anyway.
 3. Create the worktree and seed its build cache (APFS clone costs ~no disk and warms deps):
 
    ```
-   git worktree add ~/.worktrees/oxe-<step-id> -b v3/<step-id>-<slug> main
-   cp -Rc "$(git rev-parse --show-toplevel)/target" ~/.worktrees/oxe-<step-id>/target
+   git worktree add ~/.worktrees/cauce-<step-id> -b v3/<step-id>-<slug> main
+   cp -Rc "$(git rev-parse --show-toplevel)/target" ~/.worktrees/cauce-<step-id>/target
    ```
 
-   If the seeded build ever serves stale workspace artifacts, `cargo clean -p oxe-core -p
-   oxe-cli -p oxe-engines -p oxe-server -p oxe-store-sqlite` in the worktree is the cheap fix.
+   If the seeded build ever serves stale workspace artifacts, `cargo clean -p cauce-core -p
+   cauce-cli -p cauce-engines -p cauce-server -p cauce-store-sqlite` in the worktree is the cheap fix.
 4. Implement only what the step's "Do" says. The "Settled inputs" section of the wave file lists
    contracts you may not change; if the step cannot be done without changing one, stop and
    comment on the issue with the proposed amendment to the parent plan.

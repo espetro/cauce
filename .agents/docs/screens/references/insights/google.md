@@ -4,7 +4,7 @@ A per-product deep dive (see README's patterns-not-targets rule: this is
 anecdote-rich by design, so nothing here graduates to a "general" rule
 without corroboration in the `patterns-*.md` docs). Focus: Google's classic
 SERP, AI Overviews as an inline block, and AI Mode as a distinct surface,
-since oxe ships both shapes.
+since cauce ships both shapes.
 
 ## Applies to
 
@@ -95,7 +95,7 @@ the transcript grows downward; the composer never scrolls away, matching
 
 Failure paths Google does show: when confidence is low, AI Mode falls back
 to rendering a set of web links instead of an answer (documented in
-Google's own help pages), which is a graceful degradation oxe should mimic
+Google's own help pages), which is a graceful degradation cauce should mimic
 with `view Search` rather than an error.
 
 ## 3. Motion
@@ -107,7 +107,7 @@ with `view Search` rather than an error.
 - AI streaming: token cadence is tied to real generation, no typewriter
   pacing. Bold and heading formatting resolve as structure closes; no
   half-rendered markdown garbage is visible, implying they hold back
-  still-forming fragments (the same tail-stripping concern behind oxe's
+  still-forming fragments (the same tail-stripping concern behind cauce's
   fixed `jsonleak` bug).
 - Thinking indicator: an animated sparkle/glimmer treatment on the
   Gemini icon while the fan-out runs, plus a pulsing "thinking" shimmer on
@@ -144,7 +144,7 @@ What the UI shows (`google-aimode-answer-complete-twocolumn.png`):
   overflow counter for additional sources behind the same claim. Blue
   link text inside the answer is reserved for the primary referenced
   entity (product names), while chips mark supporting sources. This is a
-  meaningful upgrade over oxe's planned `[n]` markers: favicon chips
+  meaningful upgrade over cauce's planned `[n]` markers: favicon chips
   carry trust at a glance without reading the domain.
 - **Right-hand Sources rail**: a distinct card column (~420px) next to the
   answer with rich source cards, one per cited site: favicon plus site
@@ -153,7 +153,7 @@ What the UI shows (`google-aimode-answer-complete-twocolumn.png`):
   and a thumbnail on the right (screenshots, video frames with duration
   overlay for YouTube). Cards are separated by hairline dividers inside a
   single rounded container. This is dramatically richer than the
-  horizontal favicon strip that most AI search products (and oxe's
+  horizontal favicon strip that most AI search products (and cauce's
   current spec) use, and it works because Google has thumbnails and
   real titles for every citation.
 - **Show all**: a full-width pill button at the rail's bottom expands the
@@ -168,7 +168,7 @@ What the UI shows (`google-aimode-answer-complete-twocolumn.png`):
   include Reddit, YouTube, and niche forums that would also rank
   organically, but only about 38% of cited pages sit in the organic top
   10, so the rail is not just "the first four results restyled"; it is a
-  separately ranked set. For oxe this justifies deriving AI sources from
+  separately ranked set. For cauce this justifies deriving AI sources from
   the actual search backend response rather than assuming they mirror the
   classic list.
 
@@ -212,26 +212,26 @@ What the UI shows (`google-aimode-answer-complete-twocolumn.png`):
   experimental") sits directly under the answer, never in a page footer,
   matching `patterns-layout-grid.md`'s footer rule.
 
-## Verdict for oxe
+## Verdict for cauce
 
 1. **Copy the in-composer AI chip, keep it visible everywhere**: Google
    puts the `AI Mode` chip inside the pill on the landing, the SERP
-   header, and the AI surface alike; oxe's segmented control should behave
+   header, and the AI surface alike; cauce's segmented control should behave
    as one persistent control per `patterns-search-input.md`, not a
    page-level tab.
 2. **Steal the favicon citation chip with overflow counter** (`favicon +
    domain +1`) instead of bare `[n]` text markers if source favicons are
    available from DuckDuckGo results; fall back to `[n]` when they are
-   not. This is the single most transferable AI Mode idea for oxe.
+   not. This is the single most transferable AI Mode idea for cauce.
 3. **A right-hand Sources rail needs thumbnails and real titles to pay
-   off; oxe has neither reliably, so keep the horizontal compact-card row
+   off; cauce has neither reliably, so keep the horizontal compact-card row
    per the current spec**, and consider `Show all` expansion on it (that
    affordance works at any richness level).
 4. **Skip Google's branded shimmer-only thinking phase**: a sparkle
-   shimmer with no text reads as frozen past 2s; keep oxe's textual
+   shimmer with no text reads as frozen past 2s; keep cauce's textual
    progressing status line from `patterns-states.md`.
 5. **Copy the low-confidence fallback**: when the AI answer is not
-   available, Google silently renders web links; oxe should render classic
+   available, Google silently renders web links; cauce should render classic
    results with the muted `AI mode is not configured` notice per
    `patterns-states.md` 6.8 rather than an error surface.
 

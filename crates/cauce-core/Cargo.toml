@@ -1,0 +1,53 @@
+[package]
+name = "cauce-core"
+description = "Domain types, SearchPipeline, Scheduler, cache tiers, Store + Engine traits, merge/RRF, health. No HTTP, no SQL."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[features]
+# Reusable `Store` conformance suite (`src/conformance.rs`). Off by default;
+# Store impls enable it as a dev-dependency (cauce-store-sqlite, W6 postgres).
+conformance = []
+
+[dependencies]
+async-trait = "0.1"
+chrono = { version = "0.4", features = ["serde"] }
+# Body streaming under the size cap in http.rs (reqwest `stream` feature
+# returns a `Stream`; `next()` comes from here).
+futures-util = "0.3"
+# Per-engine token bucket (http.rs).
+governor = "0.10"
+# Engine egress client (http.rs). `default-tls` in reqwest 0.13 is rustls
+# (platform verifier + aws-lc-rs); `system-proxy` stays off so egress is
+# only what `[engines.<id>.egress]` says it is.
+reqwest = { version = "0.13.5", default-features = false, features = [
+    "default-tls",
+    "charset",
+    "http2",
+    "socks",
+    "stream",
+] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+sysinfo = "0.37"
+thiserror = "2"
+toml = { version = "0.9", features = ["preserve_order"] }
+# Fan-out (JoinSet) and the hard deadline (time::timeout) in pipeline.rs;
+# `sync` for the admission singleflight (watch) and per-engine Semaphore.
+tokio = { version = "1", features = ["rt", "sync", "time"] }
+tracing = "0.1"
+url = { version = "2", features = ["serde"] }
+uuid = { version = "1", features = ["v7", "serde"] }
+
+[dev-dependencies]
+# Cyclic dev-dependency is deliberate: pipeline tests drive the `replay`
+# engine (cauce-engines depends on cauce-core normally).
+cauce-engines = { path = "../cauce-engines" }
+proptest = "1"
+tempfile = "3"
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+tracing-subscriber = { version = "0.3", features = ["fmt"] }
+wiremock = "0.6"

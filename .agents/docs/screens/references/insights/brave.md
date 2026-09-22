@@ -24,7 +24,7 @@ checkpoints 3, 4, 9, 10, 11, 13, 14. Cross-references
   microphone icon, and an "Ask" button with a sparkle glyph pinned to the right
   edge as a soft pill. Brave collapsed the classic search-vs-AI choice into one
   input where "Ask" is the explicit action button, not a mode segment. Compared
-  with oxe's landing spec, Brave spends more chrome on the pill itself and has
+  with cauce's landing spec, Brave spends more chrome on the pill itself and has
   essentially no tagline or starter prompts visible at idle.
 - **Classic SERP**: sticky header with the wordmark small at left, the pill at
   top of the content column, and a horizontal tab row under it (All, Images,
@@ -59,7 +59,7 @@ checkpoints 3, 4, 9, 10, 11, 13, 14. Cross-references
   browser localStorage and applies it privately per query. "Rerank" (Jan 2025)
   is the consumer simplification: a panel over results with thumbs up/down per
   domain, stored device-side only. This is the strongest "ranking transparency"
-  differentiator in any harvested product and the conceptual cousin of oxe's
+  differentiator in any harvested product and the conceptual cousin of cauce's
   cache-transparency requirement.
 - **Settings**: reached via a gear at top right of the SERP. Flat list, includes
   the "Answer with AI" toggle (also mirrored in Brave browser settings). Notably
@@ -86,14 +86,14 @@ checkpoints 3, 4, 9, 10, 11, 13, 14. Cross-references
 - **Fallback when no answer**: if a query does not qualify for generation, the
   block simply never renders; the organic list is the whole page and the sparkle
   icon remains as the manual trigger. There is no explicit "no AI answer
-  available" state; absence is the fallback. Contrast oxe, which specifies an
+  available" state; absence is the fallback. Contrast cauce, which specifies an
   explicit empty-sources failure state; Brave's silent-absence approach is
   viable because organic results always share the page (inline-block shape),
-  whereas oxe's distinct AI surface needs the louder failure copy already in
+  whereas cauce's distinct AI surface needs the louder failure copy already in
   `patterns-states.md`.
 - **Follow-ups**: AI Answers block itself is not conversational ("by design a
   bit less interactive", per the engineering interview in the 2024 blog post);
-  follow-ups route to Ask Brave. This is a clean two-tier split oxe could note:
+  follow-ups route to Ask Brave. This is a clean two-tier split cauce could note:
   quick inline answer, explicit escalation to chat.
 
 ## 3. Animations and motion
@@ -107,14 +107,14 @@ checkpoints 3, 4, 9, 10, 11, 13, 14. Cross-references
   full-area skeleton; the organic results below load immediately and
   independently, so the AI block's latency never blocks the page's first paint.
   That decoupling (AI block lazy-fills its reserved slot while classic results
-  render) is worth copying: oxe's AI mode should not hold Search-mode render
+  render) is worth copying: cauce's AI mode should not hold Search-mode render
   hostage to model latency.
 - Entity/image enrichments pop in as the stream resolves them (the backend
   detects entity types in the token stream and fetches cards on the fly per the
   2024 engineering interview), meaning the completed block can grow after text
   finished; Brave reserves loose space rather than eliminating all shift.
 - No evidence of reduced-motion-specific handling in any public doc; do not
-  treat Brave as a reference for the reduced-motion contract, oxe's own
+  treat Brave as a reference for the reduced-motion contract, cauce's own
   `patterns-motion.md` is stricter.
 
 ## 4. AI retrieval and source richness
@@ -125,11 +125,11 @@ checkpoints 3, 4, 9, 10, 11, 13, 14. Cross-references
   offsets, number, url, favicon, and snippet, i.e. citations are positioned
   data, not appended links. This matches the "typed into the text at the point
   of the claim" convention in `patterns-answer-streaming.md` and is strong
-  evidence that oxe's `[n]`-at-claim spec reflects how a major engine
+  evidence that cauce's `[n]`-at-claim spec reflects how a major engine
   implements it internally.
 - **"Progressive citations"** is an explicit Brave API feature name: citation
   events arrive interleaved with text deltas during the stream, so source
-  chips populate as claims land. Supports the oxe reveal order (sources appear
+  chips populate as claims land. Supports the cauce reveal order (sources appear
   during, not only after, streaming).
 - **Source selection is query-level**: Answer with AI analyzes a whole page and
   picks paragraph/sentence/table-row level context (their words), so the cited
@@ -146,7 +146,7 @@ checkpoints 3, 4, 9, 10, 11, 13, 14. Cross-references
   is banned but disagreement between sources is shown, not averaged.
 - **vs Google AI Mode**: Google uses a dedicated right-side sources rail with
   rich cards; Brave keeps sources as compact chips plus per-section augment
-  modules inline, closer to the page's classic visual language. oxe's
+  modules inline, closer to the page's classic visual language. cauce's
   horizontal source-card row sits between the two and is fine.
 
 ## 5. Layout and design system
@@ -154,7 +154,7 @@ checkpoints 3, 4, 9, 10, 11, 13, 14. Cross-references
 - **Columns**: classic results ~600 to 650px left-anchored; Ask Brave answer
   column centered prose around ~680px; enrichments (image strips, video rows)
   can widen to the viewport with the text column capped. Landing pill max-width
-  is wider than oxe's (~750 to 800px) because of its attach button cluster.
+  is wider than cauce's (~750 to 800px) because of its attach button cluster.
 - **Palette**: Brave's signature is the orange lion gradient (roughly #FF3F1E
   to #B8330C range) on near-white; accent usage on the web app is restrained,
   mostly the wordmark, the Ask sparkle, and focus/active states. Link titles
@@ -173,24 +173,24 @@ checkpoints 3, 4, 9, 10, 11, 13, 14. Cross-references
   web search app reads as a humanist sans ~15 to 16px body, semibold titles);
   no exotic display type on the SERP.
 
-## Verdict for oxe
+## Verdict for cauce
 
 1. Keep the two-tier AI split in mind: Brave proves an inline quick answer plus
    an explicit escalation to chat scales better than forcing one surface to do
-   both. oxe's `ask AI instead` / `view Search` hatch plays the same role and
+   both. cauce's `ask AI instead` / `view Search` hatch plays the same role and
    should stay cheap and always visible.
 2. Copy Brave's decoupled loading: classic results render immediately while the
    AI block fills its own slot; never block one mode's first paint on the
    other's model latency.
 3. Brave's API streams citations as offset-positioned events interleaved with
-   text ("progressive citations"), which validates oxe's spec of inline `[n]`
+   text ("progressive citations"), which validates cauce's spec of inline `[n]`
    markers appearing during the stream rather than a post-hoc source list.
-4. Silent-absence fallback works only for inline-block products; since oxe's AI
+4. Silent-absence fallback works only for inline-block products; since cauce's AI
    mode is a distinct surface, keep the explicit empty-sources and mid-stream
    failure states from `patterns-states.md` instead of imitating Brave's quiet
    no-op.
 5. Goggles/Rerank is the best existing precedent for user-visible ranking
-   control (boost/downrank/discard, stored locally, transparent); oxe's cache
+   control (boost/downrank/discard, stored locally, transparent); cauce's cache
    transparency should adopt the same "panel over results, device-side, undoable"
    interaction grammar.
 

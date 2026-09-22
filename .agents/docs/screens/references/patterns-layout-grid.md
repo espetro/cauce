@@ -18,7 +18,7 @@ common layout mistake when bolting an AI mode onto a classic SERP.
 
 ## Page frame
 
-- Header is fixed-position or sticky-top across every screen (`oxe /
+- Header is fixed-position or sticky-top across every screen (`cauce /
   search / history / dashboard` nav left, `(?) settings [gh] version`
   right), never scrolls out of view. Confirmed pattern across all
   harvested products: Google, DuckDuckGo, Brave, Kagi, Bing all keep the
@@ -31,14 +31,14 @@ common layout mistake when bolting an AI mode onto a classic SERP.
 
 ## Content column widths per mode
 
-This is the gap oxe's prior docs had zero coverage of.
+This is the gap cauce's prior docs had zero coverage of.
 
 - **Classic result list (Search mode)**: left-anchored, narrower column,
   ~600-652px, NOT centered as a block of prose — DuckDuckGo, Google, and
   Bing all left-align the result column with the search box's left edge,
   leaving the right two-thirds of the viewport empty at desktop widths
   (`shots/duckduckgo-serp-search-assist-dark.png` shows the ~650px column
-  against a ~1500px+ viewport). oxe's `search.md` Mockup A specifies
+  against a ~1500px+ viewport). cauce's `search.md` Mockup A specifies
   "~652px content column, centered" — note this is centered as a *column*
   (the column itself sits mid-page) but its internal content (favicon,
   title, snippet) is left-aligned text, not centered text.
@@ -48,9 +48,9 @@ This is the gap oxe's prior docs had zero coverage of.
   goes further: a **two-column split** once sources exist — answer prose
   in a left column (~600-650px) and a separate vertical "Sources" rail
   with rich cards (thumbnail, title, snippet, date) in a right column at
-  desktop widths. oxe's spec keeps sources as a horizontal scroll row
+  desktop widths. cauce's spec keeps sources as a horizontal scroll row
   below the answer rather than a side rail (`search.md` Mockup B2); note
-  this as an intentional oxe divergence, not a gap, since the horizontal
+  this as an intentional cauce divergence, not a gap, since the horizontal
   row survives to narrow viewports without a breakpoint rewrite.
 - Convergence: both modes' primary text column caps around 600-680px
   regardless of viewport; neither mode lets prose or result text run
@@ -76,9 +76,9 @@ This is the gap oxe's prior docs had zero coverage of.
   to a single stacked column; DDG and Google both drop side-by-side
   panels here.
 - Mobile ~390-430px: full-width content column with ~16-24px side
-  gutters; header nav collapses to icons/hidden labels (`oxe`'s header
+  gutters; header nav collapses to icons/hidden labels (`cauce`'s header
   spec: "version label hides below ~640px").
-- oxe-specific breakpoints already pinned in the screen specs: header
+- cauce-specific breakpoints already pinned in the screen specs: header
   input/toggle stack below ~700px (`search.md`), dashboard panel grid
   goes single-column below ~700px (`dashboard.md` `repeat(auto-fit,
   minmax(20rem, 1fr))`), history table's url column hides below ~768px
@@ -92,10 +92,10 @@ This is the gap oxe's prior docs had zero coverage of.
   bottom: `shots/gemini-answer-complete-pinned-composer.png`,
   `shots/duckai-answer-complete-privacy-banner.png`).
 - Scrolls: the result list / answer column vertically; the source-card
-  row horizontally (oxe) or the whole page vertically for Google AI
+  row horizontally (cauce) or the whole page vertically for Google AI
   Mode's two-column layout (no independent scroll region for the
   sources rail there).
-- oxe's `search.md` follow-up input lives in the results-header pill at
+- cauce's `search.md` follow-up input lives in the results-header pill at
   the TOP of the column, not bottom-pinned like Gemini/duck.ai; this is
   a deliberate divergence already pinned in the spec (one input, one
   location, shared between modes) and should not be "fixed" to match the
@@ -113,4 +113,4 @@ This is the gap oxe's prior docs had zero coverage of.
 - https://www.nngroup.com/articles/google-ai-mode/ (AI Mode as
   full-page vs AI Overviews as inline block)
 - `.agents/docs/screens/landing.md`, `search.md`, `history.md`,
-  `dashboard.md` (oxe's own column/breakpoint contract)
+  `dashboard.md` (cauce's own column/breakpoint contract)

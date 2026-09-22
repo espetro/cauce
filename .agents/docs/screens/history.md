@@ -8,7 +8,7 @@ the user and their agents can see what was already read for a query.
 
 ```
 +------------------------------------------------------------------+
-| oxe   search   [history]  dashboard   (?)  settings  [gh] v0.4.0 |
+| cauce   search   [history]  dashboard   (?)  settings  [gh] v0.4.0 |
 +------------------------------------------------------------------+
 | Click history                                                    |
 | 12 clicks in last 24h · 340 total · 2026-09-01 08:12 (oldest)    |
@@ -30,7 +30,7 @@ Empty state:
 
 ```
 +------------------------------------------------------------------+
-| oxe   search   [history]  dashboard   (?)  settings  [gh] v0.4.0 |
+| cauce   search   [history]  dashboard   (?)  settings  [gh] v0.4.0 |
 +------------------------------------------------------------------+
 | 0 clicks in last 24h · 0 total · —                               |
 |                                                                  |
@@ -90,7 +90,7 @@ Harvested from `references/insights/`; not part of the conformance contract abov
 
 ## Notes
 
-- Retention: rows are pruned after `OXE_CLICK_RETENTION_DAYS`
+- Retention: rows are pruned after `CAUCE_CLICK_RETENTION_DAYS`
   (default 30). Expect the "oldest" timestamp to roll forward; old rows
   disappearing is retention, not data loss.
 - Share-first: `copy json` is the history-screen twin of the search

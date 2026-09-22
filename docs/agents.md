@@ -1,6 +1,6 @@
 # Agent wiring
 
-oxe serves MCP over streamable HTTP at `https://search.localhost/mcp`
+cauce serves MCP over streamable HTTP at `https://search.localhost/mcp`
 (the portless alias for `127.0.0.1:4479`; see [install.md](install.md)).
 Note the exact path: v3 mounts `/mcp`; a v2 config pointing at
 `/mcp/` (trailing slash) gets a 404.
@@ -8,7 +8,7 @@ Four tools:
 
 | Tool | Purpose |
 |---|---|
-| `search_web` | Canonical search: `query`, `page?`, `engines?`, `lang?`, `ttl_s?` → oxe `SearchResponse` with `meta.request_id` and `meta.source` |
+| `search_web` | Canonical search: `query`, `page?`, `engines?`, `lang?`, `ttl_s?` → cauce `SearchResponse` with `meta.request_id` and `meta.source` |
 | `exa_search` | Frozen Exa wire shape (`query`, `num_results?`, `type?`, `source?`, `exclude_domains?`, `category?`) for existing Exa-compatible wiring |
 | `cache_status` | Cache stats snapshot plus `request_id` |
 | `cache_invalidate` | Invalidate by `key`, `expired`, or `all` (exactly one selector; audited) |

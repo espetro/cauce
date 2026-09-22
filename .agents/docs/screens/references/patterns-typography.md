@@ -43,7 +43,7 @@ Do not fold these into the "general" rows above — single-source observations, 
 - **Google / Gemini**: headings occasionally reach 700 (bolder than the 600 ceiling most other products use), and system font stack is less consistently used (Google Sans in places) versus the system-font convergence seen elsewhere.
 - **System font stack**: acceptable and common (DuckDuckGo, Kagi, Bing all lean on system fonts; Perplexity uses a custom FK Grotesk/pplxSans but its own analyses note neutrality was the design goal, not a special typeface being load-bearing). Pair with a mono stack for domains/code: ui-monospace, SFMono-Regular, Menlo.
 
-## daisyUI mapping for oxe
+## daisyUI mapping for cauce
 
 - Answer body: `text-base` (16px), `leading-relaxed` (1.625), max-w-prose (65ch).
 - Query echo: `text-xl md:text-2xl font-semibold tracking-tight`.
