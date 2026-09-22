@@ -13,9 +13,11 @@
 use url::Url;
 
 /// True when `key` is a click/tracking parameter that never changes page
-/// content: `utm_*` (GA), `fbclid` (Meta), `gclid` (Google Ads).
+/// content: `utm_*` (GA), `fbclid` (Meta), `gclid` (Google Ads). Matched
+/// case-insensitively (`UTM_SOURCE` is stripped too).
 fn is_tracking_param(key: &str) -> bool {
-    key.starts_with("utm_") || key == "fbclid" || key == "gclid"
+    let k = key.to_lowercase();
+    k.starts_with("utm_") || k == "fbclid" || k == "gclid"
 }
 
 /// Canonical form of `url` for dedupe. See module docs for the rule list.
@@ -34,13 +36,12 @@ pub fn normalize_url(url: &Url) -> Url {
     }
 
     // Drop the port when it is the default for the scheme (Url::parse already
-    // does this for http/https; keep it explicit for other schemes).
-    let default_port = match u.scheme() {
-        "http" => Some(80),
-        "https" => Some(443),
-        _ => None,
-    };
-    if u.port().is_some() && u.port() == default_port {
+    // does this for the special schemes; keep it explicit for the rest).
+    let is_default_port = matches!(
+        (u.scheme(), u.port()),
+        ("http" | "ws", Some(80)) | ("https" | "wss", Some(443)) | ("ftp", Some(21))
+    );
+    if is_default_port {
         let _ = u.set_port(None);
     }
 
@@ -81,9 +82,10 @@ mod tests {
 
     #[test]
     fn strips_tracking_params_and_keeps_real_ones_sorted() {
-        let u =
-            Url::parse("https://example.com/p?b=2&utm_source=x&a=1&fbclid=y&gclid=z&utm_medium=m")
-                .unwrap();
+        let u = Url::parse(
+            "https://example.com/p?b=2&utm_source=x&a=1&fbclid=y&gclid=z&utm_medium=m&UTM_CAMPAIGN=C&FBCLID=Y",
+        )
+        .unwrap();
         let n = normalize_url(&u);
         assert_eq!(n.as_str(), "https://example.com/p?a=1&b=2");
     }
@@ -115,8 +117,11 @@ mod tests {
             "utm_source",
             "utm_medium",
             "utm_campaign",
+            "UTM_SOURCE",
+            "Utm_Term",
             "fbclid",
             "gclid",
+            "FBCLID",
             "a",
             "q",
             "x",

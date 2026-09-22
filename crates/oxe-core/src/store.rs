@@ -72,6 +72,8 @@ pub enum LogSource {
 pub struct ClickRow {
     #[serde(default)]
     pub id: Option<i64>,
+    /// Server always fills this on write; the serde default exists only so the
+    /// inbound beacon body can omit it.
     #[serde(default = "now")]
     pub ts: DateTime<Utc>,
     /// `CacheKey` of the search that produced the clicked result, when the
@@ -125,6 +127,8 @@ pub struct EngineHealthRow {
 pub struct AuditRow {
     #[serde(default)]
     pub id: Option<i64>,
+    /// Server always fills this on write; the serde default exists only so a
+    /// caller-built row can omit it.
     #[serde(default = "now")]
     pub ts: DateTime<Utc>,
     pub actor: String,
@@ -140,7 +144,7 @@ pub struct AuditRow {
 }
 
 /// Filters for `Store::list_history` (`GET /api/history?since&q&limit`).
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct HistoryFilter {
     /// Only rows at or after this instant.
     pub since: Option<DateTime<Utc>>,
@@ -149,6 +153,17 @@ pub struct HistoryFilter {
     pub q: Option<String>,
     /// Max items, newest first.
     pub limit: u32,
+}
+
+impl Default for HistoryFilter {
+    /// Unfiltered, last 50 items.
+    fn default() -> Self {
+        Self {
+            since: None,
+            q: None,
+            limit: 50,
+        }
+    }
 }
 
 /// One history item: a logged search or a click, merged newest-first by the
@@ -161,13 +176,25 @@ pub enum HistoryItem {
 }
 
 /// Filters for `Store::list_audit` (`GET /api/audit`).
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct AuditFilter {
     pub since: Option<DateTime<Utc>>,
     pub actor: Option<String>,
     pub action: Option<String>,
     /// Max rows, newest first.
     pub limit: u32,
+}
+
+impl Default for AuditFilter {
+    /// Unfiltered, last 50 rows.
+    fn default() -> Self {
+        Self {
+            since: None,
+            actor: None,
+            action: None,
+            limit: 50,
+        }
+    }
 }
 
 /// Searches per UTC day, for the dashboard chart.
