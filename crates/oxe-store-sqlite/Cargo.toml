@@ -1,0 +1,9 @@
+[package]
+name = "oxe-store-sqlite"
+description = "rusqlite implementation of the oxe Store trait (bundled, fts5)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]

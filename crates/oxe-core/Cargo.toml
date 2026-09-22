@@ -1,0 +1,9 @@
+[package]
+name = "oxe-core"
+description = "Domain types, SearchPipeline, Scheduler, cache tiers, Store + Engine traits, merge/RRF, health. No HTTP, no SQL."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
