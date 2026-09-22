@@ -14,6 +14,7 @@ pub mod config;
 pub mod conformance;
 mod engine;
 mod normalize;
+mod pipeline;
 mod request;
 mod response;
 mod store;
@@ -25,6 +26,9 @@ pub use config::{
 };
 pub use engine::{Engine, EngineError, EngineId, Tier};
 pub use normalize::normalize_url;
+pub use pipeline::{
+    DEFAULT_DEADLINE, DEFAULT_TTL, DEFAULT_TTL_CAP, PipelineError, SearchOpts, SearchPipeline,
+};
 pub use request::{ClientKind, SafeSearch, SearchRequest, TimeRange};
 pub use response::{EngineReport, EngineStatus, SearchMeta, SearchResponse, SearchResult, Source};
 pub use store::{

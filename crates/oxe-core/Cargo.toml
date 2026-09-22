@@ -20,9 +20,17 @@ sha2 = "0.10"
 sysinfo = "0.37"
 thiserror = "2"
 toml = { version = "0.9", features = ["preserve_order"] }
+# Fan-out (JoinSet) and the hard deadline (time::timeout) in pipeline.rs.
+tokio = { version = "1", features = ["rt", "time"] }
+tracing = "0.1"
 url = { version = "2", features = ["serde"] }
 uuid = { version = "1", features = ["v7", "serde"] }
 
 [dev-dependencies]
+# Cyclic dev-dependency is deliberate: pipeline tests drive the `replay`
+# engine (oxe-engines depends on oxe-core normally).
+oxe-engines = { path = "../oxe-engines" }
 proptest = "1"
 tempfile = "3"
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+tracing-subscriber = { version = "0.3", features = ["fmt"] }

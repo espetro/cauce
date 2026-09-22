@@ -23,7 +23,7 @@ pub enum Source {
         tier: Tier,
         /// Seconds since the hit was stored.
         age_s: u64,
-        /// TTL the entry was written with.
+        /// Seconds until expiry (remaining TTL at serve time).
         ttl_s: u64,
         /// True when the row was past `expires_at` (served stale).
         stale: bool,

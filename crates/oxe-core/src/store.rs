@@ -51,7 +51,10 @@ pub struct SearchLogRow {
     pub tier: Option<Tier>,
     pub latency_ms: u32,
     pub result_count: u32,
-    /// Engines that actually ran (`engines_json` column).
+    /// Engines that actually ran (`engines_json` column). On cache-hit
+    /// rows (`source = cache`) this instead carries the engines that
+    /// *produced* the cached entry (provenance), not engines that ran for
+    /// this request.
     pub engines: Vec<EngineId>,
     pub deadline_hit: bool,
 }
