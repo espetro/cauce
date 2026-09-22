@@ -17,8 +17,8 @@
 use std::sync::Arc;
 
 use oxe_core::Metrics;
-use oxe_core::metrics::{render_prometheus, set_cache_entries};
 use oxe_core::Store;
+use oxe_core::metrics::{render_prometheus, set_cache_entries};
 
 /// Prometheus exposition content type for `GET /metrics`.
 pub const METRICS_CONTENT_TYPE: &str = "text/plain; version=0.0.4; charset=utf-8";

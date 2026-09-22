@@ -40,7 +40,9 @@ const WINDOW_CAP: usize = 512;
 
 /// Bucket bounds (ms) for every `*_ms` histogram. Coarse on purpose: the
 /// pull endpoint is a health signal, not a profiling backend.
-const MS_BUCKETS: &[f64] = &[5.0, 10.0, 25.0, 50.0, 100.0, 250.0, 500.0, 1000.0, 2500.0, 5000.0];
+const MS_BUCKETS: &[f64] = &[
+    5.0, 10.0, 25.0, 50.0, 100.0, 250.0, 500.0, 1000.0, 2500.0, 5000.0,
+];
 
 /// Bucket bounds for `oxe_engine_results` (result counts per call).
 const COUNT_BUCKETS: &[f64] = &[0.0, 1.0, 2.0, 5.0, 10.0, 25.0, 50.0, 100.0];
@@ -447,7 +449,12 @@ pub fn render_prometheus() -> String {
         "Search request latency",
         &reg.search_duration,
     );
-    render_hist_one(&mut out, "oxe_ttfr_ms", "Time to first engine result", &reg.ttfr);
+    render_hist_one(
+        &mut out,
+        "oxe_ttfr_ms",
+        "Time to first engine result",
+        &reg.ttfr,
+    );
     render_counter(
         &mut out,
         "oxe_engine_requests_total",
