@@ -222,7 +222,9 @@ async fn all_engines_failed_returns_errors_logs_and_skips_cache() {
     assert_eq!(logs[0].engines.len(), 2);
 }
 
-/// Zero results with a healthy engine is a valid, cacheable response.
+/// Zero results with a healthy engine is a valid, cacheable response, but
+/// the engine report is honest: an `Ok` empty page normalizes to
+/// `Failed(NoResults)` so a wedged engine does not read as `Ok` (#120).
 #[tokio::test]
 async fn empty_results_are_valid_and_cached() {
     let dir = tempfile::tempdir().unwrap();
@@ -233,6 +235,11 @@ async fn empty_results_are_valid_and_cached() {
     let resp = pipe.search(&req("nothing here")).await.unwrap();
     assert!(resp.results.is_empty());
     assert!(!resp.meta.deadline_hit);
+    assert_eq!(
+        resp.meta.engines_used[0].status,
+        EngineStatus::Failed(EngineError::NoResults),
+        "Ok(vec![]) normalizes to Failed(NoResults)"
+    );
     assert_eq!(store.puts.lock().unwrap().len(), 1, "cached normally");
     assert_eq!(store.logs.lock().unwrap()[0].result_count, 0);
 }

@@ -61,6 +61,11 @@ rather than editing it away.
   engine answered (`Ok` or `NoResults`) yields a 200-shaped `SearchResponse`, possibly empty;
   `AllEnginesFailed` requires every engine to error/timeout/panic. Kills the v2 "page 2 always
   502" defect; `engines_used` still reports `Failed(NoResults)` for honesty. — 2026-09-22
+  Amended 2026-09-23 (issue #120): an `Ok` engine response with zero results normalizes to
+  `NoResults` in the pipeline's fan-out, uniform across runtimes (exec `{"results":[],
+  "error":null}` included), so a wedged engine no longer reports `EngineStatus::Ok`. The
+  response is still an answer — health stays `record_ok`, the fan-out still yields a
+  200-shaped empty response — but the engine report and the `no_results` metric are honest.
 - **Store errors degrade, never fail a search.** `get_exact` failure → warn + treat as miss;
   `put` failure → warn + serve; `log_search` failure → warn only. `/health` (W0-09) owns
   store-failure surfacing. — 2026-09-22

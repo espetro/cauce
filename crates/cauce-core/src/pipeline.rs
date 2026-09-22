@@ -854,7 +854,8 @@ impl SearchPipeline {
                 // `NoResults` is an answer, not a failure: the engine
                 // responded and there is simply no page to serve (the exec
                 // protocol's first-class code; `replay` uses it for pages
-                // beyond `page_limit`). It counts toward "an engine
+                // beyond `page_limit`; an `Ok` empty page normalizes to it
+                // in `fan_out`, issue #120). It counts toward "an engine
                 // answered" so an all-`NoResults` fan-out is a 200-shaped
                 // empty response, not `AllEnginesFailed` (v2's "page 2
                 // always 502" defect). The report stays `Failed(NoResults)`
@@ -1204,8 +1205,20 @@ impl SearchPipeline {
                 async move {
                     let _probe_guard = health.probe_guard(&id);
                     let t0 = Instant::now();
-                    let outcome =
-                        tokio::time::timeout(deadline, engine.search(&req2, deadline)).await;
+                    let outcome = tokio::time::timeout(deadline, engine.search(&req2, deadline))
+                        .await
+                        .map(|done| match done {
+                            // `Ok` with an empty page is `NoResults` (issue
+                            // #120), uniform across runtimes: an exec
+                            // `{"results":[],"error":null}` used to decode to
+                            // `Ok(vec![])` and report `EngineStatus::Ok`, so a
+                            // wedged engine looked healthy. The engine still
+                            // answered — health records `record_ok` below —
+                            // but the report and the `no_results` metric tell
+                            // the truth.
+                            Ok(results) if results.is_empty() => Err(EngineError::NoResults),
+                            done => done,
+                        });
                     let latency = t0.elapsed();
                     match &outcome {
                         Ok(Ok(r)) => {
