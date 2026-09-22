@@ -752,6 +752,38 @@ async fn config_get_redaction_and_put_roundtrip() {
     assert_envelope(&body, "invalid_config");
 }
 
+/// #82: a secret injected via an `OXE_*` env override — no `${env:...}`
+/// template in the file — must still never reach `GET /api/config`.
+#[tokio::test]
+async fn config_get_redacts_env_override_secret() {
+    let _guard = env_lock().await;
+    let tmp = tempfile::tempdir().unwrap();
+    let config_dir = tmp.path().join("cfg");
+    std::fs::create_dir_all(&config_dir).unwrap();
+    // SAFETY: serialized by ENV_LOCK; nextest also isolates per process.
+    unsafe {
+        std::env::set_var("OXE_CONFIG_DIR", &config_dir);
+        std::env::set_var("OXE_DATA_DIR", tmp.path().join("data"));
+        std::env::set_var("OXE_AI_API_KEY", "env-override-secret");
+    }
+
+    let (state, _tmp2) = test_state();
+    state.with_config(|cfg| *cfg = Config::load().unwrap());
+    let router = build_router(state);
+
+    let (status, _, body) = get(&router, "/api/config").await;
+    unsafe {
+        std::env::remove_var("OXE_AI_API_KEY");
+    }
+    assert_eq!(status, StatusCode::OK);
+    let text = body.to_string();
+    assert!(
+        !text.contains("env-override-secret"),
+        "env-override secret must never appear: {text}"
+    );
+    assert_eq!(body["ai"]["api_key"], "<redacted>");
+}
+
 /// W1-07 acceptance: `PipelineError::RateLimited` maps to 429 with a
 /// `Retry-After` header and the `rate_limited` envelope code.
 #[tokio::test]
