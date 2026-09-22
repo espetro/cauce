@@ -46,3 +46,11 @@ global store, and is never shared with or copied into another project.
   non-default); W3-04, W5-04/05, W6-02/03/04 deferred to `plans/v3/later/`; W3-06 is a
   failing-canary signal only; W2-08 drops Playwright; #84 becomes W1-13 loopback guard;
   W4-05 Anthropic kept per owner. Full entry in `decisions.md`.
+
+## 2026-09-22 — wave-1 cutover done
+
+- v3 supervises under oxmgr as `oxe` on 4479 (`/Users/josocjoq/.cargo/bin/oxe serve`), portless alias `search.localhost`.
+- Gotcha: `OXE_ENGINES` pin cannot name embedded specs (bing/brave/wikipedia); it validates against `[[engines]]` + builtins only. Specs auto-register when the pin is unset. ddgs disabled via `enabled=false` entry (exec needs repo cwd + uv venv). Docs fixed in #117.
+- rmcp `StreamableHttpService` Host allowlist was exact-match only; `*.localhost` aliases needed our own handling (PR #116). `/mcp` exact path; `/mcp/` 404s.
+- Verified live: singleflight collapses 3 concurrent identical queries to 1 upstream call; `/metrics` exposes engine histograms + breaker state + admission wait; `/api/stats` mirrors. `search_web`+`exa_search` green via MCP.
+- #90: partial-unknown pins keep wave-0 "truncate silently" (SearXNG does the same; issue commented, recommend won't-fix).
