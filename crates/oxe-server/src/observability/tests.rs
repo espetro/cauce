@@ -19,6 +19,40 @@ fn test_config(dir: &std::path::Path) -> ObservabilityConfig {
     }
 }
 
+/// `logs_dir`/`data_dir` delegate to `oxe_core::config::Dirs`: a host with
+/// only `XDG_DATA_HOME` set (no `OXE_DATA_DIR`) must resolve to
+/// `$XDG_DATA_HOME/oxe/logs`, the same place `serve` writes them.
+#[test]
+fn dirs_honour_xdg_data_home() {
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let tmp = tempfile::tempdir().unwrap();
+
+    let prev_oxe = std::env::var_os("OXE_DATA_DIR");
+    let prev_xdg = std::env::var_os("XDG_DATA_HOME");
+    // SAFETY: serialized by ENV_LOCK; nothing else in this test binary
+    // touches these variables. nextest also isolates per process.
+    unsafe {
+        std::env::remove_var("OXE_DATA_DIR");
+        std::env::set_var("XDG_DATA_HOME", tmp.path());
+    }
+    let (logs, data) = (super::logs_dir(), super::data_dir());
+    // SAFETY: same as above; restores the captured values.
+    unsafe {
+        match prev_oxe {
+            Some(v) => std::env::set_var("OXE_DATA_DIR", v),
+            None => std::env::remove_var("OXE_DATA_DIR"),
+        }
+        match prev_xdg {
+            Some(v) => std::env::set_var("XDG_DATA_HOME", v),
+            None => std::env::remove_var("XDG_DATA_HOME"),
+        }
+    }
+
+    assert_eq!(data, tmp.path().join("oxe"));
+    assert_eq!(logs, tmp.path().join("oxe").join("logs"));
+}
+
 /// Minimal `block_on` so tests can drive `Store` futures without a runtime.
 fn block_on<F: std::future::Future>(future: F) -> F::Output {
     use std::task::{Context, Poll};

@@ -16,7 +16,7 @@ fn main() {
         "record" => std::process::exit(cmds::record::run(
             &std::env::args().skip(2).collect::<Vec<_>>(),
         )),
-        "trace" => cmds::trace::run(std::env::args().nth(2)),
+        "trace" => std::process::exit(cmds::trace::run(std::env::args().nth(2))),
         "config" => std::process::exit(cmds::config::run(
             &std::env::args().skip(2).collect::<Vec<_>>(),
         )),

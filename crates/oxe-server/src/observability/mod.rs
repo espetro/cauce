@@ -27,6 +27,7 @@ pub mod trace;
 use std::io::IsTerminal;
 use std::path::PathBuf;
 
+use oxe_core::config::Dirs;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::{EnvFilter, Registry};
@@ -34,23 +35,16 @@ use tracing_subscriber::{EnvFilter, Registry};
 pub use audit::audit;
 pub use request::{RequestId, request_span};
 
-/// Environment variable selecting the data directory. Config plumbing moves
-/// to `oxe-core::config` in W0-11; until then this helper is the single
-/// place that resolves it.
+/// The oxe data directory. Delegates to `oxe_core::config::Dirs` so there
+/// is exactly one resolver: `OXE_DATA_DIR` > `XDG_DATA_HOME` >
+/// `~/.local/share/oxe`.
 pub fn data_dir() -> PathBuf {
-    if let Some(dir) = std::env::var_os("OXE_DATA_DIR") {
-        return PathBuf::from(dir);
-    }
-    std::env::home_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join(".local")
-        .join("share")
-        .join("oxe")
+    Dirs::detect().data_dir
 }
 
 /// Directory holding the JSONL logs (`<data_dir>/logs`).
 pub fn logs_dir() -> PathBuf {
-    data_dir().join("logs")
+    Dirs::detect().logs_dir()
 }
 
 /// Knobs for [`init`]. `Default` resolves the environment; callers that
