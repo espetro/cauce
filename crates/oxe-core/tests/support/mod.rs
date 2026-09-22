@@ -57,22 +57,22 @@ pub struct StubStore {
     pub fail_get: AtomicBool,
 }
 
-#[async_trait]
-impl Store for StubStore {
-    async fn get_exact(&self, key: &CacheKey) -> Result<Option<CachedSearch>, StoreError> {
-        if self.fail_get.load(Ordering::SeqCst) {
-            return Err(StoreError::Backend("injected lookup failure".to_string()));
-        }
-        let entries = self.entries.lock().unwrap();
-        Ok(entries.get(key.as_str()).and_then(|(resp, created, ttl)| {
-            let expires = *created + chrono::Duration::from_std(*ttl).unwrap();
-            (expires > Utc::now()).then(|| CachedSearch {
+impl StubStore {
+    /// Row materialisation shared by `get_exact`/`get_cache`: `get_exact`
+    /// hides expired rows, `get_cache` returns them (stale serving is the
+    /// admission layer's call).
+    fn row(&self, key: &CacheKey) -> Option<CachedSearch> {
+        self.entries
+            .lock()
+            .unwrap()
+            .get(key.as_str())
+            .map(|(resp, created, ttl)| CachedSearch {
                 key: key.clone(),
                 query: resp.query.clone(),
                 params: serde_json::json!({ "q": resp.query }),
                 response: resp.clone(),
                 created_at: *created,
-                expires_at: expires,
+                expires_at: *created + chrono::Duration::from_std(*ttl).unwrap(),
                 hits: 1,
                 engines: resp
                     .meta
@@ -82,7 +82,16 @@ impl Store for StubStore {
                     .map(|r| r.engine.clone())
                     .collect(),
             })
-        }))
+    }
+}
+
+#[async_trait]
+impl Store for StubStore {
+    async fn get_exact(&self, key: &CacheKey) -> Result<Option<CachedSearch>, StoreError> {
+        if self.fail_get.load(Ordering::SeqCst) {
+            return Err(StoreError::Backend("injected lookup failure".to_string()));
+        }
+        Ok(self.row(key).filter(|row| row.expires_at > Utc::now()))
     }
 
     async fn get_lexical(&self, _: &str, _: u8) -> Result<Vec<CachedSearch>, StoreError> {
@@ -112,8 +121,8 @@ impl Store for StubStore {
     async fn list_cache(&self, _: u32, _: u32) -> Result<Vec<CachedSearch>, StoreError> {
         unimplemented!()
     }
-    async fn get_cache(&self, _: &CacheKey) -> Result<Option<CachedSearch>, StoreError> {
-        unimplemented!()
+    async fn get_cache(&self, key: &CacheKey) -> Result<Option<CachedSearch>, StoreError> {
+        Ok(self.row(key))
     }
     async fn delete_cache(&self, _: &CacheKey) -> Result<bool, StoreError> {
         unimplemented!()
