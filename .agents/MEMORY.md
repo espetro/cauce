@@ -41,3 +41,8 @@ global store, and is never shared with or copied into another project.
   `docs/screens/` are now requirement input for the HTMX pages, not designs; the two UI-loop
   notes and the velocity retro stay as evidence. New plan: `plans/2026-09-21-v3-rust-core.md`;
   subplans per wave under `plans/v3/`.
+- **2026-09-22 — maintenance-area review applied.** `serde_yaml` to `serde_norway`; metrics
+  are an owned registry rendering Prometheus text (OTLP opt-in, `otlp` feature now
+  non-default); W3-04, W5-04/05, W6-02/03/04 deferred to `plans/v3/later/`; W3-06 is a
+  failing-canary signal only; W2-08 drops Playwright; #84 becomes W1-13 loopback guard;
+  W4-05 Anthropic kept per owner. Full entry in `decisions.md`.

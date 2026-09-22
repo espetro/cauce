@@ -1,5 +1,7 @@
 //! oxe-core: domain types, SearchPipeline, Scheduler, cache tiers, Store and
-//! Engine traits, merge/RRF, health. No HTTP, no SQL.
+//! Engine traits, merge/RRF, health. No HTTP server, no SQL; the only I/O
+//! dependency is `reqwest` behind the [`http::HttpClient`] engine-egress
+//! wrapper (parent plan section 4.1).
 //!
 //! The shapes here implement section 4.2 of `.agents/plans/2026-09-21-v3-rust-core.md`
 //! and are a settled contract: changing them requires amending the parent plan.
@@ -14,6 +16,7 @@ pub mod config;
 #[cfg(feature = "conformance")]
 pub mod conformance;
 mod engine;
+pub mod http;
 mod normalize;
 mod pipeline;
 mod request;
@@ -23,8 +26,8 @@ mod store;
 pub use admission::{Admission, AdmissionLimits, FlightResult};
 pub use cache::{CacheKey, CachedSearch, normalize_query};
 pub use config::{
-    AdmissionConfig, AiConfig, Config, ConfigError, Dirs, EngineEntry, EngineKind, LogsConfig,
-    MetaConfig, Resources, SearchConfig, ServerConfig,
+    AdmissionConfig, AiConfig, CacheConfig, Config, ConfigError, Dirs, EgressConfig, EngineEntry,
+    EngineKind, LexicalConfig, LogsConfig, MetaConfig, Resources, SearchConfig, ServerConfig,
 };
 pub use engine::{Engine, EngineError, EngineId, Tier};
 pub use normalize::normalize_url;

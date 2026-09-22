@@ -114,6 +114,9 @@ pub enum ConfigError {
     /// `OXE_ENGINES` named an engine with no configured or built-in entry.
     #[error("OXE_ENGINES names unknown engine {0:?}")]
     UnknownEngine(String),
+    /// A field value outside its allowed range (semantic, post-schema).
+    #[error("{path}: {msg}")]
+    InvalidValue { path: String, msg: String },
     /// An `[[engines]]` entry is inconsistent (e.g. `kind = "exec"` without
     /// a `command`).
     #[error("invalid engine entry {id:?}: {msg}")]
@@ -295,6 +298,44 @@ fn default_max_concurrent_per_engine() -> u32 {
     3
 }
 
+/// `[cache]`: cache-tier behaviour beyond TTLs (those live in `[search]`).
+#[derive(Debug, Default, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CacheConfig {
+    /// `[cache.lexical]`: the tier-2 FTS lookup (W1-10).
+    #[serde(default)]
+    pub lexical: LexicalConfig,
+}
+
+/// `[cache.lexical]`: tier-2 acceptance gate (W1-10). On a tier-1 miss the
+/// pipeline FTS-matches stored entries and serves the best-ranked row whose
+/// query shares `threshold` of the request's tokens (Jaccard after
+/// normalisation and stopword removal) under the same page/lang.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LexicalConfig {
+    /// Master switch for the tier-2 lookup.
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    /// Minimum Jaccard token similarity to accept a hit. Must be finite
+    /// and in `(0.0, 1.0]`; `Config::load` rejects anything else.
+    #[serde(default = "default_lexical_threshold")]
+    pub threshold: f64,
+}
+
+impl Default for LexicalConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            threshold: default_lexical_threshold(),
+        }
+    }
+}
+
+fn default_lexical_threshold() -> f64 {
+    0.8
+}
+
 /// `[logs]`: JSONL log retention (W0-05 consumes `retention_days`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -368,12 +409,49 @@ pub enum EngineKind {
     Replay,
 }
 
+/// `[engines.egress]` (a sub-table of an `[[engines]]` entry): upstream
+/// egress and politeness policy for that engine's HTTP calls (W1-01).
+/// Absent means a direct connection with a token bucket of 1 req/s,
+/// burst 3 (settled inputs).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EgressConfig {
+    /// Static proxy URL (`http://`, `https://`, `socks5://`,
+    /// `socks5h://`). Absent = direct.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub proxy: Option<String>,
+    /// Token-bucket refill rate in requests per second (>= 1).
+    #[serde(default = "default_requests_per_second")]
+    pub requests_per_second: u32,
+    /// Token-bucket burst capacity (>= 1).
+    #[serde(default = "default_burst")]
+    pub burst: u32,
+}
+
+impl Default for EgressConfig {
+    fn default() -> Self {
+        Self {
+            proxy: None,
+            requests_per_second: default_requests_per_second(),
+            burst: default_burst(),
+        }
+    }
+}
+
+fn default_requests_per_second() -> u32 {
+    1
+}
+
+fn default_burst() -> u32 {
+    3
+}
+
 /// One `[[engines]]` table. `command`/`args`/`env`/`cwd` describe the child
 /// for `kind = "exec"`; `spec` points at the YAML file for
 /// `kind = "declarative"`.
 ///
 /// Field order matters for TOML serialisation: scalars and plain arrays
-/// first, the `env` inline table last.
+/// first, the `egress`/`env` tables last.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct EngineEntry {
@@ -402,6 +480,9 @@ pub struct EngineEntry {
     /// Results per page the engine reports back.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub page_size: Option<u8>,
+    /// `[engines.egress]` sub-table: proxy and token-bucket policy.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub egress: Option<EgressConfig>,
     /// Extra environment on top of the inherited one (`exec` kind).
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub env: BTreeMap<String, String>,
@@ -422,6 +503,7 @@ fn builtin_engines() -> Vec<EngineEntry> {
             spec: None,
             tier: None,
             page_size: None,
+            egress: None,
             env: BTreeMap::new(),
         },
         EngineEntry {
@@ -434,6 +516,7 @@ fn builtin_engines() -> Vec<EngineEntry> {
             spec: None,
             tier: Some(Tier::T2),
             page_size: Some(10),
+            egress: None,
             env: BTreeMap::new(),
         },
     ]
@@ -461,6 +544,9 @@ pub struct Config {
     /// `[admission]` section.
     #[serde(default)]
     pub admission: AdmissionConfig,
+    /// `[cache]` section.
+    #[serde(default)]
+    pub cache: CacheConfig,
     /// `[logs]` section.
     #[serde(default)]
     pub logs: LogsConfig,
@@ -493,6 +579,7 @@ struct ConfigSections<'a> {
     server: &'a ServerConfig,
     search: &'a SearchConfig,
     admission: &'a AdmissionConfig,
+    cache: &'a CacheConfig,
     logs: &'a LogsConfig,
     ai: &'a AiConfig,
     engines: &'a [EngineEntry],
@@ -526,6 +613,7 @@ impl Default for Config {
             server: ServerConfig::default(),
             search: SearchConfig::default(),
             admission: AdmissionConfig::default(),
+            cache: CacheConfig::default(),
             logs: LogsConfig::default(),
             ai: AiConfig::default(),
             engines: builtin_engines(),
@@ -553,6 +641,7 @@ impl Config {
             server: &self.server,
             search: &self.search,
             admission: &self.admission,
+            cache: &self.cache,
             logs: &self.logs,
             ai: &self.ai,
             engines: &self.engines,
@@ -642,6 +731,18 @@ impl Config {
 
         let mut cfg: Config = merged.try_into().map_err(ConfigError::Invalid)?;
 
+        // `cache.lexical.threshold` gates a serve decision: reject
+        // non-finite and out-of-`(0.0, 1.0]` values rather than silently
+        // voiding the Jaccard gate (`nan` would make `score < threshold`
+        // always false, serving any same-params FTS candidate).
+        let threshold = cfg.cache.lexical.threshold;
+        if !threshold.is_finite() || threshold <= 0.0 || threshold > 1.0 {
+            return Err(ConfigError::InvalidValue {
+                path: "cache.lexical.threshold".to_string(),
+                msg: format!("expected a finite value in (0.0, 1.0], got {threshold}"),
+            });
+        }
+
         // Built-ins fill in entries the file did not define.
         for builtin in builtin_engines() {
             if !cfg.engines.iter().any(|e| e.id == builtin.id) {
@@ -653,6 +754,14 @@ impl Config {
                 return Err(ConfigError::InvalidEngine {
                     id: entry.id.to_string(),
                     msg: "kind \"exec\" requires a command".to_string(),
+                });
+            }
+            if let Some(egress) = &entry.egress
+                && (egress.requests_per_second == 0 || egress.burst == 0)
+            {
+                return Err(ConfigError::InvalidEngine {
+                    id: entry.id.to_string(),
+                    msg: "egress.requests_per_second and egress.burst must be >= 1".to_string(),
                 });
             }
         }
@@ -1083,6 +1192,8 @@ mod tests {
         assert_eq!(cfg.search.ttl_cap_s, 86400);
         assert_eq!(cfg.admission.max_wait_ms, 1500);
         assert_eq!(cfg.admission.max_concurrent_per_engine, 3);
+        assert!(cfg.cache.lexical.enabled);
+        assert_eq!(cfg.cache.lexical.threshold, 0.8);
         assert_eq!(cfg.logs.retention_days, 7);
         assert_eq!(cfg.ai.base_url, "");
         assert_eq!(cfg.ai.api_key, "");
@@ -1125,6 +1236,66 @@ mod tests {
         // Untouched fields keep their defaults.
         assert_eq!(cfg.server.host, "127.0.0.1");
         assert_eq!(cfg.search.min_results, 5);
+    }
+
+    #[test]
+    fn cache_lexical_section_loads() {
+        let (tmp, env) = sandbox(&[]);
+        write_config(
+            &tmp.path().join("cfg"),
+            "[cache.lexical]\nenabled = false\nthreshold = 0.5\n",
+        );
+        let cfg = Config::load_with(&env).unwrap();
+        assert!(!cfg.cache.lexical.enabled);
+        assert_eq!(cfg.cache.lexical.threshold, 0.5);
+
+        // A partial section fills the rest from defaults, and the section
+        // renders in the displayed/default tree.
+        write_config(
+            &tmp.path().join("cfg"),
+            "[cache.lexical]\nthreshold = 0.9\n",
+        );
+        let cfg = Config::load_with(&env).unwrap();
+        assert!(cfg.cache.lexical.enabled);
+        assert_eq!(cfg.cache.lexical.threshold, 0.9);
+        assert!(cfg.display_toml().unwrap().contains("lexical"));
+
+        // Unknown keys inside the section are still rejected.
+        write_config(&tmp.path().join("cfg"), "[cache.lexical]\nbogus = 1\n");
+        assert!(matches!(
+            Config::load_with(&env),
+            Err(ConfigError::Invalid(_))
+        ));
+    }
+
+    /// `threshold` gates a serve decision: non-finite and out-of-
+    /// `(0.0, 1.0]` values are rejected at load rather than silently
+    /// widening tier 2 (`nan` would accept every same-params candidate).
+    #[test]
+    fn lexical_threshold_out_of_range_is_rejected() {
+        let (tmp, env) = sandbox(&[]);
+        for value in ["nan", "-nan", "inf", "0.0", "-0.5", "1.5"] {
+            write_config(
+                &tmp.path().join("cfg"),
+                &format!("[cache.lexical]\nthreshold = {value}\n"),
+            );
+            assert!(
+                matches!(
+                    Config::load_with(&env),
+                    Err(ConfigError::InvalidValue { .. })
+                ),
+                "threshold = {value} must be rejected"
+            );
+        }
+        // Boundaries: 1.0 is the inclusive upper bound.
+        write_config(
+            &tmp.path().join("cfg"),
+            "[cache.lexical]\nthreshold = 1.0\n",
+        );
+        assert_eq!(
+            Config::load_with(&env).unwrap().cache.lexical.threshold,
+            1.0
+        );
     }
 
     #[test]
@@ -1423,6 +1594,36 @@ mod tests {
                 .count(),
             1
         );
+    }
+
+    #[test]
+    fn engine_egress_subtable_parses() {
+        let (tmp, env) = sandbox(&[]);
+        write_config(
+            &tmp.path().join("cfg"),
+            "[[engines]]\nid = \"bing\"\nkind = \"declarative\"\n\n[engines.egress]\nproxy = \"socks5://127.0.0.1:1080\"\n",
+        );
+        let cfg = Config::load_with(&env).unwrap();
+        let egress = cfg.engine("bing").unwrap().egress.as_ref().unwrap();
+        assert_eq!(egress.proxy.as_deref(), Some("socks5://127.0.0.1:1080"));
+        // Settled politeness defaults.
+        assert_eq!(egress.requests_per_second, 1);
+        assert_eq!(egress.burst, 3);
+        // Entries without the table stay direct.
+        assert!(cfg.engine("ddgs").unwrap().egress.is_none());
+    }
+
+    #[test]
+    fn engine_egress_zero_rate_rejected() {
+        let (tmp, env) = sandbox(&[]);
+        write_config(
+            &tmp.path().join("cfg"),
+            "[[engines]]\nid = \"x\"\nkind = \"exec\"\ncommand = \"/bin/x\"\n\n[engines.egress]\nrequests_per_second = 0\n",
+        );
+        assert!(matches!(
+            Config::load_with(&env),
+            Err(ConfigError::InvalidEngine { id, .. }) if id == "x"
+        ));
     }
 
     #[test]

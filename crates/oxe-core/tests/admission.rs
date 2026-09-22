@@ -245,20 +245,25 @@ async fn queue_overflow_serves_stale_row_and_refreshes() {
 }
 
 /// Overflow with a *fresh* row available serves it as a normal
-/// (non-stale) cache hit. `fail_get` fails the pre-admission `get_exact`
-/// (degraded to a miss) while the overflow path's `get_cache` still finds
-/// the row — the same outcome as a row that landed mid-wait.
+/// (non-stale) tier-1 cache hit. `fail_get` fails the pre-admission
+/// `get_exact` (degraded to a miss) while the overflow path's `get_cache`
+/// still finds the row — the same outcome as a row that landed mid-wait.
+/// Lexical is off: the seeded row shares the request's query text and
+/// would otherwise be claimed by the tier-2 gate before the overflow ran.
 #[tokio::test]
 async fn queue_overflow_serves_fresh_row_not_stale() {
     let dir = tempfile::tempdir().unwrap();
     let engine = Arc::new(replay_at(dir.path(), |o| o.latency_ms = 200));
     let store = Arc::new(StubStore::default());
-    let pipe = SearchPipeline::new(store.clone(), vec![engine.clone()]).with_admission(
-        Admission::new(AdmissionLimits {
+    let pipe = SearchPipeline::new(store.clone(), vec![engine.clone()])
+        .with_lexical(oxe_core::LexicalConfig {
+            enabled: false,
+            ..Default::default()
+        })
+        .with_admission(Admission::new(AdmissionLimits {
             max_wait: Duration::from_millis(1),
             max_concurrent_per_engine: 1,
-        }),
-    );
+        }));
 
     // A fresh row for the overflow query (written now, 1 h TTL).
     let fresh_req = req("fresh fallback");

@@ -25,8 +25,8 @@ results over SSE. The owner uses the UI daily for a week and files findings.
 ## Exit criteria
 
 1. Owner's usage week completed with findings triaged (W2-10).
-2. Every page renders at 390 px and 1280 px without horizontal scroll (Playwright
-   screenshot test on replay, 2 viewports, stored baselines).
+2. Every page renders at 390 px and 1280 px; no horizontal scroll at 390 px (manual
+   acceptance note, checked during W2-10).
 3. No page state exists that the replay engine's fault-injection cannot reach (empty, error,
    slow, blocked, stale).
 
@@ -115,14 +115,15 @@ results over SSE. The owner uses the UI daily for a week and files findings.
   `${env:BIFROST_API_KEY}` template survives a save round-trip byte-for-byte.
 - Follow-up: W4-01.
 
-### W2-08 Theme, mobile layout, screenshot baselines
+### W2-08 Theme and mobile layout
 - Issue #40 · Effort S · Label cosmetic · Team Product Builders · Branch `v3/w2-08-theme-mobile`
 - Depends on: W2-01 to W2-07
 - Do: light/dark via CSS variables and a header toggle; header collapses to a menu below
-  700 px; tables become cards below 640 px; Playwright (`bunx playwright`, dev-only, under
-  `tests/ui/`) screenshot test on replay at 390 and 1280 px for every page, baselines
-  committed, run in the CI fast gate (< 60 s) since it needs no network.
-- Acceptance: screenshot test green; no horizontal overflow assertion at 390 px.
+  700 px; tables become cards below 640 px; a cheap DOM assertion instead of screenshot
+  baselines: an axum integration test renders each page on replay within a sane element
+  count and asserts the viewport meta and the light/dark CSS variables exist.
+- Acceptance: DOM assertion test green for every page; no horizontal scroll at 390 px
+  (checked manually).
 - Follow-up: W2-10.
 
 ### W2-09 `oxe tail`

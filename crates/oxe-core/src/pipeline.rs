@@ -1,6 +1,6 @@
 //! `SearchPipeline` v0 (W0-08, parent plan section 4.4 minus hedging,
-//! breakers and tier-2/3 lookups, which land in W1/W3) plus W1-07
-//! admission control.
+//! breakers and the tier-3 lookup, which land in W1/W3) plus W1-07
+//! admission control and the W1-10 tier-2 lexical lookup.
 //!
 //! Request flow for [`SearchPipeline::search`] /
 //! [`SearchPipeline::search_opts`]:
@@ -14,12 +14,22 @@
 //!    the design (v2 skipped it and its hit-rate stats were fiction).
 //! 3. On a miss, admission (see [`crate::admission`]): singleflight on
 //!    `CacheKey` elects one leader per key and followers await the shared
-//!    outcome; the leader's detached flight task waits for per-engine
-//!    semaphore permits up to `admission.max_wait_ms`. A timed-out wait
-//!    overflows to the stored row if one exists (fresh rows serve as a
-//!    normal hit, expired rows go out `Source::Cache{stale:true}` and a
-//!    background refresh is enqueued) else fails with
-//!    [`PipelineError::RateLimited`].
+//!    outcome. The leader's detached flight task first runs the tier-2
+//!    `store.get_lexical(q, 5)` lookup (W1-10, `cache.lexical.*`):
+//!    candidates are checked best-rank first; a row is accepted when it
+//!    is fresh, its stored `key` equals the key this request's params
+//!    would produce for the candidate's query (the "same page/lang" gate
+//!    — the preimage also pins time_range/safesearch/engines, which is
+//!    strictly conservative), and its query's token set clears the
+//!    Jaccard `threshold` (default 0.8) after normalisation and stopword
+//!    removal. A hit is served as
+//!    `Source::Cache { tier: 2, matched_query: Some(..), .. }` without
+//!    spending an engine permit. Otherwise the flight waits for
+//!    per-engine semaphore permits up to `admission.max_wait_ms`; a
+//!    timed-out wait overflows to the stored row if one exists (fresh
+//!    rows serve as a normal hit, expired rows go out
+//!    `Source::Cache{stale:true}` and a background refresh is enqueued)
+//!    else fails with [`PipelineError::RateLimited`].
 //! 4. The flight fans out to every configured engine in parallel
 //!    ([`tokio::task::JoinSet`]), each call wrapped in
 //!    `tokio::time::timeout(deadline)`. Engines cut off at the deadline
@@ -47,7 +57,8 @@
 //!
 //! Tracing: `pipeline.search` is the root span (`request_id`, `query`,
 //! `page`, `client`, `engines` = runnable count once the pin is applied).
-//! Children: `cache_lookup` (`tier`, `hit`, `age_s`), one `engine` span
+//! Children: `cache_lookup` (`tier`, `hit`, `age_s`; the tier-2 span also
+//! records `candidates` and `matched`), one `engine` span
 //! per fanned-out engine (`engine`, `tier`,
 //! `status`, `results`; wall duration lands in `busy_ms` on close),
 //! `merge` (`in`, `out`, `deadline_hit`), `persist` (`key`, `ttl_s`).
@@ -68,7 +79,8 @@ use url::Url;
 use uuid::Uuid;
 
 use crate::admission::{Admission, FlightResult, Lead};
-use crate::cache::{CacheKey, CachedSearch, normalize_query};
+use crate::cache::{CacheKey, CachedSearch, lexical_tokens, normalize_query, token_jaccard};
+use crate::config::LexicalConfig;
 use crate::engine::{Engine, EngineError, EngineId, Tier};
 use crate::normalize::normalize_url;
 use crate::request::SearchRequest;
@@ -180,6 +192,7 @@ pub struct SearchPipeline {
     deadline: Duration,
     default_ttl: Duration,
     ttl_cap: Duration,
+    lexical: LexicalConfig,
     admission: Admission,
 }
 
@@ -197,6 +210,7 @@ impl SearchPipeline {
             deadline: DEFAULT_DEADLINE,
             default_ttl: DEFAULT_TTL,
             ttl_cap: DEFAULT_TTL_CAP,
+            lexical: LexicalConfig::default(),
             admission: Admission::default(),
         }
     }
@@ -216,6 +230,13 @@ impl SearchPipeline {
     /// Override the ceiling applied to every cache TTL.
     pub fn with_ttl_cap(mut self, cap: Duration) -> Self {
         self.ttl_cap = cap;
+        self
+    }
+
+    /// Tier-2 lexical cache settings (`cache.lexical.*`, W1-10). Defaults
+    /// to enabled with a 0.8 Jaccard threshold.
+    pub fn with_lexical(mut self, lexical: LexicalConfig) -> Self {
+        self.lexical = lexical;
         self
     }
 
@@ -292,7 +313,7 @@ impl SearchPipeline {
             // The `engines` column records the engines whose results are
             // being served (`cache_entries.engines_json` provenance).
             let engines = hit.engines.clone();
-            let resp = self.cached_response(hit, request_id, started, false);
+            let resp = self.cache_hit_response(hit, Tier::T1, request_id, started, false);
             self.write_log(
                 req,
                 &key,
@@ -320,24 +341,6 @@ impl SearchPipeline {
         let runnable = self.runnable(req);
         // `pipeline.search` is the current span here (via `instrument`).
         tracing::Span::current().record("engines", runnable.len() as u64);
-        if runnable.is_empty() {
-            warn!(pinned = ?req.engines, "no engines to run");
-            self.write_log(
-                req,
-                &key,
-                &query,
-                LogRow {
-                    source: LogSource::Network,
-                    tier: None,
-                    result_count: 0,
-                    engines: Vec::new(),
-                    deadline_hit: false,
-                },
-                started,
-            )
-            .await;
-            return Err(PipelineError::NoEngines);
-        }
 
         // ---- admission: singleflight + bounded per-engine queue (W1-07) ----
         //
@@ -395,12 +398,13 @@ impl SearchPipeline {
             .await
     }
 
-    /// Spawn the leader's flight task: acquire per-engine permits under the
-    /// wait budget, then [`SearchPipeline::fetch`]; on overflow
-    /// [`SearchPipeline::overflow`] serves a stored row or `RateLimited`.
-    /// The task is detached from the caller's future on purpose: it holds a
-    /// `SearchPipeline` clone, so a client disconnect mid-flight still lets
-    /// the fetch finish, publish to remaining waiters and persist.
+    /// Spawn the leader's flight task: tier-2 lexical lookup, then per-engine
+    /// permits under the wait budget, then [`SearchPipeline::fetch`]; on
+    /// overflow [`SearchPipeline::overflow`] serves a stored row or
+    /// `RateLimited`. The task is detached from the caller's future on
+    /// purpose: it holds a `SearchPipeline` clone, so a client disconnect
+    /// mid-flight still lets the fetch finish, publish to remaining waiters
+    /// and persist.
     fn spawn_flight(
         &self,
         lead: Lead,
@@ -425,9 +429,10 @@ impl SearchPipeline {
         );
     }
 
-    /// The flight body: bounded permit wait -> fan-out -> persist ->
-    /// publish; on overflow a stored row (fresh or stale) or `RateLimited`,
-    /// and a stale serve enqueues a background refresh.
+    /// The flight body: tier-2 lexical lookup, bounded permit wait ->
+    /// fan-out -> persist -> publish; on overflow a stored row (fresh or
+    /// stale) or `RateLimited`, and a stale serve enqueues a background
+    /// refresh.
     async fn flight(
         &self,
         lead: Lead,
@@ -438,6 +443,32 @@ impl SearchPipeline {
         request_id: Uuid,
     ) {
         let started = Instant::now();
+
+        // ---- tier-2 lexical lookup (W1-10), inside the flight ----------
+        // One FTS query per flight — followers share the outcome — and a
+        // hit never spends an engine permit. Runs before the engine check
+        // so a tier-2 hit serves even when nothing is configured (the
+        // pre-admission ordering).
+        if self.lexical.enabled
+            && let Some(hit) = self
+                .lexical_lookup(&req, &normalize_query(&req.q), request_id)
+                .await
+        {
+            lead.complete(Ok(Arc::new(self.cache_hit_response(
+                hit,
+                Tier::T2,
+                request_id,
+                started,
+                false,
+            ))));
+            return;
+        }
+        if runnable.is_empty() {
+            warn!(pinned = ?req.engines, "no engines to run");
+            lead.complete(Err(PipelineError::NoEngines));
+            return;
+        }
+
         let ids: Vec<EngineId> = runnable.iter().map(|e| e.id()).collect();
         let outcome = match self.admission.acquire(&ids).await {
             Ok(_permits) => self
@@ -524,9 +555,13 @@ impl SearchPipeline {
                 } else {
                     debug!(key = %key, "admission: overflow resolved by a fresh row");
                 }
-                Ok(Arc::new(
-                    self.cached_response(row, request_id, started, stale),
-                ))
+                Ok(Arc::new(self.cache_hit_response(
+                    row,
+                    Tier::T1,
+                    request_id,
+                    started,
+                    stale,
+                )))
             }
             Ok(None) => Err(self.rate_limited()),
             Err(e) => {
@@ -613,6 +648,7 @@ impl SearchPipeline {
                 .await;
                 info!(
                     source = label,
+                    tier = tier.map(|t| t.as_u8()).unwrap_or_default(),
                     results = resp.results.len(),
                     elapsed_ms = resp.meta.elapsed_ms,
                     deadline_hit = resp.meta.deadline_hit,
@@ -871,6 +907,92 @@ impl SearchPipeline {
         })
     }
 
+    /// Tier-2 `get_lexical` under a `cache_lookup` span (W1-10).
+    ///
+    /// Candidates come back BM25-ranked; they are checked best-first and the
+    /// first one passing the gate is served. The gate: the row is fresh
+    /// (expired rows are skipped — serving stale belongs to admission,
+    /// W1-07), the stored `key` equals the key this request's params would
+    /// produce for the candidate's query — that is the "same page/lang"
+    /// requirement, checked via the key preimage because `params_json` does
+    /// not record page/lang; it also pins time_range/safesearch/engines,
+    /// which only ever rejects more, never wrongfully accepts — and the
+    /// Jaccard similarity of the stopword-free token sets clears
+    /// `lexical.threshold`.
+    ///
+    /// A store failure degrades to a miss, same as tier 1.
+    async fn lexical_lookup(
+        &self,
+        req: &SearchRequest,
+        query: &str,
+        request_id: Uuid,
+    ) -> Option<CachedSearch> {
+        let span = info_span!(
+            "cache_lookup",
+            request_id = %request_id,
+            tier = 2u8,
+            hit = tracing::field::Empty,
+            candidates = tracing::field::Empty,
+            age_s = tracing::field::Empty,
+            matched = tracing::field::Empty,
+        );
+        let want = lexical_tokens(query);
+        if want.is_empty() {
+            span.in_scope(|| {
+                span.record("hit", false);
+                span.record("candidates", 0u64);
+            });
+            debug!("query has no lexical tokens; skipping tier-2 lookup");
+            return None;
+        }
+        let result = self
+            .store
+            .get_lexical(query, 5)
+            .instrument(span.clone())
+            .await;
+        span.in_scope(|| {
+            let rows = match result {
+                Ok(rows) => rows,
+                Err(e) => {
+                    span.record("hit", false);
+                    warn!(error = %e, "lexical lookup failed; treating as miss");
+                    return None;
+                }
+            };
+            span.record("candidates", rows.len() as u64);
+            let now = Utc::now();
+            for cand in rows {
+                if cand.expires_at <= now {
+                    continue;
+                }
+                // Same page/lang (and the rest of the key preimage): rebuild
+                // the key this request would produce for the candidate's
+                // query and compare to the stored key.
+                let mut shadow = req.clone();
+                shadow.q.clone_from(&cand.query);
+                if CacheKey::from(&shadow) != cand.key {
+                    continue;
+                }
+                let score = token_jaccard(&want, &lexical_tokens(&cand.query));
+                if score < self.lexical.threshold {
+                    continue;
+                }
+                let age_s = now
+                    .signed_duration_since(cand.created_at)
+                    .num_seconds()
+                    .max(0) as u64;
+                span.record("hit", true);
+                span.record("age_s", age_s);
+                span.record("matched", cand.query.as_str());
+                debug!(matched = %cand.query, score, "tier-2 cache hit");
+                return Some(cand);
+            }
+            span.record("hit", false);
+            debug!("lexical candidates rejected by the gate");
+            None
+        })
+    }
+
     /// Parallel fan-out with a hard deadline per engine. Returns one
     /// [`EngineOutcome`] per task that answered or timed out; panicking
     /// tasks are logged and reconciled by the caller via `answered`.
@@ -950,10 +1072,13 @@ impl SearchPipeline {
     /// (`engines_used`, `query`) is kept while `source`, `elapsed_ms` and
     /// `request_id` describe this request. `ttl_s` is the remaining TTL
     /// (0 on an expired row); `stale` marks rows past `expires_at` served
-    /// by the admission-overflow path.
-    fn cached_response(
+    /// by the admission-overflow path (W1-07). Fuzzy tiers (2+) carry
+    /// `matched_query` (the stored query); an exact tier-1 hit leaves it
+    /// `None`.
+    fn cache_hit_response(
         &self,
         hit: CachedSearch,
+        tier: Tier,
         request_id: Uuid,
         started: Instant,
         stale: bool,
@@ -968,13 +1093,15 @@ impl SearchPipeline {
             .signed_duration_since(now)
             .num_seconds()
             .max(0) as u64;
+        let matched_query = (tier != Tier::T1).then(|| hit.query.clone());
         let mut resp = hit.response;
         resp.meta = SearchMeta {
             source: Source::Cache {
-                tier: Tier::T1,
+                tier,
                 age_s,
                 ttl_s,
                 stale,
+                matched_query,
             },
             engines_used: resp.meta.engines_used,
             deadline_hit: false,

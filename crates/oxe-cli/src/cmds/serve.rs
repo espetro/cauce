@@ -100,6 +100,7 @@ async fn serve_async(opts: ServeOpts, cfg: Config) -> i32 {
             .with_deadline(Duration::from_millis(cfg.search.deadline_ms))
             .with_default_ttl(Duration::from_secs(cfg.search.ttl_s))
             .with_ttl_cap(Duration::from_secs(cfg.search.ttl_cap_s))
+            .with_lexical(cfg.cache.lexical)
             .with_admission(Admission::new(AdmissionLimits {
                 max_wait: Duration::from_millis(cfg.admission.max_wait_ms),
                 max_concurrent_per_engine: cfg.admission.max_concurrent_per_engine.max(1) as usize,
