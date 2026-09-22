@@ -1,0 +1,238 @@
+//! Integration tests for the `exec` engine runtime against real `python3`
+//! children running `oxe_engine_sdk` from `sdk/python`.
+//!
+//! These tests are skipped when `python3` is not on PATH. The ddgs canary is
+//! additionally gated behind `OXE_LIVE=1` and needs the `ddgs` extra
+//! installed (`uv pip install ddgs`, or `uv sync --extra ddgs` in
+//! `sdk/python` and a matching interpreter).
+//!
+//! This Source Code Form is subject to the terms of the Mozilla Public
+//! License, v. 2.0. If a copy of the MPL was not distributed with this
+//! file, You can obtain one at <https://mozilla.org/MPL/2.0/>.
+
+use std::io::{BufRead, BufReader, Write};
+use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
+use std::time::Duration;
+
+use oxe_core::{
+    ClientKind, Engine, EngineError, EngineId, SafeSearch, SearchRequest, SearchResult, Tier,
+};
+use oxe_engines::exec::{ExecEngine, ExecSpec};
+
+fn repo_root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .ancestors()
+        .nth(2)
+        .expect("crate dir has two ancestors")
+        .to_path_buf()
+}
+
+fn fixture() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/echo_engine.py")
+}
+
+fn have_python3() -> bool {
+    Command::new("python3")
+        .arg("--version")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
+fn echo_spec(extra_args: &[&str]) -> ExecSpec {
+    let mut args = vec![fixture().to_string_lossy().into_owned()];
+    args.extend(extra_args.iter().map(|s| (*s).to_string()));
+    ExecSpec {
+        id: EngineId::new("echo"),
+        command: "python3".to_string(),
+        args,
+        env: vec![],
+        cwd: None,
+        page_size: 10,
+        tier: Tier::T2,
+    }
+}
+
+fn req(q: &str) -> SearchRequest {
+    SearchRequest {
+        q: q.to_string(),
+        page: 1,
+        lang: Some("en".to_string()),
+        time_range: None,
+        safesearch: SafeSearch::Moderate,
+        engines: None,
+        client: ClientKind::Api,
+    }
+}
+
+/// The fixture tags every snippet with `pid=<n>`; used to prove respawns.
+fn pid_of(results: &[SearchResult]) -> u32 {
+    results[0]
+        .snippet
+        .strip_prefix("pid=")
+        .and_then(|rest| rest.split_whitespace().next())
+        .and_then(|pid| pid.parse().ok())
+        .expect("fixture snippet carries pid=<n>")
+}
+
+#[tokio::test]
+async fn exec_round_trip() {
+    if !have_python3() {
+        eprintln!("python3 not on PATH; skipping exec_round_trip");
+        return;
+    }
+    let engine = ExecEngine::new(echo_spec(&[]));
+    let res = engine
+        .search(&req("hello world"), Duration::from_secs(10))
+        .await
+        .expect("round trip succeeds");
+    assert_eq!(res.len(), 3);
+    assert!(res[0].title.contains("hello world"));
+    assert_eq!(res[0].engine, EngineId::new("echo"));
+    assert_eq!(res[0].url.host_str(), Some("example.com"));
+}
+
+#[tokio::test]
+async fn exec_respawns_after_crash() {
+    if !have_python3() {
+        eprintln!("python3 not on PATH; skipping exec_respawns_after_crash");
+        return;
+    }
+    let engine = ExecEngine::new(echo_spec(&["--crash-after", "1"]));
+
+    let r1 = engine
+        .search(&req("first"), Duration::from_secs(10))
+        .await
+        .expect("first call answers");
+    let pid1 = pid_of(&r1);
+
+    // The child exits when the second request arrives, without answering.
+    let err = engine
+        .search(&req("second"), Duration::from_secs(10))
+        .await
+        .expect_err("call into the dying child fails");
+    assert!(
+        matches!(err, EngineError::Transport(_)),
+        "expected Transport, got {err:?}"
+    );
+
+    // The next call runs against a fresh process.
+    let r3 = engine
+        .search(&req("third"), Duration::from_secs(10))
+        .await
+        .expect("respawned child answers");
+    assert_ne!(pid_of(&r3), pid1, "child was respawned");
+}
+
+#[tokio::test]
+async fn exec_kills_child_at_deadline() {
+    if !have_python3() {
+        eprintln!("python3 not on PATH; skipping exec_kills_child_at_deadline");
+        return;
+    }
+    let engine = ExecEngine::new(echo_spec(&["--sleep", "3", "--sleep-on", "slow"]));
+
+    let err = engine
+        .search(&req("slow query"), Duration::from_millis(300))
+        .await
+        .expect_err("sleeping child overruns the budget");
+    assert_eq!(err, EngineError::Timeout);
+
+    // The child was killed and respawned: a fast query answers inside the
+    // budget, and the answer is for *this* query (a stale line from the old
+    // process would carry the old query text).
+    let res = engine
+        .search(&req("fast"), Duration::from_secs(10))
+        .await
+        .expect("fresh child answers");
+    assert!(
+        res[0].title.contains("fast"),
+        "expected results for the new query, got {res:?}"
+    );
+}
+
+#[test]
+fn sdk_malformed_lines_get_error_responses() {
+    if !have_python3() {
+        eprintln!("python3 not on PATH; skipping sdk_malformed_lines_get_error_responses");
+        return;
+    }
+    let mut child = Command::new("python3")
+        .arg(fixture())
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("spawn fixture");
+    let mut stdin = child.stdin.take().unwrap();
+    let mut stdout = BufReader::new(child.stdout.take().unwrap());
+
+    // Garbage in -> error response line, process stays alive.
+    writeln!(stdin, "this is not json").unwrap();
+    stdin.flush().unwrap();
+    let mut line = String::new();
+    stdout.read_line(&mut line).unwrap();
+    let v: serde_json::Value = serde_json::from_str(&line).expect("response parses");
+    assert_eq!(v["v"], 1);
+    assert!(v["error"].is_string(), "malformed input yields an error");
+    assert!(v["results"].as_array().unwrap().is_empty());
+    assert!(child.try_wait().unwrap().is_none(), "child still alive");
+
+    // A well-formed request after the garbage still answers.
+    stdin
+        .write_all(br#"{"v":1,"query":"ok","page":1,"lang":"en","timeout_ms":5000}"#)
+        .unwrap();
+    stdin.write_all(b"\n").unwrap();
+    stdin.flush().unwrap();
+    line.clear();
+    stdout.read_line(&mut line).unwrap();
+    let v: serde_json::Value = serde_json::from_str(&line).expect("response parses");
+    assert!(v["error"].is_null());
+    assert_eq!(v["results"].as_array().unwrap().len(), 3);
+
+    // EOF -> clean exit.
+    drop(stdin);
+    assert!(child.wait().unwrap().success());
+}
+
+#[test]
+fn sdk_python_unit_tests_pass() {
+    if !have_python3() {
+        eprintln!("python3 not on PATH; skipping sdk_python_unit_tests_pass");
+        return;
+    }
+    let test_file = repo_root().join("sdk/python/tests/test_sdk.py");
+    let status = Command::new("python3")
+        .arg(&test_file)
+        .status()
+        .expect("run python sdk unit tests");
+    assert!(status.success(), "python sdk unit tests failed");
+}
+
+#[tokio::test]
+async fn exec_ddgs_live() {
+    if std::env::var_os("OXE_LIVE").is_none() {
+        return; // live canary; skipped by default
+    }
+    assert!(have_python3(), "OXE_LIVE=1 but python3 is not on PATH");
+    let has_ddgs = Command::new("python3")
+        .args(["-c", "import ddgs"])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false);
+    assert!(
+        has_ddgs,
+        "OXE_LIVE=1 but `import ddgs` failed; install the ddgs extra (uv pip install ddgs)"
+    );
+    let engine = ExecEngine::new(ExecSpec::ddgs(repo_root()));
+    let res = engine
+        .search(&req("tanstack router"), Duration::from_secs(30))
+        .await
+        .expect("ddgs live search succeeds");
+    assert!(!res.is_empty(), "ddgs live returned zero results");
+}
