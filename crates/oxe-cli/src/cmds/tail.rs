@@ -112,17 +112,20 @@ pub fn run(args: &[String]) -> i32 {
 }
 
 /// Print the last `lines` records of `path`; returns the byte offset to
-/// start following from.
+/// start following from. An unterminated trailing line (a write still in
+/// flight) is neither printed nor consumed: the offset stops at the last
+/// newline so the next `drain` re-reads it once complete.
 fn initial_read(path: &Path, lines: usize, tail: &mut Tail) -> std::io::Result<u64> {
     let content = fs::read_to_string(path)?;
-    let all: Vec<&str> = content.lines().collect();
+    let complete = content.rfind('\n').map_or(0, |i| i + 1);
+    let all: Vec<&str> = content[..complete].lines().collect();
     let stdout = std::io::stdout();
     let mut out = stdout.lock();
     for line in &all[all.len().saturating_sub(lines)..] {
         emit(tail, line, &mut out);
     }
     let _ = out.flush();
-    Ok(content.len() as u64)
+    Ok(complete as u64)
 }
 
 /// Emit one JSONL line through the renderer.
