@@ -1,0 +1,57 @@
+# cargo-deny configuration.
+# Docs: https://embarkstudios.github.io/cargo-deny/
+#
+# Repository licensing (wave-0 plan, settled inputs):
+#   crates/*  -> MPL-2.0
+#   engines/, sdk/ -> Apache-2.0
+# Third-party dependencies are restricted to the allowlist below.
+
+[graph]
+all-features = false
+
+[advisories]
+# Defaults: check the RustSec advisory database.
+ignore = []
+
+[bans]
+# Defaults. No duplicate-version or crate bans yet.
+deny = []
+skip = []
+
+[licenses]
+# SPDX identifiers permitted for third-party dependencies.
+allow = [
+    "MPL-2.0",
+    "Apache-2.0",
+    "MIT",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-DFS-2016",
+    "Unicode-3.0",
+    "Zlib",
+]
+# Copyleft family is explicitly denied (also covered by the allowlist above).
+deny = [
+    "GPL-1.0-only",
+    "GPL-1.0-or-later",
+    "GPL-2.0-only",
+    "GPL-2.0-or-later",
+    "GPL-3.0-only",
+    "GPL-3.0-or-later",
+    "AGPL-1.0-only",
+    "AGPL-1.0-or-later",
+    "AGPL-3.0-only",
+    "AGPL-3.0-or-later",
+    "LGPL-2.0-only",
+    "LGPL-2.0-or-later",
+    "LGPL-2.1-only",
+    "LGPL-2.1-or-later",
+    "LGPL-3.0-only",
+    "LGPL-3.0-or-later",
+]
+copyleft = "deny"
+unlicensed = "deny"
+default = "deny"
+confidence-threshold = 0.8
+exceptions = []

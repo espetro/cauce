@@ -1,3 +1,9 @@
+# Rust
+# Cargo.lock stays committed: this is a binary workspace, not a library.
+target/
+**/*.rs.bk
+*.pdb
+
 # Python
 __pycache__/
 *.py[cod]
@@ -9,7 +15,7 @@ build/
 .ruff_cache/
 .basedpyright_cache/
 
-# UI build output — never tracked
+# UI build output, never tracked
 dist/
 dist-ssr/
 node_modules/
