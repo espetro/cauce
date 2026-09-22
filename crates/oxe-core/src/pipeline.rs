@@ -220,13 +220,6 @@ impl SearchPipeline {
         }
     }
 
-    /// Bind a `Metrics` handle explicitly. The registry is process-global,
-    /// so this exists for readability at call sites, not isolation.
-    pub fn with_metrics(mut self, metrics: Metrics) -> Self {
-        self.metrics = metrics;
-        self
-    }
-
     /// Override the hard fan-out deadline (`search.deadline_ms`).
     pub fn with_deadline(mut self, deadline: Duration) -> Self {
         self.deadline = deadline;
@@ -718,14 +711,12 @@ impl SearchPipeline {
                 );
                 // Per-request metrics: every waiter on the flight lands
                 // here, so counters count requests, not flights. A stale
-                // serve or a deadline hit is observed by each waiter.
+                // serve is observed by each waiter; the deadline hit was
+                // already counted per flight in `fetch`.
                 self.metrics
                     .record_search(&req.client, label, tier, started.elapsed());
                 if matches!(resp.meta.source, Source::Cache { stale: true, .. }) {
                     self.metrics.record_stale_served();
-                }
-                if resp.meta.deadline_hit {
-                    self.metrics.record_deadline_hit();
                 }
                 Ok(resp)
             }
@@ -905,6 +896,14 @@ impl SearchPipeline {
         let engines_used: Vec<EngineReport> = reports.into_iter().map(|(_, r)| r).collect();
         let failures: Vec<(EngineId, EngineError)> =
             failures.into_iter().map(|(_, id, e)| (id, e)).collect();
+
+        // `oxe_deadline_hit_total` counts flights the hard deadline cut,
+        // once per flight — including the all-engines-timed-out case that
+        // surfaces as `AllEnginesFailed` and never reaches the Ok metrics
+        // in `shared_response`.
+        if deadline_hit {
+            self.metrics.record_deadline_hit();
+        }
 
         if ok_results.is_empty() {
             warn!(failures = failures.len(), "all engines failed");

@@ -521,10 +521,9 @@ pub fn render_prometheus() -> String {
 // Metrics handle (record API)
 // ---------------------------------------------------------------------------
 
-/// Cloneable handle over the settled W1-09 instrument set. The registry is
-/// process-global, so the handle carries no state: a bare `Metrics` and a
-/// handle passed through `SearchPipeline::with_metrics` record into the
-/// same series.
+/// Handle over the settled W1-09 instrument set. The registry is
+/// process-global, so the handle carries no state: `Metrics` fields on the
+/// pipeline and engine runtimes are just readable record call sites.
 #[derive(Clone, Copy, Default)]
 pub struct Metrics;
 
@@ -648,8 +647,9 @@ impl Metrics {
             .or_insert(0) += 1;
     }
 
-    /// `oxe_deadline_hit_total` — one per search whose hard deadline
-    /// cancelled in-flight engine calls.
+    /// `oxe_deadline_hit_total` — one per flight whose hard deadline
+    /// cancelled in-flight engine calls (recorded in `fetch`, so the
+    /// all-engines-timed-out `AllEnginesFailed` path counts too).
     pub fn record_deadline_hit(&self) {
         registry().deadline_hits += 1;
     }

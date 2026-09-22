@@ -363,8 +363,9 @@ impl EngineStatsRow {
 
 /// Admission/queue aggregates for `/api/stats` (W1-09). Sourced from the
 /// in-process metrics registry by `StatsSnapshot::merge_metrics`; store
-/// impls emit it zeroed. Counts are per request: every waiter on a flight
-/// observes the same rejection/stale/deadline outcome.
+/// impls emit it zeroed. Counts are per request (every waiter on a flight
+/// observes the same rejection/stale outcome) except `deadline_hits`, which
+/// is per flight — the deadline cuts the shared fan-out once.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct AdmissionStats {
     /// Flight leader acquires that measured a bounded-queue wait
@@ -377,7 +378,8 @@ pub struct AdmissionStats {
     pub rejected: u64,
     /// Rejections split by `reason` label (`queue_full`, `wait_timeout`).
     pub rejected_by_reason: std::collections::BTreeMap<String, u64>,
-    /// Searches cut by the hard deadline (`oxe_deadline_hit_total`).
+    /// Flights cut by the hard deadline (`oxe_deadline_hit_total`,
+    /// per flight — shared across the flight's waiters).
     pub deadline_hits: u64,
     /// Responses served from an expired cache row
     /// (`oxe_stale_served_total`).
