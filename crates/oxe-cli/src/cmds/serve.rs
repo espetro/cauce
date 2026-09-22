@@ -125,10 +125,20 @@ async fn serve_async(opts: ServeOpts, cfg: Config, host: String) -> i32 {
                 max_concurrent_per_engine: cfg.admission.max_concurrent_per_engine.max(1) as usize,
             })),
     );
+    // Restore persisted breakers before serving (plan 4.4.6: a restart
+    // must not hammer a blocked engine). A read failure degrades to
+    // all-Closed rather than refusing to serve.
+    match pipeline.load_health().await {
+        Ok(n) if n > 0 => tracing::info!(rows = n, "engine health restored"),
+        Ok(_) => {}
+        Err(e) => {
+            tracing::warn!(error = %e, "engine health load failed; starting with closed breakers")
+        }
+    }
     let evict = spawn_eviction_task(store.clone());
 
     let port = opts.port.unwrap_or(cfg.server.port);
-    let state = AppState::new(pipeline, store, cfg);
+    let state = AppState::new(pipeline.clone(), store, cfg);
     let app = oxe_server::build_router_opts(
         state,
         RouterOptions {
@@ -150,6 +160,11 @@ async fn serve_async(opts: ServeOpts, cfg: Config, host: String) -> i32 {
     }
     let result = oxe_server::serve(listener, app).await;
     evict.abort();
+    // Best-effort final flush so EWMA/failure updates since the last
+    // debounced write are not lost on shutdown.
+    if let Err(e) = pipeline.health().flush().await {
+        tracing::warn!(error = %e, "engine health flush on shutdown failed");
+    }
     match result {
         Ok(()) => 0,
         Err(e) => {

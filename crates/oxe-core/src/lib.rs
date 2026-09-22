@@ -16,6 +16,7 @@ pub mod config;
 #[cfg(feature = "conformance")]
 pub mod conformance;
 mod engine;
+mod health;
 pub mod http;
 mod normalize;
 mod pipeline;
@@ -31,6 +32,9 @@ pub use config::{
     ServerConfig, is_loopback_host,
 };
 pub use engine::{Engine, EngineError, EngineId, Tier};
+pub use health::{
+    EWMA_ALPHA, EngineHealth, Gate, HealthPolicy, HealthTracker, PERSIST_DEBOUNCE, ProbeGuard,
+};
 pub use normalize::normalize_url;
 pub use pipeline::{
     DEFAULT_DEADLINE, DEFAULT_TTL, DEFAULT_TTL_CAP, PipelineError, SearchOpts, SearchPipeline,

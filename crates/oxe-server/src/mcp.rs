@@ -839,6 +839,13 @@ fn pipeline_error(e: &PipelineError, pinned: bool, request_id: Uuid) -> ErrorDat
             e.to_string(),
             Some(json!({ "error": "upstream_failed", "request_id": request_id })),
         ),
+        // W1-06: every matched engine was breaker-skipped. Temporary, like
+        // the HTTP 503 `breaker_open`, but there is no client retry budget
+        // to communicate — the breaker window is server-side state.
+        PipelineError::BreakerOpen(_) => ErrorData::internal_error(
+            e.to_string(),
+            Some(json!({ "error": "breaker_open", "request_id": request_id })),
+        ),
     }
 }
 
