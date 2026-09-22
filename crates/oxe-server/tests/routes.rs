@@ -42,6 +42,14 @@ const EXPECTED_WAVE0: &[(&str, &str)] = &[
     ("PUT", "/api/config"),
 ];
 
+/// Wave-1 rows mounted so far (W1-06 engine health, W1-09 metrics).
+/// `/mcp` (W1-08) is chained in the test because its method is `*`.
+const EXPECTED_WAVE1_MOUNTED: &[(&str, &str)] = &[
+    ("GET", "/api/engines"),
+    ("POST", "/api/engines/{id}/reset"),
+    ("GET", "/metrics"),
+];
+
 /// Serialises tests that mutate process env (`OXE_CONFIG_DIR` and friends).
 /// Under nextest each test is its own process anyway; this keeps plain
 /// `cargo test` (one process per test binary) safe too.
@@ -271,18 +279,20 @@ fn wave0_routes_match_plan_filter() {
     assert_eq!(declared_wave0, expected_wave0_json);
 }
 
-/// `mounted_routes` (the builder's own view) equals the wave-0 set plus the
-/// wave-1 rows already implemented (`/metrics`, W1-09).
+/// `mounted_routes` (the builder's own view) equals the wave-0 set plus
+/// every wave-1 row implemented so far (`* /mcp` from W1-08, the engine
+/// health pair from W1-06, `/metrics` from W1-09).
 #[test]
-fn mounted_routes_equal_implemented_set() {
-    let mounted: BTreeSet<(String, String)> = mounted_routes(&Default::default())
+fn mounted_routes_match_declaration() {
+    let (state, _tmp) = test_state();
+    let mounted: BTreeSet<(String, String)> = mounted_routes(&state, &Default::default())
         .map(|r| (r.method.to_string(), r.path.to_string()))
         .collect();
     let expected: BTreeSet<(String, String)> = EXPECTED_WAVE0
         .iter()
-        .copied()
-        .chain([("GET", "/metrics")])
+        .chain(EXPECTED_WAVE1_MOUNTED)
         .map(|(m, p)| (m.to_string(), p.to_string()))
+        .chain([("*".to_string(), "/mcp".to_string())])
         .collect();
     assert_eq!(mounted, expected);
 }
@@ -292,8 +302,8 @@ fn mounted_routes_equal_implemented_set() {
 /// mechanical fix for "written but never mounted".
 #[tokio::test]
 async fn live_router_matches_routes_table() {
-    let (router, _state, _tmp) = app();
-    let mounted: BTreeSet<(String, String)> = mounted_routes(&Default::default())
+    let (router, state, _tmp) = app();
+    let mounted: BTreeSet<(String, String)> = mounted_routes(&state, &Default::default())
         .map(|r| (r.method.to_string(), r.path.to_string()))
         .collect();
 
@@ -308,12 +318,21 @@ async fn live_router_matches_routes_table() {
     for spec in ROUTES {
         // Thin inputs are fine: a 400 still proves the route exists; a
         // 404/405 means it does not.
+        // `{id}` probes a real engine id: `POST /api/engines/{id}/reset`
+        // 404s on unknown ids, which would read as "not mounted".
         let path = spec
             .path
             .replace("{key}", &key)
-            .replace("{id}", "x")
+            .replace("{id}", "replay")
             .replace("{url}", "https%3A%2F%2Fexample.com");
-        let method = Method::from_bytes(spec.method.as_bytes()).unwrap_or(Method::GET);
+        // `*` is not an HTTP method; probe the MCP endpoint with POST (a
+        // bare POST without the MCP accept/content headers answers 4xx,
+        // which still proves the route is mounted).
+        let method = if spec.method == "*" {
+            Method::POST
+        } else {
+            Method::from_bytes(spec.method.as_bytes()).unwrap_or(Method::GET)
+        };
         let uri = match (spec.method, spec.path) {
             ("GET", "/api/search") => format!("{path}?q=probe"),
             ("DELETE", "/api/cache") => format!("{path}?all=true"),
@@ -567,6 +586,29 @@ async fn error_envelope_and_param_validation() {
     assert_envelope(&body, "bad_request");
 }
 
+/// #85: a click beacon with a malformed `query_hash` is rejected with a
+/// 400 instead of storing a value that never joins to `search_log`.
+#[tokio::test]
+async fn click_beacon_rejects_malformed_query_hash() {
+    let (router, _state, _tmp) = app();
+    let request = Request::builder()
+        .method("POST")
+        .uri("/api/click")
+        .header("content-type", "application/json")
+        .body(Body::from(
+            r#"{"url":"https://example.com/a","query_hash":"garbage"}"#,
+        ))
+        .unwrap();
+    let (status, _, body) = call(&router, request).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    assert_envelope(&body, "bad_request");
+
+    // Nothing was stored.
+    let (status, _, body) = get(&router, "/api/history").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body.as_array().unwrap().len(), 0, "{body}");
+}
+
 /// `NoEngines` mapping: a non-empty pin matching nothing is 400
 /// `unknown_engines` even with zero configured engines; an empty/zero
 /// configured set is 503 `no_engines`.
@@ -711,6 +753,38 @@ async fn config_get_redaction_and_put_roundtrip() {
     let (status, _, body) = call(&router, request).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_envelope(&body, "invalid_config");
+}
+
+/// #82: a secret injected via an `OXE_*` env override — no `${env:...}`
+/// template in the file — must still never reach `GET /api/config`.
+#[tokio::test]
+async fn config_get_redacts_env_override_secret() {
+    let _guard = env_lock().await;
+    let tmp = tempfile::tempdir().unwrap();
+    let config_dir = tmp.path().join("cfg");
+    std::fs::create_dir_all(&config_dir).unwrap();
+    // SAFETY: serialized by ENV_LOCK; nextest also isolates per process.
+    unsafe {
+        std::env::set_var("OXE_CONFIG_DIR", &config_dir);
+        std::env::set_var("OXE_DATA_DIR", tmp.path().join("data"));
+        std::env::set_var("OXE_AI_API_KEY", "env-override-secret");
+    }
+
+    let (state, _tmp2) = test_state();
+    state.with_config(|cfg| *cfg = Config::load().unwrap());
+    let router = build_router(state);
+
+    let (status, _, body) = get(&router, "/api/config").await;
+    unsafe {
+        std::env::remove_var("OXE_AI_API_KEY");
+    }
+    assert_eq!(status, StatusCode::OK);
+    let text = body.to_string();
+    assert!(
+        !text.contains("env-override-secret"),
+        "env-override secret must never appear: {text}"
+    );
+    assert_eq!(body["ai"]["api_key"], "<redacted>");
 }
 
 /// W1-07 acceptance: `PipelineError::RateLimited` maps to 429 with a

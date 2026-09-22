@@ -6,7 +6,8 @@
 
 use std::time::Duration;
 
-use super::trace::{log_files, render_trace, trace_request};
+use super::tail::{Tail, TailFilter};
+use super::trace::{LogRecord, log_files, render_trace, trace_request};
 use super::{ObservabilityConfig, RequestId, build, request_span};
 
 fn test_config(dir: &std::path::Path) -> ObservabilityConfig {
@@ -290,4 +291,165 @@ fn audit_writes_event_and_row() {
     let line = audit_line.expect("audit event missing");
     assert_eq!(line["fields"]["action"], "cache.delete");
     assert_eq!(line["request_id"], request_id.to_string());
+}
+
+/// Render fixture JSONL lines through `Tail` (no colour) and collect output
+/// plus the open-span flush, the same sequence `oxe tail` runs.
+fn tail_render(lines: &[&str], filter: TailFilter) -> Vec<String> {
+    let mut tail = Tail::new(filter, false);
+    let mut out: Vec<String> = lines
+        .iter()
+        .filter_map(|l| serde_json::from_str::<LogRecord>(l).ok())
+        .filter_map(|r| tail.push(&r))
+        .collect();
+    out.extend(tail.finish());
+    out
+}
+
+const REQ_A: &str = "019f3c2a-0000-7000-8000-00000000000a";
+// Different 8-char prefix so the `--request` prefix filter can tell A from B.
+const REQ_B: &str = "02bb4d3c-0000-7000-8000-00000000000b";
+
+/// W2-09 acceptance: `oxe tail` renders a fixture JSONL, one line per event,
+/// and collapses the engine `span_open`/`span_close` pair into
+/// `engine=bing 640ms ok`.
+#[test]
+fn tail_collapses_engine_span_line() {
+    let fixture = [
+        // pipeline.search opens.
+        format!(
+            r#"{{"v":1,"kind":"span_open","ts":"2026-10-28T12:00:00.000Z","level":"INFO","target":"oxe_core::pipeline","request_id":"{REQ_A}","span":{{"id":1,"name":"pipeline.search","parent":null,"fields":{{"request_id":"{REQ_A}","query":"tanstack router","client":"api"}}}},"spans":["pipeline.search"]}}"#
+        ),
+        // engine span opens (declared fields only, like the writer emits).
+        format!(
+            r#"{{"v":1,"kind":"span_open","ts":"2026-10-28T12:00:00.010Z","level":"INFO","target":"oxe_core::pipeline","request_id":"{REQ_A}","span":{{"id":2,"name":"engine","parent":1,"fields":{{"request_id":"{REQ_A}","engine":"bing","tier":2}}}},"spans":["pipeline.search","engine"]}}"#
+        ),
+        // an event inside the engine span.
+        format!(
+            r#"{{"v":1,"kind":"event","ts":"2026-10-28T12:00:00.300Z","level":"WARN","target":"oxe_core::http","request_id":"{REQ_A}","span":{{"id":2,"name":"engine"}},"spans":["pipeline.search","engine"],"fields":{{"message":"slow upstream"}}}}"#
+        ),
+        // engine span closes with accumulated fields + busy_ms.
+        format!(
+            r#"{{"v":1,"kind":"span_close","ts":"2026-10-28T12:00:00.640Z","level":"INFO","target":"oxe_core::pipeline","request_id":"{REQ_A}","span":{{"id":2,"name":"engine","parent":1,"fields":{{"request_id":"{REQ_A}","engine":"bing","status":"ok"}}}},"spans":["pipeline.search","engine"],"busy_ms":640.0}}"#
+        ),
+        // request-level event after the fan-out.
+        format!(
+            r#"{{"v":1,"kind":"event","ts":"2026-10-28T12:00:00.700Z","level":"INFO","target":"oxe_core::pipeline","request_id":"{REQ_A}","span":{{"id":1,"name":"pipeline.search"}},"spans":["pipeline.search"],"fields":{{"message":"merged results","raw":5,"merged":5}}}}"#
+        ),
+    ];
+
+    let out = tail_render(
+        &fixture.iter().map(String::as_str).collect::<Vec<_>>(),
+        TailFilter::default(),
+    );
+
+    // The collapsed engine line: fields inline, duration, status.
+    let engine = out
+        .iter()
+        .find(|l| l.contains("engine=bing"))
+        .expect("engine span line missing");
+    assert!(
+        engine.contains("engine=bing 640ms ok"),
+        "collapsed engine line: {engine}"
+    );
+    // One line per event: the warn and the merged-results event are there,
+    // and the two span_opens produced no lines of their own.
+    assert!(
+        out.iter()
+            .any(|l| l.contains("WARN") && l.contains("slow upstream")),
+        "warn event missing:\n{}",
+        out.join("\n")
+    );
+    assert!(
+        out.iter()
+            .any(|l| l.contains("merged results merged=5 raw=5")),
+        "event fields missing:\n{}",
+        out.join("\n")
+    );
+    // The still-open pipeline.search span flushes as `open` at EOF.
+    assert!(
+        out.iter()
+            .any(|l| l.contains("query=tanstack router") && l.ends_with("open")),
+        "open span flush missing:\n{}",
+        out.join("\n")
+    );
+    assert_eq!(
+        out.len(),
+        4,
+        "expected 4 rendered lines:\n{}",
+        out.join("\n")
+    );
+}
+
+/// `--request`, `--level` and `--engine` filters, including the WARN bump a
+/// failed engine span gets so `--level warn` still shows it.
+#[test]
+fn tail_filters_request_level_engine() {
+    let fixture = [
+        // Request A: engine bing fails.
+        format!(
+            r#"{{"v":1,"kind":"span_open","ts":"2026-10-28T12:00:00.000Z","level":"INFO","target":"oxe_core::pipeline","request_id":"{REQ_A}","span":{{"id":1,"name":"engine","parent":null,"fields":{{"request_id":"{REQ_A}","engine":"bing"}}}},"spans":["engine"]}}"#
+        ),
+        format!(
+            r#"{{"v":1,"kind":"event","ts":"2026-10-28T12:00:00.010Z","level":"WARN","target":"oxe_core::http","request_id":"{REQ_A}","span":{{"id":1,"name":"engine"}},"spans":["engine"],"fields":{{"message":"upstream 429"}}}}"#
+        ),
+        format!(
+            r#"{{"v":1,"kind":"span_close","ts":"2026-10-28T12:00:00.012Z","level":"INFO","target":"oxe_core::pipeline","request_id":"{REQ_A}","span":{{"id":1,"name":"engine","parent":null,"fields":{{"request_id":"{REQ_A}","engine":"bing","status":"error"}}}},"spans":["engine"],"busy_ms":12.34}}"#
+        ),
+        // Request B: engine ddgs ok.
+        format!(
+            r#"{{"v":1,"kind":"span_open","ts":"2026-10-28T12:00:00.020Z","level":"INFO","target":"oxe_core::pipeline","request_id":"{REQ_B}","span":{{"id":3,"name":"engine","parent":null,"fields":{{"request_id":"{REQ_B}","engine":"ddgs"}}}},"spans":["engine"]}}"#
+        ),
+        format!(
+            r#"{{"v":1,"kind":"span_close","ts":"2026-10-28T12:00:00.050Z","level":"INFO","target":"oxe_core::pipeline","request_id":"{REQ_B}","span":{{"id":3,"name":"engine","parent":null,"fields":{{"request_id":"{REQ_B}","engine":"ddgs","status":"ok","results":7}}}},"spans":["engine"],"busy_ms":30.0}}"#
+        ),
+        // A record outside any request.
+        r#"{"v":1,"kind":"event","ts":"2026-10-28T12:00:00.060Z","level":"INFO","target":"oxe_server","request_id":null,"span":null,"spans":[],"fields":{"message":"listening"}}"#.to_string(),
+    ];
+    let lines: Vec<&str> = fixture.iter().map(String::as_str).collect();
+
+    // --request filters to one request id (prefix match).
+    let out = tail_render(
+        &lines,
+        TailFilter {
+            request: Some(REQ_A[..8].to_string()),
+            ..Default::default()
+        },
+    );
+    assert_eq!(out.len(), 2, "request filter:\n{}", out.join("\n"));
+    assert!(out.iter().all(|l| l.contains(&REQ_A[..8])));
+
+    // --level warn hides the ok span and info events, keeps the warn event
+    // and the failed span (bumped to WARN).
+    let out = tail_render(
+        &lines,
+        TailFilter {
+            level: Some("warn".to_string()),
+            ..Default::default()
+        },
+    );
+    assert_eq!(out.len(), 2, "level filter:\n{}", out.join("\n"));
+    assert!(out.iter().any(|l| l.contains("upstream 429")));
+    let failed = out
+        .iter()
+        .find(|l| l.contains("engine=bing"))
+        .expect("failed span should pass --level warn");
+    assert!(
+        failed.contains("12.3ms error"),
+        "failed span line: {failed}"
+    );
+
+    // --engine keeps the engine's span and the events inside it.
+    let out = tail_render(
+        &lines,
+        TailFilter {
+            engine: Some("bing".to_string()),
+            ..Default::default()
+        },
+    );
+    assert_eq!(out.len(), 2, "engine filter:\n{}", out.join("\n"));
+    assert!(
+        out.iter()
+            .all(|l| l.contains("bing") || l.contains("upstream 429"))
+    );
 }

@@ -12,6 +12,8 @@
 //!   table row through `Store::audit`, one call site per audited action.
 //! - `trace` reads the JSONL files for `oxe trace <request_id>`; W2's
 //!   `/trace/{id}` page reuses the same reader.
+//! - `tail` renders JSONL records as terminal lines for `oxe tail`
+//!   (one line per event, spans collapsed at close).
 //!
 //! This Source Code Form is subject to the terms of the Mozilla Public
 //! License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -22,6 +24,7 @@ mod jsonl;
 #[cfg(feature = "otlp")]
 mod otlp;
 mod request;
+pub mod tail;
 pub mod trace;
 
 use std::io::IsTerminal;

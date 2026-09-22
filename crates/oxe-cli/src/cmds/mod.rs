@@ -6,6 +6,8 @@
 
 pub mod config;
 pub mod engine;
+pub mod mcp;
 pub mod record;
 pub mod serve;
+pub mod tail;
 pub mod trace;

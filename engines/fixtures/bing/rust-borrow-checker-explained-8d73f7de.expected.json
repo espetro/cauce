@@ -1,0 +1,57 @@
+{
+  "query": "rust borrow checker explained",
+  "page": 1,
+  "status": 200,
+  "results": [
+    {
+      "title": "Rust Programming Language",
+      "url": "https://rust-lang.org/",
+      "snippet": "Rust is blazingly fast and memory-efficient: with no runtime or garbage collector, it can power performance-critical services, run on …"
+    },
+    {
+      "title": "Rust — Explore, Build and Survive",
+      "url": "https://rust.facepunch.com/",
+      "snippet": "The only aim in Rust is to survive. Everything wants you to die - the island’s wildlife and other inhabitants, the environment, other …"
+    },
+    {
+      "title": "Install Rust - Rust Programming Language",
+      "url": "https://rust-lang.org/tools/install",
+      "snippet": "To start using Rust, download the installer, then run the program and follow the onscreen instructions. You may need to install the …"
+    },
+    {
+      "title": "Save 50% on Rust on Steam",
+      "url": "https://store.steampowered.com/app/252490/Rust",
+      "snippet": "The only aim in Rust is to survive. Everything wants you to die - the island’s wildlife, other inhabitants, the environment, and other …"
+    },
+    {
+      "title": "Rust (programming language) - Wikipedia",
+      "url": "https://en.wikipedia.org/wiki/Rust_(programming_language)",
+      "snippet": "Rust supports multiple programming paradigms. It was influenced by ideas from functional programming, including immutability, …"
+    },
+    {
+      "title": "Rust - Play — Rust",
+      "url": "https://rust.facepunch.com/play",
+      "snippet": "The only aim in Rust is to survive. Everything wants you to die - the island’s wildlife and other inhabitants, the environment, other …"
+    },
+    {
+      "title": "rust-lang / rust: Empowering everyone to build reliable and ... - GitHub",
+      "url": "https://github.com/rust-lang/rust",
+      "snippet": "This is the main source code repository for Rust. It contains the compiler, standard library, and documentation."
+    },
+    {
+      "title": "Rust (video game) - Wikipedia",
+      "url": "https://en.wikipedia.org/wiki/Rust_(video_game)",
+      "snippet": "Rust is a 2018 multiplayer survival video game developed by Facepunch Studios. It was first released in early access in December …"
+    },
+    {
+      "title": "The Rust Programming Language",
+      "url": "https://doc.rust-lang.org/book",
+      "snippet": "The Rust Programming Language by Steve Klabnik, Carol Nichols, and Chris Krycho, with contributions from the Rust Community …"
+    },
+    {
+      "title": "Rust Documentation",
+      "url": "https://doc.rust-lang.org/",
+      "snippet": "Affectionately nicknamed “the book,” The Rust Programming Language will give you an overview of the language from first principles. …"
+    }
+  ]
+}

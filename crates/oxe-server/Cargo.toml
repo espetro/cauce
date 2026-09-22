@@ -52,6 +52,11 @@ opentelemetry-otlp = { version = "0.32", default-features = false, features = [
     "trace",
 ], optional = true }
 tracing-opentelemetry = { version = "0.33", optional = true }
+# MCP transports (W1-08): streamable HTTP at /mcp + stdio for `oxe mcp`.
+# `schemars` is a direct dep because `rmcp` re-exports it and the tool arg
+# structs derive `schemars::JsonSchema`.
+rmcp = { version = "3", features = ["transport-streamable-http-server", "transport-io"] }
+schemars = "1"
 
 [dev-dependencies]
 async-trait = "0.1"
@@ -62,3 +67,16 @@ prometheus-parse = "0.2"
 tempfile = "3"
 tokio = { version = "1", features = ["macros"] }
 tower = { version = "0.5", features = ["util"] }
+# rmcp client side for the MCP-over-HTTP integration test (feature-unified
+# with the [dependencies] entry). reqwest is the rmcp streamable client's
+# HTTP backend; http-only on loopback so no TLS features are needed.
+rmcp = { version = "3", features = [
+    "client",
+    "transport-streamable-http-client",
+    "transport-streamable-http-client-reqwest",
+] }
+reqwest = { version = "0.13", default-features = false }
+# Frozen Exa wire-shape validation (tests/fixtures/exa_schema.json).
+# default-features = false: the defaults pull reqwest+rustls for remote
+# `$ref` resolution; the fixture is self-contained.
+jsonschema = { version = "0.57", default-features = false }
