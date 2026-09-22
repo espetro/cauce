@@ -15,7 +15,7 @@ use std::sync::{Arc, Mutex};
 
 use axum::extract::{Extension, Request};
 use axum::http::Uri;
-use axum::routing::{MethodRouter, delete, get, post, put};
+use axum::routing::{MethodRouter, any_service, delete, get, post, put};
 use axum::{Router, middleware};
 use oxe_core::{SearchPipeline, Store, config::Config};
 use tokio::net::TcpListener;
@@ -23,6 +23,7 @@ use tokio::net::TcpListener;
 use crate::error::ApiError;
 use crate::handlers;
 use crate::html;
+use crate::mcp;
 use crate::middleware::{RequestCtx, request_context};
 use crate::routes::{ROUTES, RouteKind, RouteSpec};
 
@@ -99,10 +100,13 @@ impl RouterOptions {
 /// The [`ROUTES`] rows this router actually mounts: rows with a handler and
 /// a satisfied `requires` gate. The routes-table test compares this against
 /// the live router.
-pub fn mounted_routes(opts: &RouterOptions) -> impl Iterator<Item = &'static RouteSpec> {
+pub fn mounted_routes<'a>(
+    state: &'a AppState,
+    opts: &'a RouterOptions,
+) -> impl Iterator<Item = &'static RouteSpec> + 'a {
     ROUTES
         .iter()
-        .filter(|spec| opts.mounts(spec) && handler_for(spec).is_some())
+        .filter(move |spec| opts.mounts(spec) && handler_for(spec, state).is_some())
 }
 
 /// Mount every declared-and-implemented route and wrap the router in the
@@ -123,7 +127,7 @@ pub fn build_router_opts(state: AppState, opts: RouterOptions) -> Router {
     // build-time bug, not a runtime 404.
     for spec in ROUTES.iter().filter(|s| s.wave <= CURRENT_WAVE) {
         assert!(
-            handler_for(spec).is_some(),
+            handler_for(spec, &state).is_some(),
             "ROUTES: {} {} is wave-{} but has no handler",
             spec.method,
             spec.path,
@@ -133,7 +137,7 @@ pub fn build_router_opts(state: AppState, opts: RouterOptions) -> Router {
 
     let mut by_path: BTreeMap<&'static str, MethodRouter<AppState>> = BTreeMap::new();
     for spec in ROUTES.iter().filter(|s| opts.mounts(s)) {
-        let Some(mr) = handler_for(spec) else {
+        let Some(mr) = handler_for(spec, &state) else {
             continue;
         };
         // `MethodRouter::merge` takes `self` by value; `mem::take` leaves a
@@ -156,7 +160,11 @@ pub fn build_router_opts(state: AppState, opts: RouterOptions) -> Router {
 /// The dispatch table: one arm per implemented `(method, path)` pair. A
 /// declared row without an arm is the future surface; an arm without a
 /// declared row is unreachable (mounting iterates `ROUTES`).
-fn handler_for(spec: &RouteSpec) -> Option<MethodRouter<AppState>> {
+///
+/// Takes `state` because some handlers are built from it (the MCP streamable
+/// service captures the shared pipeline/store) rather than extracting it via
+/// `State<AppState>` at request time.
+fn handler_for(spec: &RouteSpec, state: &AppState) -> Option<MethodRouter<AppState>> {
     match (spec.method, spec.path, spec.kind) {
         ("GET", "/", RouteKind::Html) => Some(get(html::index)),
         ("GET", "/search", RouteKind::Html) => Some(get(html::search)),
@@ -172,6 +180,9 @@ fn handler_for(spec: &RouteSpec) -> Option<MethodRouter<AppState>> {
         ("GET", "/health", RouteKind::Json) => Some(get(handlers::health)),
         ("GET", "/api/config", RouteKind::Json) => Some(get(handlers::config_get)),
         ("PUT", "/api/config", RouteKind::Json) => Some(put(handlers::config_put)),
+        // The MCP streamable-HTTP transport is a `tower::Service` serving
+        // every method on `/mcp` (W1-08): `any_service` mounts it directly.
+        ("*", "/mcp", RouteKind::Mcp) => Some(any_service(mcp::streamable_service(state.clone()))),
         _ => None,
     }
 }

@@ -49,6 +49,11 @@ opentelemetry-otlp = { version = "0.32", default-features = false, features = [
     "trace",
 ], optional = true }
 tracing-opentelemetry = { version = "0.33", optional = true }
+# MCP transports (W1-08): streamable HTTP at /mcp + stdio for `oxe mcp`.
+# `schemars` is a direct dep because `rmcp` re-exports it and the tool arg
+# structs derive `schemars::JsonSchema`.
+rmcp = { version = "3", features = ["transport-streamable-http-server", "transport-io"] }
+schemars = "1"
 
 [dev-dependencies]
 async-trait = "0.1"

@@ -99,8 +99,11 @@ pub async fn request_context(mut request: Request<Body>, next: Next) -> Response
 
 /// `ClientKind` from path and headers (W0-09 spec): an explicit
 /// `X-Oxe-Client` header wins (`ui`, `api`, `cli`, `mcp` / `mcp:<name>`),
-/// else `/api/*`, `/health` and `/metrics` are `api` and everything else is
-/// `ui`. The MCP surface sets its own kind when it lands in W1-08.
+/// else `/api/*`, `/health`, `/metrics` and `/mcp` get their surface kind
+/// and everything else is `ui`. For `/mcp` the middleware only knows the
+/// surface: the real client name arrives with the MCP `initialize`
+/// handshake, so the span/audit kind here is `mcp:unknown` and the tool
+/// layer re-derives `ClientKind::Mcp(name)` per call.
 fn client_kind(headers: &HeaderMap, path: &str) -> ClientKind {
     if let Some(v) = headers
         .get("x-oxe-client")
@@ -124,6 +127,9 @@ fn client_kind(headers: &HeaderMap, path: &str) -> ClientKind {
                 name.to_string()
             });
         }
+    }
+    if path == "/mcp" {
+        return ClientKind::Mcp("unknown".to_string());
     }
     if path.starts_with("/api/") || path == "/health" || path == "/metrics" {
         ClientKind::Api
