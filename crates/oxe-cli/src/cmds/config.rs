@@ -29,9 +29,9 @@ pub fn run(args: &[String]) -> i32 {
 }
 
 fn show() -> i32 {
-    match Config::load() {
-        Ok(cfg) => {
-            print!("{}", cfg.display_toml());
+    match Config::load().and_then(|cfg| cfg.display_toml()) {
+        Ok(text) => {
+            print!("{text}");
             0
         }
         Err(e) => {

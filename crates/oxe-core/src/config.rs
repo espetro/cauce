@@ -6,15 +6,17 @@
 //! `$OXE_DATA_DIR` (default `~/.local/share/oxe/`: `oxe.db`, `logs/`).
 //! Interpolation on string values at load: `${env:NAME}` (missing is an
 //! error), `${env:NAME:-default}`, `${env:NAME:?msg}` (missing is an error
-//! carrying `msg`), `${file:PATH}`, and `$$` as a literal `$`. `Config::save`
-//! writes the raw template tree back, never resolved secrets. Precedence is
-//! defaults < file < `OXE_*` env.
+//! carrying `msg`), `${file:PATH}`, and `$$` as a literal `$`. The `:`
+//! forms follow POSIX: unset-or-empty counts as missing. `Config::save`
+//! writes the raw template tree back, never resolved secrets. Precedence
+//! is defaults < file < `OXE_*` env.
 //!
 //! This Source Code Form is subject to the terms of the Mozilla Public
 //! License, v. 2.0. If a copy of the MPL was not distributed with this
 //! file, You can obtain one at <https://mozilla.org/MPL/2.0/>.
 
 use std::collections::BTreeMap;
+use std::fmt;
 use std::io;
 use std::path::{Path, PathBuf};
 
@@ -23,9 +25,18 @@ use serde::{Deserialize, Serialize};
 use crate::engine::{EngineId, Tier};
 use crate::store::StoreTuning;
 
-/// An environment map: the real `std::env::vars()` snapshot in production,
-/// an explicit map in tests so loads stay deterministic.
+/// An environment map: the real process-env snapshot in production, an
+/// explicit map in tests so loads stay deterministic.
 type EnvMap = BTreeMap<String, String>;
+
+/// Snapshot of the process environment. Uses `vars_os` and skips non-UTF-8
+/// entries: `std::env::vars()` panics on those, which would take the whole
+/// process down at startup.
+fn system_env() -> EnvMap {
+    std::env::vars_os()
+        .filter_map(|(k, v)| Some((k.into_string().ok()?, v.into_string().ok()?)))
+        .collect()
+}
 
 /// `OXE_*` variables applied on top of the file layer (precedence env >
 /// file > defaults). Each entry is `(env name, dotted TOML path, parse as
@@ -119,7 +130,7 @@ pub struct Dirs {
 impl Dirs {
     /// Resolve from the process environment.
     pub fn detect() -> Self {
-        Self::detect_with(&std::env::vars().collect())
+        Self::detect_with(&system_env())
     }
 
     fn detect_with(env: &EnvMap) -> Self {
@@ -408,7 +419,12 @@ fn builtin_engines() -> Vec<EngineEntry> {
 /// Besides the typed sections it keeps the raw (pre-interpolation) file
 /// tree for `save` and a map of template paths for redacted display; none
 /// of that is part of the TOML schema (`#[serde(skip)]`).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+///
+/// `Debug` and `Serialize` are manual: both emit the *redacted* view
+/// (`display_tree`), so a resolved secret (e.g. `ai.api_key` from
+/// `${env:BIFROST_API_KEY}`) can never leak through `format!("{cfg:?}")`,
+/// `serde_json::to_string(&cfg)` or a debug log line.
+#[derive(Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Config {
     /// `[server]` section.
@@ -441,6 +457,40 @@ pub struct Config {
     templates: BTreeMap<Vec<String>, String>,
 }
 
+/// Serialization view of the typed sections only (no `dirs`/`raw`/
+/// `templates`). Private: every public output path (`Debug`, `Serialize`,
+/// `display_*`) goes through template redaction.
+#[derive(Serialize)]
+struct ConfigSections<'a> {
+    server: &'a ServerConfig,
+    search: &'a SearchConfig,
+    logs: &'a LogsConfig,
+    ai: &'a AiConfig,
+    engines: &'a [EngineEntry],
+    config: &'a MetaConfig,
+}
+
+impl fmt::Debug for Config {
+    /// Prints the redacted TOML, same as `oxe config show`.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.display_toml() {
+            Ok(text) => f.write_str(&text),
+            Err(_) => f.write_str("<config display error>"),
+        }
+    }
+}
+
+impl Serialize for Config {
+    /// Serializes the redacted tree: values produced by interpolation
+    /// templates come out as their literal `${...}` text, so resolved
+    /// secrets never reach a serializer (e.g. `GET /api/config`, W0-09).
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        self.display_tree()
+            .map_err(serde::ser::Error::custom)?
+            .serialize(s)
+    }
+}
+
 impl Default for Config {
     fn default() -> Self {
         Self {
@@ -462,7 +512,21 @@ impl Config {
     /// < `OXE_*` env. A missing file is not an error; a malformed or
     /// uninterpolatable one is (so `${env:NAME:?msg}` fails startup).
     pub fn load() -> Result<Self, ConfigError> {
-        Self::load_with(&std::env::vars().collect())
+        Self::load_with(&system_env())
+    }
+
+    /// The typed sections as a serializable view (no `dirs`/`raw`/
+    /// `templates`). Internal use only; public serialization of `Config`
+    /// is the redacted tree.
+    fn sections(&self) -> ConfigSections<'_> {
+        ConfigSections {
+            server: &self.server,
+            search: &self.search,
+            logs: &self.logs,
+            ai: &self.ai,
+            engines: &self.engines,
+            config: &self.config,
+        }
     }
 
     /// `load` against an explicit env map (tests; also the reason loads are
@@ -544,7 +608,9 @@ impl Config {
         }
 
         // `OXE_ENGINES` pins the enabled set to exactly the listed ids.
-        if let Some(list) = env.get("OXE_ENGINES") {
+        // An empty or whitespace-only value is treated as unset (documented
+        // choice): pinning to nothing would produce a dead server.
+        if let Some(list) = env.get("OXE_ENGINES").filter(|l| !l.trim().is_empty()) {
             let wanted: Vec<&str> = list
                 .split(',')
                 .map(str::trim)
@@ -622,6 +688,12 @@ impl Config {
     /// Write the raw template tree to `config_path`, creating the directory
     /// if needed. Resolved secrets are never written: values that came from
     /// `${env:...}`/`${file:...}` persist as their literal template text.
+    ///
+    /// The write is atomic (same-dir temp file + rename), so a crash mid-save
+    /// cannot leave a truncated `config.toml`. Note for W0-09's
+    /// `PUT /api/config`: the raw tree is re-serialized, so comments and
+    /// formatting in the source file are not preserved; structure and
+    /// templates are.
     pub fn save(&self) -> Result<PathBuf, ConfigError> {
         let path = self.config_path();
         if let Some(dir) = path.parent() {
@@ -635,7 +707,12 @@ impl Config {
             None => default_tree()?,
         };
         let text = toml::to_string_pretty(&raw).map_err(ConfigError::Encode)?;
-        std::fs::write(&path, &text).map_err(|source| ConfigError::Write {
+        let tmp = path.with_extension("toml.tmp");
+        std::fs::write(&tmp, &text).map_err(|source| ConfigError::Write {
+            path: tmp.clone(),
+            source,
+        })?;
+        std::fs::rename(&tmp, &path).map_err(|source| ConfigError::Write {
             path: path.clone(),
             source,
         })?;
@@ -645,20 +722,20 @@ impl Config {
     /// The resolved config as a TOML tree with secrets redacted: every
     /// value that came from an interpolation template is shown as its raw
     /// `${...}` text instead of the resolved secret.
-    pub fn display_tree(&self) -> toml::Value {
-        let mut tree = to_value(self).unwrap_or_else(|_| toml::Value::Table(toml::Table::new()));
+    pub fn display_tree(&self) -> Result<toml::Value, ConfigError> {
+        let mut tree = to_value(&self.sections())?;
         for (path, raw) in &self.templates {
             set_display(
                 tree_mut_at(&mut tree, path),
                 toml::Value::String(raw.clone()),
             );
         }
-        tree
+        Ok(tree)
     }
 
     /// `display_tree` rendered as TOML, for `oxe config show`.
-    pub fn display_toml(&self) -> String {
-        toml::to_string_pretty(&self.display_tree()).unwrap_or_default()
+    pub fn display_toml(&self) -> Result<String, ConfigError> {
+        toml::to_string_pretty(&self.display_tree()?).map_err(ConfigError::Encode)
     }
 }
 
@@ -672,7 +749,7 @@ fn to_value<T: Serialize>(v: &T) -> Result<toml::Value, ConfigError> {
 /// The built-in defaults as a TOML tree; used as the raw layer when no
 /// config file exists so a first `save` writes a complete template file.
 fn default_tree() -> Result<toml::Value, ConfigError> {
-    to_value(&Config::default())
+    to_value(&Config::default().sections())
 }
 
 /// Navigate `tree` along `path` (numeric segments index into arrays) and
@@ -820,18 +897,24 @@ fn resolve_expr(inner: &str, env: &EnvMap, path: &str) -> Result<String, ConfigE
             Some((i, kind)) => (&spec[..i], Some((kind, &spec[i + 2..]))),
             None => (spec, None),
         };
-        return match (env.get(name), suffix) {
-            (Some(v), _) => Ok(v.clone()),
-            (None, Some(('-', default))) => Ok(default.to_string()),
-            (None, Some(('?', msg))) => Err(ConfigError::MissingEnvMsg {
+        // POSIX semantics: the `:`-forms (`:-`, `:?`) treat unset OR empty
+        // as missing; the plain form treats empty as a real value.
+        let value = env.get(name).filter(|v| !v.is_empty());
+        return match suffix {
+            Some(('-', default)) => Ok(value.cloned().unwrap_or_else(|| default.to_string())),
+            Some(('?', msg)) => value.cloned().ok_or_else(|| ConfigError::MissingEnvMsg {
                 path: path.to_string(),
                 var: name.to_string(),
                 msg: msg.to_string(),
             }),
-            (None, _) => Err(ConfigError::MissingEnv {
-                path: path.to_string(),
-                var: name.to_string(),
-            }),
+            // Plain `${env:NAME}`: unset errors, empty stays empty.
+            _ => env
+                .get(name)
+                .cloned()
+                .ok_or_else(|| ConfigError::MissingEnv {
+                    path: path.to_string(),
+                    var: name.to_string(),
+                }),
         };
     }
     if let Some(file) = inner.strip_prefix("file:") {
@@ -1120,6 +1203,70 @@ mod tests {
     }
 
     #[test]
+    fn interpolation_empty_env_uses_default_posix() {
+        // POSIX: `:-` and `:?` treat unset-or-empty as missing.
+        let (tmp, env) = sandbox(&[("EMPTY_VAR", "")]);
+        write_config(
+            &tmp.path().join("cfg"),
+            "[ai]\napi_key = \"${env:EMPTY_VAR:-fallback}\"\n",
+        );
+        let cfg = Config::load_with(&env).unwrap();
+        assert_eq!(cfg.ai.api_key, "fallback");
+
+        // Plain `${env:NAME}` keeps the empty value.
+        write_config(
+            &tmp.path().join("cfg"),
+            "[ai]\napi_key = \"${env:EMPTY_VAR}\"\n",
+        );
+        let cfg = Config::load_with(&env).unwrap();
+        assert_eq!(cfg.ai.api_key, "");
+
+        // `:?` on an empty var fails startup like an unset one.
+        write_config(
+            &tmp.path().join("cfg"),
+            "[ai]\napi_key = \"${env:EMPTY_VAR:?need a key}\"\n",
+        );
+        assert!(matches!(
+            Config::load_with(&env),
+            Err(ConfigError::MissingEnvMsg { .. })
+        ));
+    }
+
+    #[test]
+    fn interpolation_escaped_template_is_literal() {
+        // `$${env:X}` produces the literal text `${env:X}`; no expansion.
+        let (tmp, env) = sandbox(&[("MY_SECRET", "s3cret")]);
+        write_config(
+            &tmp.path().join("cfg"),
+            "[ai]\napi_key = \"$${env:MY_SECRET}\"\n",
+        );
+        let cfg = Config::load_with(&env).unwrap();
+        assert_eq!(cfg.ai.api_key, "${env:MY_SECRET}");
+    }
+
+    #[test]
+    fn interpolation_adjacent_templates() {
+        let (tmp, env) = sandbox(&[("PART_A", "sk-"), ("PART_B", "bf-123")]);
+        write_config(
+            &tmp.path().join("cfg"),
+            "[ai]\napi_key = \"${env:PART_A}${env:PART_B}\"\n",
+        );
+        let cfg = Config::load_with(&env).unwrap();
+        assert_eq!(cfg.ai.api_key, "sk-bf-123");
+    }
+
+    #[test]
+    fn interpolation_required_message_with_set_var_uses_value() {
+        let (tmp, env) = sandbox(&[("SET_VAR", "real-value")]);
+        write_config(
+            &tmp.path().join("cfg"),
+            "[ai]\napi_key = \"${env:SET_VAR:?unreachable}\"\n",
+        );
+        let cfg = Config::load_with(&env).unwrap();
+        assert_eq!(cfg.ai.api_key, "real-value");
+    }
+
+    #[test]
     fn interpolation_disabled_keeps_literals() {
         let (tmp, env) = sandbox(&[("MY_SECRET", "s3cret")]);
         write_config(
@@ -1158,10 +1305,30 @@ mod tests {
             "[ai]\napi_key = \"${env:BIFROST_API_KEY}\"\n[server]\nport = 4480\n",
         );
         let cfg = Config::load_with(&env).unwrap();
-        let shown = cfg.display_toml();
+        let shown = cfg.display_toml().unwrap();
         assert!(shown.contains("${env:BIFROST_API_KEY}"), "{shown}");
         assert!(!shown.contains("sk-bf-live-secret"), "{shown}");
         assert!(shown.contains("4480"), "{shown}");
+    }
+
+    #[test]
+    fn debug_and_serialize_redact_secrets() {
+        let (tmp, env) = sandbox(&[("BIFROST_API_KEY", "sk-bf-live-secret")]);
+        write_config(
+            &tmp.path().join("cfg"),
+            "[ai]\napi_key = \"${env:BIFROST_API_KEY}\"\n",
+        );
+        let cfg = Config::load_with(&env).unwrap();
+        assert_eq!(cfg.ai.api_key, "sk-bf-live-secret");
+
+        for rendered in [
+            format!("{cfg:?}"),
+            serde_json::to_string(&cfg).unwrap(),
+            toml::to_string_pretty(&cfg).unwrap(),
+        ] {
+            assert!(!rendered.contains("sk-bf-live-secret"), "{rendered}");
+            assert!(rendered.contains("${env:BIFROST_API_KEY}"), "{rendered}");
+        }
     }
 
     #[test]
@@ -1243,6 +1410,18 @@ mod tests {
         let mut enabled: Vec<_> = cfg.enabled_engines().map(|e| e.id.as_str()).collect();
         enabled.sort();
         assert_eq!(enabled, ["ddgs", "replay"]);
+    }
+
+    #[test]
+    fn oxe_engines_empty_is_unset() {
+        // `OXE_ENGINES=""` (or whitespace) is treated as unset: pinning to
+        // zero engines would produce a dead server.
+        for value in ["", "   "] {
+            let (_tmp, env) = sandbox(&[("OXE_ENGINES", value)]);
+            let cfg = Config::load_with(&env).unwrap();
+            let enabled: Vec<_> = cfg.enabled_engines().map(|e| e.id.as_str()).collect();
+            assert_eq!(enabled, ["ddgs"]);
+        }
     }
 
     #[test]
