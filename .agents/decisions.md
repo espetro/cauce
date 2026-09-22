@@ -84,3 +84,15 @@ rather than editing it away.
 - **`requires` strings on ROUTES are runtime mount gates, not cargo features.** `RouterOptions`
   decides what mounts; real `ui`/`mcp`/`ai` feature stripping is deferred to the wave that
   measures the headless/MCP memory budgets. — 2026-09-22
+- **Maintenance-area review applied to the v3 plan.** Engine specs move from the archived
+  `serde_yaml` to `serde_norway`; metrics become an owned in-process registry rendered as
+  Prometheus text on `/metrics` instead of the OTel SDK + `opentelemetry-prometheus` path
+  (which is discontinued), while OTLP export stays opt-in behind a now non-default `otlp`
+  feature. W3-04 per-client fairness, W5-04/05 semantic tier, and W6-02/03/04
+  Postgres/auth/deploy docs are deferred to `v3/later/` stubs; W3-06 shrinks to a failing
+  nightly canary (the failed run is the report); W2-08 drops Playwright baselines for a
+  DOM assertion; #84 expands into W1-13, a loopback Host/Origin guard plus refusal to
+  start on non-loopback bind; keyed-API engine specs are added as a `later/` escape hatch.
+  The Anthropic Messages protocol (W4-05) is KEPT per the owner: supporting both protocols
+  is adoption-critical since not every user runs Bifrost. Source:
+  `/tmp/oxe-maintenance-area-review.md`. — 2026-09-22

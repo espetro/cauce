@@ -26,13 +26,15 @@ stdio, tier-2 lexical cache, a metrics endpoint, and the cutover of the owner's 
   num_results?, type?, source?, exclude_domains?, category?)` returning the Exa result shape
   from v2 (`v2-legacy:oxe/api/exa.py` is the reference; typed, frozen). Every tool result
   carries `request_id`.
-- Metrics: OTel SDK single registry; Prometheus reader on `GET /metrics` (loopback, no
-  auth); OTLP periodic exporter when `OTEL_EXPORTER_OTLP_ENDPOINT` set. Metric names in the
-  step. Fallback plan if `opentelemetry-prometheus` churns: `metrics` facade +
-  `metrics-exporter-prometheus`, same names.
+- Metrics: owned in-process registry in `oxe-core::metrics` (counters, gauges, HDR
+  histograms per engine, ~150 LoC) rendered as Prometheus text on `GET /metrics`
+  (loopback, no auth); `/api/stats` computes the same numbers. OTLP export of
+  traces+metrics stays opt-in via `tracing-opentelemetry` + `opentelemetry-otlp` behind
+  the `otlp` cargo feature, which is non-default. Metric names in the step. If
+  pull-metrics scope grows, revisit `metrics-exporter-prometheus`.
 - Modes: `oxe serve` (full), `oxe serve --headless` (no templates/pages), `oxe mcp` (stdio,
   no listener). One binary. Cargo features `ui`, `mcp`, `ai`, `archive`, `semantic`,
-  `postgres`, `otlp`; defaults `ui mcp ai otlp`.
+  `postgres`, `otlp`; defaults `ui mcp ai` (`otlp` non-default).
 
 ## Exit criteria
 
@@ -53,7 +55,9 @@ stdio, tier-2 lexical cache, a metrics endpoint, and the cutover of the owner's 
   per-request timeout from the engine budget), `Egress` trait (`Direct`, `StaticProxy`),
   per-engine `governor` token bucket, per-engine fixed UA and `Accept-Language`, response
   size cap (2 MB), redirect cap 3, `tracing` span per upstream call with status/bytes/ms.
-  Config `[engines.<id>.egress] proxy = "socks5://..."`.
+  Config `[engines.<id>.egress] proxy = "socks5://..."`. If reqwest's TLS fingerprint
+  becomes the blocker on Brave/Bing, the named fallback HTTP client is `rquest` (TLS
+  impersonation), swapped in behind `HttpClient`.
 - Acceptance: unit test with a local `wiremock` server asserts the bucket delays the 4th
   burst call, the proxy setting is honoured (mock proxy sees the request), and the size cap
   aborts a 3 MB body with `EngineError::Parse`.
@@ -62,14 +66,17 @@ stdio, tier-2 lexical cache, a metrics endpoint, and the cutover of the owner's 
 ### W1-02 Declarative engine runtime and `oxe engine test`
 - Issue #22 · Effort L · Label feature · Team Systems · Branch `v3/w1-02-declarative-runtime`
 - Depends on: W1-01
-- Do: `oxe-engines::declarative`: parse the YAML schema (parent 4.3) with `serde_yaml`
-  into a validated `EngineSpec` (compile CSS selectors once with `scraper`); `request`
+- Do: `oxe-engines::declarative`: parse the YAML schema (parent 4.3) with `serde_norway`
+  (maintained drop-in fork of `serde_yaml`) into a validated `EngineSpec` (compile CSS
+  selectors once with `scraper`); `request`
   templating (`{q}` url-encoded, `{page}`, `{page0}`, `{offset}` = (page-1)*page_size,
   `{lang}`); `parse.kind: html | json` (json uses a small JSONPath subset via
   `serde_json_path`); field extraction `css`/`attr`/`text`/`regex`; `detect.blocked`
   substrings and `rate_limited_status` map to `EngineError`; relative URL resolution;
   tracking-redirect unwrapping (`bing.com/ck/a?...&u=a1<base64>` and `r.search.yahoo.com`
-  patterns as a `unwrap_redirect` list in the spec). `oxe engine test <spec.yaml>` runs
+  patterns as a `unwrap_redirect` list in the spec). `request.headers` values may contain
+  `${env:NAME}`/`${file:PATH}` templates resolved through the config interpolator (needed
+  for keyed-API specs later). `oxe engine test <spec.yaml>` runs
   every fixture pair in `engines/fixtures/<id>/*.html` + `.expected.json` and diffs;
   `--live "<query>"` fetches once, prints parsed results, and `--record` writes a new fixture
   pair. Loading: specs embedded from `engines/*.yaml` at build (`include_dir`) and
@@ -136,7 +143,7 @@ stdio, tier-2 lexical cache, a metrics endpoint, and the cutover of the owner's 
 - Acceptance: 20 concurrent identical requests against a counting replay engine produce 1
   upstream call and 20 responses; with `max_wait_ms=1` and a slow engine the 4th request
   gets 429 with `Retry-After`; with a stale row present it gets the stale row instead.
-- Follow-up: W3-04.
+- Follow-up: `later/per-client-fairness.md`.
 
 ### W1-08 MCP server: streamable HTTP and stdio
 - Issue #28 · Effort L · Label feature · Team Product Builders · Branch `v3/w1-08-mcp`
@@ -153,19 +160,21 @@ stdio, tier-2 lexical cache, a metrics endpoint, and the cutover of the owner's 
   `v2-legacy` (`tests/fixtures/exa_schema.json`).
 - Follow-up: W1-11, W1-12.
 
-### W1-09 Metrics: OTel registry, `/metrics`, `/api/stats` extension
+### W1-09 Metrics: owned registry, `/metrics`, `/api/stats` extension
 - Issue #29 · Effort M · Label feature · Team Systems · Branch `v3/w1-09-metrics`
 - Depends on: W0-05
-- Do: `oxe-core::metrics` with the OTel metrics SDK; instruments:
+- Do: `oxe-core::metrics` as an owned in-process registry (counters, gauges, HDR
+  histograms per engine, ~150 LoC); instruments:
   `oxe_search_requests_total{client,source,tier}`, `oxe_search_duration_ms` histogram
   `{source}`, `oxe_ttfr_ms` (time to first engine result), `oxe_engine_requests_total
   {engine,outcome}`, `oxe_engine_duration_ms{engine,phase=http|parse}`,
   `oxe_engine_results{engine}` histogram, `oxe_engine_breaker_state{engine}` gauge,
   `oxe_cache_entries` gauge, `oxe_admission_wait_ms`, `oxe_admission_rejected_total{reason}`,
-  `oxe_deadline_hit_total`, `oxe_stale_served_total`; Prometheus reader on `GET /metrics`;
-  OTLP exporter when env set; `/api/stats` gains `engines[]` with median/p80/p95 split
+  `oxe_deadline_hit_total`, `oxe_stale_served_total`; the registry renders Prometheus
+  text on `GET /metrics`; `/api/stats` gains `engines[]` with median/p80/p95 split
   http/parse, result count, reliability % (SearXNG parity) and the cache/admission
-  aggregates; `/api/stats` day series still come from `search_log`.
+  aggregates; `/api/stats` day series still come from `search_log`. If pull-metrics
+  scope grows, revisit `metrics-exporter-prometheus`.
 - Acceptance: `/metrics` text parses with a Prometheus text parser crate in the test and
   contains the instruments above after one replay search; `/api/stats.engines[0].p95_ms`
   is a number.
@@ -181,7 +190,7 @@ stdio, tier-2 lexical cache, a metrics endpoint, and the cutover of the owner's 
   config `cache.lexical.enabled` (default true) and threshold.
 - Acceptance: after caching `tanstack router docs`, the request `docs tanstack router`
   returns `tier:2`; `tanstack query docs` (Jaccard 0.5) does not.
-- Follow-up: W5-05 (tier 3 reuses the acceptance shape).
+- Follow-up: `later/semantic-tier.md` (tier 3 reuses the acceptance shape).
 
 ### W1-11 Cutover: oxmgr, `~/SEARCH.md`, live smoke
 - Issue #31 · Effort S · Label infra · Team Systems · Branch `v3/w1-11-cutover`
@@ -202,12 +211,26 @@ stdio, tier-2 lexical cache, a metrics endpoint, and the cutover of the owner's 
 - Do: `oxe serve --headless` skips template routes and static assets (routes table entries
   carry `requires: ui`); cargo features `ui`, `mcp`, `ai`, `archive`, `semantic`,
   `postgres`, `otlp` gate the corresponding modules with `cfg` and the routes table filters
-  by compiled features; `mise run validate` builds default features and
+  by compiled features; `otlp` becomes non-default here (flip the W0-05 default) so
+  tonic/prost leave the default build; `mise run validate` builds default features and
   `--no-default-features --features mcp` to keep both compiling. Budget test gains
   headless < 50 MB and `oxe mcp` < 40 MB idle.
 - Acceptance: both feature sets build in CI; `--headless` returns 404 for `/search` and 200
   for `/api/search`; routes-table test filters correctly.
 - Follow-up: W2-11.
+
+### W1-13 Loopback request guard (Host/Origin + non-loopback refusal)
+- Issue #84 · Effort S · Label infra · Team Systems · Branch `v3/w1-13-loopback-guard`
+- Depends on: W0-09
+- Do: `oxe-server` Host/Origin check middleware (~50 LoC): reject requests whose `Host`
+  header is not the configured bind host (`localhost`, `127.0.0.1`, `::1`, portless
+  aliases), and on mutating methods require `Origin` absent or same-host. Mirror W6-03's
+  auth line: `auth.enabled` defaults false on loopback and is forced when bind is not
+  loopback; auth itself is deferred to `later/postgres-and-multi-instance.md`, so for now
+  a non-loopback bind refuses to start with a clear error.
+- Acceptance: routes-table test asserts mutating routes carry the guard; a test with a
+  foreign Host gets 403.
+- Follow-up: W2-01.
 
 ## Out of scope for W1
 

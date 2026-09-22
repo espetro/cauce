@@ -6,7 +6,7 @@ Parent: `../2026-09-21-v3-rust-core.md`. Index: `README.md`. Previous: `wave-2-u
 ## Goal
 
 The scheduler stops treating every engine equally: P90-triggered hedging to tier 2,
-stale-while-revalidate, per-client fairness, and a nightly signal that tells us when a
+stale-while-revalidate, and a nightly signal that tells us when a
 parser silently degrades. This is the wave that makes oxe measurably different from SearXNG
 on latency and reliability, and every knob is configurable because the owner's numbers
 (Bing 1.8-3.1 s, Brave 0.4-0.5 s) will not be everyone's.
@@ -28,7 +28,7 @@ on latency and reliability, and every knob is configurable because the owner's n
    and `meta.hedged=true`.
 2. Nightly relevance eval publishes a JSON artifact and a dashboard panel reads its last
    run.
-3. A single MCP client saturating the queue cannot starve `ui` requests (fairness test).
+3. Removed: per-client fairness is deferred to `later/per-client-fairness.md` (issue #47).
 
 ## Steps
 
@@ -66,17 +66,6 @@ on latency and reliability, and every knob is configurable because the owner's n
   fixture asserting AMP URL folds to canonical.
 - Follow-up: W3-05.
 
-### W3-04 Per-client fairness
-- Issue #47 · Effort M · Label feature · Team Systems · Branch `v3/w3-04-fairness`
-- Depends on: W1-07
-- Do: admission queue becomes per-client round-robin (`ClientKind` + MCP client name);
-  per-client concurrency cap (`admission.per_client_concurrency`, default 4); metrics
-  `oxe_admission_wait_ms{client}`; `/engines` and `/dashboard` show per-client queue depth.
-- Acceptance: exit criterion 3 as a test: 50 concurrent `mcp:agent-a` requests plus 1 `ui`
-  request against a slow replay engine; the `ui` request completes within 2 upstream
-  slots.
-- Follow-up: none.
-
 ### W3-05 Engine relevance evals (nightly)
 - Issue #48 · Effort M · Label infra · Team Systems · Branch `v3/w3-05-relevance-evals`
 - Depends on: W3-03
@@ -90,20 +79,21 @@ on latency and reliability, and every knob is configurable because the owner's n
   contains the expected domain; the workflow file exists and is `cron` only.
 - Follow-up: W3-06.
 
-### W3-06 Fixture drift report and `--live` canary
+### W3-06 `--live` canary (nightly)
 - Issue #49 · Effort S · Label infra · Team Systems · Branch `v3/w3-06-drift-canary`
 - Depends on: W3-05
-- Do: nightly `oxe engine test --live --report` for every shipped spec: fetch once, parse,
-  compare result count and field fill-rate with the committed fixture, write a markdown
-  report artifact; on `Parse` errors or fill-rate < 50 % update the tracking issue with the
-  raw HTML attached (gzipped artifact) so a contributor can fix selectors from the issue.
-- Acceptance: unit test of the reporter on a fixture pair with a removed selector produces
-  the expected diff text.
+- Do: nightly `oxe engine test --live` for every shipped spec: fetch once, parse, exit
+  non-zero on zero results, `Parse` errors, or field fill-rate < 50 % versus the committed
+  fixture. The failed nightly run is the report; no markdown drift-report generator and no
+  tracking-issue automation.
+- Acceptance: a failing canary exits non-zero in a test with a fixture that has a removed
+  selector.
 - Follow-up: W4-01.
 
 ## Out of scope for W3
 
-New engine specs (file as follow-ups with the drift report as evidence), AI, archive.
+New engine specs (file as follow-ups with the failing canary as evidence), per-client
+fairness (`later/per-client-fairness.md`), AI, archive.
 
 ## Follow-up
 
