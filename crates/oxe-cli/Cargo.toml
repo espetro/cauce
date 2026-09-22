@@ -15,16 +15,24 @@ path = "src/main.rs"
 name = "e2e"
 path = "tests/e2e/main.rs"
 
+# The binary's feature surface mirrors oxe-server's (W1-12): defaults are
+# `ui mcp ai`. `cargo build -p oxe-cli --no-default-features --features mcp`
+# produces the minimal agent build (`oxe mcp` + headless `oxe serve`, no
+# templates/assets, no OTLP); `mise run validate` keeps it compiling.
 [features]
-default = []
-# Opt-in OTLP trace export (`cargo install --features otlp`); non-default
-# per the wave-1 settled inputs. Feature wiring grows with W1-12.
+default = ["ui", "mcp", "ai"]
+ui = ["oxe-server/ui"]
+mcp = ["oxe-server/mcp"]
+ai = ["oxe-server/ai"]
+archive = ["oxe-server/archive"]
+semantic = ["oxe-server/semantic"]
+postgres = ["oxe-server/postgres"]
 otlp = ["oxe-server/otlp"]
 
 [dependencies]
 oxe-core = { path = "../oxe-core" }
 oxe-engines = { path = "../oxe-engines" }
-oxe-server = { path = "../oxe-server" }
+oxe-server = { path = "../oxe-server", default-features = false }
 oxe-store-sqlite = { path = "../oxe-store-sqlite" }
 serde_json = "1"
 tokio = { version = "1", features = ["net", "rt", "rt-multi-thread"] }

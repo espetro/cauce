@@ -1,5 +1,6 @@
 //! `oxe` binary: `serve`, `mcp`, `record`, `engine`, `trace`, `tail`,
-//! `config` are implemented; `search` and `cache` land in later waves.
+//! `config` are implemented (`mcp` only with the `mcp` cargo feature);
+//! `search` and `cache` land in later waves.
 //!
 //! This Source Code Form is subject to the terms of the Mozilla Public
 //! License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -13,9 +14,15 @@ fn main() {
         "serve" => std::process::exit(cmds::serve::run(
             &std::env::args().skip(2).collect::<Vec<_>>(),
         )),
+        #[cfg(feature = "mcp")]
         "mcp" => std::process::exit(cmds::mcp::run(
             &std::env::args().skip(2).collect::<Vec<_>>(),
         )),
+        #[cfg(not(feature = "mcp"))]
+        "mcp" => {
+            eprintln!("oxe mcp: this binary was built without the `mcp` feature");
+            std::process::exit(2);
+        }
         "record" => std::process::exit(cmds::record::run(
             &std::env::args().skip(2).collect::<Vec<_>>(),
         )),

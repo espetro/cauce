@@ -19,15 +19,17 @@ use axum::http::{Method, Request, StatusCode, header};
 use oxe_core::config::Config;
 use oxe_core::{Admission, AdmissionLimits, SearchPipeline, StoreTuning};
 use oxe_engines::{Replay, ReplayOpts};
-use oxe_server::{AppState, ROUTES, RouteKind, build_router, mounted_routes};
+use oxe_server::{
+    AppState, ROUTES, RouteKind, RouterOptions, build_router, build_router_opts, feature_enabled,
+    mounted_routes,
+};
 use oxe_store_sqlite::SqliteStore;
 use serde_json::{Value, json};
 use tower::ServiceExt;
 
-/// The wire surface wave 0 must mount (parent plan section 6, wave <= 0).
-const EXPECTED_WAVE0: &[(&str, &str)] = &[
-    ("GET", "/"),
-    ("GET", "/search"),
+/// The wave-0 JSON surface (parent plan section 6): mounts in every build
+/// and every mode, including `oxe serve --headless`.
+const EXPECTED_WAVE0_JSON: &[(&str, &str)] = &[
     ("GET", "/api/search"),
     ("GET", "/api/history"),
     ("POST", "/api/click"),
@@ -42,8 +44,13 @@ const EXPECTED_WAVE0: &[(&str, &str)] = &[
     ("PUT", "/api/config"),
 ];
 
+/// The wave-0 HTMX pages: `requires: "ui"` rows, mounted only when the
+/// `ui` cargo feature is compiled in and `--headless` is not passed.
+const EXPECTED_WAVE0_UI: &[(&str, &str)] = &[("GET", "/"), ("GET", "/search")];
+
 /// Wave-1 rows mounted so far (W1-06 engine health, W1-09 metrics).
-/// `/mcp` (W1-08) is chained in the test because its method is `*`.
+/// `/mcp` (W1-08) is added under `cfg!(feature = "mcp")` because its
+/// method is `*` and the row compiles out without the feature.
 const EXPECTED_WAVE1_MOUNTED: &[(&str, &str)] = &[
     ("GET", "/api/engines"),
     ("POST", "/api/engines/{id}/reset"),
@@ -271,9 +278,8 @@ fn wave0_routes_match_plan_filter() {
         .map(|r| (r.method.to_string(), r.path.to_string()))
         .collect();
     assert_eq!(declared_wave0, plan_wave0);
-    let expected_wave0_json: BTreeSet<(String, String)> = EXPECTED_WAVE0
+    let expected_wave0_json: BTreeSet<(String, String)> = EXPECTED_WAVE0_JSON
         .iter()
-        .filter(|(_, p)| *p == "/health" || p.starts_with("/api/"))
         .map(|(m, p)| (m.to_string(), p.to_string()))
         .collect();
     assert_eq!(declared_wave0, expected_wave0_json);
@@ -281,20 +287,78 @@ fn wave0_routes_match_plan_filter() {
 
 /// `mounted_routes` (the builder's own view) equals the wave-0 set plus
 /// every wave-1 row implemented so far (`* /mcp` from W1-08, the engine
-/// health pair from W1-06, `/metrics` from W1-09).
+/// health pair from W1-06, `/metrics` from W1-09), filtered to the
+/// compiled cargo features.
 #[test]
 fn mounted_routes_match_declaration() {
     let (state, _tmp) = test_state();
     let mounted: BTreeSet<(String, String)> = mounted_routes(&state, &Default::default())
         .map(|r| (r.method.to_string(), r.path.to_string()))
         .collect();
-    let expected: BTreeSet<(String, String)> = EXPECTED_WAVE0
+    let mut expected: BTreeSet<(String, String)> = EXPECTED_WAVE0_JSON
         .iter()
         .chain(EXPECTED_WAVE1_MOUNTED)
         .map(|(m, p)| (m.to_string(), p.to_string()))
-        .chain([("*".to_string(), "/mcp".to_string())])
         .collect();
+    if cfg!(feature = "ui") {
+        expected.extend(
+            EXPECTED_WAVE0_UI
+                .iter()
+                .map(|(m, p)| (m.to_string(), p.to_string())),
+        );
+    }
+    if cfg!(feature = "mcp") {
+        expected.insert(("*".to_string(), "/mcp".to_string()));
+    }
     assert_eq!(mounted, expected);
+}
+
+/// W1-12: `requires` filters the table by compiled cargo feature — a
+/// mounted row's feature is always compiled in (a compiled-out row has no
+/// handler arm either, so it can never leak into the router).
+#[test]
+fn mounted_routes_respect_compiled_features() {
+    let (state, _tmp) = test_state();
+    for opts in [RouterOptions::default(), RouterOptions::headless()] {
+        for spec in mounted_routes(&state, &opts) {
+            assert!(
+                spec.requires.is_none_or(feature_enabled),
+                "{} {} mounted but its feature {:?} is compiled out",
+                spec.method,
+                spec.path,
+                spec.requires,
+            );
+        }
+    }
+}
+
+/// W1-12 acceptance: `oxe serve --headless` drops the `requires: "ui"` rows
+/// (404 on the pages) while the JSON surface stays up.
+#[cfg(feature = "ui")]
+#[tokio::test]
+async fn headless_drops_ui_routes_keeps_api() {
+    let (state, _tmp) = test_state();
+    let headless: BTreeSet<(String, String)> = mounted_routes(&state, &RouterOptions::headless())
+        .map(|r| (r.method.to_string(), r.path.to_string()))
+        .collect();
+    for ui_row in EXPECTED_WAVE0_UI {
+        assert!(
+            !headless.contains(&(ui_row.0.to_string(), ui_row.1.to_string())),
+            "{ui_row:?} must not mount under --headless"
+        );
+    }
+    assert!(headless.contains(&("GET".to_string(), "/api/search".to_string())));
+
+    let router = build_router_opts(state, RouterOptions::headless());
+    for uri in ["/", "/search?q=x"] {
+        let (status, _, body) = get(&router, uri).await;
+        assert_eq!(status, StatusCode::NOT_FOUND, "{uri}: {body}");
+        assert_envelope(&body, "not_found");
+    }
+    let (status, _, body) = get(&router, "/api/search?q=headless").await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let (status, _, _) = get(&router, "/health").await;
+    assert_eq!(status, StatusCode::OK);
 }
 
 /// Probe the live router: every mounted row answers (never 404/405), every
@@ -995,9 +1059,9 @@ async fn mutating_origin_must_be_same_host() {
 #[tokio::test]
 async fn guard_accepts_configured_bind_host() {
     let (state, _tmp) = test_state();
-    let router = oxe_server::build_router_opts(
+    let router = build_router_opts(
         state,
-        oxe_server::RouterOptions {
+        RouterOptions {
             bind_host: "oxe.lvh.me".to_string(),
             ..Default::default()
         },

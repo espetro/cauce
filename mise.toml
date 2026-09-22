@@ -43,9 +43,18 @@ fi
 description = "cargo-deny: licenses, advisories, bans, sources"
 run = "cargo deny check"
 
+# W1-12: the non-default feature set stays compilable. The default build is
+# already covered by lint/test; this checks the minimal agent build
+# (`oxe mcp` + `oxe serve --headless`, no ui/ai/otlp). --all-targets also
+# compiles the e2e test target under the reduced features.
+[tasks."check:features"]
+description = "Check oxe-cli --no-default-features --features mcp"
+env = { CARGO_INCREMENTAL = "0" }
+run = "cargo check -p oxe-cli -p oxe-server --all-targets --no-default-features --features mcp"
+
 [tasks.validate]
-description = "Full local gate: fmt + lint + test + deny"
-depends = ["fmt", "lint", "test", "deny"]
+description = "Full local gate: fmt + lint + test + deny + feature-matrix check"
+depends = ["fmt", "lint", "test", "deny", "check:features"]
 
 [tasks."validate:nightly"]
 description = "Nightly budget, live canary, and full gate"

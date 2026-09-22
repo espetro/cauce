@@ -1,7 +1,8 @@
 //! Router assembly and the shared [`AppState`].
 //!
 //! [`build_router`] mounts every [`ROUTES`] row that has a handler arm in
-//! [`handler_for`] and is not gated off by [`RouterOptions`]. Mounting is
+//! [`handler_for`], whose `requires` cargo feature is compiled in, and that
+//! is not gated off by [`RouterOptions`]. Mounting is
 //! driven by iterating `ROUTES`, never by a separate route list, so an
 //! undeclared path cannot be mounted and a declared-but-handlerless wave-0
 //! row panics the build instead of silently 404ing.
@@ -15,14 +16,18 @@ use std::sync::{Arc, Mutex};
 
 use axum::extract::{Extension, Request};
 use axum::http::Uri;
-use axum::routing::{MethodRouter, any_service, delete, get, post, put};
+#[cfg(feature = "mcp")]
+use axum::routing::any_service;
+use axum::routing::{MethodRouter, delete, get, post, put};
 use axum::{Router, middleware};
 use oxe_core::{SearchPipeline, Store, config::Config};
 use tokio::net::TcpListener;
 
 use crate::error::ApiError;
 use crate::handlers;
+#[cfg(feature = "ui")]
 use crate::html;
+#[cfg(feature = "mcp")]
 use crate::mcp;
 use crate::metrics::MetricsHandle;
 use crate::middleware::{HostGuard, RequestCtx, host_origin_guard, request_context};
@@ -105,13 +110,31 @@ impl RouterOptions {
         }
     }
 
+    /// Whether `spec` mounts under these options: the `requires` cargo
+    /// feature must be compiled in (see [`feature_enabled`]) and, for
+    /// `requires: "ui"`, the runtime `--headless` gate must allow pages.
     fn mounts(&self, spec: &RouteSpec) -> bool {
         match spec.requires {
+            Some(req) if !feature_enabled(req) => false,
             Some("ui") => self.ui,
-            // Features whose surfaces are not built yet (`mcp` lands in
-            // W1-08) mount once a handler arm exists.
-            _ => true,
+            Some(_) | None => true,
         }
+    }
+}
+
+/// Whether the cargo feature `name` (a [`RouteSpec::requires`] value) is
+/// compiled into this build. Unknown names never mount — a typo'd
+/// `requires` fails closed rather than silently mounting the row.
+pub fn feature_enabled(name: &str) -> bool {
+    match name {
+        "ui" => cfg!(feature = "ui"),
+        "mcp" => cfg!(feature = "mcp"),
+        "ai" => cfg!(feature = "ai"),
+        "archive" => cfg!(feature = "archive"),
+        "semantic" => cfg!(feature = "semantic"),
+        "postgres" => cfg!(feature = "postgres"),
+        "otlp" => cfg!(feature = "otlp"),
+        _ => false,
     }
 }
 
@@ -134,16 +157,18 @@ pub fn build_router(state: AppState) -> Router {
 }
 
 /// [`build_router`] with explicit mount options (`--headless`).
-// `wave <= CURRENT_WAVE` reads absurdly while CURRENT_WAVE is 0 (u8 min) but
-// is the correct predicate once later waves land: bumping the constant must
-// keep earlier-wave routes in the must-implement set, so `==` would be wrong.
-#[allow(clippy::absurd_extreme_comparisons)]
+// `wave <= CURRENT_WAVE` is deliberately `<=`, not `==`: bumping the
+// constant must keep earlier-wave routes in the must-implement set.
 pub fn build_router_opts(state: AppState, opts: RouterOptions) -> Router {
-    // Hard check: every wave-0 row must be implemented — `requires` is a
-    // runtime mount gate (RouterOptions), not a compile-time strip, so a
-    // gated row like `GET /` still needs a handler arm. A missing arm is a
-    // build-time bug, not a runtime 404.
-    for spec in ROUTES.iter().filter(|s| s.wave <= CURRENT_WAVE) {
+    // Hard check: every wave <= CURRENT_WAVE row whose `requires` feature is
+    // compiled in must have a handler arm — a missing arm is a build-time
+    // bug, not a runtime 404. Rows gated behind a feature this build lacks
+    // (e.g. `GET /` in a `--no-default-features` build) are legitimately
+    // arm-less and stay unmounted.
+    for spec in ROUTES
+        .iter()
+        .filter(|s| s.wave <= CURRENT_WAVE && s.requires.is_none_or(feature_enabled))
+    {
         assert!(
             handler_for(spec, &state).is_some(),
             "ROUTES: {} {} is wave-{} but has no handler",
@@ -187,10 +212,14 @@ pub fn build_router_opts(state: AppState, opts: RouterOptions) -> Router {
 ///
 /// Takes `state` because some handlers are built from it (the MCP streamable
 /// service captures the shared pipeline/store) rather than extracting it via
-/// `State<AppState>` at request time.
+/// `State<AppState>` at request time. `state` is only read by the `/mcp`
+/// arm today, so it is unused in non-`mcp` builds.
+#[cfg_attr(not(feature = "mcp"), allow(unused_variables))]
 fn handler_for(spec: &RouteSpec, state: &AppState) -> Option<MethodRouter<AppState>> {
     match (spec.method, spec.path, spec.kind) {
+        #[cfg(feature = "ui")]
         ("GET", "/", RouteKind::Html) => Some(get(html::index)),
+        #[cfg(feature = "ui")]
         ("GET", "/search", RouteKind::Html) => Some(get(html::search)),
         ("GET", "/api/search", RouteKind::Json) => Some(get(handlers::search)),
         ("GET", "/api/history", RouteKind::Json) => Some(get(handlers::history)),
@@ -209,6 +238,7 @@ fn handler_for(spec: &RouteSpec, state: &AppState) -> Option<MethodRouter<AppSta
         ("PUT", "/api/config", RouteKind::Json) => Some(put(handlers::config_put)),
         // The MCP streamable-HTTP transport is a `tower::Service` serving
         // every method on `/mcp` (W1-08): `any_service` mounts it directly.
+        #[cfg(feature = "mcp")]
         ("*", "/mcp", RouteKind::Mcp) => Some(any_service(mcp::streamable_service(state.clone()))),
         _ => None,
     }

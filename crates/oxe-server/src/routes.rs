@@ -42,8 +42,10 @@ pub struct RouteSpec {
     /// Wave the route is introduced in (per the section-6 notes column).
     /// Rows ahead of the current wave are declared but not yet mounted.
     pub wave: u8,
-    /// Cargo feature the route needs. `None` mounts in every mode,
-    /// including `oxe serve --headless`.
+    /// Cargo feature the route needs (see `app::feature_enabled`). `None`
+    /// mounts in every build and every mode, including
+    /// `oxe serve --headless`; `"ui"` rows additionally obey the runtime
+    /// headless switch.
     pub requires: Option<&'static str>,
 }
 

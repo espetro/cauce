@@ -11,6 +11,9 @@
 //! License, v. 2.0. If a copy of the MPL was not distributed with this
 //! file, You can obtain one at <https://mozilla.org/MPL/2.0/>.
 
+// `/mcp` and `oxe_server::mcp` exist only in `mcp` builds (W1-12).
+#![cfg(feature = "mcp")]
+
 use std::collections::BTreeSet;
 use std::net::SocketAddr;
 use std::sync::Arc;
