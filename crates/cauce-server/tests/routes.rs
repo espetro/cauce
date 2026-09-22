@@ -57,6 +57,10 @@ const EXPECTED_WAVE1_MOUNTED: &[(&str, &str)] = &[
     ("GET", "/metrics"),
 ];
 
+/// Wave-2 HTMX pages mounted so far (W2-06 audit + trace). `requires: "ui"`
+/// rows: they join the expected set only in `ui` builds.
+const EXPECTED_WAVE2_UI: &[(&str, &str)] = &[("GET", "/audit"), ("GET", "/trace/{id}")];
+
 /// Serialises tests that mutate process env (`CAUCE_CONFIG_DIR` and friends).
 /// Under nextest each test is its own process anyway; this keeps plain
 /// `cargo test` (one process per test binary) safe too.
@@ -304,6 +308,7 @@ fn mounted_routes_match_declaration() {
         expected.extend(
             EXPECTED_WAVE0_UI
                 .iter()
+                .chain(EXPECTED_WAVE2_UI)
                 .map(|(m, p)| (m.to_string(), p.to_string())),
         );
     }

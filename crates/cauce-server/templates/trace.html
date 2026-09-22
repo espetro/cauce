@@ -1,0 +1,22 @@
+<!doctype html>
+<!-- This Source Code Form is subject to the terms of the Mozilla Public
+     License, v. 2.0. If a copy of the MPL was not distributed with this
+     file, You can obtain one at https://mozilla.org/MPL/2.0/. -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>trace {{ traced_short }} · cauce</title>
+  <style>{{ style_css|safe }}</style>
+</head>
+<body>
+  <h1>Trace</h1>
+  <div class="meta">
+    <span class="request-id" title="{{ traced_id }}">{{ traced_id }}</span>
+  </div>
+  <pre class="trace">{{ timeline }}</pre>
+  <div class="meta">
+    <span class="request-id" title="{{ request_id }}">{{ short_request_id }}</span>
+  </div>
+</body>
+</html>

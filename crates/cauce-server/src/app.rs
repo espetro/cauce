@@ -23,6 +23,8 @@ use axum::{Router, middleware};
 use cauce_core::{SearchPipeline, Store, config::Config};
 use tokio::net::TcpListener;
 
+#[cfg(feature = "ui")]
+use crate::audit_page;
 use crate::error::ApiError;
 use crate::handlers;
 #[cfg(feature = "ui")]
@@ -221,6 +223,10 @@ fn handler_for(spec: &RouteSpec, state: &AppState) -> Option<MethodRouter<AppSta
         ("GET", "/", RouteKind::Html) => Some(get(html::index)),
         #[cfg(feature = "ui")]
         ("GET", "/search", RouteKind::Html) => Some(get(html::search)),
+        #[cfg(feature = "ui")]
+        ("GET", "/audit", RouteKind::Html) => Some(get(audit_page::audit)),
+        #[cfg(feature = "ui")]
+        ("GET", "/trace/{id}", RouteKind::Html) => Some(get(audit_page::trace)),
         ("GET", "/api/search", RouteKind::Json) => Some(get(handlers::search)),
         ("GET", "/api/history", RouteKind::Json) => Some(get(handlers::history)),
         ("POST", "/api/click", RouteKind::Json) => Some(post(handlers::click)),

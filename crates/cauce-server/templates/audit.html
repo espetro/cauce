@@ -1,0 +1,52 @@
+<!doctype html>
+<!-- This Source Code Form is subject to the terms of the Mozilla Public
+     License, v. 2.0. If a copy of the MPL was not distributed with this
+     file, You can obtain one at https://mozilla.org/MPL/2.0/. -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>audit · cauce</title>
+  <style>{{ style_css|safe }}</style>
+</head>
+<body>
+  <h1>Audit</h1>
+  <form action="/audit" method="get">
+    <input type="search" name="actor" value="{{ actor }}" placeholder="actor (ui, api, cli, mcp:...)">
+    <input type="search" name="action" value="{{ action }}" placeholder="action (cache.delete, ...)">
+    <button type="submit">Filter</button>
+    {% if filtered %}<a href="/audit">clear</a>{% endif %}
+  </form>
+  {% if rows.is_empty() %}
+  <p class="empty">{% if filtered %}No audit rows match these filters.{% else %}No audit rows yet.{% endif %}</p>
+  {% else %}
+  <table>
+    <thead>
+      <tr><th>when</th><th>actor</th><th>action</th><th>target</th><th>request</th><th>details</th></tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+      <tr>
+        <td>{{ row.ts }}</td>
+        <td>{{ row.actor }}</td>
+        <td><code>{{ row.action }}</code></td>
+        <td>{{ row.target }}</td>
+        <td>
+          {% if !row.request_id.is_empty() %}
+          <a class="request-id" href="/trace/{{ row.request_id }}" title="{{ row.request_id }}">{{ row.short_request_id }}</a>
+          {% else %}
+          -
+          {% endif %}
+        </td>
+        <td><details><summary>details</summary><pre>{{ row.details }}</pre></details></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+  <div class="meta">
+    <span>{{ rows.len() }} rows</span>
+    <span class="request-id" title="{{ request_id }}">{{ short_request_id }}</span>
+  </div>
+</body>
+</html>
