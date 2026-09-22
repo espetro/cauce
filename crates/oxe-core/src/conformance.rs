@@ -155,6 +155,20 @@ pub async fn cache_exact_roundtrip(store: &impl Store) {
         .expect("get_exact failed")
         .expect("replaced row must still be visible");
     assert_eq!(got.response, resp2, "put must replace the stored payload");
+
+    // An absurd TTL must clamp to a representable timestamp, not corrupt the
+    // row (saturating to i64::MAX overflows DateTime::from_timestamp_millis).
+    let huge_key = CacheKey::from(&request("conformance exact huge ttl"));
+    store
+        .put(&huge_key, &resp, Duration::MAX)
+        .await
+        .expect("put with Duration::MAX failed");
+    let got = store
+        .get_exact(&huge_key)
+        .await
+        .expect("get_exact failed")
+        .expect("clamped row must decode, not read back Corrupt");
+    assert!(got.expires_at > Utc::now());
 }
 
 /// Rows past `expires_at` are invisible to `get_exact`, visible to the admin
@@ -262,6 +276,57 @@ pub async fn lexical_search(store: &impl Store) {
         .await
         .expect("get_lexical failed");
     assert!(hits.is_empty(), "gibberish term must match nothing");
+
+    // Punctuation-only input is an empty result, not an FTS syntax error.
+    let hits = store
+        .get_lexical("*", 10)
+        .await
+        .expect("get_lexical('*') failed");
+    assert!(hits.is_empty(), "operator-only input must not error");
+
+    // Pinned semantic: get_lexical DOES return expired rows (callers check
+    // CachedSearch::expires_at to serve or mark stale). W6 Postgres must match.
+    let expired_key = CacheKey::from(&request("conformance lexical expired"));
+    store
+        .put(
+            &expired_key,
+            &response(
+                "conformance lexical expired",
+                &[("stale zephyr hit", "https://stale.example.com/", "x")],
+            ),
+            Duration::ZERO,
+        )
+        .await
+        .expect("put expired");
+    let hits = store
+        .get_lexical("zephyr", 10)
+        .await
+        .expect("get_lexical failed");
+    assert!(
+        hits.iter()
+            .any(|c| c.key == expired_key && c.expires_at <= Utc::now()),
+        "get_lexical must return expired rows (stale serving is the caller's call)"
+    );
+
+    // A zero-result response is still indexed (its query column) and the FTS
+    // row carries the cache_entries rowid, not a phantom.
+    let empty_key = CacheKey::from(&request("conformance lexical empty"));
+    store
+        .put(
+            &empty_key,
+            &response("conformance lexical empty", &[]),
+            Duration::from_secs(3600),
+        )
+        .await
+        .expect("put empty");
+    let hits = store
+        .get_lexical("empty", 10)
+        .await
+        .expect("get_lexical failed");
+    assert!(
+        hits.iter().any(|c| c.key == empty_key),
+        "empty-results rows must be indexed and found via their query"
+    );
 
     // Lexical results must survive the source row being deleted.
     assert!(store.delete_cache(&key).await.expect("delete_cache failed"));
@@ -583,6 +648,30 @@ pub async fn stats_aggregates(store: &impl Store) {
     assert_eq!(
         after.cache_entries_expired,
         before.cache_entries_expired + 1
+    );
+
+    // Pinned semantic: `stats(0)` is the all-time window, so a 60-day-old row
+    // counts there but not in `stats(30)`.
+    let all0 = store.stats(0).await.expect("stats(0) baseline");
+    let win0 = store.stats(30).await.expect("stats(30) baseline");
+    store
+        .log_search(log_row(
+            Utc::now() - chrono::Duration::days(60),
+            "conf stats old",
+            ClientKind::Api,
+            LogSource::Network,
+            50,
+            1,
+        ))
+        .await
+        .expect("log old row");
+    let all1 = store.stats(0).await.expect("stats(0)");
+    let win1 = store.stats(30).await.expect("stats(30)");
+    assert_eq!(all1.window_days, 0);
+    assert_eq!(all1.searches, all0.searches + 1, "stats(0) is all-time");
+    assert_eq!(
+        win1.searches, win0.searches,
+        "stats(30) excludes a 60-day-old row"
     );
 }
 
