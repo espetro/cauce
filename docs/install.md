@@ -72,16 +72,23 @@ Notes:
 - The bundled `ddgs` exec engine only works when `oxe` runs from the
   repo checkout (its relative `sdk/python/...` path resolves by walking
   up from the process cwd) and its `uv` venv exists (`uv sync --project
-  sdk/python --extra ddgs`). Under supervision, either pin the
-  declarative engines and drop ddgs:
+  sdk/python --extra ddgs`). Under supervision, disable it in
+  `~/.config/oxe/config.toml`:
 
   ```toml
-  env = { OXE_ENGINES = "bing,brave" }
+  [[engines]]
+  id = "ddgs"
+  kind = "exec"
+  enabled = false
+  command = "python3"
+  args = ["sdk/python/oxe_engine_sdk/ddgs_auto.py"]
   ```
 
-  or keep ddgs by adding a `[[engines]]` block in
-  `~/.config/oxe/config.toml` with absolute `command`/`args` pointing at
-  the venv's python and `ddgs_auto.py`.
+  (`OXE_ENGINES` cannot name `bing`/`brave`: the pin validates against
+  `[[engines]]` entries and built-ins, and embedded specs are only
+  auto-registered when the pin is unset.) To keep ddgs instead, give its
+  `[[engines]]` block absolute `command`/`args` pointing at the venv's
+  python and `ddgs_auto.py`.
 
 Apply the single app (never restart the daemon for a per-app change):
 
