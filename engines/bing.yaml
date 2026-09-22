@@ -1,0 +1,43 @@
+# Copyright 2026 Joaquin Terrasa and oxe contributors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Bing web search (W1-03). `first` is 1-based and steps by `page_size`
+# (page 2 -> first=11), hence `{offset+1}`. `mkt` is pinned to en-US:
+# verified live 2026-09-22, without a market Bing serves a syntactically
+# valid SERP whose organic results belong to a different query
+# (low-trust IP poisoning). `{lang}` still flows via Accept-Language.
+id: bing
+tier: 1
+page_size: 10
+request:
+  url: "https://www.bing.com/search?q={q}&first={offset+1}&mkt=en-US"
+  headers:
+    Accept-Language: "{lang}"
+  timeout_ms: 8000
+parse:
+  kind: html
+  results: "li.b_algo"
+  fields:
+    title: { css: "h2 a", text: true }
+    url: { css: "h2 a", attr: href }
+    snippet: { css: [".b_caption p", "p"], text: true }
+detect:
+  blocked: ["captcha", "unusual traffic"]
+  rate_limited_status: [429]
+unwrap_redirect:
+  # https://www.bing.com/ck/a?...&u=a1<base64url(target)>&ntb=1
+  - match: "bing.com/ck/a"
+    param: u
+    strip: "a1"
+    base64: true
