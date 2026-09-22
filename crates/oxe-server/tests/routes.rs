@@ -277,16 +277,19 @@ fn wave0_routes_match_plan_filter() {
 }
 
 /// `mounted_routes` (the builder's own view) equals the wave-0 set plus
-/// every wave-1 row implemented so far.
+/// every wave-1 row implemented so far (`* /mcp` from W1-08, the engine
+/// health pair from W1-06).
 #[test]
-fn mounted_routes_equal_wave0_declaration() {
-    let mounted: BTreeSet<(String, String)> = mounted_routes(&Default::default())
+fn mounted_routes_match_declaration() {
+    let (state, _tmp) = test_state();
+    let mounted: BTreeSet<(String, String)> = mounted_routes(&state, &Default::default())
         .map(|r| (r.method.to_string(), r.path.to_string()))
         .collect();
     let expected: BTreeSet<(String, String)> = EXPECTED_WAVE0
         .iter()
         .chain(EXPECTED_WAVE1_MOUNTED)
         .map(|(m, p)| (m.to_string(), p.to_string()))
+        .chain([("*".to_string(), "/mcp".to_string())])
         .collect();
     assert_eq!(mounted, expected);
 }
@@ -296,8 +299,8 @@ fn mounted_routes_equal_wave0_declaration() {
 /// mechanical fix for "written but never mounted".
 #[tokio::test]
 async fn live_router_matches_routes_table() {
-    let (router, _state, _tmp) = app();
-    let mounted: BTreeSet<(String, String)> = mounted_routes(&Default::default())
+    let (router, state, _tmp) = app();
+    let mounted: BTreeSet<(String, String)> = mounted_routes(&state, &Default::default())
         .map(|r| (r.method.to_string(), r.path.to_string()))
         .collect();
 
@@ -319,7 +322,14 @@ async fn live_router_matches_routes_table() {
             .replace("{key}", &key)
             .replace("{id}", "replay")
             .replace("{url}", "https%3A%2F%2Fexample.com");
-        let method = Method::from_bytes(spec.method.as_bytes()).unwrap_or(Method::GET);
+        // `*` is not an HTTP method; probe the MCP endpoint with POST (a
+        // bare POST without the MCP accept/content headers answers 4xx,
+        // which still proves the route is mounted).
+        let method = if spec.method == "*" {
+            Method::POST
+        } else {
+            Method::from_bytes(spec.method.as_bytes()).unwrap_or(Method::GET)
+        };
         let uri = match (spec.method, spec.path) {
             ("GET", "/api/search") => format!("{path}?q=probe"),
             ("DELETE", "/api/cache") => format!("{path}?all=true"),
