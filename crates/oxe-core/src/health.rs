@@ -166,7 +166,7 @@ impl EngineHealth {
 /// The pipeline's per-engine gate decision (parent plan 4.4.6: skip `Open`,
 /// probe `HalfOpen` with one call).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Admission {
+pub enum Gate {
     /// Breaker closed: the engine fans out normally.
     Call,
     /// Breaker half-open: this is the single probe call.
@@ -244,13 +244,13 @@ impl HealthTracker {
     /// Gate an engine call. May lazily transition `Open` -> `HalfOpen`
     /// once `breaker_until` passes (that transition is marked dirty and
     /// audited on the next flush). Unknown engines are treated as closed.
-    pub fn admission(&self, id: &EngineId, request_id: Uuid) -> Admission {
+    pub fn admission(&self, id: &EngineId, request_id: Uuid) -> Gate {
         let mut inner = self.lock();
         let mut transition = None;
         let decision = {
             let health = inner.map.entry(id.clone()).or_default();
             match health.breaker {
-                BreakerState::Closed => Admission::Call,
+                BreakerState::Closed => Gate::Call,
                 BreakerState::Open => {
                     let elapsed = health
                         .breaker_until
@@ -258,7 +258,7 @@ impl HealthTracker {
                         .unwrap_or(true);
                     if !elapsed {
                         debug!(engine = %id, "breaker open: skipping engine");
-                        Admission::Skip
+                        Gate::Skip
                     } else {
                         health.breaker = BreakerState::HalfOpen;
                         health.probe_in_flight = true;
@@ -271,16 +271,16 @@ impl HealthTracker {
                             request_id,
                         });
                         info!(engine = %id, "breaker window elapsed: half-open probe");
-                        Admission::Probe
+                        Gate::Probe
                     }
                 }
                 BreakerState::HalfOpen => {
                     if health.probe_in_flight {
                         debug!(engine = %id, "half-open probe already in flight: skipping");
-                        Admission::Skip
+                        Gate::Skip
                     } else {
                         health.probe_in_flight = true;
-                        Admission::Probe
+                        Gate::Probe
                     }
                 }
             }

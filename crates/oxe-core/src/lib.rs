@@ -1,5 +1,7 @@
 //! oxe-core: domain types, SearchPipeline, Scheduler, cache tiers, Store and
-//! Engine traits, merge/RRF, health. No HTTP, no SQL.
+//! Engine traits, merge/RRF, health. No HTTP server, no SQL; the only I/O
+//! dependency is `reqwest` behind the [`http::HttpClient`] engine-egress
+//! wrapper (parent plan section 4.1).
 //!
 //! The shapes here implement section 4.2 of `.agents/plans/2026-09-21-v3-rust-core.md`
 //! and are a settled contract: changing them requires amending the parent plan.
@@ -8,26 +10,30 @@
 //! License, v. 2.0. If a copy of the MPL was not distributed with this
 //! file, You can obtain one at <https://mozilla.org/MPL/2.0/>.
 
+mod admission;
 mod cache;
 pub mod config;
 #[cfg(feature = "conformance")]
 pub mod conformance;
 mod engine;
 mod health;
+pub mod http;
 mod normalize;
 mod pipeline;
 mod request;
 mod response;
 mod store;
 
+pub use admission::{Admission, AdmissionLimits, FlightResult};
 pub use cache::{CacheKey, CachedSearch, normalize_query};
 pub use config::{
-    AiConfig, Config, ConfigError, Dirs, EngineEntry, EngineKind, LogsConfig, MetaConfig,
-    Resources, SearchConfig, ServerConfig,
+    AdmissionConfig, AiConfig, AuthConfig, CacheConfig, Config, ConfigError, Dirs, EgressConfig,
+    EngineEntry, EngineKind, LexicalConfig, LogsConfig, MetaConfig, Resources, SearchConfig,
+    ServerConfig, is_loopback_host,
 };
 pub use engine::{Engine, EngineError, EngineId, Tier};
 pub use health::{
-    Admission, EWMA_ALPHA, EngineHealth, HealthPolicy, HealthTracker, PERSIST_DEBOUNCE, ProbeGuard,
+    EWMA_ALPHA, EngineHealth, Gate, HealthPolicy, HealthTracker, PERSIST_DEBOUNCE, ProbeGuard,
 };
 pub use normalize::normalize_url;
 pub use pipeline::{

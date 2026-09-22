@@ -11,12 +11,13 @@
 
 use std::collections::BTreeSet;
 use std::sync::{Arc, OnceLock};
+use std::time::Duration;
 
 use axum::Router;
 use axum::body::{Body, to_bytes};
-use axum::http::{Method, Request, StatusCode};
+use axum::http::{Method, Request, StatusCode, header};
 use oxe_core::config::Config;
-use oxe_core::{SearchPipeline, StoreTuning};
+use oxe_core::{Admission, AdmissionLimits, SearchPipeline, StoreTuning};
 use oxe_engines::{Replay, ReplayOpts};
 use oxe_server::{AppState, ROUTES, RouteKind, build_router, mounted_routes};
 use oxe_store_sqlite::SqliteStore;
@@ -425,6 +426,11 @@ async fn history_click_and_stats() {
     assert_eq!(rows.len(), 2, "{body}");
     assert_eq!(rows[0]["kind"], "search");
 
+    // History merges searches and clicks by (ts DESC, id DESC) at
+    // millisecond precision; without a pause the click can share the last
+    // search's ms and lose the id tiebreak, flipping rows[0].
+    tokio::time::sleep(Duration::from_millis(2)).await;
+
     let request = Request::builder()
         .method("POST")
         .uri("/api/click")
@@ -711,4 +717,229 @@ async fn config_get_redaction_and_put_roundtrip() {
     let (status, _, body) = call(&router, request).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_envelope(&body, "invalid_config");
+}
+
+/// W1-07 acceptance: `PipelineError::RateLimited` maps to 429 with a
+/// `Retry-After` header and the `rate_limited` envelope code.
+#[tokio::test]
+async fn search_queue_overflow_returns_429_retry_after() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let store = Arc::new(
+        SqliteStore::open(tmp.path().join("oxe.db"), StoreTuning::default()).expect("store"),
+    );
+    let engine = Arc::new(Replay::new(ReplayOpts {
+        latency_ms: 300,
+        ..ReplayOpts::default()
+    }));
+    let pipeline = Arc::new(
+        SearchPipeline::new(store.clone(), vec![engine.clone()]).with_admission(Admission::new(
+            AdmissionLimits {
+                max_wait: Duration::from_millis(1),
+                max_concurrent_per_engine: 1,
+            },
+        )),
+    );
+    let router = build_router(AppState::new(pipeline, store, Config::default()));
+
+    // Occupy the single engine slot with an in-flight request.
+    let holder = tokio::spawn({
+        let router = router.clone();
+        async move { router.oneshot(req("GET", "/api/search?q=holder")).await }
+    });
+    // `call_count` ticks at the top of `search`: 1 means the permit is held.
+    let deadline = std::time::Instant::now() + Duration::from_secs(2);
+    while engine.call_count() == 0 && std::time::Instant::now() < deadline {
+        tokio::time::sleep(Duration::from_millis(2)).await;
+    }
+    assert_eq!(engine.call_count(), 1, "holder never reached the engine");
+
+    let (status, headers, body) = get(&router, "/api/search?q=overflow").await;
+    assert_eq!(status, StatusCode::TOO_MANY_REQUESTS, "{body}");
+    assert_eq!(headers[header::RETRY_AFTER], "1");
+    assert_envelope(&body, "rate_limited");
+
+    let holder_resp = holder.await.unwrap().expect("holder response");
+    assert_eq!(holder_resp.status(), StatusCode::OK);
+}
+
+// ---------------------------------------------------------------------------
+// W1-13: Host/Origin loopback guard
+// ---------------------------------------------------------------------------
+
+/// A request with a foreign `Host` is 403 before routing, whatever the
+/// path or method — the DNS-rebinding shape. Loopback and portless-alias
+/// hosts (`*.localhost`) pass.
+#[tokio::test]
+async fn foreign_host_is_forbidden() {
+    let (router, _state, _tmp) = app();
+
+    for (method, uri) in [
+        ("GET", "/api/search?q=x"),
+        ("GET", "/health"),
+        ("GET", "/"),
+        ("DELETE", "/api/cache?all=true"),
+        ("PUT", "/api/config"),
+    ] {
+        let request = Request::builder()
+            .method(method)
+            .uri(uri)
+            .header("host", "attacker.example.com")
+            .body(Body::empty())
+            .unwrap();
+        let (status, _, body) = call(&router, request).await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "{method} {uri}: {body}");
+        assert_envelope(&body, "forbidden");
+    }
+
+    // A foreign Host is rejected even on an undeclared path: the guard
+    // runs before routing.
+    let request = Request::builder()
+        .method("GET")
+        .uri("/nope")
+        .header("host", "attacker.example.com")
+        .body(Body::empty())
+        .unwrap();
+    let (status, _, _) = call(&router, request).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+
+    for host in [
+        "127.0.0.1",
+        "127.0.0.1:4479",
+        "localhost",
+        "localhost:4479",
+        "[::1]",
+        "[::1]:4479",
+        "search.localhost",
+        "oxe.localhost:443",
+    ] {
+        let request = Request::builder()
+            .method("GET")
+            .uri("/health")
+            .header("host", host)
+            .body(Body::empty())
+            .unwrap();
+        let (status, _, body) = call(&router, request).await;
+        assert_eq!(status, StatusCode::OK, "host {host}: {body}");
+    }
+}
+
+/// Every mutating `ROUTES` row carries the guard: a foreign `Origin` on a
+/// mutating method is 403 before the handler runs. The table is iterated
+/// rather than enumerated so rows added in later waves are covered
+/// automatically; `*` (the MCP row) is probed as POST.
+#[tokio::test]
+async fn mutating_routes_reject_foreign_origin() {
+    let (router, _state, _tmp) = app();
+
+    let mut mutating = 0;
+    for spec in ROUTES
+        .iter()
+        .filter(|s| !matches!(s.method, "GET" | "HEAD" | "OPTIONS"))
+    {
+        mutating += 1;
+        let method = if spec.method == "*" {
+            "POST"
+        } else {
+            spec.method
+        };
+        let path = spec
+            .path
+            .replace("{key}", &"a".repeat(64))
+            .replace("{id}", "x")
+            .replace("{url}", "x");
+        let request = Request::builder()
+            .method(method)
+            .uri(&path)
+            .header("origin", "https://attacker.example.com")
+            .body(Body::empty())
+            .unwrap();
+        let (status, _, body) = call(&router, request).await;
+        assert_eq!(
+            status,
+            StatusCode::FORBIDDEN,
+            "{} {} must carry the guard: {body}",
+            spec.method,
+            spec.path
+        );
+        assert_envelope(&body, "forbidden");
+    }
+    assert!(mutating > 0, "the table must contain mutating rows");
+}
+
+/// `Origin` absent (CLI/server-to-server) or same-host passes the guard;
+/// `null` and foreign origins on mutating methods do not.
+#[tokio::test]
+async fn mutating_origin_must_be_same_host() {
+    let (router, _state, _tmp) = app();
+    let click = || {
+        Request::builder()
+            .method("POST")
+            .uri("/api/click")
+            .header("content-type", "application/json")
+    };
+
+    // Absent Origin reaches the handler (204 = click accepted).
+    let (status, _, _) = call(
+        &router,
+        click()
+            .body(Body::from(r#"{"url":"https://example.com/a"}"#))
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+
+    // Same-host origins pass, whatever the port or loopback alias.
+    for origin in [
+        "http://localhost:4479",
+        "http://localhost:3000",
+        "https://search.localhost",
+        "http://127.0.0.1:4479",
+        "http://[::1]:4479",
+    ] {
+        let (status, _, body) = call(
+            &router,
+            click()
+                .header("origin", origin)
+                .body(Body::from(r#"{"url":"https://example.com/a"}"#))
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::NO_CONTENT, "origin {origin}: {body}");
+    }
+
+    // `null` (sandboxed frame) and foreign origins are rejected.
+    for origin in ["null", "https://attacker.example.com", "not a uri"] {
+        let (status, _, body) = call(
+            &router,
+            click()
+                .header("origin", origin)
+                .body(Body::from(r#"{"url":"https://example.com/a"}"#))
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "origin {origin}: {body}");
+        assert_envelope(&body, "forbidden");
+    }
+}
+
+/// The guard's allow list honours a configured bind host beyond the
+/// loopback names (a loopback-resolving alias like `lvh.me`).
+#[tokio::test]
+async fn guard_accepts_configured_bind_host() {
+    let (state, _tmp) = test_state();
+    let router = oxe_server::build_router_opts(
+        state,
+        oxe_server::RouterOptions {
+            bind_host: "oxe.lvh.me".to_string(),
+            ..Default::default()
+        },
+    );
+    let request = Request::builder()
+        .method("GET")
+        .uri("/health")
+        .header("host", "oxe.lvh.me:4479")
+        .body(Body::empty())
+        .unwrap();
+    let (status, _, body) = call(&router, request).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
 }

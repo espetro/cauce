@@ -14,7 +14,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use oxe_core::{
-    Admission, BreakerState, EngineError, EngineId, HealthPolicy, HealthTracker, PipelineError,
+    BreakerState, EngineError, EngineId, Gate, HealthPolicy, HealthTracker, PipelineError,
     SearchPipeline, Store,
 };
 use support::{GateEngine, StubStore, replay_at, req};
@@ -338,20 +338,17 @@ async fn load_restores_persisted_state() {
     assert_eq!(tracker.load().await.unwrap(), 2);
 
     // Still inside the window: skipped, persisted fields intact.
-    assert_eq!(tracker.admission(&open_id, Uuid::now_v7()), Admission::Skip);
+    assert_eq!(tracker.admission(&open_id, Uuid::now_v7()), Gate::Skip);
     let row = tracker.health_row(&open_id).unwrap();
     assert_eq!(row.ewma_ms, 500.0);
     assert_eq!(row.failures, 4);
     assert_eq!(row.last_error.as_deref(), Some("rate limited by upstream"));
 
     // Elapsed window: one probe admitted, a second is not.
+    assert_eq!(tracker.admission(&stale_id, Uuid::now_v7()), Gate::Probe);
     assert_eq!(
         tracker.admission(&stale_id, Uuid::now_v7()),
-        Admission::Probe
-    );
-    assert_eq!(
-        tracker.admission(&stale_id, Uuid::now_v7()),
-        Admission::Skip,
+        Gate::Skip,
         "half-open admits exactly one probe"
     );
 
@@ -361,6 +358,6 @@ async fn load_restores_persisted_state() {
     assert_eq!(row.breaker, BreakerState::Closed);
     assert_eq!(row.failures, 0);
     assert_eq!(row.ewma_ms, 0.0);
-    assert_eq!(tracker.admission(&open_id, Uuid::now_v7()), Admission::Call);
+    assert_eq!(tracker.admission(&open_id, Uuid::now_v7()), Gate::Call);
     assert!(tracker.reset(&EngineId::from("unknown")).is_none());
 }

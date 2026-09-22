@@ -23,7 +23,7 @@ use tokio::net::TcpListener;
 use crate::error::ApiError;
 use crate::handlers;
 use crate::html;
-use crate::middleware::{RequestCtx, request_context};
+use crate::middleware::{HostGuard, RequestCtx, host_origin_guard, request_context};
 use crate::routes::{ROUTES, RouteKind, RouteSpec};
 
 /// The wave this build implements; the routes-table test pins
@@ -68,22 +68,31 @@ impl AppState {
 
 /// Which `requires` features a build mounts. `oxe serve --headless` sets
 /// `ui: false` (plan section 6: headless mounts only non-`ui` rows).
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct RouterOptions {
     /// Mount `requires: "ui"` rows (the HTMX pages).
     pub ui: bool,
+    /// The effective bind host (`--bind` or `server.host`); the Host/Origin
+    /// guard (W1-13) accepts it on top of the loopback names.
+    pub bind_host: String,
 }
 
 impl Default for RouterOptions {
     fn default() -> Self {
-        Self { ui: true }
+        Self {
+            ui: true,
+            bind_host: "127.0.0.1".to_string(),
+        }
     }
 }
 
 impl RouterOptions {
     /// `oxe serve --headless`: API + MCP, no pages.
     pub fn headless() -> Self {
-        Self { ui: false }
+        Self {
+            ui: false,
+            ..Self::default()
+        }
     }
 
     fn mounts(&self, spec: &RouteSpec) -> bool {
@@ -149,6 +158,12 @@ pub fn build_router_opts(state: AppState, opts: RouterOptions) -> Router {
     router
         .fallback(not_found)
         .method_not_allowed_fallback(method_not_allowed)
+        // The Host/Origin guard (W1-13) runs inside `request_context`, so
+        // a rejected request still carries `X-Request-Id` and its span.
+        .layer(middleware::from_fn_with_state(
+            HostGuard::new(&opts.bind_host),
+            host_origin_guard,
+        ))
         .layer(middleware::from_fn(request_context))
         .with_state(state)
 }
