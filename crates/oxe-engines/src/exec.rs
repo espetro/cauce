@@ -2,9 +2,14 @@
 //! stdin/stdout (parent plan section 4.3, protocol `v: 1`).
 //!
 //! One request is in flight per process; concurrent `search` calls serialize on
-//! a mutex. A child that crashes or overruns the request budget is killed and
-//! respawned lazily on the next call. Child stderr is forwarded to `tracing`
-//! at `warn`.
+//! a mutex. The child is spawned eagerly when the engine is built inside a
+//! tokio runtime (the `serve`/`mcp` factory path) so the first request is not
+//! racing process boot against its deadline (issue #83); built outside a
+//! runtime, or after a failed eager spawn, it degrades to lazy spawn on the
+//! first call. A child that crashes or overruns the request budget is killed
+//! and re-warmed immediately, including when the pipeline's outer deadline
+//! *drops* the in-flight `search`, so the next call never cold-starts inside
+//! its own deadline. Child stderr is forwarded to `tracing` at `warn`.
 //!
 //! This Source Code Form is subject to the terms of the Mozilla Public
 //! License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -12,12 +17,14 @@
 
 use std::path::PathBuf;
 use std::process::Stdio;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStdin, ChildStdout, Command};
+use tokio::runtime::Handle;
 use tokio::sync::Mutex;
 use tokio::time::timeout;
 use tracing::{debug, warn};
@@ -141,13 +148,116 @@ struct State {
     child: Option<ChildIo>,
 }
 
+/// Spawn the child. Must be called inside a tokio runtime (the stderr
+/// forwarder is a spawned task).
+fn spawn_child(spec: &ExecSpec) -> Result<ChildIo, EngineError> {
+    let mut cmd = Command::new(&spec.command);
+    cmd.args(&spec.args)
+        .envs(spec.env.iter().cloned())
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true);
+    if let Some(cwd) = &spec.cwd {
+        cmd.current_dir(cwd);
+    }
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| EngineError::Transport(format!("spawn `{}` failed: {e}", spec.command)))?;
+    if let Some(stderr) = child.stderr.take() {
+        let id = spec.id.clone();
+        tokio::spawn(async move {
+            let mut lines = BufReader::new(stderr).lines();
+            while let Ok(Some(line)) = lines.next_line().await {
+                warn!(engine = %id, "exec child stderr: {line}");
+            }
+        });
+    }
+    let stdin = child
+        .stdin
+        .take()
+        .ok_or_else(|| EngineError::Transport("child stdin not piped".into()))?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| EngineError::Transport("child stdout not piped".into()))?;
+    debug!(engine = %spec.id, "exec child spawned");
+    Ok(ChildIo {
+        child,
+        stdin,
+        stdout: BufReader::new(stdout),
+    })
+}
+
+/// Re-warm the engine after a kill (issue #83). Armed for the span of one
+/// in-flight request: every path that ends without putting a live child back
+/// into `state` (the engine's own deadline, an io failure, a decode desync,
+/// or the pipeline's outer deadline dropping the whole `search` future)
+/// leaves `state.child` empty and a dead process behind. `Drop` then spawns
+/// the replacement on a detached task so the next caller finds a child that
+/// is already booted or booting, instead of paying cold-start inside its own
+/// deadline and dying the same way. A failed respawn leaves `child` at `None`
+/// and the next `search` retries lazily, so a broken `command` cannot hot
+/// loop here.
+struct RespawnOnDrop {
+    spec: ExecSpec,
+    state: Arc<Mutex<State>>,
+    armed: bool,
+}
+
+impl RespawnOnDrop {
+    fn armed(spec: &ExecSpec, state: &Arc<Mutex<State>>) -> Self {
+        Self {
+            spec: spec.clone(),
+            state: Arc::clone(state),
+            armed: true,
+        }
+    }
+
+    fn disarm(&mut self) {
+        self.armed = false;
+    }
+}
+
+impl Drop for RespawnOnDrop {
+    fn drop(&mut self) {
+        // `Handle::try_current` because this also runs when the runtime is
+        // tearing down: no respawn is worth a panic in a destructor, the next
+        // call simply cold-spawns as before.
+        if !self.armed || Handle::try_current().is_err() {
+            return;
+        }
+        let spec = self.spec.clone();
+        let state = Arc::clone(&self.state);
+        tokio::spawn(async move {
+            let mut state = state.lock().await;
+            // `None` can also mean a concurrent `search` holds the child
+            // right now; installing a spare then is harmless, it is either
+            // adopted by the next call or killed by `kill_on_drop` when the
+            // in-flight call puts its own child back.
+            if state.child.is_none() {
+                match spawn_child(&spec) {
+                    Ok(io) => {
+                        debug!(engine = %spec.id, "exec child re-warmed after kill");
+                        state.child = Some(io);
+                    }
+                    Err(e) => warn!(engine = %spec.id, error = %e,
+                        "eager respawn failed; next call retries lazily"),
+                }
+            }
+        });
+    }
+}
+
 /// A warm `exec` engine: owns one child process and speaks protocol v1 to it.
 ///
-/// The child is spawned lazily on the first `search` call, so `new` is safe to
-/// call outside a tokio runtime.
+/// The child is spawned eagerly when `new` runs inside a tokio runtime (the
+/// `serve`/`mcp` factory path, tests); a failed spawn degrades to the lazy
+/// path, so `new` is safe to call outside a runtime and never fails on a
+/// missing `command`.
 pub struct ExecEngine {
     spec: ExecSpec,
-    state: Mutex<State>,
+    state: Arc<Mutex<State>>,
     /// W1-09 phase timings (`oxe_engine_duration_ms{phase}`): `http` is the
     /// stdin/stdout round trip, `parse` the response decode.
     metrics: Metrics,
@@ -155,56 +265,28 @@ pub struct ExecEngine {
 
 impl ExecEngine {
     pub fn new(spec: ExecSpec) -> Self {
+        let mut state = State::default();
+        // Eager warm spawn (issue #83): pay the child's boot cost at
+        // construction instead of inside the first request's deadline.
+        // `spawn_child` needs a runtime (stderr forwarder task); without
+        // one, or on a spawn error, the first `search` spawns lazily and
+        // surfaces the error there.
+        if Handle::try_current().is_ok() {
+            match spawn_child(&spec) {
+                Ok(io) => state.child = Some(io),
+                Err(e) => warn!(engine = %spec.id, error = %e,
+                    "eager spawn failed; first search retries lazily"),
+            }
+        }
         Self {
             spec,
-            state: Mutex::new(State::default()),
+            state: Arc::new(Mutex::new(state)),
             metrics: Metrics,
         }
     }
 
     pub fn spec(&self) -> &ExecSpec {
         &self.spec
-    }
-
-    /// Spawn the child. Must be called inside a tokio runtime (the stderr
-    /// forwarder is a spawned task).
-    fn spawn(&self) -> Result<ChildIo, EngineError> {
-        let mut cmd = Command::new(&self.spec.command);
-        cmd.args(&self.spec.args)
-            .envs(self.spec.env.iter().cloned())
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .kill_on_drop(true);
-        if let Some(cwd) = &self.spec.cwd {
-            cmd.current_dir(cwd);
-        }
-        let mut child = cmd.spawn().map_err(|e| {
-            EngineError::Transport(format!("spawn `{}` failed: {e}", self.spec.command))
-        })?;
-        if let Some(stderr) = child.stderr.take() {
-            let id = self.spec.id.clone();
-            tokio::spawn(async move {
-                let mut lines = BufReader::new(stderr).lines();
-                while let Ok(Some(line)) = lines.next_line().await {
-                    warn!(engine = %id, "exec child stderr: {line}");
-                }
-            });
-        }
-        let stdin = child
-            .stdin
-            .take()
-            .ok_or_else(|| EngineError::Transport("child stdin not piped".into()))?;
-        let stdout = child
-            .stdout
-            .take()
-            .ok_or_else(|| EngineError::Transport("child stdout not piped".into()))?;
-        debug!(engine = %self.spec.id, "exec child spawned");
-        Ok(ChildIo {
-            child,
-            stdin,
-            stdout: BufReader::new(stdout),
-        })
     }
 
     /// Take the live child out of `state`, respawning first when the
@@ -235,7 +317,7 @@ impl ExecEngine {
             if let Some(mut io) = state.child.take() {
                 let _ = io.child.kill().await; // reap the zombie
             }
-            state.child = Some(self.spawn()?);
+            state.child = Some(spawn_child(&self.spec)?);
         }
         Ok(state.child.take().expect("child present"))
     }
@@ -303,6 +385,9 @@ impl Engine for ExecEngine {
         // for the next caller.
         let mut state = self.state.lock().await;
         let mut io = self.ensure_child(&mut state).await?;
+        // From here every exit path kills the child this call is holding;
+        // the guard re-warms `state` so the next request is not cold.
+        let mut respawn = RespawnOnDrop::armed(&self.spec, &self.state);
 
         let round_trip = async {
             io.stdin.write_all(line.as_bytes()).await?;
@@ -347,6 +432,7 @@ impl Engine for ExecEngine {
             .record_engine_phase(&self.spec.id, EnginePhase::Parse, parse.elapsed());
         match decoded {
             Ok(results) => {
+                respawn.disarm(); // a live child is going back into `state`
                 state.child = Some(io);
                 Ok(results)
             }
