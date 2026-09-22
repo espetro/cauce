@@ -28,7 +28,8 @@ use std::io::IsTerminal;
 use std::path::PathBuf;
 
 use oxe_core::config::Dirs;
-use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::filter::LevelFilter;
+use tracing_subscriber::layer::{Layer, SubscriberExt};
 use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::{EnvFilter, Registry};
 
@@ -59,8 +60,10 @@ pub struct ObservabilityConfig {
     /// Emit the pretty human layer on stderr. Default: `OXE_LOG_PRETTY=1`
     /// or stderr is a TTY.
     pub stderr_pretty: bool,
-    /// `tracing` filter directive. Default: `OXE_LOG`, then `RUST_LOG`,
-    /// then `info`.
+    /// `tracing` filter directive for the stderr and OTLP layers. Default:
+    /// `OXE_LOG`, then `RUST_LOG`, then `info`. The JSONL layer is NOT
+    /// filtered by this: it keeps a fixed `info` floor so `RUST_LOG=warn`
+    /// cannot silently starve `oxe trace`.
     pub filter: String,
     /// Compile-time `otlp` feature is separate; this flag controls the
     /// runtime check of `OTEL_EXPORTER_OTLP_ENDPOINT`.
@@ -123,6 +126,7 @@ impl Drop for ObservabilityGuard {
 pub fn build(
     config: &ObservabilityConfig,
 ) -> Result<(tracing::Dispatch, ObservabilityGuard), jsonl::LogInitError> {
+    // The env-controlled filter applies to the stderr and OTLP layers only.
     let filter = EnvFilter::try_new(&config.filter).unwrap_or_else(|e| {
         eprintln!(
             "oxe: invalid log filter {:?} ({e}); falling back to \"info\"",
@@ -132,20 +136,26 @@ pub fn build(
     });
 
     let (writer, writer_guard) = jsonl::daily_file_writer(&config.logs_dir, config.retention_days)?;
-    let json_layer = jsonl::JsonlLayer::new(writer);
+    // The JSONL layer is the observability record of truth and `oxe trace`'s
+    // only input: it gets its own fixed `info` floor so a restrictive
+    // `OXE_LOG`/`RUST_LOG` (e.g. `warn`) cannot silently empty the logs.
+    let json_layer = jsonl::JsonlLayer::new(writer).with_filter(LevelFilter::INFO);
 
-    let stderr_layer = config.stderr_pretty.then(|| {
-        tracing_subscriber::fmt::layer()
-            .pretty()
-            .with_ansi(std::io::stderr().is_terminal())
-            .with_writer(std::io::stderr)
-    });
+    let stderr_layer = config
+        .stderr_pretty
+        .then(|| {
+            tracing_subscriber::fmt::layer()
+                .pretty()
+                .with_ansi(std::io::stderr().is_terminal())
+                .with_writer(std::io::stderr)
+        })
+        .map(|layer| layer.with_filter(filter.clone()));
 
     // The OTLP layer is typed over `Registry`, so it is the first layer in
-    // the stack. `EnvFilter` as a stack member filters the whole subscriber.
+    // the stack. Its `EnvFilter` is a per-layer filter, like stderr's.
     #[cfg(feature = "otlp")]
     let (otlp_layer, otlp) = match config.otlp.then(otlp::build_layer).flatten() {
-        Some((layer, handle)) => (Some(layer), Some(handle)),
+        Some((layer, handle)) => (Some(layer.with_filter(filter.clone())), Some(handle)),
         None => (None, None),
     };
     #[cfg(not(feature = "otlp"))]
@@ -153,7 +163,6 @@ pub fn build(
 
     let subscriber = Registry::default()
         .with(otlp_layer)
-        .with(filter)
         .with(json_layer)
         .with(stderr_layer);
 

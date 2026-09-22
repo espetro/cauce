@@ -134,6 +134,54 @@ fn trace_replays_engine_spans_in_order_with_durations() {
     assert!(out.contains("ERROR"), "error event missing:\n{out}");
 }
 
+/// The env-controlled filter (`OXE_LOG`/`RUST_LOG`) scopes stderr/OTLP only:
+/// the JSONL layer keeps its own `info` floor, so `filter = "warn"` must
+/// still record info-level span opens/closes and events — otherwise
+/// `oxe trace` silently goes empty.
+#[test]
+fn jsonl_layer_ignores_env_filter_floor() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut config = test_config(dir.path());
+    config.filter = "warn".to_string();
+    let (dispatch, guard) = build(&config).unwrap();
+    let request_id = RequestId::new();
+
+    tracing::dispatcher::with_default(&dispatch, || {
+        let request = request_span(request_id);
+        let _req = request.enter();
+        {
+            let engine = tracing::info_span!("engine", engine = "ddgs");
+            let _e = engine.enter();
+            tracing::info!(results = 3u32, "engine done");
+            tracing::warn!("slow upstream");
+        }
+    });
+    drop(guard);
+
+    let files = log_files(&config.logs_dir).unwrap();
+    assert_eq!(files.len(), 1, "expected one daily log file");
+    let content = std::fs::read_to_string(&files[0]).unwrap();
+    let kinds: Vec<String> = content
+        .lines()
+        .map(|l| {
+            serde_json::from_str::<serde_json::Value>(l).unwrap()["kind"]
+                .as_str()
+                .unwrap()
+                .to_string()
+        })
+        .collect();
+    assert!(
+        kinds.iter().any(|k| k == "span_open") && kinds.iter().any(|k| k == "span_close"),
+        "info-level spans must reach JSONL under a warn filter: {kinds:?}"
+    );
+    let records = trace_request(&config.logs_dir, &request_id.to_string()).unwrap();
+    let out = render_trace(&request_id.to_string(), &records);
+    assert!(
+        out.contains("ddgs"),
+        "info-level engine span missing from trace under warn filter:\n{out}"
+    );
+}
+
 /// `audit` emits the JSONL event and forwards to `Store::audit`.
 #[test]
 fn audit_writes_event_and_row() {
