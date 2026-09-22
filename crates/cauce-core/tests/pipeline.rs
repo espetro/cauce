@@ -292,14 +292,47 @@ async fn request_id_ttl_override_and_engine_pin() {
     assert!(matches!(under.meta.source, Source::Network));
     assert_eq!(store.puts.lock().unwrap()[2].1, Duration::from_secs(60));
 
-    // Pin to a configured engine runs it; pin to an unknown id is
-    // `NoEngines` (still logged).
+    // Pin to a configured engine runs it; a pin naming unknown ids —
+    // fully or partially — is `UnknownEngines` naming the offenders and
+    // the configured set (issue #90 strict contract, still logged).
     let mut pinned = req("pinned");
     pinned.engines = Some(vec![EngineId::from("replay")]);
     pipe.search(&pinned).await.unwrap();
+
     pinned.engines = Some(vec![EngineId::from("nope")]);
     let err = pipe.search(&pinned).await.unwrap_err();
-    assert!(matches!(err, PipelineError::NoEngines));
+    let PipelineError::UnknownEngines {
+        unknown,
+        configured,
+    } = &err
+    else {
+        panic!("expected UnknownEngines, got {err}");
+    };
+    assert_eq!(unknown, &[EngineId::from("nope")]);
+    assert_eq!(configured, &[EngineId::from("replay")]);
+    let msg = err.to_string();
+    assert!(msg.contains("nope"), "message names the rejected id: {msg}");
+    assert!(
+        msg.contains("replay"),
+        "message lists the configured set: {msg}"
+    );
+
+    // A partial pin rejects the whole request too — no silent truncation.
+    pinned.engines = Some(vec![EngineId::from("replay"), EngineId::from("nope")]);
+    let err = pipe.search(&pinned).await.unwrap_err();
+    assert!(
+        matches!(err, PipelineError::UnknownEngines { .. }),
+        "partial pin must be UnknownEngines: {err}"
+    );
+
+    // The did-you-mean hint fires on an edit-distance-1 id.
+    pinned.engines = Some(vec![EngineId::from("repla")]);
+    let err = pipe.search(&pinned).await.unwrap_err();
+    assert!(
+        err.to_string().contains("did you mean repla -> replay?"),
+        "edit-distance-1 hint: {err}"
+    );
+
     let last = store.logs.lock().unwrap().last().unwrap().clone();
     assert_eq!(last.source, LogSource::Network);
     assert!(last.engines.is_empty());

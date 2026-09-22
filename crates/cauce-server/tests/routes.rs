@@ -673,15 +673,35 @@ async fn click_beacon_rejects_malformed_query_hash() {
     assert_eq!(body.as_array().unwrap().len(), 0, "{body}");
 }
 
-/// `NoEngines` mapping: a non-empty pin matching nothing is 400
-/// `unknown_engines` even with zero configured engines; an empty/zero
-/// configured set is 503 `no_engines`.
+/// `NoEngines`/`UnknownEngines` mapping: a pin naming any id outside the
+/// configured set is 400 `unknown_engines` naming the rejected ids and the
+/// configured set (issue #90 strict contract — partial pins no longer
+/// truncate), even with zero configured engines; an empty/zero configured
+/// set with no pin is 503 `no_engines`.
 #[tokio::test]
 async fn no_engines_status_mapping() {
     let (router, _state, _tmp) = app();
     let (status, _, body) = get(&router, "/api/search?q=x&engines=nosuch").await;
     assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
     assert_envelope(&body, "unknown_engines");
+    let message = body["error"]["message"].as_str().unwrap();
+    assert!(
+        message.contains("nosuch"),
+        "message names the rejected id: {message}"
+    );
+    assert!(
+        message.contains("replay"),
+        "message lists the configured set: {message}"
+    );
+
+    // A partially-valid pin rejects the whole request (issue #90): no
+    // silent truncation to the known ids.
+    let (status, _, body) = get(&router, "/api/search?q=x&engines=replay,nosuch").await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    assert_envelope(&body, "unknown_engines");
+    let message = body["error"]["message"].as_str().unwrap();
+    assert!(message.contains("nosuch"), "{message}");
+    assert!(message.contains("replay"), "{message}");
 
     // A valid pin on a configured engine runs (and keys the cache entry
     // separately from the unpinned search).
@@ -694,10 +714,13 @@ async fn no_engines_status_mapping() {
     let pipeline = Arc::new(SearchPipeline::new(store.clone(), vec![]));
     let router = build_router(AppState::new(pipeline, store, Config::default()));
 
-    // Non-empty pin with zero configured engines is still the caller's error.
+    // Non-empty pin with zero configured engines is still the caller's
+    // error — every pin id is unknown when nothing is configured.
     let (status, _, body) = get(&router, "/api/search?q=x&engines=replay").await;
     assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
     assert_envelope(&body, "unknown_engines");
+    let message = body["error"]["message"].as_str().unwrap();
+    assert!(message.contains("replay"), "{message}");
 
     // No pin with zero configured engines is the operator's error.
     let (status, _, body) = get(&router, "/api/search?q=x").await;
