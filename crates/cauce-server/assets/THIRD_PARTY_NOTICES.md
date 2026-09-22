@@ -5,6 +5,9 @@ This directory vendors third-party JavaScript that is embedded into the
 HTMX pages. The vendored files are upstream releases, unmodified; their
 licenses follow.
 
+`favicon.svg` is a first-party icon (MPL-2.0, like the rest of the crate),
+not vendored.
+
 ## htmx.min.js
 
 - Name: htmx

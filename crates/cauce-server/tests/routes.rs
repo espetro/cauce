@@ -57,6 +57,11 @@ const EXPECTED_WAVE1_MOUNTED: &[(&str, &str)] = &[
     ("GET", "/metrics"),
 ];
 
+/// Wave-2 rows mounted so far: the favicon (#87). It is a `requires: "ui"`
+/// row, so it joins the mounted set only in `ui` builds and drops under
+/// `--headless` like the pages.
+const EXPECTED_WAVE2_UI_MOUNTED: &[(&str, &str)] = &[("GET", "/favicon.ico")];
+
 /// Serialises tests that mutate process env (`CAUCE_CONFIG_DIR` and friends).
 /// Under nextest each test is its own process anyway; this keeps plain
 /// `cargo test` (one process per test binary) safe too.
@@ -287,8 +292,8 @@ fn wave0_routes_match_plan_filter() {
 
 /// `mounted_routes` (the builder's own view) equals the wave-0 set plus
 /// every wave-1 row implemented so far (`* /mcp` from W1-08, the engine
-/// health pair from W1-06, `/metrics` from W1-09), filtered to the
-/// compiled cargo features.
+/// health pair from W1-06, `/metrics` from W1-09) and the wave-2 favicon
+/// (#87), filtered to the compiled cargo features.
 #[test]
 fn mounted_routes_match_declaration() {
     let (state, _tmp) = test_state();
@@ -304,6 +309,7 @@ fn mounted_routes_match_declaration() {
         expected.extend(
             EXPECTED_WAVE0_UI
                 .iter()
+                .chain(EXPECTED_WAVE2_UI_MOUNTED)
                 .map(|(m, p)| (m.to_string(), p.to_string())),
         );
     }
@@ -341,7 +347,7 @@ async fn headless_drops_ui_routes_keeps_api() {
     let headless: BTreeSet<(String, String)> = mounted_routes(&state, &RouterOptions::headless())
         .map(|r| (r.method.to_string(), r.path.to_string()))
         .collect();
-    for ui_row in EXPECTED_WAVE0_UI {
+    for ui_row in EXPECTED_WAVE0_UI.iter().chain(EXPECTED_WAVE2_UI_MOUNTED) {
         assert!(
             !headless.contains(&(ui_row.0.to_string(), ui_row.1.to_string())),
             "{ui_row:?} must not mount under --headless"
@@ -350,7 +356,7 @@ async fn headless_drops_ui_routes_keeps_api() {
     assert!(headless.contains(&("GET".to_string(), "/api/search".to_string())));
 
     let router = build_router_opts(state, RouterOptions::headless());
-    for uri in ["/", "/search?q=x"] {
+    for uri in ["/", "/search?q=x", "/favicon.ico"] {
         let (status, _, body) = get(&router, uri).await;
         assert_eq!(status, StatusCode::NOT_FOUND, "{uri}: {body}");
         assert_envelope(&body, "not_found");
@@ -441,6 +447,26 @@ async fn live_router_matches_routes_table() {
         assert_eq!(status, StatusCode::NOT_FOUND, "{uri}");
         assert_envelope(&body, "not_found");
     }
+}
+
+/// `GET /favicon.ico` serves the embedded SVG icon — the wave-0 browser
+/// pass saw it 404 on every page load (#87). `ui` builds only.
+#[cfg(feature = "ui")]
+#[tokio::test]
+async fn favicon_is_served() {
+    let (router, _state, _tmp) = app();
+    let resp = router
+        .clone()
+        .oneshot(req("GET", "/favicon.ico"))
+        .await
+        .expect("response");
+    assert_eq!(resp.status(), StatusCode::OK);
+    assert_eq!(resp.headers()[header::CONTENT_TYPE], "image/svg+xml");
+    let bytes = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+    assert!(
+        bytes.starts_with(b"<svg"),
+        "favicon body should be the embedded SVG: {bytes:?}"
+    );
 }
 
 // ---------------------------------------------------------------------------
