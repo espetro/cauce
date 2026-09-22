@@ -28,6 +28,8 @@ pub enum RouteKind {
     Sse,
     /// MCP streamable-HTTP endpoint (accepts every method once mounted).
     Mcp,
+    /// Embedded static asset (`/favicon.ico`).
+    Static,
 }
 
 /// One row of the section-6 wire table.
@@ -119,6 +121,16 @@ pub const ROUTES: &[RouteSpec] = &[
     html("/trace/{id}", 2),
     html("/settings", 2),
     html("/opensearch.xml", 2),
+    // `GET /favicon.ico` was a wave-0 omission (#87): browsers request it on
+    // every page load. It rides the `ui` gate like the pages — `rust-embed`
+    // is a `ui` dependency and `--headless` serves no browser surface.
+    RouteSpec {
+        method: "GET",
+        path: "/favicon.ico",
+        kind: RouteKind::Static,
+        wave: 2,
+        requires: Some("ui"),
+    },
     // ---- wave 4 ------------------------------------------------------------
     sse("POST", "/api/answer", 4),
     html("/answer", 4),
