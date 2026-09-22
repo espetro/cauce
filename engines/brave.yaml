@@ -34,15 +34,10 @@ parse:
     snippet:
       css: [".generic-snippet .content", ".snippet-description", ".generic-snippet"]
 detect:
+  # Only the hydration marker is echo-safe: every other candidate needle
+  # can appear in a healthy SERP via the echoed query or organic snippet
+  # text (see issue #109). JSON escaping turns a typed '"' into '\"' so
+  # '"/captcha"' can never be produced by echoed input.
   blocked:
     - '"/captcha"'
-    - "unusual traffic"
-    - "too many requests"
-    - "verify you are human"
-    - "you are a human"
-    - "are you a robot"
-    - "data-sitekey"
-    - "hcaptcha"
-    - "challenges.cloudflare.com"
-    - "/cdn-cgi/challenge"
   rate_limited_status: [429, 403]
