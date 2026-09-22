@@ -423,13 +423,29 @@ pub async fn config_put(
 ) -> Result<Json<Value>, ApiError> {
     let text = std::str::from_utf8(&body)
         .map_err(|_| ctx.bad_request("PUT /api/config expects a UTF-8 TOML body"))?;
-    let tree = toml::from_str::<toml::Value>(text).map_err(|e| {
+    let mut tree = toml::from_str::<toml::Value>(text).map_err(|e| {
         ctx.err(
             StatusCode::BAD_REQUEST,
             "invalid_config",
             format!("TOML: {e}"),
         )
     })?;
+
+    // `<redacted>` leaves from a `GET /api/config` roundtrip get their real
+    // values back from the current config; a literal `<redacted>` with no
+    // current secret behind it is rejected rather than persisted.
+    let restored = state
+        .with_config(|cfg| cfg.restore_redacted(&mut tree))
+        .map_err(|e| {
+            ctx.err(
+                StatusCode::BAD_REQUEST,
+                "invalid_config",
+                format!("invalid config: {e}"),
+            )
+        })?;
+    if !restored.is_empty() {
+        tracing::info!(paths = ?restored, "restored redacted config secrets on PUT");
+    }
 
     // In-memory validation: resolve `${...}` templates, apply `OXE_*` env
     // overrides, check schema and engine pinning. The original file is not
