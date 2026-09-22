@@ -142,8 +142,13 @@ impl Store for StubStore {
     async fn list_cache(&self, _: u32, _: u32) -> Result<Vec<CachedSearch>, StoreError> {
         unimplemented!()
     }
-    async fn get_cache(&self, _: &CacheKey) -> Result<Option<CachedSearch>, StoreError> {
-        unimplemented!()
+    /// `get_exact` hides expired rows; `get_cache` returns them (stale
+    /// serving is the admission layer's call).
+    async fn get_cache(&self, key: &CacheKey) -> Result<Option<CachedSearch>, StoreError> {
+        let entries = self.entries.lock().unwrap();
+        Ok(entries
+            .get(key.as_str())
+            .map(|entry| to_cached(key.as_str(), entry)))
     }
     async fn delete_cache(&self, _: &CacheKey) -> Result<bool, StoreError> {
         unimplemented!()
