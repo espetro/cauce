@@ -326,12 +326,49 @@ pub enum EngineKind {
     Replay,
 }
 
+/// `[engines.egress]` (a sub-table of an `[[engines]]` entry): upstream
+/// egress and politeness policy for that engine's HTTP calls (W1-01).
+/// Absent means a direct connection with a token bucket of 1 req/s,
+/// burst 3 (settled inputs).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EgressConfig {
+    /// Static proxy URL (`http://`, `https://`, `socks5://`,
+    /// `socks5h://`). Absent = direct.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub proxy: Option<String>,
+    /// Token-bucket refill rate in requests per second (>= 1).
+    #[serde(default = "default_requests_per_second")]
+    pub requests_per_second: u32,
+    /// Token-bucket burst capacity (>= 1).
+    #[serde(default = "default_burst")]
+    pub burst: u32,
+}
+
+impl Default for EgressConfig {
+    fn default() -> Self {
+        Self {
+            proxy: None,
+            requests_per_second: default_requests_per_second(),
+            burst: default_burst(),
+        }
+    }
+}
+
+fn default_requests_per_second() -> u32 {
+    1
+}
+
+fn default_burst() -> u32 {
+    3
+}
+
 /// One `[[engines]]` table. `command`/`args`/`env`/`cwd` describe the child
 /// for `kind = "exec"`; `spec` points at the YAML file for
 /// `kind = "declarative"`.
 ///
 /// Field order matters for TOML serialisation: scalars and plain arrays
-/// first, the `env` inline table last.
+/// first, the `egress`/`env` tables last.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct EngineEntry {
@@ -360,6 +397,9 @@ pub struct EngineEntry {
     /// Results per page the engine reports back.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub page_size: Option<u8>,
+    /// `[engines.egress]` sub-table: proxy and token-bucket policy.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub egress: Option<EgressConfig>,
     /// Extra environment on top of the inherited one (`exec` kind).
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub env: BTreeMap<String, String>,
@@ -380,6 +420,7 @@ fn builtin_engines() -> Vec<EngineEntry> {
             spec: None,
             tier: None,
             page_size: None,
+            egress: None,
             env: BTreeMap::new(),
         },
         EngineEntry {
@@ -392,6 +433,7 @@ fn builtin_engines() -> Vec<EngineEntry> {
             spec: None,
             tier: Some(Tier::T2),
             page_size: Some(10),
+            egress: None,
             env: BTreeMap::new(),
         },
     ]
@@ -605,6 +647,14 @@ impl Config {
                 return Err(ConfigError::InvalidEngine {
                     id: entry.id.to_string(),
                     msg: "kind \"exec\" requires a command".to_string(),
+                });
+            }
+            if let Some(egress) = &entry.egress
+                && (egress.requests_per_second == 0 || egress.burst == 0)
+            {
+                return Err(ConfigError::InvalidEngine {
+                    id: entry.id.to_string(),
+                    msg: "egress.requests_per_second and egress.burst must be >= 1".to_string(),
                 });
             }
         }
@@ -1373,6 +1423,36 @@ mod tests {
                 .count(),
             1
         );
+    }
+
+    #[test]
+    fn engine_egress_subtable_parses() {
+        let (tmp, env) = sandbox(&[]);
+        write_config(
+            &tmp.path().join("cfg"),
+            "[[engines]]\nid = \"bing\"\nkind = \"declarative\"\n\n[engines.egress]\nproxy = \"socks5://127.0.0.1:1080\"\n",
+        );
+        let cfg = Config::load_with(&env).unwrap();
+        let egress = cfg.engine("bing").unwrap().egress.as_ref().unwrap();
+        assert_eq!(egress.proxy.as_deref(), Some("socks5://127.0.0.1:1080"));
+        // Settled politeness defaults.
+        assert_eq!(egress.requests_per_second, 1);
+        assert_eq!(egress.burst, 3);
+        // Entries without the table stay direct.
+        assert!(cfg.engine("ddgs").unwrap().egress.is_none());
+    }
+
+    #[test]
+    fn engine_egress_zero_rate_rejected() {
+        let (tmp, env) = sandbox(&[]);
+        write_config(
+            &tmp.path().join("cfg"),
+            "[[engines]]\nid = \"x\"\nkind = \"exec\"\ncommand = \"/bin/x\"\n\n[engines.egress]\nrequests_per_second = 0\n",
+        );
+        assert!(matches!(
+            Config::load_with(&env),
+            Err(ConfigError::InvalidEngine { id, .. }) if id == "x"
+        ));
     }
 
     #[test]
