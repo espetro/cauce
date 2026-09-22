@@ -1,0 +1,51 @@
+name: validate
+
+on:
+  push:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: DCO sign-off check
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="${{ github.event.before }}"
+          head="${{ github.sha }}"
+          if [ "$base" = "0000000000000000000000000000000000000000" ]; then
+            # Branch or tag creation: check the commits listed in the push event.
+            mapfile -t commits < <(jq -r '.commits[].id' "$GITHUB_EVENT_PATH")
+          else
+            mapfile -t commits < <(git rev-list --reverse "$base..$head")
+          fi
+          if [ "${#commits[@]}" -eq 0 ]; then
+            echo "No commits in range; nothing to check."
+            exit 0
+          fi
+          missing=""
+          for c in "${commits[@]}"; do
+            if ! git log -1 --format='%(trailers:key=Signed-off-by,valueonly)' "$c" | grep -q .; then
+              missing="$missing $c"
+            fi
+          done
+          if [ -n "$missing" ]; then
+            echo "Commits missing a Signed-off-by trailer (git commit -s):$missing"
+            exit 1
+          fi
+          echo "All ${#commits[@]} commit(s) in range carry Signed-off-by."
+
+      - uses: jdx/mise-action@v2
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: validate
+        run: mise run validate
