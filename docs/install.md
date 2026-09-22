@@ -9,7 +9,7 @@ from a checkout.
 git clone https://github.com/espetro/oxe
 cd oxe
 mise install            # Rust toolchain + cargo-deny + cargo-nextest
-cargo install --path crates/oxe-cli
+cargo install --locked --path crates/oxe-cli
 ```
 
 `cargo install` puts `oxe` on `~/.cargo/bin`. Verify:
@@ -67,6 +67,21 @@ Notes:
   not expand `~`.
 - Keep the port at the default 4479 so the existing health check and the
   portless alias below keep working.
+- The v2 entry's `env = { OXE_BACKENDS = ... }` can be dropped; v3
+  ignores it.
+- The bundled `ddgs` exec engine only works when `oxe` runs from the
+  repo checkout (its relative `sdk/python/...` path resolves by walking
+  up from the process cwd) and its `uv` venv exists (`uv sync --project
+  sdk/python --extra ddgs`). Under supervision, either pin the
+  declarative engines and drop ddgs:
+
+  ```toml
+  env = { OXE_ENGINES = "bing,brave" }
+  ```
+
+  or keep ddgs by adding a `[[engines]]` block in
+  `~/.config/oxe/config.toml` with absolute `command`/`args` pointing at
+  the venv's python and `ddgs_auto.py`.
 
 Apply the single app (never restart the daemon for a per-app change):
 

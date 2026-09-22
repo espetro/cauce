@@ -47,6 +47,7 @@ fn live_query(config_dir: &TempDir, data_dir: &TempDir, engine: &str, query: &st
 #[test]
 fn live_engine_smoke() {
     if std::env::var("OXE_LIVE").ok().as_deref() != Some("1") {
+        eprintln!("skipping live engine smoke: set OXE_LIVE=1 to run it");
         return;
     }
     let config_dir = TempDir::new().expect("config dir");
