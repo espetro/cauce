@@ -1,5 +1,13 @@
 //! `exec` engine runtime: one warm child process per engine, JSON lines over
-//! stdin/stdout (parent plan section 4.3, protocol `v: 1`).
+//! stdin/stdout (parent plan section 4.3, protocol `v: 2`).
+//!
+//! Protocol v2 adds `safesearch`, `time_range` and a per-engine `params`
+//! object to the request line (issue #88); v1 children never see them.
+//! Negotiation is optimistic per process: a fresh child gets a v2 request and
+//! an `error` naming the protocol version (the v1 reference SDK answers
+//! `parse:unsupported protocol version: 2`) downgrades that child to v1 and
+//! resends. v2 children must accept `v: 1` requests — a strict subset — and
+//! echo the request's `v`, so old parents keep working against new children.
 //!
 //! One request is in flight per process; concurrent `search` calls serialize on
 //! a mutex. The child is spawned eagerly when the engine is built inside a
@@ -15,6 +23,7 @@
 //! License, v. 2.0. If a copy of the MPL was not distributed with this
 //! file, You can obtain one at <https://mozilla.org/MPL/2.0/>.
 
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::Arc;
@@ -30,11 +39,16 @@ use tokio::time::timeout;
 use tracing::{debug, warn};
 
 use cauce_core::{
-    Engine, EngineError, EngineId, EnginePhase, Metrics, SearchRequest, SearchResult, Tier,
+    Engine, EngineError, EngineId, EnginePhase, Metrics, SafeSearch, SearchRequest, SearchResult,
+    Tier, TimeRange,
 };
 
 /// Version of the exec wire protocol implemented here (parent plan 4.3).
-pub const PROTOCOL_VERSION: u8 = 1;
+pub const PROTOCOL_VERSION: u8 = 2;
+
+/// Oldest protocol version a child may speak. v1 predates the
+/// `safesearch`/`time_range`/`params` request fields (issue #88).
+pub const MIN_PROTOCOL_VERSION: u8 = 1;
 
 /// Static description of an exec engine: how to spawn it and where it sits in
 /// the fan-out tiers.
@@ -54,6 +68,10 @@ pub struct ExecSpec {
     pub page_size: u8,
     /// Fan-out tier (parent plan 4.4).
     pub tier: Tier,
+    /// Static per-engine params forwarded on every v2 request (from the
+    /// `[engines.params]` config table). Omitted on the wire when empty or
+    /// when the child negotiated v1.
+    pub params: BTreeMap<String, String>,
 }
 
 impl ExecSpec {
@@ -72,14 +90,18 @@ impl ExecSpec {
             cwd: Some(cwd),
             page_size: 10,
             tier: Tier::T2,
+            params: BTreeMap::new(),
         }
     }
 }
 
-/// Outbound request line (`->` on the child's stdin), protocol v1.
+/// Outbound request line (`->` on the child's stdin).
 ///
 /// Field names are the settled wire contract: `query`, `page`, `lang`,
-/// `timeout_ms`.
+/// `timeout_ms`, plus the v2 additions `safesearch`, `time_range` and
+/// `params` (issue #88). The v2 fields are `None`/empty — and therefore
+/// absent from the JSON — on a v1-negotiated child, so strict v1 decoders
+/// keep working.
 #[derive(Debug, Clone, Serialize)]
 pub struct ExecRequest {
     pub v: u8,
@@ -88,16 +110,30 @@ pub struct ExecRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub lang: Option<String>,
     pub timeout_ms: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub safesearch: Option<SafeSearch>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub time_range: Option<TimeRange>,
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub params: BTreeMap<String, String>,
 }
 
 impl ExecRequest {
-    fn new(req: &SearchRequest, budget: Duration) -> Self {
+    fn new(req: &SearchRequest, budget: Duration, version: u8, spec: &ExecSpec) -> Self {
+        let v2 = version >= 2;
         Self {
-            v: PROTOCOL_VERSION,
+            v: version,
             query: req.q.clone(),
             page: req.page,
             lang: req.lang.clone(),
             timeout_ms: budget.as_millis().clamp(1, u64::MAX as u128) as u64,
+            safesearch: v2.then_some(req.safesearch),
+            time_range: if v2 { req.time_range } else { None },
+            params: if v2 {
+                spec.params.clone()
+            } else {
+                BTreeMap::new()
+            },
         }
     }
 }
@@ -111,7 +147,8 @@ pub struct ExecResultRow {
     pub snippet: String,
 }
 
-/// Inbound response line (`<-` on the child's stdout), protocol v1.
+/// Inbound response line (`<-` on the child's stdout). `v` echoes the
+/// request's version, so a negotiated-v1 child answers `v: 1`.
 #[derive(Debug, Clone, Deserialize)]
 pub struct ExecResponse {
     pub v: u8,
@@ -119,6 +156,20 @@ pub struct ExecResponse {
     pub results: Vec<ExecResultRow>,
     #[serde(default)]
     pub error: Option<String>,
+}
+
+/// Does a raw response line reject the request's protocol version? The v1
+/// reference SDK answers `parse:unsupported protocol version: 2`; any error
+/// naming the protocol version is treated the same so strict third-party v1
+/// children downgrade too. One line in, one line out: the stream stays in
+/// sync and the request can be resent at the lower version.
+fn is_version_rejection(line: &str) -> bool {
+    let Ok(resp) = serde_json::from_str::<ExecResponse>(line.trim()) else {
+        return false;
+    };
+    resp.error
+        .as_deref()
+        .is_some_and(|e| e.to_lowercase().contains("protocol version"))
 }
 
 /// Map a protocol `error` string to an `EngineError`. Recognised codes are
@@ -141,6 +192,11 @@ struct ChildIo {
     child: Child,
     stdin: ChildStdin,
     stdout: BufReader<ChildStdout>,
+    /// Negotiated protocol version for this process: optimistic
+    /// [`PROTOCOL_VERSION`] at spawn, downgraded on a version-rejection
+    /// response (issue #88). Cached here so the probe costs a v1 child one
+    /// extra round trip per process lifetime.
+    version: u8,
 }
 
 #[derive(Default)]
@@ -186,6 +242,7 @@ fn spawn_child(spec: &ExecSpec) -> Result<ChildIo, EngineError> {
         child,
         stdin,
         stdout: BufReader::new(stdout),
+        version: PROTOCOL_VERSION,
     })
 }
 
@@ -249,7 +306,8 @@ impl Drop for RespawnOnDrop {
     }
 }
 
-/// A warm `exec` engine: owns one child process and speaks protocol v1 to it.
+/// A warm `exec` engine: owns one child process and speaks protocol v2 to it
+/// (negotiated down to v1 per process when the child rejects v2, issue #88).
 ///
 /// The child is spawned eagerly when `new` runs inside a tokio runtime (the
 /// `serve`/`mcp` factory path, tests); a failed spawn degrades to the lazy
@@ -325,7 +383,9 @@ impl ExecEngine {
     fn decode(&self, line: &str) -> Result<Vec<SearchResult>, EngineError> {
         let resp: ExecResponse = serde_json::from_str(line.trim())
             .map_err(|e| EngineError::Parse(format!("bad exec response line: {e}")))?;
-        if resp.v != PROTOCOL_VERSION {
+        // The response `v` echoes the request's, so a negotiated-v1 child
+        // legitimately answers `v: 1`.
+        if !(MIN_PROTOCOL_VERSION..=PROTOCOL_VERSION).contains(&resp.v) {
             return Err(EngineError::Transport(format!(
                 "exec protocol version {} unsupported",
                 resp.v
@@ -373,10 +433,6 @@ impl Engine for ExecEngine {
         req: &SearchRequest,
         budget: Duration,
     ) -> Result<Vec<SearchResult>, EngineError> {
-        let mut line = serde_json::to_string(&ExecRequest::new(req, budget))
-            .map_err(|e| EngineError::Parse(format!("request encode: {e}")))?;
-        line.push('\n');
-
         // One request in flight per process: the lock is held for the whole
         // round trip. The child is owned by this future while the request
         // is in flight (see `ensure_child`), so cancelling the call — e.g.
@@ -389,12 +445,40 @@ impl Engine for ExecEngine {
         // the guard re-warms `state` so the next request is not cold.
         let mut respawn = RespawnOnDrop::armed(&self.spec, &self.state);
 
+        // Encode inside the round trip: when a v1 child rejects the v2
+        // request the loop downgrades `io.version` and resends on the same
+        // child — the rejection is a well-formed response line, so the
+        // stream stays in sync (issue #88).
         let round_trip = async {
-            io.stdin.write_all(line.as_bytes()).await?;
-            io.stdin.flush().await?;
-            let mut buf = String::new();
-            io.stdout.read_line(&mut buf).await?;
-            Ok::<String, std::io::Error>(buf)
+            loop {
+                let mut line =
+                    serde_json::to_string(&ExecRequest::new(req, budget, io.version, &self.spec))
+                        .map_err(|e| EngineError::Parse(format!("request encode: {e}")))?;
+                line.push('\n');
+                io.stdin
+                    .write_all(line.as_bytes())
+                    .await
+                    .map_err(|e| EngineError::Transport(format!("child io: {e}")))?;
+                io.stdin
+                    .flush()
+                    .await
+                    .map_err(|e| EngineError::Transport(format!("child io: {e}")))?;
+                let mut buf = String::new();
+                io.stdout
+                    .read_line(&mut buf)
+                    .await
+                    .map_err(|e| EngineError::Transport(format!("child io: {e}")))?;
+                if buf.is_empty()
+                    || io.version == MIN_PROTOCOL_VERSION
+                    || !is_version_rejection(&buf)
+                {
+                    return Ok::<String, EngineError>(buf);
+                }
+                debug!(engine = %self.spec.id,
+                    "exec child rejected protocol v{}; downgrading to v{MIN_PROTOCOL_VERSION}",
+                    io.version);
+                io.version = MIN_PROTOCOL_VERSION;
+            }
         };
 
         // Every failure path returns early with `io` still owned here:
@@ -412,8 +496,8 @@ impl Engine for ExecEngine {
             Ok(Err(e)) => {
                 self.metrics
                     .record_engine_phase(&self.spec.id, EnginePhase::Http, fetch.elapsed());
-                warn!(engine = %self.spec.id, "exec child io failed ({e}); killing child");
-                return Err(EngineError::Transport(format!("child io: {e}")));
+                warn!(engine = %self.spec.id, "exec round trip failed ({e}); killing child");
+                return Err(e);
             }
             Ok(Ok(buf)) if buf.is_empty() => {
                 self.metrics

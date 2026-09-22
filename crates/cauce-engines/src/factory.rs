@@ -97,6 +97,7 @@ pub fn build_engine(entry: &EngineEntry, config_dir: &Path) -> Option<Arc<dyn En
                     .or_else(|| resolve_exec_cwd(entry)),
                 page_size: entry.page_size.unwrap_or(10),
                 tier: entry.tier.unwrap_or(Tier::T2),
+                params: entry.params.clone(),
             })))
         }
         EngineKind::Declarative => match build_declarative(entry, config_dir) {
