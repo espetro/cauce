@@ -1,6 +1,6 @@
 //! `SearchPipeline` v0 (W0-08, parent plan section 4.4 minus hedging,
-//! breakers and the tier-3 lookup, which land in W1/W3; W1-10 added the
-//! tier-2 lexical lookup).
+//! breakers and the tier-3 lookup, which land in W1/W3) plus W1-07
+//! admission control and the W1-10 tier-2 lexical lookup.
 //!
 //! Request flow for [`SearchPipeline::search`] /
 //! [`SearchPipeline::search_opts`]:
@@ -12,16 +12,25 @@
 //!    stale: false }` and *still* appends a `search_log` row
 //!    (`LogSource::Cache`): the unconditional write is the whole point of
 //!    the design (v2 skipped it and its hit-rate stats were fiction).
-//! 3. Tier-2 `store.get_lexical(q, 5)` (W1-10, `cache.lexical.*`): on a
-//!    tier-1 miss, candidates are checked best-rank first. A row is
-//!    accepted when it is fresh, its stored `key` equals the key this
-//!    request's params would produce for the candidate's query (the
-//!    "same page/lang" gate — the preimage also pins
-//!    time_range/safesearch/engines, which is strictly conservative), and
-//!    its query's token set clears the Jaccard `threshold` (default 0.8)
-//!    after normalisation and stopword removal. Served as
-//!    `Source::Cache { tier: 2, matched_query: Some(..), .. }`.
-//! 4. On a miss, fan out to every configured engine in parallel
+//! 3. On a miss, admission (see [`crate::admission`]): singleflight on
+//!    `CacheKey` elects one leader per key and followers await the shared
+//!    outcome. The leader's detached flight task first runs the tier-2
+//!    `store.get_lexical(q, 5)` lookup (W1-10, `cache.lexical.*`):
+//!    candidates are checked best-rank first; a row is accepted when it
+//!    is fresh, its stored `key` equals the key this request's params
+//!    would produce for the candidate's query (the "same page/lang" gate
+//!    — the preimage also pins time_range/safesearch/engines, which is
+//!    strictly conservative), and its query's token set clears the
+//!    Jaccard `threshold` (default 0.8) after normalisation and stopword
+//!    removal. A hit is served as
+//!    `Source::Cache { tier: 2, matched_query: Some(..), .. }` without
+//!    spending an engine permit. Otherwise the flight waits for
+//!    per-engine semaphore permits up to `admission.max_wait_ms`; a
+//!    timed-out wait overflows to the stored row if one exists (fresh
+//!    rows serve as a normal hit, expired rows go out
+//!    `Source::Cache{stale:true}` and a background refresh is enqueued)
+//!    else fails with [`PipelineError::RateLimited`].
+//! 4. The flight fans out to every configured engine in parallel
 //!    ([`tokio::task::JoinSet`]), each call wrapped in
 //!    `tokio::time::timeout(deadline)`. Engines cut off at the deadline
 //!    report `EngineStatus::Failed(EngineError::Timeout)` and set
@@ -32,10 +41,14 @@
 //!    stable ordering by first-seen position; the occurrence with the
 //!    best single contribution supplies the emitted `SearchResult`.
 //! 6. `store.put` with `ttl = opts.ttl.unwrap_or(default_ttl)` clamped to
-//!    `ttl_cap` (defaults 3600 s / 86400 s). Never on the
-//!    `AllEnginesFailed` path.
-//! 7. `store.log_search` unconditionally: cache hit, network, empty and
-//!    error paths all write a row.
+//!    `ttl_cap` (defaults 3600 s / 86400 s), once per flight. Never on the
+//!    `AllEnginesFailed`/`RateLimited` paths.
+//! 7. `store.log_search` unconditionally: every request — cache hit,
+//!    singleflight follower, stale serve, error — writes its own row with
+//!    its own `request_id`; the shared `SearchResponse`'s
+//!    `meta.request_id`/`elapsed_ms` are rewritten per waiter so the
+//!    `meta.request_id == X-Request-Id == JSONL request_id` invariant
+//!    holds for followers too.
 //!
 //! Request ids: `search` mints a UUIDv7; `search_with_id`/`search_opts`
 //! take a caller-supplied `Uuid` so `meta.request_id` == `X-Request-Id` ==
@@ -65,6 +78,7 @@ use tracing::{Instrument, debug, info, info_span, warn};
 use url::Url;
 use uuid::Uuid;
 
+use crate::admission::{Admission, FlightResult, Lead};
 use crate::cache::{CacheKey, CachedSearch, lexical_tokens, normalize_query, token_jaccard};
 use crate::config::LexicalConfig;
 use crate::engine::{Engine, EngineError, EngineId, Tier};
@@ -105,7 +119,10 @@ pub struct SearchOpts {
 }
 
 /// Errors a search can return.
-#[derive(Debug, thiserror::Error)]
+///
+/// `Clone` because an outcome is published once per admission flight and
+/// every waiter on it receives its own copy.
+#[derive(Debug, Clone, thiserror::Error)]
 pub enum PipelineError {
     /// The engine pin in `req.engines` matched no configured engine, or
     /// the pipeline was built with an empty engine list.
@@ -119,6 +136,16 @@ pub enum PipelineError {
     /// cached; the `search_log` row is still written.
     #[error("all engines failed: {}", render_failures(.0))]
     AllEnginesFailed(Vec<(EngineId, EngineError)>),
+    /// Admission rejected the request: the per-engine queue wait exceeded
+    /// `admission.max_wait_ms` and no stored row (fresh or stale) existed
+    /// to serve instead. W0-09 maps this to HTTP 429 with `Retry-After:
+    /// retry_after_s`; the MCP surface (W1-08) maps it to a
+    /// `rate_limited` tool error carrying `retry_after_s`.
+    #[error("admission queue saturated; retry after {retry_after_s}s")]
+    RateLimited {
+        /// Seconds the client should wait before retrying.
+        retry_after_s: u64,
+    },
 }
 
 impl PipelineError {
@@ -126,7 +153,7 @@ impl PipelineError {
     pub fn failures(&self) -> &[(EngineId, EngineError)] {
         match self {
             Self::AllEnginesFailed(failures) => failures,
-            Self::NoEngines => &[],
+            Self::NoEngines | Self::RateLimited { .. } => &[],
         }
     }
 }
@@ -149,12 +176,16 @@ struct EngineOutcome {
     outcome: Result<Result<Vec<SearchResult>, EngineError>, tokio::time::error::Elapsed>,
 }
 
-/// The search pipeline: tier-1 cache lookup, parallel fan-out under a
-/// hard deadline, RRF merge, persist, unconditional `search_log`.
+/// The search pipeline: tier-1 cache lookup, admission (singleflight +
+/// bounded per-engine queue), parallel fan-out under a hard deadline,
+/// RRF merge, persist, unconditional `search_log`.
 ///
 /// Build once at startup and share by reference; all fields are immutable
-/// after construction. `search*` must be called inside a tokio runtime;
-/// `JoinSet::spawn` panics outside one.
+/// after construction. `Clone` is shallow (every field is an `Arc` or a
+/// value): flight and refresh tasks hold a clone so they outlive the
+/// request that elected them. `search*` must be called inside a tokio
+/// runtime; `JoinSet::spawn`/`tokio::spawn` panic outside one.
+#[derive(Clone)]
 pub struct SearchPipeline {
     store: Arc<dyn Store>,
     engines: Vec<Arc<dyn Engine>>,
@@ -162,6 +193,7 @@ pub struct SearchPipeline {
     default_ttl: Duration,
     ttl_cap: Duration,
     lexical: LexicalConfig,
+    admission: Admission,
 }
 
 fn millis(d: Duration) -> u32 {
@@ -179,6 +211,7 @@ impl SearchPipeline {
             default_ttl: DEFAULT_TTL,
             ttl_cap: DEFAULT_TTL_CAP,
             lexical: LexicalConfig::default(),
+            admission: Admission::default(),
         }
     }
 
@@ -204,6 +237,14 @@ impl SearchPipeline {
     /// to enabled with a 0.8 Jaccard threshold.
     pub fn with_lexical(mut self, lexical: LexicalConfig) -> Self {
         self.lexical = lexical;
+        self
+    }
+
+    /// Override the admission controller (`admission.max_wait_ms`,
+    /// per-engine concurrency cap). Default: [`Admission::default`]
+    /// (1500 ms wait, 3 concurrent calls per engine).
+    pub fn with_admission(mut self, admission: Admission) -> Self {
+        self.admission = admission;
         self
     }
 
@@ -272,7 +313,7 @@ impl SearchPipeline {
             // The `engines` column records the engines whose results are
             // being served (`cache_entries.engines_json` provenance).
             let engines = hit.engines.clone();
-            let resp = self.cache_hit_response(hit, Tier::T1, request_id, started);
+            let resp = self.cache_hit_response(hit, Tier::T1, request_id, started, false);
             self.write_log(
                 req,
                 &key,
@@ -296,59 +337,362 @@ impl SearchPipeline {
             return Ok(resp);
         }
 
-        // ---- tier-2 lexical lookup (W1-10) ------------------------------
-        if self.lexical.enabled
-            && let Some(hit) = self.lexical_lookup(req, &query, request_id).await
-        {
-            let engines = hit.engines.clone();
-            let resp = self.cache_hit_response(hit, Tier::T2, request_id, started);
-            self.write_log(
-                req,
-                &key,
-                &query,
-                LogRow {
-                    source: LogSource::Cache,
-                    tier: Some(Tier::T2),
-                    result_count: resp.results.len() as u32,
-                    engines,
-                    deadline_hit: false,
-                },
-                started,
-            )
-            .await;
-            info!(
-                source = "cache",
-                tier = 2u8,
-                results = resp.results.len(),
-                elapsed_ms = resp.meta.elapsed_ms,
-                "search complete"
-            );
-            return Ok(resp);
-        }
-
-        // ---- fan-out ----------------------------------------------------
+        // ---- fan-out set ---------------------------------------------------
         let runnable = self.runnable(req);
         // `pipeline.search` is the current span here (via `instrument`).
         tracing::Span::current().record("engines", runnable.len() as u64);
+
+        // ---- admission: singleflight + bounded per-engine queue (W1-07) ----
+        //
+        // Every miss for `key` elects one leader; its detached flight task
+        // does the work below and publishes a `FlightResult`. Followers (and
+        // the leader's own request) all wait on the same watch channel, so a
+        // cancelled request can never strand work its twins are waiting on.
+        let ttl = ttl_override.unwrap_or(self.default_ttl).min(self.ttl_cap);
+        let mut re_elected = false;
+        let shared: FlightResult = loop {
+            let (lead, mut rx) = self.admission.enter(&key);
+            if let Some(lead) = lead {
+                self.spawn_flight(
+                    lead,
+                    req.clone(),
+                    key.clone(),
+                    runnable.clone(),
+                    ttl,
+                    request_id,
+                );
+            }
+            // Extract the published outcome before matching: the `Ref`
+            // from `wait_for` borrows `rx` mutably, so `rx.borrow()` cannot
+            // run while it lives.
+            let published = match rx.wait_for(|outcome| outcome.is_some()).await {
+                Ok(guard) => guard.clone().expect("wait_for observed Some"),
+                Err(_) => {
+                    // The flight task died without publishing (panic/abort);
+                    // the `Lead` drop freed the slot, so the next `enter`
+                    // elects a new leader. Retry once, then surface the
+                    // failure instead of spinning on a poisoned fetch.
+                    if re_elected {
+                        break Err(PipelineError::AllEnginesFailed(
+                            runnable
+                                .iter()
+                                .map(|e| {
+                                    (
+                                        e.id(),
+                                        EngineError::Transport(
+                                            "in-flight search task vanished".to_string(),
+                                        ),
+                                    )
+                                })
+                                .collect(),
+                        ));
+                    }
+                    re_elected = true;
+                    warn!("admission: flight vanished before publishing; re-electing");
+                    continue;
+                }
+            };
+            break published;
+        };
+        self.shared_response(req, &key, &runnable, shared, request_id, started)
+            .await
+    }
+
+    /// Spawn the leader's flight task: tier-2 lexical lookup, then per-engine
+    /// permits under the wait budget, then [`SearchPipeline::fetch`]; on
+    /// overflow [`SearchPipeline::overflow`] serves a stored row or
+    /// `RateLimited`. The task is detached from the caller's future on
+    /// purpose: it holds a `SearchPipeline` clone, so a client disconnect
+    /// mid-flight still lets the fetch finish, publish to remaining waiters
+    /// and persist.
+    fn spawn_flight(
+        &self,
+        lead: Lead,
+        req: SearchRequest,
+        key: CacheKey,
+        runnable: Vec<Arc<dyn Engine>>,
+        ttl: Duration,
+        request_id: Uuid,
+    ) {
+        let pipe = self.clone();
+        let span = info_span!(
+            "admission.flight",
+            request_id = %request_id,
+            key = %key,
+            engines = runnable.len(),
+        );
+        tokio::spawn(
+            async move {
+                pipe.flight(lead, req, key, runnable, ttl, request_id).await;
+            }
+            .instrument(span),
+        );
+    }
+
+    /// The flight body: tier-2 lexical lookup, bounded permit wait ->
+    /// fan-out -> persist -> publish; on overflow a stored row (fresh or
+    /// stale) or `RateLimited`, and a stale serve enqueues a background
+    /// refresh.
+    async fn flight(
+        &self,
+        lead: Lead,
+        req: SearchRequest,
+        key: CacheKey,
+        runnable: Vec<Arc<dyn Engine>>,
+        ttl: Duration,
+        request_id: Uuid,
+    ) {
+        let started = Instant::now();
+
+        // ---- tier-2 lexical lookup (W1-10), inside the flight ----------
+        // One FTS query per flight — followers share the outcome — and a
+        // hit never spends an engine permit. Runs before the engine check
+        // so a tier-2 hit serves even when nothing is configured (the
+        // pre-admission ordering).
+        if self.lexical.enabled
+            && let Some(hit) = self
+                .lexical_lookup(&req, &normalize_query(&req.q), request_id)
+                .await
+        {
+            lead.complete(Ok(Arc::new(self.cache_hit_response(
+                hit,
+                Tier::T2,
+                request_id,
+                started,
+                false,
+            ))));
+            return;
+        }
         if runnable.is_empty() {
             warn!(pinned = ?req.engines, "no engines to run");
-            self.write_log(
-                req,
-                &key,
-                &query,
-                LogRow {
-                    source: LogSource::Network,
-                    tier: None,
-                    result_count: 0,
-                    engines: Vec::new(),
-                    deadline_hit: false,
-                },
-                started,
-            )
-            .await;
-            return Err(PipelineError::NoEngines);
+            lead.complete(Err(PipelineError::NoEngines));
+            return;
         }
-        let outcomes = self.fan_out(req, &runnable, request_id).await;
+
+        let ids: Vec<EngineId> = runnable.iter().map(|e| e.id()).collect();
+        let outcome = match self.admission.acquire(&ids).await {
+            Ok(_permits) => self
+                .fetch(&req, &runnable, &key, ttl, request_id, started)
+                .await
+                .map(Arc::new),
+            Err(_) => self.overflow(&key, request_id, started).await,
+        };
+        let served_stale = matches!(
+            &outcome,
+            Ok(resp) if matches!(resp.meta.source, Source::Cache { stale: true, .. })
+        );
+        lead.complete(outcome);
+        // The refresh is spawned *after* `complete` cleared the slot so it
+        // can elect itself; an `enter` while our own entry still existed
+        // would make it join (and skip) the flight it came to replace.
+        if served_stale {
+            self.spawn_refresh(req, key, runnable, ttl);
+        }
+    }
+
+    /// Enqueue a background refresh for a stale-served key. The refresh
+    /// queues for engine permits with a generous budget (nobody is blocked
+    /// on it) and only elects itself once it can run immediately, so a
+    /// waiting refresh never holds a flight slot that real requests would
+    /// join. If another flight for the key registered meanwhile, the
+    /// refresh is redundant and exits.
+    fn spawn_refresh(
+        &self,
+        req: SearchRequest,
+        key: CacheKey,
+        runnable: Vec<Arc<dyn Engine>>,
+        ttl: Duration,
+    ) {
+        let pipe = self.clone();
+        let span = info_span!("admission.refresh", key = %key, engines = runnable.len());
+        tokio::spawn(
+            async move {
+                let ids: Vec<EngineId> = runnable.iter().map(|e| e.id()).collect();
+                // `_permits` must stay bound for the whole fetch; a
+                // temporary in the condition would drop the slots before
+                // the engine call runs.
+                let Ok(_permits) = pipe
+                    .admission
+                    .acquire_within(&ids, crate::admission::REFRESH_MAX_WAIT)
+                    .await
+                else {
+                    debug!("admission: background refresh dropped, queue stayed full");
+                    return;
+                };
+                let (lead, _rx) = pipe.admission.enter(&key);
+                let Some(lead) = lead else {
+                    debug!("admission: refresh skipped, another flight is running");
+                    return;
+                };
+                info!("admission: refreshing stale entry");
+                let outcome = pipe
+                    .fetch(&req, &runnable, &key, ttl, Uuid::now_v7(), Instant::now())
+                    .await
+                    .map(Arc::new);
+                // Requests that joined mid-refresh get the real outcome,
+                // error included.
+                lead.complete(outcome);
+            }
+            .instrument(span),
+        );
+    }
+
+    /// Permit wait exhausted: serve the stored row when one exists. A row
+    /// that landed mid-wait (another flight just persisted) is a plain
+    /// fresh hit; an expired row goes out `stale` and the caller enqueues
+    /// a background refresh; nothing stored means `RateLimited`.
+    async fn overflow(
+        &self,
+        key: &CacheKey,
+        request_id: Uuid,
+        started: Instant,
+    ) -> Result<Arc<SearchResponse>, PipelineError> {
+        match self.store.get_cache(key).await {
+            Ok(Some(row)) => {
+                let stale = row.expires_at <= Utc::now();
+                if stale {
+                    info!(key = %key, stale_served = true, "admission: serving stale row on overflow");
+                } else {
+                    debug!(key = %key, "admission: overflow resolved by a fresh row");
+                }
+                Ok(Arc::new(self.cache_hit_response(
+                    row,
+                    Tier::T1,
+                    request_id,
+                    started,
+                    stale,
+                )))
+            }
+            Ok(None) => Err(self.rate_limited()),
+            Err(e) => {
+                warn!(key = %key, error = %e, "admission: stale lookup failed");
+                Err(self.rate_limited())
+            }
+        }
+    }
+
+    fn rate_limited(&self) -> PipelineError {
+        let retry_after_s = self.admission.retry_after_s();
+        info!(
+            admission_rejected = true,
+            reason = "queue_full",
+            retry_after_s,
+            "admission: rejected, no row to fall back on"
+        );
+        PipelineError::RateLimited { retry_after_s }
+    }
+
+    /// Per-request completion of a shared outcome: rewrite `request_id`
+    /// and `elapsed_ms` for this waiter, write this request's
+    /// `search_log` row, return. Every waiter — leader included — lands
+    /// here, so the unconditional-log rule holds per request, not per
+    /// flight.
+    async fn shared_response(
+        &self,
+        req: &SearchRequest,
+        key: &CacheKey,
+        runnable: &[Arc<dyn Engine>],
+        shared: FlightResult,
+        request_id: Uuid,
+        started: Instant,
+    ) -> Result<SearchResponse, PipelineError> {
+        let query = normalize_query(&req.q);
+        match shared {
+            Ok(resp) => {
+                let mut resp = (*resp).clone();
+                resp.meta.request_id = request_id;
+                resp.meta.elapsed_ms = millis(started.elapsed());
+                // On a cache-sourced row (the stale-serve path) the log
+                // carries the producing engines (Ok provenance), matching
+                // the fresh-hit path's `hit.engines`; on a network row it
+                // carries every engine that ran.
+                let (source, tier, engines) = match &resp.meta.source {
+                    Source::Cache { tier, .. } => (
+                        LogSource::Cache,
+                        Some(*tier),
+                        resp.meta
+                            .engines_used
+                            .iter()
+                            .filter(|r| matches!(r.status, EngineStatus::Ok))
+                            .map(|r| r.engine.clone())
+                            .collect(),
+                    ),
+                    Source::Network => (
+                        LogSource::Network,
+                        None,
+                        resp.meta
+                            .engines_used
+                            .iter()
+                            .map(|r| r.engine.clone())
+                            .collect(),
+                    ),
+                };
+                let label = if matches!(resp.meta.source, Source::Cache { .. }) {
+                    "cache"
+                } else {
+                    "network"
+                };
+                self.write_log(
+                    req,
+                    key,
+                    &query,
+                    LogRow {
+                        source,
+                        tier,
+                        result_count: resp.results.len() as u32,
+                        engines,
+                        deadline_hit: resp.meta.deadline_hit,
+                    },
+                    started,
+                )
+                .await;
+                info!(
+                    source = label,
+                    tier = tier.map(|t| t.as_u8()).unwrap_or_default(),
+                    results = resp.results.len(),
+                    elapsed_ms = resp.meta.elapsed_ms,
+                    deadline_hit = resp.meta.deadline_hit,
+                    "search complete"
+                );
+                Ok(resp)
+            }
+            Err(e) => {
+                if matches!(e, PipelineError::AllEnginesFailed(_)) {
+                    warn!(failures = e.failures().len(), "all engines failed");
+                }
+                self.write_log(
+                    req,
+                    key,
+                    &query,
+                    LogRow {
+                        source: LogSource::Network,
+                        tier: None,
+                        result_count: 0,
+                        engines: runnable.iter().map(|e| e.id()).collect(),
+                        deadline_hit: false,
+                    },
+                    started,
+                )
+                .await;
+                Err(e)
+            }
+        }
+    }
+
+    /// One flight's upstream work: parallel fan-out under the hard
+    /// deadline, per-engine reports, RRF merge, persist, response. The
+    /// `search_log` write is deliberately absent — each waiter writes its
+    /// own row in [`SearchPipeline::shared_response`].
+    async fn fetch(
+        &self,
+        req: &SearchRequest,
+        runnable: &[Arc<dyn Engine>],
+        key: &CacheKey,
+        ttl: Duration,
+        request_id: Uuid,
+        started: Instant,
+    ) -> Result<SearchResponse, PipelineError> {
+        let outcomes = self.fan_out(req, runnable, request_id).await;
 
         // ---- per-engine reports ------------------------------------------
         let mut reports: Vec<(usize, EngineReport)> = Vec::with_capacity(runnable.len());
@@ -454,20 +798,8 @@ impl SearchPipeline {
 
         if ok_results.is_empty() {
             warn!(failures = failures.len(), "all engines failed");
-            self.write_log(
-                req,
-                &key,
-                &query,
-                LogRow {
-                    source: LogSource::Network,
-                    tier: None,
-                    result_count: 0,
-                    engines: runnable.iter().map(|e| e.id()).collect(),
-                    deadline_hit,
-                },
-                started,
-            )
-            .await;
+            // No log write here: every waiter on the flight logs its own
+            // failure row in `shared_response`.
             return Err(PipelineError::AllEnginesFailed(failures));
         }
 
@@ -491,7 +823,7 @@ impl SearchPipeline {
         };
 
         let resp = SearchResponse {
-            query: query.clone(),
+            query: normalize_query(&req.q),
             results: merged,
             meta: SearchMeta {
                 source: Source::Network,
@@ -502,8 +834,7 @@ impl SearchPipeline {
             },
         };
 
-        // ---- persist + unconditional log -----------------------------------
-        let ttl = ttl_override.unwrap_or(self.default_ttl).min(self.ttl_cap);
+        // ---- persist -------------------------------------------------------
         let persist = info_span!(
             "persist",
             request_id = %request_id,
@@ -515,34 +846,13 @@ impl SearchPipeline {
         // multi-threaded runtime.
         let put = self
             .store
-            .put(&key, &resp, ttl)
+            .put(key, &resp, ttl)
             .instrument(persist.clone())
             .await;
         persist.in_scope(|| match put {
             Ok(()) => debug!("response cached"),
             Err(e) => warn!(error = %e, "cache write failed; serving response anyway"),
         });
-        self.write_log(
-            req,
-            &key,
-            &query,
-            LogRow {
-                source: LogSource::Network,
-                tier: None,
-                result_count: resp.results.len() as u32,
-                engines: runnable.iter().map(|e| e.id()).collect(),
-                deadline_hit,
-            },
-            started,
-        )
-        .await;
-        info!(
-            source = "network",
-            results = resp.results.len(),
-            elapsed_ms = resp.meta.elapsed_ms,
-            deadline_hit,
-            "search complete"
-        );
         Ok(resp)
     }
 
@@ -758,17 +1068,20 @@ impl SearchPipeline {
         outcomes
     }
 
-    /// Rebuild the stored payload as a fresh-hit response: provenance
+    /// Rebuild a stored row as a cache response: provenance
     /// (`engines_used`, `query`) is kept while `source`, `elapsed_ms` and
-    /// `request_id` describe this request. `ttl_s` is the remaining TTL.
-    /// Fuzzy tiers (2+) carry `matched_query` (the stored query); an exact
-    /// tier-1 hit leaves it `None`.
+    /// `request_id` describe this request. `ttl_s` is the remaining TTL
+    /// (0 on an expired row); `stale` marks rows past `expires_at` served
+    /// by the admission-overflow path (W1-07). Fuzzy tiers (2+) carry
+    /// `matched_query` (the stored query); an exact tier-1 hit leaves it
+    /// `None`.
     fn cache_hit_response(
         &self,
         hit: CachedSearch,
         tier: Tier,
         request_id: Uuid,
         started: Instant,
+        stale: bool,
     ) -> SearchResponse {
         let now = Utc::now();
         let age_s = now
@@ -787,7 +1100,7 @@ impl SearchPipeline {
                 tier,
                 age_s,
                 ttl_s,
-                stale: false,
+                stale,
                 matched_query,
             },
             engines_used: resp.meta.engines_used,

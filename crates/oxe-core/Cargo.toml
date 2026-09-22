@@ -35,8 +35,9 @@ sha2 = "0.10"
 sysinfo = "0.37"
 thiserror = "2"
 toml = { version = "0.9", features = ["preserve_order"] }
-# Fan-out (JoinSet) and the hard deadline (time::timeout) in pipeline.rs.
-tokio = { version = "1", features = ["rt", "time"] }
+# Fan-out (JoinSet) and the hard deadline (time::timeout) in pipeline.rs;
+# `sync` for the admission singleflight (watch) and per-engine Semaphore.
+tokio = { version = "1", features = ["rt", "sync", "time"] }
 tracing = "0.1"
 url = { version = "2", features = ["serde"] }
 uuid = { version = "1", features = ["v7", "serde"] }
