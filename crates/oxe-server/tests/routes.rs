@@ -42,10 +42,13 @@ const EXPECTED_WAVE0: &[(&str, &str)] = &[
     ("PUT", "/api/config"),
 ];
 
-/// Wave-1 rows mounted so far (W1-06 engine health). `/metrics` (W1-09)
-/// and `/mcp` (W1-08) land with their own steps.
-const EXPECTED_WAVE1_MOUNTED: &[(&str, &str)] =
-    &[("GET", "/api/engines"), ("POST", "/api/engines/{id}/reset")];
+/// Wave-1 rows mounted so far (W1-06 engine health, W1-09 metrics).
+/// `/mcp` (W1-08) is chained in the test because its method is `*`.
+const EXPECTED_WAVE1_MOUNTED: &[(&str, &str)] = &[
+    ("GET", "/api/engines"),
+    ("POST", "/api/engines/{id}/reset"),
+    ("GET", "/metrics"),
+];
 
 /// Serialises tests that mutate process env (`OXE_CONFIG_DIR` and friends).
 /// Under nextest each test is its own process anyway; this keeps plain
@@ -278,7 +281,7 @@ fn wave0_routes_match_plan_filter() {
 
 /// `mounted_routes` (the builder's own view) equals the wave-0 set plus
 /// every wave-1 row implemented so far (`* /mcp` from W1-08, the engine
-/// health pair from W1-06).
+/// health pair from W1-06, `/metrics` from W1-09).
 #[test]
 fn mounted_routes_match_declaration() {
     let (state, _tmp) = test_state();

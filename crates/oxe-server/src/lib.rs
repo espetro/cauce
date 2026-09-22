@@ -9,6 +9,7 @@ mod error;
 mod handlers;
 mod html;
 pub mod mcp;
+mod metrics;
 mod middleware;
 pub mod observability;
 mod routes;
@@ -17,5 +18,6 @@ pub use app::{
     AppState, CURRENT_WAVE, RouterOptions, build_router, build_router_opts, mounted_routes, serve,
 };
 pub use error::ApiError;
+pub use metrics::{METRICS_CONTENT_TYPE, MetricsHandle};
 pub use middleware::{HostGuard, RequestCtx, host_origin_guard, request_context};
 pub use routes::{ROUTES, RouteKind, RouteSpec};

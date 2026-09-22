@@ -77,6 +77,31 @@ async fn replay_golden_path() {
     let hit_rate = stats["hit_rate"].as_f64().expect("hit_rate");
     assert!((hit_rate - 0.5).abs() < 1e-9, "hit_rate {hit_rate} != 0.5");
 
+    // 4b. W1-09: stats carries the per-engine metrics row and the admission
+    // aggregates.
+    assert_eq!(stats["engines"][0]["engine"], "replay", "{stats}");
+    assert!(
+        stats["engines"][0]["p95_ms"].is_number(),
+        "engines[0].p95_ms must be a number: {stats}"
+    );
+    assert!(stats["admission"]["rejected"].is_number(), "{stats}");
+
+    // 4c. W1-09: /metrics exposes the settled instrument names.
+    let (status, metrics_body) = common::http(addr, "GET", "/metrics", None).await;
+    assert_eq!(status, 200, "metrics failed: {metrics_body}");
+    for name in [
+        "oxe_search_requests_total",
+        "oxe_engine_requests_total",
+        "oxe_engine_breaker_state",
+        "oxe_cache_entries",
+        "oxe_deadline_hit_total",
+    ] {
+        assert!(
+            metrics_body.contains(name),
+            "missing {name}:\n{metrics_body}"
+        );
+    }
+
     // Compute the canonical cache key before recording the UI click. This is
     // also the query_hash sent by the real result-link beacon.
     let cache_req = SearchRequest {

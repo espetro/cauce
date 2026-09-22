@@ -269,6 +269,123 @@ pub struct ClientCount {
     pub searches: u64,
 }
 
+/// Median/p80/p95 of a millisecond sample window (engine phases, admission
+/// waits). Zeroed when no samples exist — percentiles are always numbers on
+/// the wire (the W1-09 acceptance contract).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
+pub struct PhaseStats {
+    pub median_ms: u32,
+    pub p80_ms: u32,
+    pub p95_ms: u32,
+}
+
+/// One `/api/stats` `engines[]` row (W1-09): the persisted `engine_health`
+/// fields plus the in-process request metrics merged in by the HTTP
+/// handler (`StatsSnapshot::merge_metrics`). Store impls fill only the
+/// health fields; the metric fields stay zeroed until the merge.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EngineStatsRow {
+    pub engine: EngineId,
+    /// EWMA latency in ms (`engine_health.ewma_ms`; 0 when unseen).
+    pub ewma_ms: f64,
+    pub failures: u32,
+    pub breaker: BreakerState,
+    pub breaker_until: Option<DateTime<Utc>>,
+    pub last_ok_at: Option<DateTime<Utc>>,
+    pub last_error: Option<String>,
+    /// Engine calls completed this process lifetime.
+    pub requests: u64,
+    /// Total results returned across calls.
+    pub result_count: u64,
+    /// Successful answers / requests * 100 (SearXNG reliability parity;
+    /// `no_results` answers count as successful).
+    pub reliability_pct: f64,
+    /// Whole-call percentiles (pipeline-observed latency).
+    pub median_ms: u32,
+    pub p80_ms: u32,
+    pub p95_ms: u32,
+    /// `oxe_engine_duration_ms{phase="http"}` samples (the fetch leg).
+    pub http: PhaseStats,
+    /// `oxe_engine_duration_ms{phase="parse"}` samples (extraction).
+    pub parse: PhaseStats,
+}
+
+impl EngineStatsRow {
+    /// Health-only row, as `Store::stats` produces it.
+    pub fn from_health(row: EngineHealthRow) -> Self {
+        Self {
+            engine: row.engine,
+            ewma_ms: row.ewma_ms,
+            failures: row.failures,
+            breaker: row.breaker,
+            breaker_until: row.breaker_until,
+            last_ok_at: row.last_ok_at,
+            last_error: row.last_error,
+            requests: 0,
+            result_count: 0,
+            reliability_pct: 0.0,
+            median_ms: 0,
+            p80_ms: 0,
+            p95_ms: 0,
+            http: PhaseStats::default(),
+            parse: PhaseStats::default(),
+        }
+    }
+
+    /// Metrics-only row for an engine with no `engine_health` row yet
+    /// (pre-W1-06, every engine is here until its first health write).
+    pub fn from_metrics(m: crate::metrics::EngineMetricStats) -> Self {
+        let mut row = Self::from_health(EngineHealthRow {
+            engine: m.engine.clone(),
+            ewma_ms: 0.0,
+            failures: 0,
+            breaker: BreakerState::Closed,
+            breaker_until: None,
+            last_ok_at: None,
+            last_error: None,
+        });
+        row.set_metrics(&m);
+        row
+    }
+
+    /// Fill the metric fields from the in-process aggregates.
+    pub fn set_metrics(&mut self, m: &crate::metrics::EngineMetricStats) {
+        self.requests = m.requests;
+        self.result_count = m.result_count;
+        self.reliability_pct = m.reliability_pct;
+        self.median_ms = m.total.median_ms;
+        self.p80_ms = m.total.p80_ms;
+        self.p95_ms = m.total.p95_ms;
+        self.http = m.http;
+        self.parse = m.parse;
+    }
+}
+
+/// Admission/queue aggregates for `/api/stats` (W1-09). Sourced from the
+/// in-process metrics registry by `StatsSnapshot::merge_metrics`; store
+/// impls emit it zeroed. Counts are per request (every waiter on a flight
+/// observes the same rejection/stale outcome) except `deadline_hits`, which
+/// is per flight — the deadline cuts the shared fan-out once.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct AdmissionStats {
+    /// Flight leader acquires that measured a bounded-queue wait
+    /// (`oxe_admission_wait_ms` observations).
+    pub waits: u64,
+    pub wait_median_ms: u32,
+    pub wait_p80_ms: u32,
+    pub wait_p95_ms: u32,
+    /// Requests rejected by admission (`oxe_admission_rejected_total`).
+    pub rejected: u64,
+    /// Rejections split by `reason` label (`queue_full`, `wait_timeout`).
+    pub rejected_by_reason: std::collections::BTreeMap<String, u64>,
+    /// Flights cut by the hard deadline (`oxe_deadline_hit_total`,
+    /// per flight — shared across the flight's waiters).
+    pub deadline_hits: u64,
+    /// Responses served from an expired cache row
+    /// (`oxe_stale_served_total`).
+    pub stale_served: u64,
+}
+
 /// Dashboard aggregates (`GET /api/stats?days`, section 5 search_log readers
 /// plus the cache/engine panels).
 ///
@@ -287,12 +404,34 @@ pub struct StatsSnapshot {
     /// Queries with `result_count = 0`, most frequent first.
     pub zero_result_queries: Vec<String>,
     pub per_day: Vec<DayCount>,
-    /// Engine table: one row per known engine.
-    pub engines: Vec<EngineHealthRow>,
+    /// Engine table: one row per engine in `engine_health`, extended with
+    /// the in-process request metrics by `merge_metrics` (W1-09).
+    pub engines: Vec<EngineStatsRow>,
     /// Live `cache_entries` rows (unexpired).
     pub cache_entries: u64,
     /// Rows past `expires_at` awaiting eviction.
     pub cache_entries_expired: u64,
+    /// Admission/queue aggregates. Zeroed by store impls; the HTTP handler
+    /// fills it from the in-process metrics registry via `merge_metrics`.
+    pub admission: AdmissionStats,
+}
+
+impl StatsSnapshot {
+    /// Overlay the in-process metrics (W1-09): health-derived `engines[]`
+    /// rows gain requests/result_count/reliability and the latency
+    /// percentiles; engines seen by the pipeline but missing from
+    /// `engine_health` are appended; `admission` is filled. Called by the
+    /// `/api/stats` handler, so `Store::stats` results stay health-only.
+    pub fn merge_metrics(&mut self) {
+        for m in crate::metrics::engine_stats() {
+            match self.engines.iter_mut().find(|r| r.engine == m.engine) {
+                Some(row) => row.set_metrics(&m),
+                None => self.engines.push(EngineStatsRow::from_metrics(m)),
+            }
+        }
+        self.engines.sort_by(|a, b| a.engine.cmp(&b.engine));
+        self.admission = crate::metrics::admission_stats();
+    }
 }
 
 /// Persistence contract (parent plan 4.2). Every table has exactly one writer
