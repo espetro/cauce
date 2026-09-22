@@ -5,3 +5,4 @@ mod guard;
 mod headless;
 mod health;
 mod mcp_stdio;
+mod smoke;
