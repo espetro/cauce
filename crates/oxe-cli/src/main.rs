@@ -15,6 +15,9 @@ fn main() {
             &std::env::args().skip(2).collect::<Vec<_>>(),
         )),
         "trace" => cmds::trace::run(std::env::args().nth(2)),
+        "config" => std::process::exit(cmds::config::run(
+            &std::env::args().skip(2).collect::<Vec<_>>(),
+        )),
         _ => eprintln!("usage: oxe <serve|search|engine|cache|record|trace|config> [args]"),
     }
 }
