@@ -11,5 +11,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: jdx/mise-action@v2
+      - uses: astral-sh/setup-uv@v5
+      - name: Provision ddgs live engine
+        run: |
+          uv sync --project sdk/python --extra ddgs
+          echo "$GITHUB_WORKSPACE/sdk/python/.venv/bin" >> "$GITHUB_PATH"
       - uses: Swatinem/rust-cache@v2
       - run: mise run validate:nightly

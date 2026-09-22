@@ -5,10 +5,15 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
+autotests = false
 
 [[bin]]
 name = "oxe"
 path = "src/main.rs"
+
+[[test]]
+name = "e2e"
+path = "tests/e2e/main.rs"
 
 [dependencies]
 oxe-core = { path = "../oxe-core" }
@@ -17,3 +22,8 @@ oxe-server = { path = "../oxe-server" }
 oxe-store-sqlite = { path = "../oxe-store-sqlite" }
 tokio = { version = "1", features = ["net", "rt", "rt-multi-thread"] }
 tracing = "0.1"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["io-util", "macros", "process", "time"] }
+serde_json = "1"
+tempfile = "3"
