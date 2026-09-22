@@ -9,6 +9,8 @@
 //! file, You can obtain one at <https://mozilla.org/MPL/2.0/>.
 
 mod cache;
+#[cfg(feature = "conformance")]
+pub mod conformance;
 mod engine;
 mod normalize;
 mod request;
