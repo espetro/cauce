@@ -851,6 +851,62 @@ async fn config_get_redacts_env_override_secret() {
     assert_eq!(body["ai"]["api_key"], "<redacted>");
 }
 
+/// A `GET` -> edit -> `PUT` roundtrip restores `<redacted>` placeholders
+/// from the current config instead of writing the literal into
+/// `config.toml`; a placeholder with no current secret is a 400.
+#[tokio::test]
+async fn config_put_restores_redacted_placeholders() {
+    let _guard = env_lock().await;
+    let tmp = tempfile::tempdir().unwrap();
+    let config_dir = tmp.path().join("cfg");
+    std::fs::create_dir_all(&config_dir).unwrap();
+    // SAFETY: serialized by ENV_LOCK; nextest also isolates per process.
+    unsafe {
+        std::env::set_var("OXE_CONFIG_DIR", &config_dir);
+        std::env::set_var("OXE_DATA_DIR", tmp.path().join("data"));
+        std::env::set_var("OXE_AI_API_KEY", "env-override-secret");
+    }
+
+    let (state, _tmp2) = test_state();
+    state.with_config(|cfg| *cfg = Config::load().unwrap());
+    let router = build_router(state);
+
+    // PUT the redacted display shape back: the placeholder is restored.
+    let request = Request::builder()
+        .method("PUT")
+        .uri("/api/config")
+        .header("content-type", "application/toml")
+        .body(Body::from("[ai]\napi_key = \"<redacted>\"\n"))
+        .unwrap();
+    let (status, _, body) = call(&router, request).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+
+    let file = std::fs::read_to_string(config_dir.join("config.toml")).unwrap();
+    assert!(
+        file.contains("env-override-secret"),
+        "restored secret must land in the file: {file}"
+    );
+    assert!(
+        !file.contains("<redacted>"),
+        "placeholder must never persist: {file}"
+    );
+
+    // A placeholder with nothing behind it is rejected.
+    let bad = Request::builder()
+        .method("PUT")
+        .uri("/api/config")
+        .header("content-type", "application/toml")
+        .body(Body::from("[search]\ndeadline_ms = \"<redacted>\"\n"))
+        .unwrap();
+    let (status, _, body) = call(&router, bad).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    assert_envelope(&body, "invalid_config");
+
+    unsafe {
+        std::env::remove_var("OXE_AI_API_KEY");
+    }
+}
+
 /// W1-07 acceptance: `PipelineError::RateLimited` maps to 429 with a
 /// `Retry-After` header and the `rate_limited` envelope code.
 #[tokio::test]

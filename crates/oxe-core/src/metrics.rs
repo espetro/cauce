@@ -542,7 +542,7 @@ impl Metrics {
         let mut reg = registry();
         *reg.search_requests
             .entry(labels(&[
-                ("client", client.label()),
+                ("client", client.kind().to_string()),
                 ("source", source.to_string()),
                 (
                     "tier",

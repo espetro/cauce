@@ -92,6 +92,18 @@ impl ClientKind {
             Self::Cli => "cli".to_string(),
         }
     }
+
+    /// Bounded label for metrics (`ui` | `api` | `mcp` | `cli`): the MCP
+    /// client name is arbitrary client-supplied text, so `label()` would
+    /// make `oxe_search_requests_total{client}` unbounded.
+    pub fn kind(&self) -> &'static str {
+        match self {
+            Self::Ui => "ui",
+            Self::Api => "api",
+            Self::Mcp(_) => "mcp",
+            Self::Cli => "cli",
+        }
+    }
 }
 
 impl std::fmt::Display for ClientKind {
