@@ -111,9 +111,23 @@ pub(crate) fn token_jaccard(a: &BTreeSet<String>, b: &BTreeSet<String>) -> f64 {
 /// permuted.engines = Some(vec![EngineId::from("brave"), EngineId::from("bing")]);
 /// assert_eq!(CacheKey::from(&pinned), CacheKey::from(&permuted));
 /// ```
+// No `transparent`: it cannot combine with `try_from`, and a derived
+// newtype struct already serializes as its inner string anyway.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
-#[serde(transparent)]
+#[serde(try_from = "String")]
 pub struct CacheKey(String);
+
+/// Deserialization goes through the same 64-hex validation as `FromStr`:
+/// an unconstrained `String` would accept anything, letting a malformed
+/// `query_hash` from a click beacon (or any other inbound JSON) be stored
+/// and silently never join to `search_log` (#85).
+impl TryFrom<String> for CacheKey {
+    type Error = String;
+
+    fn try_from(s: String) -> Result<Self, Self::Error> {
+        s.parse()
+    }
+}
 
 impl CacheKey {
     /// Hex digest (64 lowercase chars). This is the `key` column of
@@ -321,6 +335,54 @@ mod tests {
         assert_eq!(key.as_str().len(), 64);
         assert_eq!(CacheKey::from_str(key.as_str()).unwrap(), key);
         assert!(CacheKey::from_str("not-a-key").is_err());
+    }
+
+    /// #85: JSON deserialization takes the same 64-hex gate as `FromStr` —
+    /// a malformed `query_hash` in a click beacon is rejected instead of
+    /// being stored as a value that never joins to `search_log`.
+    #[test]
+    fn deserialize_validates_hex_like_from_str() {
+        let key = CacheKey::from(&req(None));
+        let json = format!("\"{}\"", key.as_str());
+        assert_eq!(serde_json::from_str::<CacheKey>(&json).unwrap(), key);
+
+        for bad in [
+            "\"not-a-key\"".to_string(),
+            format!("\"{}\"", "f".repeat(63)), // too short
+            format!("\"{}\"", "g".repeat(64)), // right length, not hex
+            "42".to_string(),                  // not a string
+        ] {
+            assert!(serde_json::from_str::<CacheKey>(&bad).is_err(), "{bad}");
+        }
+
+        // Uppercase hex normalizes to lowercase, matching `FromStr`.
+        let upper = format!("\"{}\"", "A".repeat(64));
+        assert_eq!(
+            serde_json::from_str::<CacheKey>(&upper).unwrap().as_str(),
+            "a".repeat(64)
+        );
+    }
+
+    /// The beacon body (`ClickRow`) propagates the key validation: a bad
+    /// `query_hash` fails the whole body; absent and `null` stay valid.
+    #[test]
+    fn click_row_rejects_malformed_query_hash() {
+        use crate::store::ClickRow;
+
+        for body in [
+            r#"{"url":"https://example.com/a","query_hash":"garbage"}"#,
+            r#"{"url":"https://example.com/a","query_hash":42}"#,
+        ] {
+            assert!(serde_json::from_str::<ClickRow>(body).is_err(), "{body}");
+        }
+
+        for body in [
+            r#"{"url":"https://example.com/a"}"#,
+            r#"{"url":"https://example.com/a","query_hash":null}"#,
+        ] {
+            let row: ClickRow = serde_json::from_str(body).unwrap();
+            assert!(row.query_hash.is_none(), "{body}");
+        }
     }
 
     proptest! {
