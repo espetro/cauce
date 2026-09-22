@@ -558,6 +558,29 @@ async fn error_envelope_and_param_validation() {
     assert_envelope(&body, "bad_request");
 }
 
+/// #85: a click beacon with a malformed `query_hash` is rejected with a
+/// 400 instead of storing a value that never joins to `search_log`.
+#[tokio::test]
+async fn click_beacon_rejects_malformed_query_hash() {
+    let (router, _state, _tmp) = app();
+    let request = Request::builder()
+        .method("POST")
+        .uri("/api/click")
+        .header("content-type", "application/json")
+        .body(Body::from(
+            r#"{"url":"https://example.com/a","query_hash":"garbage"}"#,
+        ))
+        .unwrap();
+    let (status, _, body) = call(&router, request).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    assert_envelope(&body, "bad_request");
+
+    // Nothing was stored.
+    let (status, _, body) = get(&router, "/api/history").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body.as_array().unwrap().len(), 0, "{body}");
+}
+
 /// `NoEngines` mapping: a non-empty pin matching nothing is 400
 /// `unknown_engines` even with zero configured engines; an empty/zero
 /// configured set is 503 `no_engines`.
