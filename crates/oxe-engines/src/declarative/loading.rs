@@ -1,8 +1,9 @@
 //! Spec source loading (W1-02): `engines/*.yaml` files are embedded into
-//! the binary at build time via `include_dir`; at runtime,
-//! `$OXE_CONFIG_DIR/engines/*.yaml` files override them — a config-dir
-//! file whose spec `id` matches an embedded spec replaces it, any other
-//! `id` adds a new spec.
+//! the binary at build time via `rust-embed` (the `include` glob keeps
+//! `engines/fixtures/` bodies out of the binary — fixtures are read from
+//! the filesystem only); at runtime, `$OXE_CONFIG_DIR/engines/*.yaml`
+//! files override them — a config-dir file whose spec `id` matches an
+//! embedded spec replaces it, any other `id` adds a new spec.
 //!
 //! Lookup order for one name (a `[[engines]]` `spec` value or an entry
 //! `id`):
@@ -19,30 +20,30 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use include_dir::{Dir, include_dir};
+use rust_embed::RustEmbed;
 use tracing::warn;
 
 use oxe_core::config::{EngineEntry, EnvMap};
 
 use super::spec::{CompiledSpec, EngineSpec, SpecError};
 
-/// `engines/` embedded at build (specs ship inside the binary; the
-/// directory also carries `LICENSE` and `fixtures/`, which are embedded
-/// too but never consulted at runtime).
-static EMBEDDED_ENGINES: Dir<'static> = include_dir!("$CARGO_MANIFEST_DIR/../../engines");
+/// `engines/*.yaml` embedded at build: specs ship inside the binary while
+/// the `include` globs keep `LICENSE` and every `fixtures/` body out of it
+/// (`fixture_pairs` only ever reads the filesystem).
+#[derive(RustEmbed)]
+#[folder = "../../engines/"]
+#[include = "*.yaml"]
+#[include = "*.yml"]
+struct EmbeddedEngines;
 
 /// `(file_name, yaml_text)` for every embedded top-level `*.yaml`/`*.yml`
-/// spec (fixtures subdirectories are not walked).
-fn embedded_specs() -> Vec<(&'static str, &'static str)> {
-    EMBEDDED_ENGINES
-        .files()
-        .filter_map(|f| {
-            let name = f.path().file_name()?.to_str()?;
-            let is_yaml = name.ends_with(".yaml") || name.ends_with(".yml");
-            is_yaml.then(|| {
-                f.contents_utf8()
-                    .map(|text| (f.path().to_str().unwrap_or(name), text))
-            })?
+/// spec.
+fn embedded_specs() -> Vec<(String, String)> {
+    EmbeddedEngines::iter()
+        .filter_map(|name| {
+            let file = EmbeddedEngines::get(&name)?;
+            let text = std::str::from_utf8(&file.data).ok()?;
+            Some((name.into_owned(), text.to_string()))
         })
         .collect()
 }
@@ -73,9 +74,9 @@ fn override_spec_files(config_dir: &Path) -> Vec<PathBuf> {
 pub fn load_specs(config_dir: &Path, env: &EnvMap) -> Vec<CompiledSpec> {
     let mut by_id: BTreeMap<String, String> = BTreeMap::new();
     for (name, text) in embedded_specs() {
-        match EngineSpec::from_yaml(text) {
+        match EngineSpec::from_yaml(&text) {
             Ok(spec) => {
-                by_id.insert(spec.id.to_string(), text.to_string());
+                by_id.insert(spec.id.to_string(), text);
             }
             Err(e) => warn!(file = name, error = %e, "embedded engine spec skipped"),
         }
@@ -140,19 +141,37 @@ pub(crate) fn resolve_named(name: &str, config_dir: &Path) -> Option<String> {
         format!("{name}.yaml"),
         format!("{name}.yml"),
     ] {
-        if let Some(f) = EMBEDDED_ENGINES.get_file(&candidate)
-            && let Some(text) = f.contents_utf8()
+        if let Some(f) = EmbeddedEngines::get(&candidate)
+            && let Ok(text) = std::str::from_utf8(&f.data)
         {
             return Some(text.to_string());
         }
     }
     // 4. embedded by spec id
     for (_file, text) in embedded_specs() {
-        if let Ok(spec) = EngineSpec::from_yaml(text)
+        if let Ok(spec) = EngineSpec::from_yaml(&text)
             && spec.id.as_str() == name
         {
-            return Some(text.to_string());
+            return Some(text);
         }
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn embed_includes_only_top_level_yaml() {
+        // The `include` glob must keep `engines/fixtures/**` bodies (and
+        // `LICENSE`) out of the binary: every embedded path is a bare
+        // top-level `*.yaml`/`*.yml` file name.
+        for path in EmbeddedEngines::iter() {
+            assert!(
+                !path.contains('/') && (path.ends_with(".yaml") || path.ends_with(".yml")),
+                "non-spec path embedded: {path}"
+            );
+        }
+    }
 }

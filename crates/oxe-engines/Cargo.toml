@@ -11,8 +11,9 @@ async-trait = "0.1"
 # Tracking-redirect unwrapping (declarative): bing `u=a1<base64>` payloads.
 base64 = "0.22.1"
 chrono = { version = "0.4", features = ["serde"] }
-# `engines/*.yaml` embedded into the binary (declarative spec loading).
-include_dir = "0.7.4"
+# `engines/*.yaml` embedded into the binary (declarative spec loading);
+# `include-exclude` keeps `engines/fixtures/` bodies out of the binary.
+rust-embed = { version = "8.12.0", features = ["include-exclude"] }
 oxe-core = { path = "../oxe-core" }
 # Tracking-redirect unwrapping (declarative): yahoo `/RU=<encoded>` paths.
 percent-encoding = "2.3.2"
