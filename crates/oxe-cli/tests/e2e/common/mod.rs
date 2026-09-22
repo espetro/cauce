@@ -61,14 +61,35 @@ pub async fn spawn_oxe(
     spawn_oxe_bin(oxe_bin(), data_dir, config_dir, engines).await
 }
 
+/// [`spawn_oxe`] plus extra env vars (e.g. `OXE_REPLAY_BLOCKED` for the
+/// breaker tests).
+pub async fn spawn_oxe_env(
+    data_dir: impl AsRef<Path>,
+    config_dir: impl AsRef<Path>,
+    engines: &str,
+    extra_env: &[(&str, &str)],
+) -> ServerGuard {
+    spawn_oxe_bin_env(oxe_bin(), data_dir, config_dir, engines, extra_env).await
+}
+
 pub async fn spawn_oxe_bin(
     bin: &str,
     data_dir: impl AsRef<Path>,
     config_dir: impl AsRef<Path>,
     engines: &str,
 ) -> ServerGuard {
-    let mut child = Command::new(bin)
-        .current_dir(workspace_root())
+    spawn_oxe_bin_env(bin, data_dir, config_dir, engines, &[]).await
+}
+
+pub async fn spawn_oxe_bin_env(
+    bin: &str,
+    data_dir: impl AsRef<Path>,
+    config_dir: impl AsRef<Path>,
+    engines: &str,
+    extra_env: &[(&str, &str)],
+) -> ServerGuard {
+    let mut cmd = Command::new(bin);
+    cmd.current_dir(workspace_root())
         .arg("serve")
         .arg("--bind")
         .arg("127.0.0.1")
@@ -80,9 +101,11 @@ pub async fn spawn_oxe_bin(
         .env("OXE_LOG", "info")
         .env("OXE_LOG_PRETTY", "1")
         .stdout(Stdio::null())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("failed to spawn oxe serve");
+        .stderr(Stdio::piped());
+    for (k, v) in extra_env {
+        cmd.env(k, v);
+    }
+    let mut child = cmd.spawn().expect("failed to spawn oxe serve");
 
     let stderr = child.stderr.take().expect("stderr piped");
     let mut lines = BufReader::new(stderr).lines();
