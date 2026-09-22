@@ -8,6 +8,7 @@ mod app;
 mod error;
 mod handlers;
 mod html;
+pub mod mcp;
 mod middleware;
 pub mod observability;
 mod routes;

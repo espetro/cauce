@@ -1,5 +1,5 @@
-//! `oxe` binary: `serve`, `record`, `engine`, `trace`, `config` are
-//! implemented; `search` and `cache` land in later waves.
+//! `oxe` binary: `serve`, `mcp`, `record`, `engine`, `trace`, `config`
+//! are implemented; `search` and `cache` land in later waves.
 //!
 //! This Source Code Form is subject to the terms of the Mozilla Public
 //! License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -11,6 +11,9 @@ fn main() {
     let sub = std::env::args().nth(1).unwrap_or_default();
     match sub.as_str() {
         "serve" => std::process::exit(cmds::serve::run(
+            &std::env::args().skip(2).collect::<Vec<_>>(),
+        )),
+        "mcp" => std::process::exit(cmds::mcp::run(
             &std::env::args().skip(2).collect::<Vec<_>>(),
         )),
         "record" => std::process::exit(cmds::record::run(
@@ -30,7 +33,7 @@ fn main() {
             std::process::exit(2);
         }
         _ => {
-            eprintln!("usage: oxe <serve|record|engine|trace|config> [args]");
+            eprintln!("usage: oxe <serve|mcp|record|engine|trace|config> [args]");
             std::process::exit(2);
         }
     }
