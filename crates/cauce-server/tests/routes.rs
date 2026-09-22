@@ -57,6 +57,10 @@ const EXPECTED_WAVE1_MOUNTED: &[(&str, &str)] = &[
     ("GET", "/metrics"),
 ];
 
+/// Wave-2 rows mounted so far (W2-04 cache page). `requires: "ui"` rows
+/// are chained under `cfg!(feature = "ui")` like `EXPECTED_WAVE0_UI`.
+const EXPECTED_WAVE2_UI_MOUNTED: &[(&str, &str)] = &[("GET", "/cache")];
+
 /// Serialises tests that mutate process env (`CAUCE_CONFIG_DIR` and friends).
 /// Under nextest each test is its own process anyway; this keeps plain
 /// `cargo test` (one process per test binary) safe too.
@@ -304,6 +308,7 @@ fn mounted_routes_match_declaration() {
         expected.extend(
             EXPECTED_WAVE0_UI
                 .iter()
+                .chain(EXPECTED_WAVE2_UI_MOUNTED)
                 .map(|(m, p)| (m.to_string(), p.to_string())),
         );
     }
@@ -341,7 +346,7 @@ async fn headless_drops_ui_routes_keeps_api() {
     let headless: BTreeSet<(String, String)> = mounted_routes(&state, &RouterOptions::headless())
         .map(|r| (r.method.to_string(), r.path.to_string()))
         .collect();
-    for ui_row in EXPECTED_WAVE0_UI {
+    for ui_row in EXPECTED_WAVE0_UI.iter().chain(EXPECTED_WAVE2_UI_MOUNTED) {
         assert!(
             !headless.contains(&(ui_row.0.to_string(), ui_row.1.to_string())),
             "{ui_row:?} must not mount under --headless"
@@ -350,7 +355,7 @@ async fn headless_drops_ui_routes_keeps_api() {
     assert!(headless.contains(&("GET".to_string(), "/api/search".to_string())));
 
     let router = build_router_opts(state, RouterOptions::headless());
-    for uri in ["/", "/search?q=x"] {
+    for uri in ["/", "/search?q=x", "/cache"] {
         let (status, _, body) = get(&router, uri).await;
         assert_eq!(status, StatusCode::NOT_FOUND, "{uri}: {body}");
         assert_envelope(&body, "not_found");

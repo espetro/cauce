@@ -1,0 +1,98 @@
+<!doctype html>
+<!-- This Source Code Form is subject to the terms of the Mozilla Public
+     License, v. 2.0. If a copy of the MPL was not distributed with this
+     file, You can obtain one at https://mozilla.org/MPL/2.0/. -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ crate::strings::CACHE_PAGE_TITLE|lower }} · cauce</title>
+  <style>{{ style_css|safe }}</style>
+</head>
+<body>
+  <p><a href="/">{{ crate::strings::NAV_SEARCH }}</a></p>
+  <h1>{{ crate::strings::CACHE_PAGE_TITLE }}</h1>
+
+  <form action="/cache" method="get">
+    <input type="search" name="q" value="{{ q }}" placeholder="{{ crate::strings::CACHE_FILTER_PLACEHOLDER }}">
+    <button type="submit">{{ crate::strings::CACHE_FILTER_BUTTON }}</button>
+    {% if searching %}
+    <a href="/cache">{{ crate::strings::CACHE_FILTER_CLEAR }}</a>
+    {% endif %}
+  </form>
+
+  <div class="meta">
+    <span>{{ shown }} entries</span>
+    {% if searching %}
+    <span>{{ crate::strings::CACHE_FILTERED_CAP_NOTE }}</span>
+    {% endif %}
+    <span class="request-id" title="{{ request_id }}">{{ short_request_id }}</span>
+  </div>
+
+  <div class="cache-actions">
+    <button
+      hx-delete="/api/cache?expired=true"
+      hx-confirm="{{ crate::strings::CACHE_CONFIRM_EXPIRED }}"
+      hx-headers='{"X-Cauce-Client":"ui"}'
+      hx-swap="none"
+      hx-on::after-request="if (event.detail.successful) window.location.reload()"
+    >{{ crate::strings::CACHE_DELETE_EXPIRED }}</button>
+    <button
+      class="danger"
+      hx-delete="/api/cache?all=true"
+      hx-confirm="{{ crate::strings::CACHE_CONFIRM_ALL }}"
+      hx-headers='{"X-Cauce-Client":"ui"}'
+      hx-swap="none"
+      hx-on::after-request="if (event.detail.successful) window.location.reload()"
+    >{{ crate::strings::CACHE_DELETE_ALL }}</button>
+  </div>
+
+  {% if rows.is_empty() %}
+  <p>{% if searching %}{{ crate::strings::CACHE_EMPTY_FILTERED }}{% else %}{{ crate::strings::CACHE_EMPTY }}{% endif %}</p>
+  {% endif %}
+
+  {% for row in rows %}
+  <article class="cache-entry{% if row.expired %} expired{% endif %}">
+    <div class="cache-row">
+      <details
+        class="cache-details"
+        hx-get="/api/cache/{{ row.key }}"
+        hx-trigger="toggle once"
+        hx-target="find .cache-payload"
+        hx-swap="innerHTML"
+        hx-headers='{"Accept":"text/html","X-Cauce-Client":"ui"}'
+      >
+        <summary>
+          <span class="cache-query">{{ row.query }}</span>
+          <span class="cache-meta">
+            <span>{{ row.created }}</span>
+            <span class="cache-expires">{{ row.expires }}</span>
+            <span>{{ row.hits }} hits</span>
+            <span>{{ row.engines }}</span>
+            <span>{{ row.size }}</span>
+          </span>
+        </summary>
+        <div class="cache-payload">{{ crate::strings::CACHE_PAYLOAD_LOADING }}</div>
+      </details>
+      <button
+        class="cache-delete"
+        hx-delete="/api/cache/{{ row.key }}"
+        hx-target="closest .cache-entry"
+        hx-swap="delete"
+        hx-confirm="{{ crate::strings::CACHE_CONFIRM_ROW }}"
+        hx-headers='{"X-Cauce-Client":"ui"}'
+      >{{ crate::strings::CACHE_DELETE_ROW }}</button>
+    </div>
+  </article>
+  {% endfor %}
+
+  {% if !prev_url.is_empty() || !next_url.is_empty() %}
+  <div class="cache-pager meta">
+    {% if !prev_url.is_empty() %}<a href="{{ prev_url }}">&larr; {{ crate::strings::CACHE_PAGE_PREV }}</a>{% endif %}
+    {% if !next_url.is_empty() %}<a href="{{ next_url }}">{{ crate::strings::CACHE_PAGE_NEXT }} &rarr;</a>{% endif %}
+  </div>
+  {% endif %}
+
+  <script>{{ htmx_js|safe }}</script>
+</body>
+</html>

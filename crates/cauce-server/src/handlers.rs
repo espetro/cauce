@@ -199,17 +199,27 @@ pub async fn metrics(State(state): State<AppState>) -> Response {
         .into_response()
 }
 
-/// `GET /api/cache?limit&offset`: cache admin listing (includes
-/// expired-but-not-yet-evicted rows).
+/// `GET /api/cache?limit&offset&q`: cache admin listing (includes
+/// expired-but-not-yet-evicted rows). `q` switches to the tier-2 lexical
+/// index (`Store::get_lexical`): FTS over stored queries, titles and
+/// snippets, ranked, capped at 255 rows, `offset` ignored.
 pub async fn cache_list(
     State(state): State<AppState>,
     Extension(ctx): Extension<RequestCtx>,
     uri: Uri,
 ) -> Result<Json<Vec<cauce_core::CachedSearch>>, ApiError> {
     let params = QueryParams::parse(uri.query(), &ctx)?;
-    params.allow(&ctx, &["limit", "offset"])?;
+    params.allow(&ctx, &["limit", "offset", "q"])?;
     let limit = params.u32(&ctx, "limit", 50)?.clamp(1, MAX_LIMIT);
     let offset = params.u32(&ctx, "offset", 0)?;
+    if let Some(q) = params.get("q").filter(|v| !v.is_empty()) {
+        return state
+            .store()
+            .get_lexical(q, limit.min(u8::MAX as u32) as u8)
+            .await
+            .map(Json)
+            .map_err(|e| ctx.store(&e));
+    }
     state
         .store()
         .list_cache(limit, offset)
@@ -219,12 +229,16 @@ pub async fn cache_list(
 }
 
 /// `GET /api/cache/{key}`: one entry by hex `CacheKey` (400 malformed,
-/// 404 absent).
+/// 404 absent). `Accept: text/html` renders the stored payload as a
+/// pretty-JSON fragment for the `/cache` row expander (W2-04); that arm
+/// exists only in `ui` builds.
+#[cfg_attr(not(feature = "ui"), allow(unused_variables))]
 pub async fn cache_get(
     State(state): State<AppState>,
     Extension(ctx): Extension<RequestCtx>,
+    headers: HeaderMap,
     Path(key): Path<String>,
-) -> Result<Json<cauce_core::CachedSearch>, ApiError> {
+) -> Result<Response, ApiError> {
     let key = cache_key(&ctx, &key)?;
     match state
         .store()
@@ -232,7 +246,14 @@ pub async fn cache_get(
         .await
         .map_err(|e| ctx.store(&e))?
     {
-        Some(entry) => Ok(Json(entry)),
+        Some(entry) => {
+            #[cfg(feature = "ui")]
+            if crate::cache_page::accepts_html(&headers) {
+                return crate::cache_page::payload(&entry, ctx.request_id.as_uuid())
+                    .map(IntoResponse::into_response);
+            }
+            Ok(Json(entry).into_response())
+        }
         None => Err(ctx.not_found(format!("no cache entry for key {key}"))),
     }
 }
