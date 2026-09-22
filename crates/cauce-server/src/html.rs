@@ -13,6 +13,7 @@ use std::sync::LazyLock;
 use askama::Template;
 use axum::Extension;
 use axum::extract::State;
+use axum::http::header;
 use axum::http::{HeaderMap, Uri};
 use axum::response::{Html, IntoResponse, Response};
 use cauce_core::{CacheKey, EngineStatus, SearchRequest, SearchResponse, Source};
@@ -155,6 +156,48 @@ pub async fn search(
         )
         .into_response())
     }
+}
+
+/// `GET /opensearch.xml` (W2-11): the OpenSearch 1.1 description document
+/// browsers fetch after seeing the page head's `<link rel="search">`.
+///
+/// The `Url` templates must be absolute, so they are built from the
+/// request's `Host` header (the Host/Origin guard has already vetted it;
+/// the listener is loopback, hence `http`). The second `Url` is the
+/// suggestions placeholder the step's contract asks for: no suggestions
+/// endpoint exists yet, so `rel="suggestions"` simply points at the path
+/// it will live on.
+pub async fn opensearch(headers: HeaderMap) -> Response {
+    let host = headers
+        .get(header::HOST)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("127.0.0.1");
+    (
+        [(
+            header::CONTENT_TYPE,
+            "application/opensearchdescription+xml",
+        )],
+        opensearch_xml(host),
+    )
+        .into_response()
+}
+
+fn opensearch_xml(host: &str) -> String {
+    format!(
+        concat!(
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n",
+            "<OpenSearchDescription xmlns=\"http://a9.com/-/spec/opensearch/1.1/\">\n",
+            "  <ShortName>cauce</ShortName>\n",
+            "  <Description>cauce metasearch</Description>\n",
+            "  <InputEncoding>UTF-8</InputEncoding>\n",
+            "  <Url type=\"text/html\" rel=\"results\" \
+             template=\"http://{host}/search?q={{searchTerms}}\"/>\n",
+            "  <Url type=\"application/x-suggestions+json\" rel=\"suggestions\" \
+             template=\"http://{host}/api/suggest?q={{searchTerms}}\"/>\n",
+            "</OpenSearchDescription>\n",
+        ),
+        host = host
+    )
 }
 
 fn prefers_json(accept: &str) -> bool {

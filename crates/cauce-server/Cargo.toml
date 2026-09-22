@@ -106,3 +106,7 @@ reqwest = { version = "0.13", default-features = false }
 # default-features = false: the defaults pull reqwest+rustls for remote
 # `$ref` resolution; the fixture is self-contained.
 jsonschema = { version = "0.57", default-features = false }
+# W2-11 acceptance: validate /opensearch.xml against the vendored
+# OpenSearch 1.1 XSD (tests/fixtures/opensearch-1-1.xsd) with a real XSD
+# engine. Pure Rust — no libxml2 C dependency in CI.
+oxixml-schema = "0.1"
