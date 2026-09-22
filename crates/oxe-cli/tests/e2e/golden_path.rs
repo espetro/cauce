@@ -9,12 +9,12 @@
 //! file, You can obtain one at <https://mozilla.org/MPL/2.0/>.
 
 use std::process::Command;
+use std::thread::sleep;
 use std::time::Duration;
 
 use oxe_core::{CacheKey, ClientKind, SafeSearch, SearchRequest};
 use serde_json::{Value, json};
 use tempfile::TempDir;
-use tokio::time::sleep;
 
 use crate::common;
 
@@ -77,9 +77,24 @@ async fn replay_golden_path() {
     let hit_rate = stats["hit_rate"].as_f64().expect("hit_rate");
     assert!((hit_rate - 0.5).abs() < 1e-9, "hit_rate {hit_rate} != 0.5");
 
+    // Compute the canonical cache key before recording the UI click. This is
+    // also the query_hash sent by the real result-link beacon.
+    let cache_req = SearchRequest {
+        q: QUERY.to_string(),
+        page: 1,
+        lang: None,
+        time_range: None,
+        safesearch: SafeSearch::default(),
+        engines: None,
+        client: ClientKind::Api,
+    };
+    let key = CacheKey::from(&cache_req);
+
     // 5. Click beacon is accepted.
     let click = serde_json::to_string(&json!({
         "url": "https://example.com/golden-result",
+        "title": "golden path: a practical handbook with trade-offs",
+        "query_hash": key.as_str(),
         "position": 0,
     }))
     .unwrap();
@@ -105,16 +120,6 @@ async fn replay_golden_path() {
     assert!(html.contains("cached"), "HTML should show cached badge");
 
     // 8. Delete the exact cache entry; the next search is network again.
-    let cache_req = SearchRequest {
-        q: QUERY.to_string(),
-        page: 1,
-        lang: None,
-        time_range: None,
-        safesearch: SafeSearch::default(),
-        engines: None,
-        client: ClientKind::Api,
-    };
-    let key = CacheKey::from(&cache_req);
     let (status, del_body) = common::http(
         addr,
         "DELETE",
@@ -139,23 +144,29 @@ async fn replay_golden_path() {
         .expect("cache.delete audit row missing");
     assert_eq!(delete_row["actor"], "api");
 
-    // Give the JSONL writer a moment to flush before reading it back.
-    sleep(Duration::from_millis(500)).await;
-
-    // 10. `oxe trace <request_id>` prints the replay engine span.
-    let trace_out = Command::new(common::oxe_bin())
-        .arg("trace")
-        .arg(&first_request_id)
-        .env("OXE_DATA_DIR", &data_dir)
-        .env("OXE_CONFIG_DIR", &config_dir)
-        .output()
-        .expect("oxe trace command");
-    assert!(
-        trace_out.status.success(),
-        "oxe trace failed: {}",
-        String::from_utf8_lossy(&trace_out.stderr)
-    );
-    let trace = String::from_utf8_lossy(&trace_out.stdout);
+    // 10. `oxe trace <request_id>` prints the replay engine span. Poll the
+    // JSONL writer with a short bounded retry instead of relying on a fixed
+    // sleep, since flush latency varies between local and CI runners.
+    let mut trace = String::new();
+    for _ in 0..40 {
+        let trace_out = Command::new(common::oxe_bin())
+            .arg("trace")
+            .arg(&first_request_id)
+            .env("OXE_DATA_DIR", &data_dir)
+            .env("OXE_CONFIG_DIR", &config_dir)
+            .output()
+            .expect("oxe trace command");
+        assert!(
+            trace_out.status.success(),
+            "oxe trace failed: {}",
+            String::from_utf8_lossy(&trace_out.stderr)
+        );
+        trace = String::from_utf8_lossy(&trace_out.stdout).into_owned();
+        if trace.contains("engine") && trace.contains("replay") {
+            break;
+        }
+        sleep(Duration::from_millis(25));
+    }
     assert!(
         trace.contains("engine"),
         "trace should contain an engine span"
