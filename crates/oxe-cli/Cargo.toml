@@ -11,3 +11,6 @@ name = "oxe"
 path = "src/main.rs"
 
 [dependencies]
+oxe-core = { path = "../oxe-core" }
+oxe-engines = { path = "../oxe-engines" }
+tokio = { version = "1", features = ["rt"] }
