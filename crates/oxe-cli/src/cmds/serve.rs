@@ -14,8 +14,8 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use oxe_core::SearchPipeline;
 use oxe_core::config::{Config, Resources};
+use oxe_core::{Admission, AdmissionLimits, SearchPipeline};
 use oxe_engines::factory::build_engines;
 use oxe_server::{AppState, RouterOptions, observability};
 use oxe_store_sqlite::{SqliteStore, spawn_eviction_task};
@@ -99,7 +99,11 @@ async fn serve_async(opts: ServeOpts, cfg: Config) -> i32 {
         SearchPipeline::new(store.clone(), engines)
             .with_deadline(Duration::from_millis(cfg.search.deadline_ms))
             .with_default_ttl(Duration::from_secs(cfg.search.ttl_s))
-            .with_ttl_cap(Duration::from_secs(cfg.search.ttl_cap_s)),
+            .with_ttl_cap(Duration::from_secs(cfg.search.ttl_cap_s))
+            .with_admission(Admission::new(AdmissionLimits {
+                max_wait: Duration::from_millis(cfg.admission.max_wait_ms),
+                max_concurrent_per_engine: cfg.admission.max_concurrent_per_engine.max(1) as usize,
+            })),
     );
     let evict = spawn_eviction_task(store.clone());
 
