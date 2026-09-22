@@ -1,7 +1,7 @@
 # later: SearXNG format=json compat shim
 Issue: #121
 
-Seam: `oxe-server` routes — a `/search?format=json` param-alias plus a SearXNG-shape
+Seam: `cauce-server` routes — a `/search?format=json` param-alias plus a SearXNG-shape
 serializer (~100-150 LoC), and a POST arm for LangChain JS.
 Trigger: adoption pull from the SearXNG client ecosystem (LangChain `SearxSearchWrapper`
 GETs `/search&format=json`, Open WebUI, searxng-python clients — all consume JSON only).

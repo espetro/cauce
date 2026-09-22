@@ -1,7 +1,7 @@
-# Copyright (c) 2026 Joaquin Terrasa and oxe contributors. Apache-2.0.
+# Copyright (c) 2026 Joaquin Terrasa and cauce contributors. Apache-2.0.
 #
 # Wikipedia via the MediaWiki OpenSearch API: keyless, JSON, and gentle on
-# rate limits, so it is the engine to pin while iterating on oxe itself
+# rate limits, so it is the engine to pin while iterating on cauce itself
 # (`engines=["wikipedia"]`, next to the offline `replay` engine).
 #
 # The response is a positional parallel array, not a list of objects:
@@ -15,7 +15,7 @@
 # `enabled: false`: the spec ships off so it never joins the default
 # fan-out on its own. To search with it, add a config entry
 # (`[[engines]] id = "wikipedia", kind = "declarative"`) or run it
-# directly with `oxe engine test engines/wikipedia.yaml --live "<query>"`.
+# directly with `cauce engine test engines/wikipedia.yaml --live "<query>"`.
 id: wikipedia
 tier: 3
 page_size: 10
@@ -25,7 +25,7 @@ request:
   headers:
     Accept: application/json
     # Wikimedia etiquette: a descriptive UA, not a browser disguise.
-    User-Agent: "oxe-metasearch/3.0 (https://github.com/espetro/oxe)"
+    User-Agent: "cauce-metasearch/3.0 (https://github.com/espetro/cauce)"
   timeout_ms: 2500
 parse:
   kind: json

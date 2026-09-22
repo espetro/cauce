@@ -3,8 +3,8 @@
 Single-product insight doc. Per the README's patterns-not-targets rule,
 everything here is a comparison point, not a target: Gemini is the far end of
 the answer-only spectrum (no classic SERP exists anywhere in the product), so
-it informs oxe's AI mode and landing screen, and is explicitly NOT the model
-for oxe's search mode or its shared-input hybrid.
+it informs cauce's AI mode and landing screen, and is explicitly NOT the model
+for cauce's search mode or its shared-input hybrid.
 
 ## Applies to
 
@@ -99,7 +99,7 @@ for oxe's search mode or its shared-input hybrid.
   the partial text with a "stopped" indicator, matching the streaming
   contract in `patterns-answer-streaming.md`.
 - Failure states are rare and generic (a prose apology with a retry), with
-  none of the hybrid-mode asymmetry oxe needs (`patterns-states.md` ## Hybrid).
+  none of the hybrid-mode asymmetry cauce needs (`patterns-states.md` ## Hybrid).
 
 ## 3. Motion
 
@@ -148,7 +148,7 @@ for oxe's search mode or its shared-input hybrid.
   but it is sparser than Perplexity's always-on numbered cards and lacks AI
   Mode's two-column sources rail. Because Gemini has no classic SERP, its
   grounding chips must double as "see the raw results" escape hatch, which
-  is exactly the job oxe splits across the `view Search` hatch and the
+  is exactly the job cauce splits across the `view Search` hatch and the
   source-card row.
 
 ## 5. Layout and design system
@@ -176,29 +176,29 @@ for oxe's search mode or its shared-input hybrid.
   capabilities (Canvas, Deep Research, video) enter through tools attached
   to this one composer rather than separate pages.
 
-## Verdict for oxe
+## Verdict for cauce
 
 1. Do not borrow the answer-only frame. Gemini can make the landing the app
-   because it has no classic mode; oxe's shared top-of-column pill, mode
+   because it has no classic mode; cauce's shared top-of-column pill, mode
    toggle, and `view Search`/`ask AI instead` hatches exist precisely because
-   oxe is not this. Keep `search.md`'s layout contract.
+   cauce is not this. Keep `search.md`'s layout contract.
 2. Borrow the composer morph as a transition, not a layout: animating the
    same pill from hero position to its results position in one continuous
-   motion is a legitimate upgrade to oxe's landing->search handoff, as long
-   as oxe's pill lands at the top of the column, not bottom-pinned
+   motion is a legitimate upgrade to cauce's landing->search handoff, as long
+   as cauce's pill lands at the top of the column, not bottom-pinned
    (patterns-layout-grid.md records bottom-pin as an intentional divergence).
 3. The collapsible streamed "Thoughts" region is the strongest thinking-state
    pattern observed: it streams real progress, stays out of the way when
-   collapsed, and never blocks the answer. Prefer it over oxe's static
-   skeleton if the oxe backend can expose reasoning/phase events; otherwise
+   collapsed, and never blocks the answer. Prefer it over cauce's static
+   skeleton if the cauce backend can expose reasoning/phase events; otherwise
    keep the skeleton plus status line from `patterns-states.md`.
 4. Grounding chips ("Searched for ...") above the answer plus a source strip
-   below are a good, cheap richness step for oxe's AI mode: show the queries
-   the backend actually ran (oxe already has them), keep inline [n] citation
+   below are a good, cheap richness step for cauce's AI mode: show the queries
+   the backend actually ran (cauce already has them), keep inline [n] citation
    markers at claim points per the existing streaming contract, and keep
    `view Search` as the stronger escape hatch Gemini cannot offer.
 5. Keep Gemini's gradient-atmosphere branding and Google Sans at arm's
-   length: they are single-product identity choices, and oxe's daisyUI
+   length: they are single-product identity choices, and cauce's daisyUI
    token set (`tokens.md`) plus system fonts are the cross-product converged
    position.
 

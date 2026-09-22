@@ -1,6 +1,6 @@
 # Pattern: Classic result list anatomy
 
-The classic SERP result: favicon, title, snippet, metadata. oxe had zero
+The classic SERP result: favicon, title, snippet, metadata. cauce had zero
 reference coverage for this even though `search.md` Mockup A specifies it
 in detail; this doc grounds that spec in real products so future edits
 have something to check against besides the spec text itself.
@@ -18,25 +18,25 @@ have something to check against besides the spec text itself.
 Convergent across Google and DuckDuckGo (both confirmed live in
 `shots/google-landing-full-idle-loggedout.png`'s sibling results pages
 and general product knowledge; DuckDuckGo's classic layout matches
-Google's anatomy exactly, which is why oxe's spec cites "Google style"
+Google's anatomy exactly, which is why cauce's spec cites "Google style"
 directly):
 
 1. **Favicon + domain line**, above the title, smallest text in the
    block. Google: domain in dark gray/green, favicon 16-18px to its
-   left. oxe: `icons.duckduckgo.com/ip3/{domain}.ico`, 16px, lazy-loaded,
+   left. cauce: `icons.duckduckgo.com/ip3/{domain}.ico`, 16px, lazy-loaded,
    graceful when absent (domain text alone still reads).
 2. **Title link**, one size step up from the domain line, the only
    saturated-color text in the row (`#1a0dab` light / `#8ab4f8` dark in
-   oxe's spec, matching classic Google's link-blue convention). Max two
+   cauce's spec, matching classic Google's link-blue convention). Max two
    lines, no underline until hover.
 3. **Snippet**, plain two-line clamp, body-gray text, no border, no
    background. This is the convergent "boxed card" rejection: neither
-   Google nor DuckDuckGo nor oxe's spec puts a border or shadow around
+   Google nor DuckDuckGo nor cauce's spec puts a border or shadow around
    individual results; separation is whitespace only.
-4. **Metadata row** (optional, below or beside the snippet): oxe adds a
+4. **Metadata row** (optional, below or beside the snippet): cauce adds a
    collapsed `<details>` "cached page text preview" per result, unique
-   to oxe's cache-transparency requirement — not a pattern borrowed from
-   any harvested product, called out here as an oxe-specific addition
+   to cauce's cache-transparency requirement — not a pattern borrowed from
+   any harvested product, called out here as a cauce-specific addition
    rather than a convergent pattern.
 
 ## Vertical rhythm
@@ -54,27 +54,27 @@ directly):
 
 - `N results` count, optionally with cache/source provenance
   (`from cache · 3h old`), positioned as the first line of the results
-  block, not in the header. This is an oxe requirement (cache
+  block, not in the header. This is a cauce requirement (cache
   transparency) without a direct competitor precedent, since none of
   the harvested products expose cache state to end users; documented
-  here as oxe-specific rather than implying convergence.
+  here as cauce-specific rather than implying convergence.
 - Share affordances (`copy link`, `copy json`) sit on the same meta
   line, right-aligned; no harvested competitor product exposes a
-  developer-facing JSON copy action, another oxe-specific addition.
+  developer-facing JSON copy action, another cauce-specific addition.
 
 ## Continuous scroll / pagination
 
 - No harvested product exposes numbered pagination on the primary SERP
   in its default AI-adjacent surface; Google's classic results still
   paginate with numbers at the very bottom, but none of the AI-mode or
-  AI-assist surfaces researched do. oxe's continuous-scroll-with-`more
+  AI-assist surfaces researched do. cauce's continuous-scroll-with-`more
   results`-button-fallback (`search.md` Behavior) sits between these:
   closer to a chat product's infinite scroll than classic numbered
   pagination.
 
 ## Sources
 
-- `.agents/docs/screens/search.md` Mockup A (oxe's own anatomy spec,
+- `.agents/docs/screens/search.md` Mockup A (cauce's own anatomy spec,
   the primary source this doc grounds)
 - `shots/duckduckgo-serp-search-assist-dark.png` (DuckDuckGo classic
   result directly below its Search Assist block, same-page comparison)
@@ -83,4 +83,4 @@ directly):
   fresh screenshot of a plain Google organic result was captured in this
   harvest (gap, noted honestly rather than invented from an old memory
   of the layout — the anatomy described matches what is visible in the
-  DuckDuckGo capture, which oxe's spec already cites as the model).
+  DuckDuckGo capture, which cauce's spec already cites as the model).

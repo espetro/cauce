@@ -77,12 +77,12 @@ rather than editing it away.
   Stripe, GitHub, Exa and the Zalando guidelines all fail loud with names; silent
   truncation is the worst failure mode for agents. Research: `/tmp/oxe-searxng-ux-research.md`.
   — 2026-09-22
-- **Config precedence: CLI flags > `OXE_*` env > config file > defaults.** One ordering, no
-  per-subcommand exceptions; `oxe record` resolves `--engine` through `Config::load()` like
+- **Config precedence: CLI flags > `CAUCE_*` env > config file > defaults.** One ordering, no
+  per-subcommand exceptions; `cauce record` resolves `--engine` through `Config::load()` like
   `serve` does. — 2026-09-22
 - **The JSONL observability layer has a fixed `info` floor independent of
-  `RUST_LOG`/`OXE_LOG`.** The env filter scopes the stderr and OTLP layers only; the JSONL
-  file is `oxe trace`'s only input, so an env-set `warn` must not silently empty it.
+  `RUST_LOG`/`CAUCE_LOG`.** The env filter scopes the stderr and OTLP layers only; the JSONL
+  file is `cauce trace`'s only input, so an env-set `warn` must not silently empty it.
   — 2026-09-22
 - **`requires` strings on ROUTES are runtime mount gates, not cargo features.** `RouterOptions`
   decides what mounts; real `ui`/`mcp`/`ai` feature stripping is deferred to the wave that
@@ -102,9 +102,9 @@ rather than editing it away.
 - **UX-complaint hardening applied from SearXNG research
   (`/tmp/oxe-searxng-ux-research.md`).** Never cache empty responses;
   `cache.degraded_ttl_s` for partial/degraded responses;
-  `oxe_stale_served_total{reason=engines_unhealthy}` signal (W3-02); `meta.engines_skipped`
+  `cauce_stale_served_total{reason=engines_unhealthy}` signal (W3-02); `meta.engines_skipped`
   + failed/skipped engines rendered in UI (W2-01); `outcome` label on
-  `oxe_search_requests_total` (W2-03); canary checks page-2 overlap + count regression
+  `cauce_search_requests_total` (W2-03); canary checks page-2 overlap + count regression
   (W3-06); new W3-07 breaker on Parse/Transport streaks; exec/replay empty → NoResults
   normalization. SearXNG `format=json` compat shim and engine-param forwarding deferred to
   `later/`. Project renamed oxe → cauce; CLI stays `cauce`. — 2026-09-22

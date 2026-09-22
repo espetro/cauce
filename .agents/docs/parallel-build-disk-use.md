@@ -114,7 +114,7 @@ checkout. Point it at a shared cache dir instead (`$XDG_CACHE_HOME`/`~/.cache`/`
 with an env override so CI can keep it under the cached `target/`:
 
 ```rust
-let target_dir = std::env::var_os("OXE_BUDGET_TARGET_DIR")   // your own var name
+let target_dir = std::env::var_os("CAUCE_BUDGET_TARGET_DIR")   // your own var name
     .map(PathBuf::from)
     .unwrap_or_else(|| /* ~/.cache/<proj>/e2e-budget */ ...);
 ```
@@ -132,8 +132,8 @@ let target_dir = std::env::var_os("OXE_BUDGET_TARGET_DIR")   // your own var nam
 ## How this repo applies it
 
 - `Cargo.toml` carries the section-1 profile; `mise.toml` sets `CARGO_INCREMENTAL=0` on the
-  lint/test gate tasks; `budget.rs` honors `OXE_BUDGET_TARGET_DIR` (CI pins it under `target/`,
-  locally it defaults to `~/.cache/oxe/e2e-budget`).
+  lint/test gate tasks; `budget.rs` honors `CAUCE_BUDGET_TARGET_DIR` (CI pins it under `target/`,
+  locally it defaults to `~/.cache/cauce/e2e-budget`).
 - Host setup for this machine: `mise use -g sccache` and `RUSTC_WRAPPER=sccache` in the global
   mise `[env]`.
 - Orchestrator dispatch rules live in `.agents/plans/v3/README.md` (clone-seed, `df` check,

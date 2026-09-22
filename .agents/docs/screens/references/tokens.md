@@ -6,8 +6,8 @@ instead of restating a number; if a doc and this file disagree, this file
 wins and the other doc is stale.
 
 Every token below is mapped to its daisyUI 5 equivalent where one exists.
-oxe's `ui/src/index.css` currently declares only `@plugin "daisyui" { themes:
-light --default, dark --prefersdark; }` with no theme overrides, so oxe runs
+cauce's `ui/src/index.css` currently declares only `@plugin "daisyui" { themes:
+light --default, dark --prefersdark; }` with no theme overrides, so cauce runs
 on daisyUI's unmodified built-in `light` / `dark` themes. Anything marked
 "daisyUI default" below is inherited, not chosen; changing it means adding
 an override block to `index.css`, not just picking a different token name
@@ -56,11 +56,11 @@ Base unit 4px (Tailwind's default scale, daisyUI does not override it).
 ## Radii
 
 daisyUI 5 structural theme variables (names + example values from
-daisyUI's own theme-authoring template; oxe has not overridden any of
+daisyUI's own theme-authoring template; cauce has not overridden any of
 these, so it runs on daisyUI's built-in defaults, not the numbers below,
 which are shown as reference for what each variable governs):
 
-| Variable | Governs | Typical oxe use |
+| Variable | Governs | Typical cauce use |
 |---|---|---|
 | `--radius-selector` | checkbox, toggle, radio, badge | segmented-control track/thumb |
 | `--radius-field` | button, input, select, tab | pill search input, chips |
@@ -73,7 +73,7 @@ matching the cross-product convergence in `patterns-search-input.md`.
 ## Elevation / depth
 
 daisyUI 5 ships a `--depth` variable (0 or 1) that adds a soft 3D bevel to
-components like buttons; oxe has not overridden it (default applies).
+components like buttons; cauce has not overridden it (default applies).
 Beyond that, shadow values observed converging across source-card hover
 states in `patterns-motion.md`:
 
@@ -85,10 +85,10 @@ states in `patterns-motion.md`:
 
 ## Color roles
 
-daisyUI semantic roles (from daisyUI docs) mapped to oxe usage. oxe uses
+daisyUI semantic roles (from daisyUI docs) mapped to cauce usage. cauce uses
 the built-in `light`/`dark` daisyUI theme pair unmodified:
 
-| daisyUI role | oxe usage |
+| daisyUI role | cauce usage |
 |---|---|
 | `base-100` | page canvas |
 | `base-200` / `base-300` | elevated surfaces (dropdown, source card background) |
@@ -100,7 +100,7 @@ the built-in `light`/`dark` daisyUI theme pair unmodified:
 | `warning` | rate-limit / retry state |
 | `error` | backend error state |
 
-oxe's legacy static-site CSS (`ui/src/index.css` `:root` custom
+cauce's legacy static-site CSS (`ui/src/index.css` `:root` custom
 properties: `--accent #aa3bff`, `--text`, `--bg`, etc.) predates the
 daisyUI migration and is a separate, non-daisyUI token set scoped to the
 old landing markup; it is out of scope for the SPA screens this
@@ -124,7 +124,7 @@ Tailwind/CSS values (`duration-[120ms]` etc.), not daisyUI tokens.
 
 ## Sources
 
-- `ui/src/lib/theme.ts`, `ui/src/index.css` (oxe's actual theme wiring, read
+- `ui/src/lib/theme.ts`, `ui/src/index.css` (cauce's actual theme wiring, read
   2026-09-18).
 - https://daisyui.com/docs/colors/ (semantic color roles)
 - https://daisyui.com/docs/themes/ (theme authoring template, structural

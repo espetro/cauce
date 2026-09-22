@@ -1,4 +1,4 @@
-# Agent memory process (oxe)
+# Agent memory process (cauce)
 
 Project-scoped agent memory with time-bounded recall ("dreaming"). Per the repo owner's global
 memory policy (`~/MEMORY.md`), memory lives inside this repo under `.agents/`, never in a
@@ -49,8 +49,8 @@ global store, and is never shared with or copied into another project.
 
 ## 2026-09-22 — wave-1 cutover done
 
-- v3 supervises under oxmgr as `oxe` on 4479 (`/Users/josocjoq/.cargo/bin/oxe serve`), portless alias `search.localhost`.
-- Gotcha: `OXE_ENGINES` pin cannot name embedded specs (bing/brave/wikipedia); it validates against `[[engines]]` + builtins only. Specs auto-register when the pin is unset. ddgs disabled via `enabled=false` entry (exec needs repo cwd + uv venv). Docs fixed in #117.
+- v3 supervises under oxmgr as `cauce` on 4479 (`/Users/josocjoq/.cargo/bin/cauce serve`), portless alias `search.localhost`.
+- Gotcha: `CAUCE_ENGINES` pin cannot name embedded specs (bing/brave/wikipedia); it validates against `[[engines]]` + builtins only. Specs auto-register when the pin is unset. ddgs disabled via `enabled=false` entry (exec needs repo cwd + uv venv). Docs fixed in #117.
 - rmcp `StreamableHttpService` Host allowlist was exact-match only; `*.localhost` aliases needed our own handling (PR #116). `/mcp` exact path; `/mcp/` 404s.
 - Verified live: singleflight collapses 3 concurrent identical queries to 1 upstream call; `/metrics` exposes engine histograms + breaker state + admission wait; `/api/stats` mirrors. `search_web`+`exa_search` green via MCP.
 - #90: decided strict 400 naming unknown ids (reversed the earlier won't-fix recommendation after UX research — SearXNG silently widens on fully-unknown pins, industry norm is fail-loud-with-names). Issue commented with acceptance.

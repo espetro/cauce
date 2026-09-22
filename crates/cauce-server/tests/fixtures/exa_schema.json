@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cauce.local/schemas/exa_search.json",
+  "title": "ExaSearchResponse",
+  "description": "Frozen wire shape of the `exa_search` MCP tool result (web/cache sources), copied from v2-legacy oxe/api/exa.py + oxe/api/mcp.py: ExaSearchResponse (requestId, searchType, results, costDollars) plus the cauce-specific tool_source.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["requestId", "searchType", "results", "costDollars", "tool_source"],
+  "properties": {
+    "requestId": { "type": "string" },
+    "searchType": { "type": "string" },
+    "tool_source": { "type": "string", "enum": ["web", "cache"] },
+    "results": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/ExaResultItem" }
+    },
+    "costDollars": { "$ref": "#/$defs/ExaCostDollars" }
+  },
+  "$defs": {
+    "ExaResultItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "title",
+        "url",
+        "id",
+        "text",
+        "highlights",
+        "highlightScores",
+        "publishedDate",
+        "author",
+        "image",
+        "favicon",
+        "extras"
+      ],
+      "properties": {
+        "title": { "type": "string" },
+        "url": { "type": "string" },
+        "id": { "type": "string" },
+        "text": { "type": "string" },
+        "highlights": { "type": "array", "items": { "type": "string" } },
+        "highlightScores": { "type": "array", "items": { "type": "number" } },
+        "publishedDate": { "type": ["string", "null"] },
+        "author": { "type": ["string", "null"] },
+        "image": { "type": ["string", "null"] },
+        "favicon": { "type": ["string", "null"] },
+        "extras": { "$ref": "#/$defs/ExaExtras" }
+      }
+    },
+    "ExaExtras": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["links"],
+      "properties": {
+        "links": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "ExaCostDollars": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["total"],
+      "properties": {
+        "total": { "type": "number" }
+      }
+    }
+  }
+}

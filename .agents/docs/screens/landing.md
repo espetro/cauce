@@ -7,7 +7,7 @@ its right end. This is also the browser search engine entry point
 (`https://search.localhost/?q=%s` renders the same page straight into
 results). No cards, no marketing copy, no hint line: mode explanations
 live in the navbar (?) about panel. Mode persists in `localStorage`
-(`oxe-mode`); when AI is unavailable the AI segment stays visible but
+(`cauce-mode`); when AI is unavailable the AI segment stays visible but
 disabled.
 
 ## ASCII mockup
@@ -16,11 +16,11 @@ State 1: landing, Search mode (default).
 
 ```
 +------------------------------------------------------------------+
-| oxe   [search]  history  dashboard        (?)  settings  [gh] v0.4.0 |
+| cauce   [search]  history  dashboard        (?)  settings  [gh] v0.4.0 |
 +------------------------------------------------------------------+
 |                                                                  |
 |                                                                  |
-|                              oxe                                 |
+|                              cauce                                 |
 |                 your local web intel layer                       |
 |                                                                  |
 |        +--------------------------------------------+            |
@@ -90,13 +90,13 @@ State 5: suggestions dropdown open (typing, input focused, >=2 chars).
   most-recent-first, capped at 3. (2) `web suggestions`: DuckDuckGo
   ac endpoint matches, capped at 4, shown only when enabled.
 - Local-first default: local matches are instant (cache hit latency)
-  and aligned with oxe's purpose of reusing past searches across
+  and aligned with cauce's purpose of reusing past searches across
   agents and users, so `your history` leads. Preferred, not enforced:
   remote cache backends are a legitimate future option. DDG ac
   reaches the network per debounce tick, adding latency and
   dependency on reach, so it ships behind a small `ac: on/off`
   toggle at the bottom edge of the dropdown (persisted in
-  `localStorage` key `oxe-ac`); it may default on if it demonstrably
+  `localStorage` key `cauce-ac`); it may default on if it demonstrably
   yields better suggestions. Network calls are debounced to 300ms
   with in-flight cancellation. The two groups keep their caps labels
   so the user can tell what came from history vs. the network.
@@ -121,7 +121,7 @@ State 5: suggestions dropdown open (typing, input focused, >=2 chars).
   light track with the active segment as a raised white pill, two
   options labeled **Search** (magnifier icon) and **AI** (sparkle
   icon), `role="radiogroup"`, arrow keys switch segments. Default
-  Search. Persisted in `localStorage` key `oxe-mode`. In AI mode the
+  Search. Persisted in `localStorage` key `cauce-mode`. In AI mode the
   submit targets `/search?q=...&mode=ai`; Search targets
   `/search?q=...` (mode param absent keeps existing urls shareable).
 - AI unavailable (`/v1/models` says so): the AI segment stays visible
@@ -130,8 +130,8 @@ State 5: suggestions dropdown open (typing, input focused, >=2 chars).
 - AI second row: selecting AI morphs the pill open with a hairline
   divider and a second action row: a filterable model combobox (see
   ModelPicker in search.md Behavior) plus a small `reasoning` toggle
-  chip. Both persist in `localStorage` (`oxe-ai-model`,
-  `oxe-ai-reasoning`); model falls back to the first listed model.
+  chip. Both persist in `localStorage` (`cauce-ai-model`,
+  `cauce-ai-reasoning`); model falls back to the first listed model.
 - Placeholder swaps with mode: `Search privately` vs
   `Ask anything privately`.
 - Header nav matches the rest of the app (search / history /
@@ -155,7 +155,7 @@ State 5: suggestions dropdown open (typing, input focused, >=2 chars).
 
 - Mobbin reference (Perplexity-style landing, saved set
   `/tmp/mobbin-imgs/`): oversized centered input, one accent control,
-  answer-first framing for the AI option. Keep oxe's restraint: no
+  answer-first framing for the AI option. Keep cauce's restraint: no
   suggested-question chips on landing v1; related questions live in the
   AI answer view instead.
 - Landing is intentionally cache-transparent-free: no meta line until

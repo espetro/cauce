@@ -1,6 +1,6 @@
 # User flow checkpoints + URL state contract
 
-Key states a user (or QA agent) can drive the oxe web UI into, and how each
+Key states a user (or QA agent) can drive the cauce web UI into, and how each
 can be reached via URL so a QA agent can deep-link directly. Carried over
 from the legacy (`v0.4.0`) UI spec as the behavioral source of truth for the
 v0.5.0 rebuild. **Unverified against the new build**: the screens described

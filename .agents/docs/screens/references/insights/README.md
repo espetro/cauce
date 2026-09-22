@@ -16,22 +16,22 @@ product's choice documented below is an anecdote, not a rule.
 - [`duckduckgo.md`](duckduckgo.md) - DuckDuckGo classic + Search Assist +
   Duck.ai. Motion restraint as a deliberate choice, query-gated inline AI
   card, privacy chrome ("Anonymized by...") placement, weak citations
-  oxe can out-do. Doubly relevant: oxe's backend IS DDG, so the doc also
+  cauce can out-do. Doubly relevant: cauce's backend IS DDG, so the doc also
   covers backend-driven UX (snippet bold terms, favicon fallback,
   throttle/CAPTCHA states).
 - [`brave.md`](brave.md) - Brave Search classic + AI Answers + Ask Brave +
   Goggles. Offset-positioned citation events from their Answers API,
   two-tier AI escalation (inline block then chat surface), decoupled
   AI-block loading, Goggles custom-ranking grammar as precedent for
-  oxe's cache-transparency panel.
+  cauce's cache-transparency panel.
 - [`gemini.md`](gemini.md) - Gemini (answer-only extreme, comparison
   point not target). Composer morph transition, collapsible streamed
   "Thoughts", web-grounding query chips + per-claim citations,
-  bottom-pinned composer (oxe deliberately diverges).
+  bottom-pinned composer (cauce deliberately diverges).
 - [`searxng.md`](searxng.md) - SearXNG as instantiated on public
   instances. Server-rendered no-JS-first restraint, per-result engine
   chips (metadata transparency unique in the set, compared directly
-  against oxe's cache meta line), partial-failure aggregation states,
+  against cauce's cache meta line), partial-failure aggregation states,
   ecosystem patterns for bolting AI answers onto a metasearch backend.
 
 - [`dispositions.md`](dispositions.md) - one disposition (covered, promoted,
@@ -51,4 +51,4 @@ Five parallel research passes, one per product, each grounded in the
 local shots plus web research, each constrained to the same five-part
 skeleton (pages/surfaces, state transitions, motion, AI retrieval and
 source richness, layout/design system) plus the repo-standard
-`## Applies to`, `## Sources`, and `## Verdict for oxe` sections.
+`## Applies to`, `## Sources`, and `## Verdict for cauce` sections.

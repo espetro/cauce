@@ -27,7 +27,7 @@ archive (`fetch_and_index`, `search_archive`).
 ### W5-01 `fetch_and_index`: readability to markdown
 - Issue #55 · Effort M · Label feature · Team Systems · Branch `v3/w5-01-fetch-index`
 - Depends on: W4-05
-- Do: `oxe-core::archive`: fetch through the shared `HttpClient` (same politeness, own
+- Do: `cauce-core::archive`: fetch through the shared `HttpClient` (same politeness, own
   token bucket keyed by host), readability extraction, markdown conversion, `pages` write,
   `pages_fts` trigger; `POST /api/pages` (url) and `GET /api/pages/{url}`; UI click beacon
   optionally triggers indexing (`archive.index_on_click`, default true); MCP

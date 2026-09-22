@@ -1,4 +1,4 @@
-# Screen specs (oxe web UI + v0.2 dashboard)
+# Screen specs (cauce web UI + v0.2 dashboard)
 
 ASCII mockups for layout/design validation before implementation. Each
 file follows the same format: intro, `## ASCII mockup`, `## Behavior`,
@@ -28,7 +28,7 @@ file follows the same format: intro, `## ASCII mockup`, `## Behavior`,
   past search's payload, filters, 30d default retention.
 - [dashboard.md](dashboard.md) - Screen: Dashboard
   (`dist/dashboard/index.html`). Static, no-JS stats page built by
-  `oxe stats build`: 6 metrics from `search_log` as a bento of inline
+  `cauce stats build`: 6 metrics from `search_log` as a bento of inline
   SVG panels, top-queries table, zero-results list, client split.
 
 Grounded on the v0.2 design memory: `search_log` schema

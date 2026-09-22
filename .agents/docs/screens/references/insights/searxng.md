@@ -92,7 +92,7 @@ Core SearXNG has no LLM answer. The ecosystem bolts one on in four patterns:
    result loading is never blocked. Features: token streaming, inline
    clickable citations, follow-ups, conversation state in the URL hash
    (`#ai=`), collapsed-by-default answer box to avoid layout shift, tab
-   whitelist. This is the closest ecosystem analogue to oxe's AI mode.
+   whitelist. This is the closest ecosystem analogue to cauce's AI mode.
 2. Upstream proposal: searxng PR #4506 "Quick Answer" (OpenRouter, modeled
    on Mojeek summaries and Kagi Quick Answer), pending since 2025; stalled
    partly on a frontend-architecture conflict, showing even upstream
@@ -104,7 +104,7 @@ Core SearXNG has no LLM answer. The ecosystem bolts one on in four patterns:
    LLM-selected search params and streaming SSE progress), searxng-ai-kit
    (CLI + MCP server exposing search to assistants).
 
-Common lesson across all four: the aggregation layer (SearXNG, oxe) is the
+Common lesson across all four: the aggregation layer (SearXNG, cauce) is the
 RAG retrieval layer, and every AI integration streams answers separately
 from the blocking result fetch.
 
@@ -136,15 +136,15 @@ from the blocking result fetch.
 - Type scale is modest: h1 title on landing, h3 result titles, small
   metadata; density is high, decoration near zero.
 
-## Comparison: engines chips vs oxe cache meta line
+## Comparison: engines chips vs cauce cache meta line
 
 SearXNG's per-result `.engines` chip row is unique transparency: it tells you
 which of many upstream sources produced each hit, with a cached-link and a
-link to error logs. It answers "who said this" per result. oxe's meta line
+link to error logs. It answers "who said this" per result. cauce's meta line
 (search.md) answers a different question set: "is this from cache, how old,
 and how do I refresh or share it" via the clickable `cached · 3h old` badge
 plus `copy link`/`copy json`. SearXNG shows provenance but hides freshness
-and machine access (JSON/RSS links sit in a sidebar box, not per result); oxe
+and machine access (JSON/RSS links sit in a sidebar box, not per result); cauce
 shows freshness and machine addressability but, with a single upstream (DDG),
 has no per-result provenance story to tell. The interesting borrow is not the
 chips themselves but the failure surface: SearXNG surfaces per-source errors
@@ -183,25 +183,25 @@ attempted but blocked by antibot challenge pages.
 - https://github.com/nikvdp/searxng-ai-kit
 - https://github.com/ptonlix/LangChain-SearXNG
 
-## Verdict for oxe
+## Verdict for cauce
 
 1. Do not copy the blocking aggregation wait: SearXNG renders nothing until
-   timeout. oxe's cache-first architecture means the cached SERP should
+   timeout. cauce's cache-first architecture means the cached SERP should
    render instantly and re-fetch only on the explicit `cached` badge click,
    which is a UX advantage to keep.
 2. Steal the failure surface: a collapsed "source messages" area that names
    failed sources with error type and stays silent when everything worked
-   (searx/templates/simple/elements/engines_msg.html). For oxe this maps to
+   (searx/templates/simple/elements/engines_msg.html). For cauce this maps to
    DDG failures and cache staleness, not engine chips.
 3. Steal the empty state: distinct page-1 ("no results, try X") vs page-N
    ("no more results, go back") copy with concrete actions, `role=alert`.
 4. AI mode design validation: every successful SearXNG AI integration keeps
    the answer fetch non-blocking, collapses the answer box to prevent layout
    shift, streams tokens with citations, and keeps conversation state in the
-   URL. oxe's AI mode already matches this; treat the collapsed-box-on-load
+   URL. cauce's AI mode already matches this; treat the collapsed-box-on-load
    and citation-click behaviors as required, not nice.
 5. The preferences panel is SearXNG's moat among simple engines because it
    exposes engine reliability data (per-engine toggles, error rates,
-   timings). oxe's equivalent transparency budget should go into cache
+   timings). cauce's equivalent transparency budget should go into cache
    freshness/refresh affordances rather than an engine table, since there is
    one upstream.

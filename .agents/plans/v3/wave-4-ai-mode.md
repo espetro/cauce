@@ -25,7 +25,7 @@ that catch regressions offline. Anthropic Messages protocol as the last step.
 - Evals: `evals/ai/*.jsonl` with `{"query", "must_cite_domains", "must_contain",
   "must_not_contain"}` run over replay cassettes with a recorded provider transcript
   (`evals/ai/transcripts/`); baseline score in `evals/thresholds.toml`; CI fast gate runs 5
-  cases (< 30 s), full set offline via `oxe eval ai`.
+  cases (< 30 s), full set offline via `cauce eval ai`.
 - Resource-adaptive: no local model in this wave; only network calls.
 
 ## Exit criteria
@@ -40,11 +40,11 @@ that catch regressions offline. Anthropic Messages protocol as the last step.
 ### W4-01 OpenAI streaming client and `/models`
 - Issue #50 · Effort M · Label feature · Team Systems · Branch `v3/w4-01-openai-client`
 - Depends on: W2-07, W3-06
-- Do: `oxe-core::ai::openai`: SSE-streamed chat completions with tool-call delta
+- Do: `cauce-core::ai::openai`: SSE-streamed chat completions with tool-call delta
   assembly, usage extraction, typed errors (auth, rate limit with retry-after, context
   length), `GET {base_url}/models` listing with a 60 s cache; `wiremock` fixtures recorded
-  from Bifrost for tests; metrics `oxe_ai_requests_total{model,outcome}`,
-  `oxe_ai_tokens_total{model,kind}`, `oxe_ai_duration_ms`; audit row per provider call
+  from Bifrost for tests; metrics `cauce_ai_requests_total{model,outcome}`,
+  `cauce_ai_tokens_total{model,kind}`, `cauce_ai_duration_ms`; audit row per provider call
   (model, tokens, ms, request_id), never the prompt text.
 - Acceptance: fixture-driven test assembles a two-chunk tool call correctly; a 429 fixture
   surfaces `retry_after_s`.
@@ -78,11 +78,11 @@ that catch regressions offline. Anthropic Messages protocol as the last step.
 ### W4-04 AI evals: offline set and CI smoke
 - Issue #53 · Effort M · Label infra · Team Systems · Branch `v3/w4-04-ai-evals`
 - Depends on: W4-03
-- Do: `oxe eval ai evals/ai/*.jsonl` (offline, transcripts + cassettes, parallelism from
+- Do: `cauce eval ai evals/ai/*.jsonl` (offline, transcripts + cassettes, parallelism from
   available cores), scoring: cited-domain recall, `must_contain`/`must_not_contain`
   string checks, ungrounded rate; results to `evals/results/<date>-ai.json`; baseline and
   tolerance in `evals/thresholds.toml`; CI fast gate runs the 5 cases tagged `smoke` and
-  fails only if below baseline minus tolerance; `oxe eval ai --record` regenerates a
+  fails only if below baseline minus tolerance; `cauce eval ai --record` regenerates a
   transcript against the live provider (owner-run).
 - Acceptance: CI job time < 30 s; a deliberately broken tail parser drops the score below
   baseline in a test.
@@ -91,7 +91,7 @@ that catch regressions offline. Anthropic Messages protocol as the last step.
 ### W4-05 Anthropic Messages protocol
 - Issue #54 · Effort M · Label feature · Team Systems · Branch `v3/w4-05-anthropic`
 - Depends on: W4-04
-- Do: `oxe-core::ai::anthropic`: Messages API streaming with tool use blocks, mapped onto
+- Do: `cauce-core::ai::anthropic`: Messages API streaming with tool use blocks, mapped onto
   the same `AnswerFrame` stream; `protocol = "anthropic"` selects it; fixtures recorded via
   Bifrost's Anthropic passthrough or the public API; evals run against both protocols when
   transcripts exist.
