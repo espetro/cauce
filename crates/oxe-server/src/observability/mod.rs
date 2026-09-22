@@ -126,10 +126,18 @@ impl Drop for ObservabilityGuard {
 /// Build the subscriber without installing it. Returns the dispatch plus the
 /// guard that owns the writer/OTLP lifetimes. Used by tests; `init` calls it
 /// and installs globally.
-pub fn build(config: &ObservabilityConfig) -> (tracing::Dispatch, ObservabilityGuard) {
-    let filter = EnvFilter::new(&config.filter);
+pub fn build(
+    config: &ObservabilityConfig,
+) -> Result<(tracing::Dispatch, ObservabilityGuard), jsonl::LogInitError> {
+    let filter = EnvFilter::try_new(&config.filter).unwrap_or_else(|e| {
+        eprintln!(
+            "oxe: invalid log filter {:?} ({e}); falling back to \"info\"",
+            config.filter
+        );
+        EnvFilter::new("info")
+    });
 
-    let (writer, writer_guard) = jsonl::daily_file_writer(&config.logs_dir, config.retention_days);
+    let (writer, writer_guard) = jsonl::daily_file_writer(&config.logs_dir, config.retention_days)?;
     let json_layer = jsonl::JsonlLayer::new(writer);
 
     let stderr_layer = config.stderr_pretty.then(|| {
@@ -160,16 +168,16 @@ pub fn build(config: &ObservabilityConfig) -> (tracing::Dispatch, ObservabilityG
         #[cfg(feature = "otlp")]
         otlp,
     };
-    (tracing::Dispatch::new(subscriber), guard)
+    Ok((tracing::Dispatch::new(subscriber), guard))
 }
 
 /// Install the observability pipeline as the global default subscriber.
 /// Called once by `oxe serve` (and `oxe mcp`); must run before any spans are
 /// created. The HTTP middleware that mints `RequestId`s is W0-09.
-pub fn init(config: &ObservabilityConfig) -> ObservabilityGuard {
-    let (dispatch, guard) = build(config);
+pub fn init(config: &ObservabilityConfig) -> Result<ObservabilityGuard, jsonl::LogInitError> {
+    let (dispatch, guard) = build(config)?;
     dispatch.init();
-    guard
+    Ok(guard)
 }
 
 #[cfg(test)]

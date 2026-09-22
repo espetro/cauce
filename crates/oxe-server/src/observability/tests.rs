@@ -39,7 +39,7 @@ fn block_on<F: std::future::Future>(future: F) -> F::Output {
 fn trace_replays_engine_spans_in_order_with_durations() {
     let dir = tempfile::tempdir().unwrap();
     let config = test_config(dir.path());
-    let (dispatch, guard) = build(&config);
+    let (dispatch, guard) = build(&config).unwrap();
     let request_id = RequestId::new();
 
     tracing::dispatcher::with_default(&dispatch, || {
@@ -174,7 +174,7 @@ fn audit_writes_event_and_row() {
 
     let dir = tempfile::tempdir().unwrap();
     let config = test_config(dir.path());
-    let (dispatch, guard) = build(&config);
+    let (dispatch, guard) = build(&config).unwrap();
     let request_id = RequestId::new();
 
     let store = Spy {

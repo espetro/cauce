@@ -51,25 +51,47 @@ const SCHEMA_VERSION: u64 = 1;
 /// How often the writer checks for `oxe.<date>.jsonl` files to canonicalise.
 const NORMALIZE_INTERVAL_SECS: u64 = 60;
 
+/// Errors from [`daily_file_writer`].
+#[derive(Debug, thiserror::Error)]
+pub enum LogInitError {
+    #[error("cannot create log directory {0}")]
+    Dir(PathBuf, #[source] io::Error),
+    #[error("cannot create log file in {0}")]
+    Writer(PathBuf, #[source] tracing_appender::rolling::InitError),
+}
+
 /// Create the non-blocking daily writer plus its flush guard.
 ///
 /// Daily rotation and retention (`retention_days` files) come from
 /// `tracing-appender`; `DailyJsonlWriter` only canonicalises file names.
-pub fn daily_file_writer(dir: &Path, retention_days: usize) -> (NonBlocking, WorkerGuard) {
+///
+/// The writer is configured non-lossy: audit records must not silently
+/// vanish under burst, so a full buffer exerts backpressure on emitters
+/// instead of dropping lines. Writes are one message per line drained by a
+/// dedicated thread, so stalls stay brief; the alternative (exposing
+/// `error_counter().dropped_lines()` as a health signal) still loses audit
+/// events, which is worse than a stall.
+pub fn daily_file_writer(
+    dir: &Path,
+    retention_days: usize,
+) -> Result<(NonBlocking, WorkerGuard), LogInitError> {
     // The appender prunes before it creates the directory, which would
     // otherwise print a spurious read_dir error on first init.
-    if let Err(e) = fs::create_dir_all(dir) {
-        panic!("cannot create log directory {}: {e}", dir.display());
-    }
+    fs::create_dir_all(dir).map_err(|e| LogInitError::Dir(dir.to_path_buf(), e))?;
     let appender = RollingFileAppender::builder()
         .rotation(Rotation::DAILY)
         .filename_prefix("oxe")
         .filename_suffix("jsonl")
         .max_log_files(retention_days.max(1))
         .build(dir)
-        .unwrap_or_else(|e| panic!("cannot create log file in {}: {e}", dir.display()));
+        .map_err(|e| LogInitError::Writer(dir.to_path_buf(), e))?;
     normalize_log_names(dir);
-    tracing_appender::non_blocking(DailyJsonlWriter::new(appender, dir))
+    Ok(
+        tracing_appender::non_blocking::NonBlockingBuilder::default()
+            .lossy(false)
+            .thread_name("oxe-log-writer")
+            .finish(DailyJsonlWriter::new(appender, dir)),
+    )
 }
 
 /// Rename `oxe.<YYYY-MM-DD>.jsonl` files to `oxe-<YYYY-MM-DD>.jsonl`.
