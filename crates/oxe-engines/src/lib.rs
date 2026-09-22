@@ -6,6 +6,7 @@
 
 pub mod cassette;
 pub mod exec;
+pub mod factory;
 pub mod record;
 pub mod replay;
 
