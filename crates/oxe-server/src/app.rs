@@ -169,6 +169,8 @@ fn handler_for(spec: &RouteSpec) -> Option<MethodRouter<AppState>> {
         ("DELETE", "/api/cache/{key}", RouteKind::Json) => Some(delete(handlers::cache_delete)),
         ("DELETE", "/api/cache", RouteKind::Json) => Some(delete(handlers::cache_bulk_delete)),
         ("GET", "/api/audit", RouteKind::Json) => Some(get(handlers::audit_list)),
+        ("GET", "/api/engines", RouteKind::Json) => Some(get(handlers::engines_list)),
+        ("POST", "/api/engines/{id}/reset", RouteKind::Json) => Some(post(handlers::engine_reset)),
         ("GET", "/health", RouteKind::Json) => Some(get(handlers::health)),
         ("GET", "/api/config", RouteKind::Json) => Some(get(handlers::config_get)),
         ("PUT", "/api/config", RouteKind::Json) => Some(put(handlers::config_put)),

@@ -17,8 +17,9 @@ use axum::http::{HeaderMap, StatusCode, Uri};
 use axum::response::{IntoResponse, Json, Response};
 use chrono::{DateTime, NaiveDate, Utc};
 use oxe_core::{
-    AuditFilter, AuditRow, CacheKey, ClickRow, EngineId, HistoryFilter, HistoryItem, PipelineError,
-    SafeSearch, SearchRequest, SearchResponse, StatsSnapshot, Store, TimeRange,
+    AuditFilter, AuditRow, CacheKey, ClickRow, EngineHealthRow, EngineId, HistoryFilter,
+    HistoryItem, PipelineError, SafeSearch, SearchRequest, SearchResponse, StatsSnapshot, Store,
+    TimeRange,
     config::{Config, system_env},
 };
 use serde_json::{Value, json};
@@ -106,6 +107,13 @@ pub(crate) async fn search_inner(
         Err(e @ PipelineError::AllEnginesFailed(_)) => {
             Err(ctx.err(StatusCode::BAD_GATEWAY, "upstream_failed", e.to_string()))
         }
+        // Every matched engine was breaker-skipped (W1-06): temporary,
+        // so 503 regardless of pinning — the pin *did* match.
+        Err(e @ PipelineError::BreakerOpen(_)) => Err(ctx.err(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "breaker_open",
+            e.to_string(),
+        )),
     }
 }
 
@@ -276,6 +284,44 @@ pub async fn cache_bulk_delete(
     )
     .await?;
     Ok(Json(json!({ "removed": removed })))
+}
+
+/// `GET /api/engines` (W1-06): every known engine with its live health —
+/// EWMA latency, consecutive failures, breaker state — straight from the
+/// pipeline's tracker (fresher than the debounced `engine_health` table).
+pub async fn engines_list(State(state): State<AppState>) -> Json<Vec<EngineHealthRow>> {
+    Json(state.pipeline().health().snapshot())
+}
+
+/// `POST /api/engines/{id}/reset` (W1-06): close the breaker and clear
+/// EWMA/failures for one engine. Audited (`engine.reset`, with the
+/// previous breaker in `details`); the fresh row is persisted immediately
+/// rather than through the 1/s debounce.
+pub async fn engine_reset(
+    State(state): State<AppState>,
+    Extension(ctx): Extension<RequestCtx>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+) -> Result<Json<EngineHealthRow>, ApiError> {
+    let id = EngineId::from(id);
+    let Some((previous, row)) = state.pipeline().health().reset(&id) else {
+        return Err(ctx.not_found(format!("no such engine {id}")));
+    };
+    state
+        .store()
+        .put_health(&row)
+        .await
+        .map_err(|e| ctx.store(&e))?;
+    write_audit(
+        state.store(),
+        &ctx,
+        &headers,
+        "engine.reset",
+        id.to_string(),
+        json!({ "from": previous, "to": "closed" }),
+    )
+    .await?;
+    Ok(Json(row))
 }
 
 /// `GET /api/audit?since&actor&action&limit`.

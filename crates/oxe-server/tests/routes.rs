@@ -41,6 +41,11 @@ const EXPECTED_WAVE0: &[(&str, &str)] = &[
     ("PUT", "/api/config"),
 ];
 
+/// Wave-1 rows mounted so far (W1-06 engine health). `/metrics` (W1-09)
+/// and `/mcp` (W1-08) land with their own steps.
+const EXPECTED_WAVE1_MOUNTED: &[(&str, &str)] =
+    &[("GET", "/api/engines"), ("POST", "/api/engines/{id}/reset")];
+
 /// Serialises tests that mutate process env (`OXE_CONFIG_DIR` and friends).
 /// Under nextest each test is its own process anyway; this keeps plain
 /// `cargo test` (one process per test binary) safe too.
@@ -270,7 +275,8 @@ fn wave0_routes_match_plan_filter() {
     assert_eq!(declared_wave0, expected_wave0_json);
 }
 
-/// `mounted_routes` (the builder's own view) equals the wave-0 set.
+/// `mounted_routes` (the builder's own view) equals the wave-0 set plus
+/// every wave-1 row implemented so far.
 #[test]
 fn mounted_routes_equal_wave0_declaration() {
     let mounted: BTreeSet<(String, String)> = mounted_routes(&Default::default())
@@ -278,6 +284,7 @@ fn mounted_routes_equal_wave0_declaration() {
         .collect();
     let expected: BTreeSet<(String, String)> = EXPECTED_WAVE0
         .iter()
+        .chain(EXPECTED_WAVE1_MOUNTED)
         .map(|(m, p)| (m.to_string(), p.to_string()))
         .collect();
     assert_eq!(mounted, expected);
@@ -304,10 +311,12 @@ async fn live_router_matches_routes_table() {
     for spec in ROUTES {
         // Thin inputs are fine: a 400 still proves the route exists; a
         // 404/405 means it does not.
+        // `{id}` probes a real engine id: `POST /api/engines/{id}/reset`
+        // 404s on unknown ids, which would read as "not mounted".
         let path = spec
             .path
             .replace("{key}", &key)
-            .replace("{id}", "x")
+            .replace("{id}", "replay")
             .replace("{url}", "https%3A%2F%2Fexample.com");
         let method = Method::from_bytes(spec.method.as_bytes()).unwrap_or(Method::GET);
         let uri = match (spec.method, spec.path) {
