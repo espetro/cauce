@@ -1,0 +1,23 @@
+<div id="results">
+  {% for row in results %}
+  <article
+    hx-post="/api/click"
+    hx-vals="{{ row.hx_vals }}"
+    hx-swap="none"
+    hx-ext="json-enc"
+    hx-headers='{"X-Oxe-Client":"ui"}'
+    hx-trigger="click"
+  >
+    <img src="{{ row.favicon }}" width="16" height="16" alt="" loading="lazy">
+    <a href="{{ row.url }}" target="_blank">{{ row.title }}</a>
+    <span class="host">{{ row.host }}</span>
+    <p class="snippet">{{ row.snippet }}</p>
+  </article>
+  {% endfor %}
+  {% if results.is_empty() %}
+  <p>No results</p>
+  {% endif %}
+  {% if !more_url.is_empty() %}
+  <button hx-get="{{ more_url }}" hx-target="#results" hx-swap="outerHTML">More</button>
+  {% endif %}
+</div>

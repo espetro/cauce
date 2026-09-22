@@ -1,0 +1,109 @@
+/*! oxe wave-0 UI: tiny local CSS, no CDN. */
+
+:root {
+    color-scheme: light dark;
+    --bg: #ffffff;
+    --fg: #1a1a1a;
+    --muted: #666666;
+    --border: #d1d5db;
+    --accent: #2563eb;
+    --radius: 0.5rem;
+}
+
+@media (prefers-color-scheme: dark) {
+    :root {
+        --bg: #0f0f0f;
+        --fg: #e5e5e5;
+        --muted: #a3a3a3;
+        --border: #3f3f46;
+        --accent: #60a5fa;
+    }
+}
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    margin: 0;
+    padding: 1rem;
+    background: var(--bg);
+    color: var(--fg);
+    max-width: 720px;
+    line-height: 1.5;
+}
+
+form {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+}
+
+input[type="search"] {
+    flex: 1;
+    padding: 0.5rem 0.75rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    font-size: 1rem;
+    background: var(--bg);
+    color: var(--fg);
+}
+
+button {
+    padding: 0.5rem 1rem;
+    border: none;
+    border-radius: var(--radius);
+    background: var(--accent);
+    color: white;
+    font-size: 1rem;
+    cursor: pointer;
+}
+
+.meta {
+    color: var(--muted);
+    font-size: 0.875rem;
+    margin-bottom: 1rem;
+}
+
+.meta span + span::before {
+    content: " · ";
+}
+
+.request-id {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    cursor: pointer;
+}
+
+article {
+    margin: 0.75rem 0;
+    padding: 0.75rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+}
+
+article img {
+    vertical-align: middle;
+    margin-right: 0.5rem;
+}
+
+article a {
+    color: var(--accent);
+    text-decoration: none;
+    font-weight: 600;
+}
+
+article a:hover {
+    text-decoration: underline;
+}
+
+.host {
+    color: var(--muted);
+    font-size: 0.875rem;
+    margin-left: 0.5rem;
+}
+
+.snippet {
+    margin: 0.25rem 0 0;
+    color: var(--muted);
+}

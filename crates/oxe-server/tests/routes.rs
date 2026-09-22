@@ -25,6 +25,8 @@ use tower::ServiceExt;
 
 /// The wire surface wave 0 must mount (parent plan section 6, wave <= 0).
 const EXPECTED_WAVE0: &[(&str, &str)] = &[
+    ("GET", "/"),
+    ("GET", "/search"),
     ("GET", "/api/search"),
     ("GET", "/api/history"),
     ("POST", "/api/click"),
@@ -260,7 +262,12 @@ fn wave0_routes_match_plan_filter() {
         .map(|r| (r.method.to_string(), r.path.to_string()))
         .collect();
     assert_eq!(declared_wave0, plan_wave0);
-    assert_eq!(declared_wave0.len(), EXPECTED_WAVE0.len());
+    let expected_wave0_json: BTreeSet<(String, String)> = EXPECTED_WAVE0
+        .iter()
+        .filter(|(_, p)| *p == "/health" || p.starts_with("/api/"))
+        .map(|(m, p)| (m.to_string(), p.to_string()))
+        .collect();
+    assert_eq!(declared_wave0, expected_wave0_json);
 }
 
 /// `mounted_routes` (the builder's own view) equals the wave-0 set.

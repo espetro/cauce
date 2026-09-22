@@ -22,6 +22,7 @@ use tokio::net::TcpListener;
 
 use crate::error::ApiError;
 use crate::handlers;
+use crate::html;
 use crate::middleware::{RequestCtx, request_context};
 use crate::routes::{ROUTES, RouteKind, RouteSpec};
 
@@ -158,6 +159,8 @@ pub fn build_router_opts(state: AppState, opts: RouterOptions) -> Router {
 /// declared row is unreachable (mounting iterates `ROUTES`).
 fn handler_for(spec: &RouteSpec) -> Option<MethodRouter<AppState>> {
     match (spec.method, spec.path, spec.kind) {
+        ("GET", "/", RouteKind::Html) => Some(get(html::index)),
+        ("GET", "/search", RouteKind::Html) => Some(get(html::search)),
         ("GET", "/api/search", RouteKind::Json) => Some(get(handlers::search)),
         ("GET", "/api/history", RouteKind::Json) => Some(get(handlers::history)),
         ("POST", "/api/click", RouteKind::Json) => Some(post(handlers::click)),

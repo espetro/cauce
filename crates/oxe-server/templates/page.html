@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% if !q.is_empty() %}{{ q }} · oxe{% else %}oxe{% endif %}</title>
+  <style>{{ style_css|safe }}</style>
+</head>
+<body>
+  <form action="/search" method="get">
+    <input type="search" name="q" value="{{ q }}" placeholder="Search..." autofocus>
+    <button type="submit">Search</button>
+  </form>
+  {% if has_results %}
+  <div class="meta">
+    <span>{{ result_count }} results</span>
+    <span>{{ badge }}</span>
+    <span class="request-id" title="{{ request_id }}">{{ short_request_id }}</span>
+  </div>
+  {% include "results.html" %}
+  {% endif %}
+  <script>{{ htmx_js|safe }}</script>
+  <script>{{ json_enc_js|safe }}</script>
+</body>
+</html>
