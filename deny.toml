@@ -29,6 +29,9 @@ allow = [
     "MIT",
     "BSD-2-Clause",
     "BSD-3-Clause",
+    # Mozilla CA root bundle data, via webpki-root-certs <-
+    # rustls-platform-verifier <- reqwest rustls (W1-01).
+    "CDLA-Permissive-2.0",
     "ISC",
     "Unicode-DFS-2016",
     "Unicode-3.0",
