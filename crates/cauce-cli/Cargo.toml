@@ -37,6 +37,9 @@ cauce-store-sqlite = { path = "../cauce-store-sqlite" }
 serde_json = "1"
 tokio = { version = "1", features = ["net", "rt", "rt-multi-thread"] }
 tracing = "0.1"
+# `cauce search` mints the request UUIDv7 itself so it can print it to
+# stderr even when the pipeline returns an error.
+uuid = { version = "1", features = ["v7"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 [dev-dependencies]
