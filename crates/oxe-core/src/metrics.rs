@@ -1,20 +1,18 @@
-//! Process metrics (W1-09, parent plan 6.1): the OTel instrument set feeding
-//! `GET /metrics` and the OTLP exporter, plus the in-memory rolling
-//! aggregates backing `/api/stats`'s `engines[]` and `admission` sections.
+//! Process metrics (W1-09, parent plan 6.1): an owned in-process registry
+//! of counters, gauges and fixed-bucket histograms that renders Prometheus
+//! text for `GET /metrics` and feeds the rolling aggregates behind
+//! `/api/stats`'s `engines[]` and `admission` sections.
 //!
-//! [`Metrics`] is a cheap cloneable handle over the twelve settled
-//! instruments. Instrument creation binds to the provider behind the meter:
-//! [`Metrics::default()`] stays unbound until the first record call, which
-//! resolves `opentelemetry::global::meter("oxe")` — so a pipeline built
-//! before the provider is installed still lands its samples once it exists.
-//! [`Metrics::new`] binds an explicit meter (the server's `MetricsHandle`,
-//! or a test-local provider).
+//! The registry is process-global: [`Metrics`] is a cheap unit handle and
+//! every `record_*` writes straight into it, so a pipeline or engine built
+//! before `oxe-server` starts serving still lands its samples. There is no
+//! external metrics SDK in this crate; OTLP export of traces stays opt-in
+//! behind `oxe-server`'s non-default `otlp` cargo feature.
 //!
-//! The [`StatsRegistry`] is a process-global rolling aggregate (SearXNG
-//! parity: per-engine percentile windows plus admission counters) that every
-//! `record_*` writes through to, independent of whether an OTel provider is
-//! installed. `oxe-server` merges it into `StatsSnapshot`; the store keeps
-//! serving the day series from `search_log`.
+//! Alongside the exposition series the registry keeps rolling percentile
+//! windows (per-engine plus admission, SearXNG parity over the current run);
+//! [`crate::StatsSnapshot::merge_metrics`] folds those into `/api/stats`
+//! while the store keeps serving the day series from `search_log`.
 //!
 //! Admission recording (`record_admission_wait` / `record_admission_rejected`
 //! / `record_stale_served`) is the hook set W1-07's admission code calls;
@@ -25,11 +23,10 @@
 //! file, You can obtain one at <https://mozilla.org/MPL/2.0/>.
 
 use std::collections::{BTreeMap, HashMap, VecDeque};
-use std::sync::{Arc, LazyLock, Mutex, OnceLock};
+use std::fmt::Write as _;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{LazyLock, Mutex, MutexGuard};
 use std::time::Duration;
-
-use opentelemetry::KeyValue;
-use opentelemetry::metrics::{Counter, Gauge, Histogram, Meter};
 
 use crate::engine::{EngineError, EngineId, Tier};
 use crate::request::ClientKind;
@@ -40,6 +37,13 @@ use crate::store::{AdmissionStats, BreakerState, PhaseStats};
 /// percentiles describe the recent past (SearXNG computes over the current
 /// run too).
 const WINDOW_CAP: usize = 512;
+
+/// Bucket bounds (ms) for every `*_ms` histogram. Coarse on purpose: the
+/// pull endpoint is a health signal, not a profiling backend.
+const MS_BUCKETS: &[f64] = &[5.0, 10.0, 25.0, 50.0, 100.0, 250.0, 500.0, 1000.0, 2500.0, 5000.0];
+
+/// Bucket bounds for `oxe_engine_results` (result counts per call).
+const COUNT_BUCKETS: &[f64] = &[0.0, 1.0, 2.0, 5.0, 10.0, 25.0, 50.0, 100.0];
 
 /// `phase` label domain of `oxe_engine_duration_ms`. Engines record the
 /// phases they actually perform: the upstream fetch leg as `Http`, result
@@ -94,7 +98,134 @@ fn ms_u32(d: Duration) -> u32 {
 }
 
 // ---------------------------------------------------------------------------
-// In-memory rolling aggregates (`/api/stats`)
+// Registry storage
+// ---------------------------------------------------------------------------
+
+/// One label set, kept sorted so `BTreeMap` keys are canonical.
+type Labels = Vec<(String, String)>;
+
+fn labels(pairs: &[(&str, String)]) -> Labels {
+    pairs
+        .iter()
+        .map(|(k, v)| ((*k).to_string(), v.clone()))
+        .collect()
+}
+
+/// Fixed-bucket histogram: per-bucket counts plus running sum/count. The
+/// last bucket is the implicit `+Inf` overflow; Prometheus's cumulative
+/// `le` series are produced at render time.
+struct Hist {
+    bounds: &'static [f64],
+    buckets: Vec<u64>,
+    sum: f64,
+    count: u64,
+}
+
+impl Hist {
+    fn new(bounds: &'static [f64]) -> Self {
+        Self {
+            bounds,
+            buckets: vec![0; bounds.len() + 1],
+            sum: 0.0,
+            count: 0,
+        }
+    }
+
+    fn observe(&mut self, v: f64) {
+        self.sum += v;
+        self.count += 1;
+        let idx = self.bounds.partition_point(|b| v > *b);
+        self.buckets[idx] += 1;
+    }
+}
+
+#[derive(Default)]
+struct EngineAgg {
+    /// Engine calls completed (any outcome).
+    requests: u64,
+    /// Calls that returned results or `NoResults` (an answer, not a failure).
+    ok: u64,
+    /// Total results returned across calls.
+    result_count: u64,
+    /// Whole-call latency as seen by the pipeline.
+    total_ms: VecDeque<u32>,
+    http_ms: VecDeque<u32>,
+    parse_ms: VecDeque<u32>,
+}
+
+struct RegistryInner {
+    // --- /api/stats rolling aggregates -------------------------------------
+    engines: HashMap<EngineId, EngineAgg>,
+    admission_waits: VecDeque<u32>,
+    admission_rejected: u64,
+    rejected_by_reason: BTreeMap<String, u64>,
+    deadline_hits: u64,
+    stale_served: u64,
+    // --- exposition series --------------------------------------------------
+    /// `oxe_search_requests_total{client,source,tier}`.
+    search_requests: BTreeMap<Labels, u64>,
+    /// `oxe_search_duration_ms{source}`.
+    search_duration: BTreeMap<Labels, Hist>,
+    /// `oxe_ttfr_ms`.
+    ttfr: Hist,
+    /// `oxe_engine_requests_total{engine,outcome}`.
+    engine_requests: BTreeMap<Labels, u64>,
+    /// `oxe_engine_duration_ms{engine,phase}`.
+    engine_duration: BTreeMap<Labels, Hist>,
+    /// `oxe_engine_results{engine}`.
+    engine_results: BTreeMap<Labels, Hist>,
+    /// `oxe_engine_breaker_state{engine}` — last write wins (gauge).
+    breaker_state: BTreeMap<Labels, u64>,
+    /// `oxe_admission_wait_ms`.
+    admission_wait: Hist,
+    /// `oxe_admission_rejected_total{reason}`.
+    admission_rejected_series: BTreeMap<Labels, u64>,
+}
+
+impl Default for RegistryInner {
+    fn default() -> Self {
+        Self {
+            engines: HashMap::new(),
+            admission_waits: VecDeque::new(),
+            admission_rejected: 0,
+            rejected_by_reason: BTreeMap::new(),
+            deadline_hits: 0,
+            stale_served: 0,
+            search_requests: BTreeMap::new(),
+            search_duration: BTreeMap::new(),
+            ttfr: Hist::new(MS_BUCKETS),
+            engine_requests: BTreeMap::new(),
+            engine_duration: BTreeMap::new(),
+            engine_results: BTreeMap::new(),
+            breaker_state: BTreeMap::new(),
+            admission_wait: Hist::new(MS_BUCKETS),
+            admission_rejected_series: BTreeMap::new(),
+        }
+    }
+}
+
+static REGISTRY: LazyLock<Mutex<RegistryInner>> =
+    LazyLock::new(|| Mutex::new(RegistryInner::default()));
+
+fn registry() -> MutexGuard<'static, RegistryInner> {
+    // A poisoned lock only means a recorder panicked mid-update; the
+    // aggregates are still consistent enough to keep serving.
+    REGISTRY.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// Backing cell of the `oxe_cache_entries` gauge. `oxe-server` refreshes it
+/// from the store before each scrape (observable-style, without the OTel
+/// callback machinery).
+static CACHE_ENTRIES: AtomicU64 = AtomicU64::new(0);
+
+/// Set the live `cache_entries` row count reported by
+/// `oxe_cache_entries`. Called by `oxe-server`'s `MetricsHandle`.
+pub fn set_cache_entries(n: u64) {
+    CACHE_ENTRIES.store(n, Ordering::Relaxed);
+}
+
+// ---------------------------------------------------------------------------
+// /api/stats views
 // ---------------------------------------------------------------------------
 
 /// Nearest-rank percentile of an unsorted sample list; zeros when empty.
@@ -118,39 +249,6 @@ fn push(window: &mut VecDeque<u32>, ms: u32) {
         window.pop_front();
     }
     window.push_back(ms);
-}
-
-#[derive(Default)]
-struct EngineAgg {
-    /// Engine calls completed (any outcome).
-    requests: u64,
-    /// Calls that returned results or `NoResults` (an answer, not a failure).
-    ok: u64,
-    /// Total results returned across calls.
-    result_count: u64,
-    /// Whole-call latency as seen by the pipeline.
-    total_ms: VecDeque<u32>,
-    http_ms: VecDeque<u32>,
-    parse_ms: VecDeque<u32>,
-}
-
-#[derive(Default)]
-struct RegistryInner {
-    engines: HashMap<EngineId, EngineAgg>,
-    admission_waits: VecDeque<u32>,
-    admission_rejected: u64,
-    rejected_by_reason: BTreeMap<String, u64>,
-    deadline_hits: u64,
-    stale_served: u64,
-}
-
-static REGISTRY: LazyLock<Mutex<RegistryInner>> =
-    LazyLock::new(|| Mutex::new(RegistryInner::default()));
-
-fn registry() -> std::sync::MutexGuard<'static, RegistryInner> {
-    // A poisoned lock only means a recorder panicked mid-update; the
-    // aggregates are still consistent enough to keep serving.
-    REGISTRY.lock().unwrap_or_else(|e| e.into_inner())
 }
 
 /// One engine's in-process aggregates, merged into `/api/stats`'s
@@ -211,118 +309,218 @@ pub fn admission_stats() -> AdmissionStats {
 }
 
 // ---------------------------------------------------------------------------
-// OTel instruments
+// Prometheus text render
 // ---------------------------------------------------------------------------
 
-/// The settled W1-09 instrument set. `oxe_cache_entries` is deliberately not
-/// here: it is an observable gauge whose callback needs store access, so the
-/// server-side `MetricsHandle` registers it on the provider's meter.
-struct Instruments {
-    /// `oxe_search_requests_total{client,source,tier}` — every search path.
-    search_requests: Counter<u64>,
-    /// `oxe_search_duration_ms{source}` — whole-request latency.
-    search_duration_ms: Histogram<f64>,
-    /// `oxe_ttfr_ms` — time to the first successful engine response.
-    ttfr_ms: Histogram<f64>,
-    /// `oxe_engine_requests_total{engine,outcome}` — every engine call.
-    engine_requests: Counter<u64>,
-    /// `oxe_engine_duration_ms{engine,phase}` — per-phase engine timings,
-    /// recorded by the engine runtimes (http = fetch leg, parse = extract).
-    engine_duration_ms: Histogram<f64>,
-    /// `oxe_engine_results{engine}` — results returned per call.
-    engine_results: Histogram<u64>,
-    /// `oxe_engine_breaker_state{engine}` — 0 closed / 1 half-open / 2 open.
-    engine_breaker_state: Gauge<u64>,
-    /// `oxe_admission_wait_ms` — time spent in the admission queue.
-    admission_wait_ms: Histogram<f64>,
-    /// `oxe_admission_rejected_total{reason}` — queue overflows / timeouts.
-    admission_rejected: Counter<u64>,
-    /// `oxe_deadline_hit_total` — searches that hit the hard deadline.
-    deadline_hit: Counter<u64>,
-    /// `oxe_stale_served_total` — responses served from an expired row.
-    stale_served: Counter<u64>,
+/// Escape a label value per the exposition format (`\`, `"`, newline).
+fn write_labels(out: &mut String, ls: &Labels) {
+    if ls.is_empty() {
+        return;
+    }
+    out.push('{');
+    for (i, (k, v)) in ls.iter().enumerate() {
+        if i > 0 {
+            out.push(',');
+        }
+        let _ = write!(out, "{k}=\"");
+        for c in v.chars() {
+            match c {
+                '\\' => out.push_str("\\\\"),
+                '"' => out.push_str("\\\""),
+                '\n' => out.push_str("\\n"),
+                c => out.push(c),
+            }
+        }
+        out.push('"');
+    }
+    out.push('}');
 }
 
-impl Instruments {
-    fn new(meter: &Meter) -> Self {
-        let i = Self {
-            search_requests: meter
-                .u64_counter("oxe_search_requests_total")
-                .with_description("Search requests")
-                .build(),
-            search_duration_ms: meter
-                .f64_histogram("oxe_search_duration_ms")
-                .with_description("Search request latency")
-                .build(),
-            ttfr_ms: meter
-                .f64_histogram("oxe_ttfr_ms")
-                .with_description("Time to first engine result")
-                .build(),
-            engine_requests: meter
-                .u64_counter("oxe_engine_requests_total")
-                .with_description("Engine calls")
-                .build(),
-            engine_duration_ms: meter
-                .f64_histogram("oxe_engine_duration_ms")
-                .with_description("Engine phase duration")
-                .build(),
-            engine_results: meter
-                .u64_histogram("oxe_engine_results")
-                .with_description("Results returned per engine call")
-                .build(),
-            engine_breaker_state: meter
-                .u64_gauge("oxe_engine_breaker_state")
-                .with_description("Circuit breaker state (0 closed, 1 half-open, 2 open)")
-                .build(),
-            admission_wait_ms: meter
-                .f64_histogram("oxe_admission_wait_ms")
-                .with_description("Time spent queued by admission control")
-                .build(),
-            admission_rejected: meter
-                .u64_counter("oxe_admission_rejected_total")
-                .with_description("Requests rejected by admission control")
-                .build(),
-            deadline_hit: meter
-                .u64_counter("oxe_deadline_hit_total")
-                .with_description("Searches cut by the hard deadline")
-                .build(),
-            stale_served: meter
-                .u64_counter("oxe_stale_served_total")
-                .with_description("Responses served from an expired cache row")
-                .build(),
-        };
-        // Zero-seed the event counters so the series exist before their
-        // first real event: Prometheus only exports series that have a data
-        // point, and the settled list must appear after a single search.
-        i.admission_rejected.add(0, &[]);
-        i.deadline_hit.add(0, &[]);
-        i.stale_served.add(0, &[]);
-        i
+fn render_counter(out: &mut String, name: &str, help: &str, series: &BTreeMap<Labels, u64>) {
+    let _ = writeln!(out, "# HELP {name} {help}");
+    let _ = writeln!(out, "# TYPE {name} counter");
+    if series.is_empty() {
+        // Keep the family present before its first real event: the settled
+        // instrument list must appear after a single search.
+        let _ = writeln!(out, "{name} 0");
+        return;
+    }
+    for (ls, v) in series {
+        out.push_str(name);
+        write_labels(out, ls);
+        let _ = writeln!(out, " {v}");
     }
 }
 
-/// Cloneable handle over the settled instrument set. Clones share one
-/// binding: a default (unbound) handle resolves `global::meter("oxe")` on
-/// its first record; [`Metrics::new`] binds an explicit meter eagerly.
-#[derive(Clone, Default)]
-pub struct Metrics {
-    instruments: Arc<OnceLock<Instruments>>,
+fn render_gauge(out: &mut String, name: &str, help: &str, series: &BTreeMap<Labels, u64>) {
+    let _ = writeln!(out, "# HELP {name} {help}");
+    let _ = writeln!(out, "# TYPE {name} gauge");
+    if series.is_empty() {
+        let _ = writeln!(out, "{name} 0");
+        return;
+    }
+    for (ls, v) in series {
+        out.push_str(name);
+        write_labels(out, ls);
+        let _ = writeln!(out, " {v}");
+    }
 }
+
+/// Emit one histogram series: cumulative `_bucket{le}` lines plus `_sum`
+/// and `_count`.
+fn render_hist_series(out: &mut String, name: &str, ls: &Labels, h: &Hist) {
+    let mut cumulative = 0u64;
+    for (i, bound) in h.bounds.iter().enumerate() {
+        cumulative += h.buckets[i];
+        let mut ls = ls.clone();
+        ls.push(("le".to_string(), format!("{bound}")));
+        out.push_str(name);
+        out.push_str("_bucket");
+        write_labels(out, &ls);
+        let _ = writeln!(out, " {cumulative}");
+    }
+    let mut inf = ls.clone();
+    inf.push(("le".to_string(), "+Inf".to_string()));
+    out.push_str(name);
+    out.push_str("_bucket");
+    write_labels(out, &inf);
+    let _ = writeln!(out, " {}", h.count);
+    out.push_str(name);
+    out.push_str("_sum");
+    write_labels(out, ls);
+    let _ = writeln!(out, " {}", h.sum);
+    out.push_str(name);
+    out.push_str("_count");
+    write_labels(out, ls);
+    let _ = writeln!(out, " {}", h.count);
+}
+
+fn render_hist_header(out: &mut String, name: &str, help: &str) {
+    let _ = writeln!(out, "# HELP {name} {help}");
+    let _ = writeln!(out, "# TYPE {name} histogram");
+}
+
+fn render_hist_empty(out: &mut String, name: &str) {
+    let _ = writeln!(out, "{name}_bucket{{le=\"+Inf\"}} 0");
+    let _ = writeln!(out, "{name}_sum 0");
+    let _ = writeln!(out, "{name}_count 0");
+}
+
+fn render_hist_map(out: &mut String, name: &str, help: &str, series: &BTreeMap<Labels, Hist>) {
+    render_hist_header(out, name, help);
+    if series.is_empty() {
+        // Keep the family present before its first observation.
+        render_hist_empty(out, name);
+        return;
+    }
+    for (ls, h) in series {
+        render_hist_series(out, name, ls, h);
+    }
+}
+
+/// Label-free histogram (`oxe_ttfr_ms`, `oxe_admission_wait_ms`).
+fn render_hist_one(out: &mut String, name: &str, help: &str, h: &Hist) {
+    render_hist_header(out, name, help);
+    if h.count == 0 {
+        render_hist_empty(out, name);
+        return;
+    }
+    render_hist_series(out, name, &Labels::new(), h);
+}
+
+/// Prometheus text exposition of the whole registry (the body of
+/// `GET /metrics`). Infallible: rendering never fails and an empty registry
+/// still produces a parseable document with every settled family present.
+pub fn render_prometheus() -> String {
+    let reg = registry();
+    let mut out = String::with_capacity(4096);
+
+    render_counter(
+        &mut out,
+        "oxe_search_requests_total",
+        "Search requests",
+        &reg.search_requests,
+    );
+    render_hist_map(
+        &mut out,
+        "oxe_search_duration_ms",
+        "Search request latency",
+        &reg.search_duration,
+    );
+    render_hist_one(&mut out, "oxe_ttfr_ms", "Time to first engine result", &reg.ttfr);
+    render_counter(
+        &mut out,
+        "oxe_engine_requests_total",
+        "Engine calls",
+        &reg.engine_requests,
+    );
+    render_hist_map(
+        &mut out,
+        "oxe_engine_duration_ms",
+        "Engine phase duration",
+        &reg.engine_duration,
+    );
+    render_hist_map(
+        &mut out,
+        "oxe_engine_results",
+        "Results returned per engine call",
+        &reg.engine_results,
+    );
+    render_gauge(
+        &mut out,
+        "oxe_engine_breaker_state",
+        "Circuit breaker state (0 closed, 1 half-open, 2 open)",
+        &reg.breaker_state,
+    );
+    let _ = writeln!(
+        out,
+        "# HELP oxe_cache_entries Live (unexpired) cache_entries rows"
+    );
+    let _ = writeln!(out, "# TYPE oxe_cache_entries gauge");
+    let _ = writeln!(
+        out,
+        "oxe_cache_entries {}",
+        CACHE_ENTRIES.load(Ordering::Relaxed)
+    );
+    render_hist_one(
+        &mut out,
+        "oxe_admission_wait_ms",
+        "Time spent queued by admission control",
+        &reg.admission_wait,
+    );
+    render_counter(
+        &mut out,
+        "oxe_admission_rejected_total",
+        "Requests rejected by admission control",
+        &reg.admission_rejected_series,
+    );
+    let _ = writeln!(
+        out,
+        "# HELP oxe_deadline_hit_total Searches cut by the hard deadline"
+    );
+    let _ = writeln!(out, "# TYPE oxe_deadline_hit_total counter");
+    let _ = writeln!(out, "oxe_deadline_hit_total {}", reg.deadline_hits);
+    let _ = writeln!(
+        out,
+        "# HELP oxe_stale_served_total Responses served from an expired cache row"
+    );
+    let _ = writeln!(out, "# TYPE oxe_stale_served_total counter");
+    let _ = writeln!(out, "oxe_stale_served_total {}", reg.stale_served);
+    out
+}
+
+// ---------------------------------------------------------------------------
+// Metrics handle (record API)
+// ---------------------------------------------------------------------------
+
+/// Cloneable handle over the settled W1-09 instrument set. The registry is
+/// process-global, so the handle carries no state: `Metrics::default()` and
+/// a handle passed through `SearchPipeline::with_metrics` record into the
+/// same series.
+#[derive(Clone, Copy, Default)]
+pub struct Metrics;
 
 impl Metrics {
-    /// Bind to `meter` now (server `MetricsHandle`, test-local providers).
-    pub fn new(meter: &Meter) -> Self {
-        let metrics = Self::default();
-        // Fresh OnceLock: `set` cannot fail here.
-        let _ = metrics.instruments.set(Instruments::new(meter));
-        metrics
-    }
-
-    fn instruments(&self) -> &Instruments {
-        self.instruments
-            .get_or_init(|| Instruments::new(&opentelemetry::global::meter("oxe")))
-    }
-
     /// `oxe_search_requests_total{client,source,tier}` +
     /// `oxe_search_duration_ms{source}`. `source` is `"cache"` or
     /// `"network"`; `tier` is the serving cache tier for hits, `None` on the
@@ -334,27 +532,28 @@ impl Metrics {
         tier: Option<Tier>,
         elapsed: Duration,
     ) {
-        let i = self.instruments();
-        i.search_requests.add(
-            1,
-            &[
-                KeyValue::new("client", client.label()),
-                KeyValue::new("source", source),
-                KeyValue::new(
+        let mut reg = registry();
+        *reg.search_requests
+            .entry(labels(&[
+                ("client", client.label()),
+                ("source", source.to_string()),
+                (
                     "tier",
                     tier.map(|t| t.as_u8().to_string())
                         .unwrap_or_else(|| "none".to_string()),
                 ),
-            ],
-        );
-        i.search_duration_ms
-            .record(ms_f64(elapsed), &[KeyValue::new("source", source)]);
+            ]))
+            .or_insert(0) += 1;
+        reg.search_duration
+            .entry(labels(&[("source", source.to_string())]))
+            .or_insert_with(|| Hist::new(MS_BUCKETS))
+            .observe(ms_f64(elapsed));
     }
 
     /// `oxe_ttfr_ms` — call once per search with the latency of the first
     /// successful engine response.
     pub fn record_ttfr(&self, d: Duration) {
-        self.instruments().ttfr_ms.record(ms_f64(d), &[]);
+        registry().ttfr.observe(ms_f64(d));
     }
 
     /// One completed engine call: `oxe_engine_requests_total{engine,outcome}`,
@@ -368,14 +567,20 @@ impl Metrics {
         latency: Duration,
         results: Option<usize>,
     ) {
-        let engine_kv = KeyValue::new("engine", engine.as_str().to_string());
-        let i = self.instruments();
-        i.engine_requests
-            .add(1, &[engine_kv.clone(), KeyValue::new("outcome", outcome)]);
-        if let Some(n) = results {
-            i.engine_results.record(n as u64, &[engine_kv]);
-        }
         let mut reg = registry();
+        let engine_label = ("engine", engine.as_str().to_string());
+        *reg.engine_requests
+            .entry(labels(&[
+                engine_label.clone(),
+                ("outcome", outcome.to_string()),
+            ]))
+            .or_insert(0) += 1;
+        if let Some(n) = results {
+            reg.engine_results
+                .entry(labels(&[engine_label]))
+                .or_insert_with(|| Hist::new(COUNT_BUCKETS))
+                .observe(n as f64);
+        }
         let agg = reg.engines.entry(engine.clone()).or_default();
         agg.requests += 1;
         if matches!(outcome, "ok" | "no_results") {
@@ -388,14 +593,14 @@ impl Metrics {
     /// `oxe_engine_duration_ms{engine,phase}` — recorded by engine runtimes
     /// for the phases they perform (`Http` fetch leg, `Parse` extraction).
     pub fn record_engine_phase(&self, engine: &EngineId, phase: EnginePhase, d: Duration) {
-        self.instruments().engine_duration_ms.record(
-            ms_f64(d),
-            &[
-                KeyValue::new("engine", engine.as_str().to_string()),
-                KeyValue::new("phase", phase.as_str()),
-            ],
-        );
         let mut reg = registry();
+        reg.engine_duration
+            .entry(labels(&[
+                ("engine", engine.as_str().to_string()),
+                ("phase", phase.as_str().to_string()),
+            ]))
+            .or_insert_with(|| Hist::new(MS_BUCKETS))
+            .observe(ms_f64(d));
         let agg = reg.engines.entry(engine.clone()).or_default();
         let window = match phase {
             EnginePhase::Http => &mut agg.http_ms,
@@ -408,26 +613,27 @@ impl Metrics {
     /// 0/1/2 (closed/half-open/open). Pre-W1-06 the pipeline reports
     /// `Closed` for every engine it runs.
     pub fn record_breaker_state(&self, engine: &EngineId, state: BreakerState) {
-        self.instruments().engine_breaker_state.record(
+        registry().breaker_state.insert(
+            labels(&[("engine", engine.as_str().to_string())]),
             breaker_state_code(state),
-            &[KeyValue::new("engine", engine.as_str().to_string())],
         );
     }
 
     /// `oxe_admission_wait_ms` — queue wait for the request. Pre-W1-07
     /// admission is pass-through, so the pipeline records `Duration::ZERO`.
     pub fn record_admission_wait(&self, d: Duration) {
-        self.instruments().admission_wait_ms.record(ms_f64(d), &[]);
-        push(&mut registry().admission_waits, ms_u32(d));
+        let mut reg = registry();
+        reg.admission_wait.observe(ms_f64(d));
+        push(&mut reg.admission_waits, ms_u32(d));
     }
 
     /// `oxe_admission_rejected_total{reason}` — W1-07 calls this on queue
     /// overflow (`"queue_full"`, `"wait_timeout"`).
     pub fn record_admission_rejected(&self, reason: &'static str) {
-        self.instruments()
-            .admission_rejected
-            .add(1, &[KeyValue::new("reason", reason)]);
         let mut reg = registry();
+        *reg.admission_rejected_series
+            .entry(labels(&[("reason", reason.to_string())]))
+            .or_insert(0) += 1;
         reg.admission_rejected += 1;
         *reg.rejected_by_reason
             .entry(reason.to_string())
@@ -437,14 +643,12 @@ impl Metrics {
     /// `oxe_deadline_hit_total` — one per search whose hard deadline
     /// cancelled in-flight engine calls.
     pub fn record_deadline_hit(&self) {
-        self.instruments().deadline_hit.add(1, &[]);
         registry().deadline_hits += 1;
     }
 
     /// `oxe_stale_served_total` — one per response served from an expired
     /// cache row (the W1-07 overflow path).
     pub fn record_stale_served(&self) {
-        self.instruments().stale_served.add(1, &[]);
         registry().stale_served += 1;
     }
 }
