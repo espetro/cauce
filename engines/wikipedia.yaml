@@ -1,0 +1,38 @@
+# Copyright (c) 2026 Joaquin Terrasa and oxe contributors. Apache-2.0.
+#
+# Wikipedia via the MediaWiki OpenSearch API: keyless, JSON, and gentle on
+# rate limits, so it is the engine to pin while iterating on oxe itself
+# (`engines=["wikipedia"]`, next to the offline `replay` engine).
+#
+# The response is a positional parallel array, not a list of objects:
+#
+#   ["query", ["title 1", ...], ["description 1", ...], ["url 1", ...]]
+#
+# `parse.results` selects the titles array (a lone array node is iterated
+# element-wise), and every field reads its own array through `{i}` (the
+# result index) against the document root (`root: true`).
+#
+# `enabled: false`: the spec ships off so it never joins the default
+# fan-out on its own. To search with it, add a config entry
+# (`[[engines]] id = "wikipedia", kind = "declarative"`) or run it
+# directly with `oxe engine test engines/wikipedia.yaml --live "<query>"`.
+id: wikipedia
+tier: 3
+page_size: 10
+enabled: false
+request:
+  url: "https://{lang}.wikipedia.org/w/api.php?action=opensearch&search={q}&limit=10&format=json"
+  headers:
+    Accept: application/json
+    # Wikimedia etiquette: a descriptive UA, not a browser disguise.
+    User-Agent: "oxe-metasearch/3.0 (https://github.com/espetro/oxe)"
+  timeout_ms: 2500
+parse:
+  kind: json
+  results: "$[1]"
+  fields:
+    title: { path: "$[1][{i}]", root: true }
+    snippet: { path: "$[2][{i}]", root: true }
+    url: { path: "$[3][{i}]", root: true }
+detect:
+  rate_limited_status: [429]

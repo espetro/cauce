@@ -1,0 +1,57 @@
+{
+  "query": "earth",
+  "page": 1,
+  "status": 200,
+  "results": [
+    {
+      "title": "Earth",
+      "url": "https://en.wikipedia.org/wiki/Earth",
+      "snippet": ""
+    },
+    {
+      "title": "Earth, Wind & Fire",
+      "url": "https://en.wikipedia.org/wiki/Earth,_Wind_%26_Fire",
+      "snippet": ""
+    },
+    {
+      "title": "Earthquake",
+      "url": "https://en.wikipedia.org/wiki/Earthquake",
+      "snippet": ""
+    },
+    {
+      "title": "Earth radius",
+      "url": "https://en.wikipedia.org/wiki/Earth_radius",
+      "snippet": ""
+    },
+    {
+      "title": "Eartha Kitt",
+      "url": "https://en.wikipedia.org/wiki/Eartha_Kitt",
+      "snippet": ""
+    },
+    {
+      "title": "Earth's magnetic field",
+      "url": "https://en.wikipedia.org/wiki/Earth%27s_magnetic_field",
+      "snippet": ""
+    },
+    {
+      "title": "EarthBound",
+      "url": "https://en.wikipedia.org/wiki/EarthBound",
+      "snippet": ""
+    },
+    {
+      "title": "Earthworm",
+      "url": "https://en.wikipedia.org/wiki/Earthworm",
+      "snippet": ""
+    },
+    {
+      "title": "Earth's inner core",
+      "url": "https://en.wikipedia.org/wiki/Earth%27s_inner_core",
+      "snippet": ""
+    },
+    {
+      "title": "Earthsea",
+      "url": "https://en.wikipedia.org/wiki/Earthsea",
+      "snippet": ""
+    }
+  ]
+}

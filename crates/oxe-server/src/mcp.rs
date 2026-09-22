@@ -158,6 +158,8 @@ pub struct SearchWebArgs {
     /// 1-based result page (default 1).
     pub page: Option<u8>,
     /// Engine pin, e.g. `["replay"]` or `["wikipedia"]` while iterating.
+    /// Pins select among built engines only: `wikipedia` ships
+    /// `enabled: false`, so it needs a `[[engines]]` config entry first.
     /// Omitted or empty = the configured default fan-out.
     pub engines: Option<Vec<String>>,
     /// BCP-47 language hint (`en`, `de`, ...).
@@ -552,7 +554,7 @@ impl OxeMcp {
     name = "oxe",
     version = "0.0.0",
     router = self.tool_router.clone(),
-    instructions = "Local metasearch backed by a TTL cache. `search_web` returns the canonical oxe SearchResponse (meta.request_id, meta.source cache/network); `exa_search` returns the Exa-compatible shape for existing wiring; `cache_status`/`cache_invalidate` manage the shared cache. While iterating, pin engines=[\"replay\"] (deterministic, offline) or engines=[\"wikipedia\"] (keyless, gentle rate limits)."
+    instructions = "Local metasearch backed by a TTL cache. `search_web` returns the canonical oxe SearchResponse (meta.request_id, meta.source cache/network); `exa_search` returns the Exa-compatible shape for existing wiring; `cache_status`/`cache_invalidate` manage the shared cache. While iterating, pin engines=[\"replay\"] (deterministic, offline) or engines=[\"wikipedia\"] (keyless, gentle rate limits; ships enabled=false so it needs a [[engines]] config entry first)."
 )]
 impl ServerHandler for OxeMcp {}
 

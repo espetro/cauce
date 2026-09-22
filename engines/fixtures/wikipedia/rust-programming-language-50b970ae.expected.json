@@ -1,0 +1,17 @@
+{
+  "query": "rust programming language",
+  "page": 1,
+  "status": 200,
+  "results": [
+    {
+      "title": "Rust (programming language)",
+      "url": "https://en.wikipedia.org/wiki/Rust_(programming_language)",
+      "snippet": ""
+    },
+    {
+      "title": "Ruby (programming language)",
+      "url": "https://en.wikipedia.org/wiki/Ruby_(programming_language)",
+      "snippet": ""
+    }
+  ]
+}
