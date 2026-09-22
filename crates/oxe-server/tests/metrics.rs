@@ -3,9 +3,9 @@
 //! instrument, and `/api/stats` carries `engines[]` with numeric percentile
 //! fields.
 //!
-//! This file deliberately holds a single test: `AppState` installs the
-//! process-global meter provider, so two tests in one binary could race the
-//! lazy binding in `Metrics::default()`. One test, one provider, no race.
+//! This file deliberately holds a single test: the metrics registry is
+//! process-global, so two tests in one binary would share its series.
+//! One test, one registry, no bleed.
 //!
 //! This Source Code Form is subject to the terms of the Mozilla Public
 //! License, v. 2.0. If a copy of the MPL was not distributed with this

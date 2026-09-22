@@ -183,19 +183,12 @@ pub async fn stats(
 /// each scrape so the pull model reports a live value.
 pub async fn metrics(State(state): State<AppState>) -> Response {
     state.metrics().refresh_cache().await;
-    match state.metrics().render() {
-        Ok(body) => (
-            StatusCode::OK,
-            [(axum::http::header::CONTENT_TYPE, METRICS_CONTENT_TYPE)],
-            body,
-        )
-            .into_response(),
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({ "error": format!("metrics encode: {e}") })),
-        )
-            .into_response(),
-    }
+    (
+        StatusCode::OK,
+        [(axum::http::header::CONTENT_TYPE, METRICS_CONTENT_TYPE)],
+        state.metrics().render(),
+    )
+        .into_response()
 }
 
 /// `GET /api/cache?limit&offset`: cache admin listing (includes

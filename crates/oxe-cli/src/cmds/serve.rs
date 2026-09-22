@@ -150,8 +150,6 @@ async fn serve_async(opts: ServeOpts, cfg: Config, host: String) -> i32 {
     }
     let result = oxe_server::serve(listener, app).await;
     evict.abort();
-    // Flush the metrics provider (OTLP PeriodicReader) before exit.
-    state.metrics().shutdown();
     match result {
         Ok(()) => 0,
         Err(e) => {

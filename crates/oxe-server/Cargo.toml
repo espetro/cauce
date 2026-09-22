@@ -7,12 +7,13 @@ license.workspace = true
 repository.workspace = true
 
 [features]
-default = ["otlp"]
-# OTLP export (spans via tracing-opentelemetry, metrics via a PeriodicReader).
-# Active only when OTEL_EXPORTER_OTLP_ENDPOINT is set at runtime; the feature
-# only controls whether the code is compiled in. The OTel metrics SDK and the
-# Prometheus reader stay unconditional: `GET /metrics` is always mounted.
+default = []
+# OTLP export (spans via tracing-opentelemetry). Non-default per the amended
+# W1-09 contract; active only when OTEL_EXPORTER_OTLP_ENDPOINT is set at
+# runtime — the feature only controls whether the code is compiled in.
 otlp = [
+    "dep:opentelemetry",
+    "dep:opentelemetry_sdk",
     "dep:opentelemetry-otlp",
     "dep:tracing-opentelemetry",
 ]
@@ -39,18 +40,15 @@ url = "2"
 urlencoding = "2"
 uuid = { version = "1", features = ["v7", "serde"] }
 
-# W1-09 metrics: OTel API + SDK and the Prometheus text exporter are
-# unconditional (`/metrics` is always mounted). `prometheus` must match the
-# version opentelemetry-prometheus re-exports its `Registry` type from.
-opentelemetry = "0.32"
-opentelemetry_sdk = "0.32"
-opentelemetry-prometheus = "0.32"
-prometheus = "0.14"
-# default-features off: the default set pulls the HTTP/proto + reqwest
-# exporters; we only ship the gRPC/tonic exporters.
+# OTLP trace export (observability/otlp.rs), all gated behind the
+# non-default `otlp` feature. `default-features` off on the exporter: its
+# default set pulls the HTTP/proto + reqwest exporters; we only ship the
+# gRPC/tonic one. W1-09 metrics need no SDK: the registry in oxe-core
+# renders Prometheus text itself.
+opentelemetry = { version = "0.32", optional = true }
+opentelemetry_sdk = { version = "0.32", optional = true }
 opentelemetry-otlp = { version = "0.32", default-features = false, features = [
     "grpc-tonic",
-    "metrics",
     "trace",
 ], optional = true }
 tracing-opentelemetry = { version = "0.33", optional = true }

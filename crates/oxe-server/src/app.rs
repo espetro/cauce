@@ -33,7 +33,7 @@ pub const CURRENT_WAVE: u8 = 0;
 
 /// Shared handler state: the search pipeline, the store, the live config
 /// (`PUT /api/config` swaps it under the lock) and the W1-09 metrics
-/// provider (`GET /metrics` scrape plus OTLP push when configured).
+/// handle (`GET /metrics` scrape off the owned in-process registry).
 #[derive(Clone)]
 pub struct AppState {
     pipeline: Arc<SearchPipeline>,
@@ -62,7 +62,7 @@ impl AppState {
         &self.store
     }
 
-    /// The process metrics provider (`/metrics` render + OTLP readers).
+    /// The process metrics handle (`/metrics` render + cache gauge refresh).
     pub fn metrics(&self) -> &MetricsHandle {
         &self.metrics
     }
