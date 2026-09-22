@@ -553,10 +553,12 @@ impl QueryParams {
             .map(|(_, v)| v.as_str())
     }
 
-    /// Present and non-empty.
+    /// Present and non-blank: `q=` and whitespace-only values are 400s
+    /// just like an absent parameter — a blank `q` would otherwise run a
+    /// fan-out on the empty normalized query (#89).
     pub(crate) fn required<'a>(&'a self, ctx: &RequestCtx, key: &str) -> Result<&'a str, ApiError> {
         self.get(key)
-            .filter(|v| !v.is_empty())
+            .filter(|v| !v.trim().is_empty())
             .ok_or_else(|| ctx.bad_request(format!("missing required parameter {key:?}")))
     }
 
