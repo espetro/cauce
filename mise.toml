@@ -26,6 +26,8 @@ set -euo pipefail
 threads="$(sysctl -n hw.ncpu 2>/dev/null || nproc 2>/dev/null || echo 4)"
 if command -v cargo-nextest >/dev/null 2>&1; then
     cargo nextest run --workspace --test-threads "$threads" --no-tests=pass
+    # nextest cannot run doctests; they are part of the gate (CacheKey contract).
+    cargo test --workspace --doc
 else
     cargo test --workspace -- --test-threads "$threads"
 fi
