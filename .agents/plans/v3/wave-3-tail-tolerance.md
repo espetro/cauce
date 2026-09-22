@@ -29,6 +29,8 @@ on latency and reliability, and every knob is configurable because the owner's n
 2. Nightly relevance eval publishes a JSON artifact and a dashboard panel reads its last
    run.
 3. Removed: per-client fairness is deferred to `later/per-client-fairness.md` (issue #47).
+4. A permanently-broken engine rests (breaker on Parse/Transport streak) instead of
+   burning deadline latency forever.
 
 ## Steps
 
@@ -50,9 +52,18 @@ on latency and reliability, and every knob is configurable because the owner's n
 - Do: expired tier-1 rows within `cache.stale_grace_s` (default 6 h) are served immediately
   as `Source::Cache{stale:true}` while a background refresh runs (deduped by singleflight);
   `evict_expired` respects the grace window; metric `oxe_stale_served_total{reason=grace|
-  admission}`; the UI badge says `stale · refreshing`.
+  admission}`; the UI badge says `stale · refreshing`; three cache-hygiene rules: (a) never
+  `put` a response whose `results` is empty (an all-NoResults fan-out must not be cached —
+  a wedged exec engine returning `[]` would otherwise poison the cache for the full TTL);
+  (b) `cache.degraded_ttl_s` (default 60) applies when any engine `Failed` or
+  `deadline_hit` — a partial response doesn't earn the full TTL; (c) when a stale row is
+  served while ALL pinned engines are unhealthy (breaker open or in `skipped`), emit a warn
+  event and bump `oxe_stale_served_total{reason=engines_unhealthy}` so 'everything is down,
+  serving only stale' is an aggregate signal, not a per-response footnote.
 - Acceptance: expire a row in the temp DB, search returns stale in < 5 ms, a second search
-  200 ms later returns fresh `Network`-derived cache.
+  200 ms later returns fresh `Network`-derived cache; a replay engine returning `[]`
+  produces a 200 with no cache write; a stale serve during a simulated all-breaker outage
+  logs the warn event and increments the labeled counter.
 - Follow-up: W3-03.
 
 ### W3-03 RRF and URL normalisation tuning
@@ -85,10 +96,27 @@ on latency and reliability, and every knob is configurable because the owner's n
 - Do: nightly `oxe engine test --live` for every shipped spec: fetch once, parse, exit
   non-zero on zero results, `Parse` errors, or field fill-rate < 50 % versus the committed
   fixture. The failed nightly run is the report; no markdown drift-report generator and no
-  tracking-issue automation.
+  tracking-issue automation. The `--live` canary additionally fetches `page=2` for each
+  spec and fails when normalized-URL overlap with page 1 exceeds ~70% (the 'engine
+  silently serves page 1 again' anti-bot pattern, SearXNG #3402/#4546) or when the page-1
+  result count drops below ~50% of the committed fixture (partial selector drift, SearXNG
+  #4910).
 - Acceptance: a failing canary exits non-zero in a test with a fixture that has a removed
   selector.
 - Follow-up: W4-01.
+
+### W3-07 Breaker on consecutive Parse/Transport failures
+- Issue #119 · Effort M · Label infra · Team Systems · Branch `v3/w3-07-degraded-breaker`
+- Depends on: W1-06
+- Do: extend `HealthPolicy` with `degraded_threshold` (default 5) and `degraded_window`
+  (default 600 s): N consecutive `Parse` or `Transport` errors within the window open the
+  breaker like the timeout streak does. Today a drifted selector or a captcha page that
+  evades `detect.blocked` fails on every request forever without ever being rested — worse
+  for tail latency than a skipped engine and it spams the upstream during an active block.
+  `NoResults`/successful answers reset the streak.
+- Acceptance: a replay engine scripted to `Parse` 5 times in a row opens the breaker on the
+  5th; a `Parse` streak interrupted by an `Ok` or `NoResults` does not.
+- Follow-up: W2-05 surfaces the new streak counts.
 
 ## Out of scope for W3
 

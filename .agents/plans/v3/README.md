@@ -10,7 +10,7 @@ wave is one issue, one branch, one PR.
 | W0 | `wave-0-skeleton.md` | 1 | 2026-09-22 to 10-05 | P0 | golden path green on `replay`; `oxe serve` returns real results through the `ddgs` exec bridge; every request traceable by id |
 | W1 | `wave-1-engines-and-agents.md` | 2 | 10-06 to 10-19 | P0 | Bing + Brave native; MCP over HTTP and stdio; `~/SEARCH.md` wiring cut over to v3 on 4479 |
 | W2 | `wave-2-ui-and-observability.md` | 3 | 10-20 to 11-02 | P1 | all HTMX pages usable; owner uses it daily for a week |
-| W3 | `wave-3-tail-tolerance.md` | 4 | 11-03 to 11-16 | P1 | hedging, stale-while-revalidate, nightly relevance evals |
+| W3 | `wave-3-tail-tolerance.md` | 4 | 11-03 to 11-16 | P1 | hedging, stale-while-revalidate, nightly relevance evals (6 steps) |
 | W4 | `wave-4-ai-mode.md` | 5 | 11-17 to 11-30 | P2 | streamed, grounded answers via Bifrost; AI evals with baseline |
 | W5 | `wave-5-archive-and-semantic.md` | 6 | 12-01 to 12-14 | P2 | `fetch_and_index`, `search_archive` (3 steps) |
 | W6 | `wave-6-postgres-and-multi-instance.md` | 7 | 12-15 to 12-28 | P2 | conformance suite green on SQLite, parameterised for a second impl (1 step) |
@@ -30,7 +30,7 @@ W0 ─► W1-01 http/egress ─► W1-02 declarative runtime ─► W1-03/04/05 
    ├► W1-08 MCP (needs W0-09), W1-09 metrics (needs W0-05), W1-12 modes (needs W1-08),
    │  W1-13 loopback guard (needs W0-09)
 W1 ─► W2-* (UI pages, each needs its route from W0/W1) ─► W2-10 usage week ─► W3-*
-W3 ─► W4 (AI) ─► W5 (archive)
+W3 ─► W4 (AI) ─► W5 (archive); W3-07 (needs W1-06)
 W5 ─► W6 (conformance suite only; Postgres impl is `later/postgres-and-multi-instance.md`)
 ```
 

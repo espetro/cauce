@@ -99,3 +99,12 @@ rather than editing it away.
   The Anthropic Messages protocol (W4-05) is KEPT per the owner: supporting both protocols
   is adoption-critical since not every user runs Bifrost. Source:
   `/tmp/oxe-maintenance-area-review.md`. — 2026-09-22
+- **UX-complaint hardening applied from SearXNG research
+  (`/tmp/oxe-searxng-ux-research.md`).** Never cache empty responses;
+  `cache.degraded_ttl_s` for partial/degraded responses;
+  `oxe_stale_served_total{reason=engines_unhealthy}` signal (W3-02); `meta.engines_skipped`
+  + failed/skipped engines rendered in UI (W2-01); `outcome` label on
+  `oxe_search_requests_total` (W2-03); canary checks page-2 overlap + count regression
+  (W3-06); new W3-07 breaker on Parse/Transport streaks; exec/replay empty → NoResults
+  normalization. SearXNG `format=json` compat shim and engine-param forwarding deferred to
+  `later/`. Project renamed oxe → cauce; CLI stays `cauce`. — 2026-09-22
