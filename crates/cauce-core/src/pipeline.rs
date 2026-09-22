@@ -35,7 +35,10 @@
 //!    `tokio::time::timeout(deadline)`. Engines cut off at the deadline
 //!    report `EngineStatus::Failed(EngineError::Timeout)` and set
 //!    `meta.deadline_hit`. `req.engines = Some(ids)` pins the fan-out to
-//!    the configured engines whose ids are in the set. The breaker gate
+//!    the configured engines whose ids are in the set; any id outside the
+//!    configured set rejects the request outright with
+//!    [`PipelineError::UnknownEngines`] before the cache lookups (the
+//!    strict `unknown_engines` contract, issue #90). The breaker gate
 //!    ([`HealthTracker`]) skips `Open` engines and lets one probe through
 //!    for `HalfOpen`; every outcome updates EWMA/failures and persists
 //!    through `Store::put_health` (transitions urgent, rest debounced 1/s).
@@ -129,14 +132,33 @@ pub struct SearchOpts {
 /// every waiter on it receives its own copy.
 #[derive(Debug, Clone, thiserror::Error)]
 pub enum PipelineError {
-    /// The engine pin in `req.engines` matched no configured engine, or
-    /// the pipeline was built with an empty engine list.
+    /// The pipeline was built with an empty engine list, or the request
+    /// carried an empty `engines` pin (`Some([])`): nothing can run.
     ///
-    /// W0-09 maps the two cases differently: a bad pin is a 400, an
-    /// unconfigured pipeline a 503. Call [`SearchPipeline::configured_engines`]
-    /// to distinguish (`0` means no engines configured).
+    /// A pin naming ids outside the configured set is rejected earlier as
+    /// [`PipelineError::UnknownEngines`] (issue #90), so `NoEngines` from a
+    /// non-empty pin is unreachable. W0-09 still maps the two cases
+    /// differently: a bare `Some([])` pin is the caller's 400, an
+    /// unconfigured pipeline a 503. Call
+    /// [`SearchPipeline::configured_engines`] to distinguish (`0` means no
+    /// engines configured).
     #[error("no engines available for this request")]
     NoEngines,
+    /// The `engines` pin named ids that are not configured — the strict
+    /// `unknown_engines` contract from issue #90, superseding wave-0's
+    /// silent truncation of partial pins. Checked before any cache lookup
+    /// or fan-out, so a stale pin is never served from a stored row.
+    /// W0-09 maps it to 400 `unknown_engines`; W1-08 mirrors it as MCP
+    /// `invalid_params`. The rendered message lists the rejected ids and
+    /// the configured set, plus an edit-distance-1 "did you mean" hint
+    /// when one applies.
+    #[error("{}", render_unknown_engines(.unknown, .configured))]
+    UnknownEngines {
+        /// Pin ids that matched no configured engine (pin order, deduped).
+        unknown: Vec<EngineId>,
+        /// Every configured engine id — the set a pin may name.
+        configured: Vec<EngineId>,
+    },
     /// Every engine that ran returned an error. The response is not
     /// cached; the `search_log` row is still written.
     #[error("all engines failed: {}", render_failures(.0))]
@@ -163,7 +185,10 @@ impl PipelineError {
     pub fn failures(&self) -> &[(EngineId, EngineError)] {
         match self {
             Self::AllEnginesFailed(failures) => failures,
-            Self::NoEngines | Self::RateLimited { .. } | Self::BreakerOpen(_) => &[],
+            Self::NoEngines
+            | Self::UnknownEngines { .. }
+            | Self::RateLimited { .. }
+            | Self::BreakerOpen(_) => &[],
         }
     }
 }
@@ -173,6 +198,68 @@ fn render_ids(ids: &[EngineId]) -> String {
         .map(|id| id.as_str())
         .collect::<Vec<_>>()
         .join(", ")
+}
+
+/// The `unknown_engines` message: rejected ids first, then the configured
+/// set, then per-offender "did you mean" hints for edit-distance-1 ids
+/// (the Stripe/ES precedent named in the #90 acceptance).
+fn render_unknown_engines(unknown: &[EngineId], configured: &[EngineId]) -> String {
+    let configured_list = if configured.is_empty() {
+        "none".to_string()
+    } else {
+        render_ids(configured)
+    };
+    let mut msg = format!(
+        "unknown engine ids: {}; configured engines: {configured_list}",
+        render_ids(unknown),
+    );
+    let hints: Vec<String> = unknown
+        .iter()
+        .filter_map(|id| {
+            configured
+                .iter()
+                .find(|c| edit_distance_one(id.as_str(), c.as_str()))
+                .map(|c| format!("{id} -> {c}"))
+        })
+        .collect();
+    if !hints.is_empty() {
+        msg.push_str(&format!("; did you mean {}?", hints.join(", ")));
+    }
+    msg
+}
+
+/// `true` when `a` is one insertion, deletion or substitution away from
+/// `b` — the did-you-mean bar for engine ids.
+fn edit_distance_one(a: &str, b: &str) -> bool {
+    let a: Vec<char> = a.chars().collect();
+    let b: Vec<char> = b.chars().collect();
+    match a.len().abs_diff(b.len()) {
+        0 => a.iter().zip(&b).filter(|(x, y)| x != y).count() == 1,
+        1 => {
+            let (short, long) = if a.len() < b.len() {
+                (&a, &b)
+            } else {
+                (&b, &a)
+            };
+            // Skip at most one char of `long`; every `short` char must
+            // match in order.
+            let mut i = 0;
+            let mut j = 0;
+            let mut skipped = false;
+            while i < short.len() && j < long.len() {
+                if short[i] == long[j] {
+                    i += 1;
+                } else if skipped {
+                    return false;
+                } else {
+                    skipped = true;
+                }
+                j += 1;
+            }
+            true
+        }
+        _ => false,
+    }
 }
 
 fn render_failures(failures: &[(EngineId, EngineError)]) -> String {
@@ -305,9 +392,10 @@ impl SearchPipeline {
 
     /// Number of configured engines. `0` means the pipeline is
     /// unconfigured. W0-09 maps `NoEngines` + (zero configured engines or
-    /// an empty `engines` pin) to 503 `no_engines`, and `NoEngines` + a
-    /// non-empty `engines` pin that matched nothing to 400 `unknown_engines`
-    /// regardless of the configured count.
+    /// an empty `engines` pin) to 503 `no_engines`, and
+    /// [`PipelineError::UnknownEngines`] — a pin naming any id outside this
+    /// set — to 400 `unknown_engines` regardless of the configured count
+    /// (issue #90 strict contract).
     pub fn configured_engines(&self) -> usize {
         self.engines.len()
     }
@@ -362,6 +450,46 @@ impl SearchPipeline {
         let started = Instant::now();
         let query = normalize_query(&req.q);
         let key = CacheKey::from(req);
+
+        // ---- pin validation (issue #90 strict contract) -------------------
+        // Any pin id outside the configured set rejects the whole request —
+        // ahead of the cache lookups, so a stale pin can never be served
+        // out of a row a silently-truncated run once stored. The
+        // unconditional `search_log` row is still written (`engines` stays
+        // empty: nothing ran).
+        if let Some(ids) = &req.engines {
+            let configured: Vec<EngineId> = self.engines.iter().map(|e| e.id()).collect();
+            let mut unknown: Vec<EngineId> = Vec::new();
+            for id in ids {
+                if !configured.contains(id) && !unknown.contains(id) {
+                    unknown.push(id.clone());
+                }
+            }
+            if !unknown.is_empty() {
+                let err = PipelineError::UnknownEngines {
+                    unknown,
+                    configured,
+                };
+                warn!(pinned = ?ids, error = %err, "unknown engine ids in pin");
+                self.write_log(
+                    req,
+                    &key,
+                    &query,
+                    LogRow {
+                        source: LogSource::Network,
+                        tier: None,
+                        result_count: 0,
+                        engines: Vec::new(),
+                        deadline_hit: false,
+                    },
+                    started,
+                )
+                .await;
+                self.metrics
+                    .record_search(&req.client, "network", None, started.elapsed());
+                return Err(err);
+            }
+        }
 
         // ---- tier-1 exact lookup ---------------------------------------
         if let Some(hit) = self.cache_lookup(&key, request_id).await {
@@ -528,6 +656,9 @@ impl SearchPipeline {
             return;
         }
         if runnable.is_empty() {
+            // Unreachable for a non-empty pin — unknown ids were rejected
+            // in `run` as `UnknownEngines`. This is the unconfigured
+            // pipeline (or a bare `Some([])` pin) case.
             warn!(pinned = ?req.engines, "no engines to run");
             lead.complete(Err(PipelineError::NoEngines));
             return;
