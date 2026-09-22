@@ -49,6 +49,16 @@ const ENV_OVERRIDES: &[(&str, &[&str], bool)] = &[
     ("OXE_SEARCH_MIN_RESULTS", &["search", "min_results"], true),
     ("OXE_SEARCH_TTL_S", &["search", "ttl_s"], true),
     ("OXE_SEARCH_TTL_CAP_S", &["search", "ttl_cap_s"], true),
+    (
+        "OXE_ADMISSION_MAX_WAIT_MS",
+        &["admission", "max_wait_ms"],
+        true,
+    ),
+    (
+        "OXE_ADMISSION_MAX_CONCURRENT_PER_ENGINE",
+        &["admission", "max_concurrent_per_engine"],
+        true,
+    ),
     ("OXE_LOGS_RETENTION_DAYS", &["logs", "retention_days"], true),
     ("OXE_AI_BASE_URL", &["ai", "base_url"], false),
     ("OXE_AI_API_KEY", &["ai", "api_key"], false),
@@ -253,6 +263,38 @@ fn default_ttl_cap_s() -> u64 {
     86400
 }
 
+/// `[admission]`: singleflight + bounded per-engine queue (parent plan
+/// 6.2, W1-07).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AdmissionConfig {
+    /// Total milliseconds a request may wait for per-engine slots before
+    /// admission overflows to a stale row or a 429. Default 1500.
+    #[serde(default = "default_max_wait_ms")]
+    pub max_wait_ms: u64,
+    /// Concurrent upstream calls allowed per engine id. Default 3 matches
+    /// the per-engine politeness burst (1 req/s burst 3).
+    #[serde(default = "default_max_concurrent_per_engine")]
+    pub max_concurrent_per_engine: u32,
+}
+
+impl Default for AdmissionConfig {
+    fn default() -> Self {
+        Self {
+            max_wait_ms: default_max_wait_ms(),
+            max_concurrent_per_engine: default_max_concurrent_per_engine(),
+        }
+    }
+}
+
+fn default_max_wait_ms() -> u64 {
+    1500
+}
+
+fn default_max_concurrent_per_engine() -> u32 {
+    3
+}
+
 /// `[logs]`: JSONL log retention (W0-05 consumes `retention_days`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -416,6 +458,9 @@ pub struct Config {
     /// `[search]` section.
     #[serde(default)]
     pub search: SearchConfig,
+    /// `[admission]` section.
+    #[serde(default)]
+    pub admission: AdmissionConfig,
     /// `[logs]` section.
     #[serde(default)]
     pub logs: LogsConfig,
@@ -447,6 +492,7 @@ pub struct Config {
 struct ConfigSections<'a> {
     server: &'a ServerConfig,
     search: &'a SearchConfig,
+    admission: &'a AdmissionConfig,
     logs: &'a LogsConfig,
     ai: &'a AiConfig,
     engines: &'a [EngineEntry],
@@ -479,6 +525,7 @@ impl Default for Config {
         Self {
             server: ServerConfig::default(),
             search: SearchConfig::default(),
+            admission: AdmissionConfig::default(),
             logs: LogsConfig::default(),
             ai: AiConfig::default(),
             engines: builtin_engines(),
@@ -505,6 +552,7 @@ impl Config {
         ConfigSections {
             server: &self.server,
             search: &self.search,
+            admission: &self.admission,
             logs: &self.logs,
             ai: &self.ai,
             engines: &self.engines,
@@ -1033,6 +1081,8 @@ mod tests {
         assert_eq!(cfg.search.min_results, 5);
         assert_eq!(cfg.search.ttl_s, 3600);
         assert_eq!(cfg.search.ttl_cap_s, 86400);
+        assert_eq!(cfg.admission.max_wait_ms, 1500);
+        assert_eq!(cfg.admission.max_concurrent_per_engine, 3);
         assert_eq!(cfg.logs.retention_days, 7);
         assert_eq!(cfg.ai.base_url, "");
         assert_eq!(cfg.ai.api_key, "");
