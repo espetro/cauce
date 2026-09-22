@@ -968,10 +968,12 @@ impl Config {
     /// would otherwise write the literal string into `config.toml` and
     /// destroy the secret. Template-covered leaves get their raw `${...}`
     /// text back; literal secrets (file or `OXE_*` override) get the
-    /// resolved value. A `<redacted>` leaf with nothing to restore —
-    /// unknown path, unknown engine id, unset key — is rejected so the
-    /// placeholder can never be persisted. Returns the restored dotted
-    /// paths.
+    /// resolved value. Only paths `display_tree` can emit as `<redacted>`
+    /// (`SECRET_PATHS` and `engines.<i>.env.<key>`, matched by engine id so
+    /// a reordered array cannot leak one engine's secret onto another) are
+    /// restored; every other placeholder — non-secret path, unknown path,
+    /// unknown engine id, unset env key — is rejected so the literal can
+    /// never be persisted. Returns the restored dotted paths.
     pub fn restore_redacted(
         &self,
         submitted: &mut toml::Value,
@@ -1016,6 +1018,18 @@ impl Config {
                 return Some(raw.clone());
             }
             return self.engines[cur].env.get(&path[3]).cloned();
+        }
+        // Anything outside SECRET_PATHS is not a path `display_tree` can
+        // emit as `<redacted>`, so the placeholder is a fabrication: reject
+        // it rather than guess at a source.
+        if !SECRET_PATHS.iter().any(|p| {
+            *p == path
+                .iter()
+                .map(String::as_str)
+                .collect::<Vec<_>>()
+                .as_slice()
+        }) {
+            return None;
         }
         if let Some(raw) = self.templates.get(path) {
             return Some(raw.clone());
@@ -1955,6 +1969,53 @@ mod tests {
         let mut submitted: toml::Value =
             toml::from_str("[search]\ndeadline_ms = \"<redacted>\"\n").unwrap();
         assert!(cfg.restore_redacted(&mut submitted).is_err());
+
+        // String-typed non-secret paths are rejected too, and a fabricated
+        // `<redacted>` on an engine field cannot leak a *different* engine's
+        // value across a reordered array.
+        let mut submitted: toml::Value = toml::from_str(
+            "[server]\nhost = \"<redacted>\"\n\n[[engines]]\nid = \"x\"\nkind = \"exec\"\ncommand = \"<redacted>\"\n",
+        )
+        .unwrap();
+        assert!(cfg.restore_redacted(&mut submitted).is_err());
+
+        // Unknown engine id under env is rejected.
+        let mut submitted: toml::Value = toml::from_str(
+            "[[engines]]\nid = \"ghost\"\nkind = \"exec\"\ncommand = \"/bin/x\"\n\n[engines.env]\nK = \"<redacted>\"\n",
+        )
+        .unwrap();
+        assert!(cfg.restore_redacted(&mut submitted).is_err());
+    }
+
+    /// Engine env placeholders bind by engine id, not array index: a
+    /// submitted `[[engines]]` order different from the current config still
+    /// restores each secret onto the right engine.
+    #[test]
+    fn restore_redacted_matches_engine_env_by_id() {
+        let (tmp, env) = sandbox(&[]);
+        write_config(
+            &tmp.path().join("cfg"),
+            "[[engines]]\nid = \"a\"\nkind = \"exec\"\ncommand = \"/bin/a\"\n\n[engines.env]\nK = \"secret-a\"\n\n[[engines]]\nid = \"b\"\nkind = \"exec\"\ncommand = \"/bin/b\"\n\n[engines.env]\nK = \"secret-b\"\n",
+        );
+        let cfg = Config::load_with(&env).unwrap();
+
+        // Submitted order is b, a — the reverse of the file.
+        let mut submitted: toml::Value = toml::from_str(
+            "[[engines]]\nid = \"b\"\nkind = \"exec\"\ncommand = \"/bin/b\"\n\n[engines.env]\nK = \"<redacted>\"\n\n[[engines]]\nid = \"a\"\nkind = \"exec\"\ncommand = \"/bin/a\"\n\n[engines.env]\nK = \"<redacted>\"\n",
+        )
+        .unwrap();
+        let mut restored = cfg.restore_redacted(&mut submitted).unwrap();
+        restored.sort();
+        assert_eq!(restored, ["engines.0.env.K", "engines.1.env.K"]);
+        let k = |i: &str| {
+            tree_at(
+                &submitted,
+                &["engines".into(), i.into(), "env".into(), "K".into()],
+            )
+            .and_then(|v| v.as_str().map(String::from))
+        };
+        assert_eq!(k("0").as_deref(), Some("secret-b"));
+        assert_eq!(k("1").as_deref(), Some("secret-a"));
     }
 
     #[test]
