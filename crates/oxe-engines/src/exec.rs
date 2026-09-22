@@ -201,8 +201,16 @@ impl ExecEngine {
         })
     }
 
-    /// Return the live child, respawning first when the previous one exited.
-    async fn ensure_child<'a>(&self, state: &'a mut State) -> Result<&'a mut ChildIo, EngineError> {
+    /// Take the live child out of `state`, respawning first when the
+    /// previous one exited. The caller owns the `ChildIo` for the round
+    /// trip and puts it back into `state` only on a fully successful call:
+    /// while it is out, a dropped `search` future drops the `ChildIo` too,
+    /// and `kill_on_drop` (set in `spawn`) reaps the process. This is what
+    /// keeps a cancelled call from leaving an unanswered request pending on
+    /// a child the next `search` would reuse — protocol v1 has no request
+    /// correlation, so a stale response would decode cleanly as the next
+    /// query's answer (cross-query cache poisoning).
+    async fn ensure_child(&self, state: &mut State) -> Result<ChildIo, EngineError> {
         let dead = match state.child.as_mut() {
             None => true,
             Some(io) => match io.child.try_wait() {
@@ -223,14 +231,7 @@ impl ExecEngine {
             }
             state.child = Some(self.spawn()?);
         }
-        Ok(state.child.as_mut().expect("child present"))
-    }
-
-    /// Kill the current child (if any) and forget it; the next call respawns.
-    async fn kill_child(&self, state: &mut State) {
-        if let Some(mut io) = state.child.take() {
-            let _ = io.child.kill().await;
-        }
+        Ok(state.child.take().expect("child present"))
     }
 
     fn decode(&self, line: &str) -> Result<Vec<SearchResult>, EngineError> {
@@ -289,9 +290,13 @@ impl Engine for ExecEngine {
         line.push('\n');
 
         // One request in flight per process: the lock is held for the whole
-        // round trip.
+        // round trip. The child is owned by this future while the request
+        // is in flight (see `ensure_child`), so cancelling the call — e.g.
+        // the pipeline's outer deadline winning over `budget` — drops `io`
+        // and reaps the process instead of leaving a stale response queued
+        // for the next caller.
         let mut state = self.state.lock().await;
-        let io = self.ensure_child(&mut state).await?;
+        let mut io = self.ensure_child(&mut state).await?;
 
         let round_trip = async {
             io.stdin.write_all(line.as_bytes()).await?;
@@ -301,24 +306,38 @@ impl Engine for ExecEngine {
             Ok::<String, std::io::Error>(buf)
         };
 
-        match timeout(budget, round_trip).await {
+        // Every failure path returns early with `io` still owned here:
+        // dropping it kills the child (`kill_on_drop`), `state.child` stays
+        // `None`, and the next call respawns on a clean stream.
+        let buf = match timeout(budget, round_trip).await {
             Err(_) => {
                 warn!(engine = %self.spec.id, budget_ms = budget.as_millis() as u64,
                     "exec engine deadline hit; killing child");
-                self.kill_child(&mut state).await;
-                Err(EngineError::Timeout)
+                return Err(EngineError::Timeout);
             }
             Ok(Err(e)) => {
                 warn!(engine = %self.spec.id, "exec child io failed ({e}); killing child");
-                self.kill_child(&mut state).await;
-                Err(EngineError::Transport(format!("child io: {e}")))
+                return Err(EngineError::Transport(format!("child io: {e}")));
             }
             Ok(Ok(buf)) if buf.is_empty() => {
                 warn!(engine = %self.spec.id, "exec child closed stdout (EOF); will respawn");
-                state.child = None;
-                Err(EngineError::Transport("engine process exited".into()))
+                return Err(EngineError::Transport("engine process exited".into()));
             }
-            Ok(Ok(buf)) => self.decode(&buf),
+            Ok(Ok(buf)) => buf,
+        };
+
+        match self.decode(&buf) {
+            Ok(results) => {
+                state.child = Some(io);
+                Ok(results)
+            }
+            // A response that fails to decode means the stream position is
+            // untrustworthy (protocol desync); kill the child too.
+            Err(e) => {
+                warn!(engine = %self.spec.id, error = %e,
+                    "exec response undecodable; killing child");
+                Err(e)
+            }
         }
     }
 }
