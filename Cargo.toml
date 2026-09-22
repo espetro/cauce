@@ -13,3 +13,17 @@ version = "0.0.0"
 edition = "2024"
 license = "MPL-2.0"
 repository = "https://github.com/espetro/oxe"
+
+# Dev profile: line tables only for workspace crates, no debug info for
+# dependencies. Debuginfo is the dominant share of target/ (roughly half or
+# more) and nothing in this repo consumes DWARF — e2e tests spawn the binary
+# and parse stderr/HTTP, and panic file:line comes from compile-time
+# Location metadata, not debuginfo. Orchestrated worktrees multiply this
+# cost, so keep it small. Deep-debugging escape hatch:
+# CARGO_PROFILE_DEV_DEBUG=2 (and CARGO_PROFILE_DEV_PACKAGE__ALL__DEBUG=2 for
+# deps). Release profile untouched: the nightly binary/RSS budget is safe.
+[profile.dev]
+debug = 1
+
+[profile.dev.package."*"]
+debug = 0

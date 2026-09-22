@@ -14,12 +14,18 @@ run = "cargo fmt --all -- --check"
 description = "Apply rustfmt"
 run = "cargo fmt --all"
 
+# CARGO_INCREMENTAL=0 on the gate tasks: gate builds are one-shot (especially
+# in short-lived agent worktrees) and incremental artifacts for workspace
+# crates just accumulate on disk. Day-to-day `cargo run`/`cargo test`
+# iteration keeps incremental on — it is not affected.
 [tasks.lint]
 description = "Clippy on all targets, warnings as errors"
+env = { CARGO_INCREMENTAL = "0" }
 run = "cargo clippy --all-targets -- -D warnings"
 
 [tasks.test]
 description = "Run tests (cargo-nextest when installed, else cargo test)"
+env = { CARGO_INCREMENTAL = "0" }
 run = """
 #!/usr/bin/env bash
 set -euo pipefail

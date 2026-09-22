@@ -40,14 +40,31 @@ believe a dependency is wrong, comment on the issue; do not start anyway.
 
 1. Read `../2026-09-21-v3-rust-core.md` sections 4 to 7, then the wave file, then the step.
 2. Move the issue to `WIP` on the project (`ghx project item-edit`), assign yourself.
-3. `git worktree add ~/.worktrees/oxe-<step-id> -b v3/<step-id>-<slug> main`.
+3. Create the worktree and seed its build cache (APFS clone costs ~no disk and warms deps):
+
+   ```
+   git worktree add ~/.worktrees/oxe-<step-id> -b v3/<step-id>-<slug> main
+   cp -Rc "$(git rev-parse --show-toplevel)/target" ~/.worktrees/oxe-<step-id>/target
+   ```
+
+   If the seeded build ever serves stale workspace artifacts, `cargo clean -p oxe-core -p
+   oxe-cli -p oxe-engines -p oxe-server -p oxe-store-sqlite` in the worktree is the cheap fix.
 4. Implement only what the step's "Do" says. The "Settled inputs" section of the wave file lists
    contracts you may not change; if the step cannot be done without changing one, stop and
    comment on the issue with the proposed amendment to the parent plan.
 5. Acceptance assertions are the PR's test list. The golden path must stay green.
 6. PR title `<type>(<scope>): <summary>` (Conventional Commits), body `Closes #<issue>`,
    commits signed off (`git commit -s`, DCO).
-7. On merge: issue `Completed`, then read the step's "Follow-up" line for what unblocks next.
+7. On merge: issue `Completed`, `git worktree remove` the step's worktree, then read the step's
+   "Follow-up" line for what unblocks next.
+
+## Orchestrator disk rules
+
+Worktrees each carry a `target/` (multiple GB); parallel dispatch multiplies it. Before
+dispatching a wave, check `df -h /` and require headroom of roughly 5 GB per planned concurrent
+worktree. Remove each worktree at merge, not at wave end. The full rationale and host setup
+(sccache, dev-profile slimming, incremental-off gate builds) is in
+`../../docs/parallel-build-disk-use.md`; that doc is repo-agnostic and reusable in other projects.
 
 ## Step ID format
 
