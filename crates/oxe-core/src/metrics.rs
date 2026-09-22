@@ -524,7 +524,7 @@ pub fn render_prometheus() -> String {
 /// Handle over the settled W1-09 instrument set. The registry is
 /// process-global, so the handle carries no state: `Metrics` fields on the
 /// pipeline and engine runtimes are just readable record call sites.
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct Metrics;
 
 impl Metrics {
