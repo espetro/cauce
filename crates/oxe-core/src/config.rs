@@ -27,12 +27,12 @@ use crate::store::StoreTuning;
 
 /// An environment map: the real process-env snapshot in production, an
 /// explicit map in tests so loads stay deterministic.
-type EnvMap = BTreeMap<String, String>;
+pub type EnvMap = BTreeMap<String, String>;
 
 /// Snapshot of the process environment. Uses `vars_os` and skips non-UTF-8
 /// entries: `std::env::vars()` panics on those, which would take the whole
 /// process down at startup.
-fn system_env() -> EnvMap {
+pub fn system_env() -> EnvMap {
     std::env::vars_os()
         .filter_map(|(k, v)| Some((k.into_string().ok()?, v.into_string().ok()?)))
         .collect()
@@ -562,10 +562,28 @@ impl Config {
             default_tree()?
         };
 
+        // Validate the file layer (an empty table when no file exists); the
+        // saved raw tree is the file contents or the defaults template tree.
+        let mut cfg = Self::from_raw(&file, env)?;
+        cfg.dirs = dirs;
+        cfg.raw = Some(raw);
+        Ok(cfg)
+    }
+
+    /// Validate and resolve a raw file-layer tree against an environment map.
+    ///
+    /// This is the in-memory path `Config::load` uses: env overrides,
+    /// `${...}` interpolation, typed-section validation, built-in engine
+    /// injection and `OXE_ENGINES` pinning. The returned `Config` has `raw`
+    /// set to the submitted tree (so `save` preserves templates verbatim)
+    /// and `dirs` resolved from `env`.
+    pub fn from_raw(raw: &toml::Value, env: &EnvMap) -> Result<Self, ConfigError> {
+        let dirs = Dirs::detect_with(env);
+
         // Resolution base is file + env only, never the defaults: a default
         // like `api_key = "${env:BIFROST_API_KEY}"` must stay a harmless
-        // literal instead of failing startup when the variable is unset.
-        let mut merged = file;
+        // literal instead of failing when the variable is unset.
+        let mut merged = raw.clone();
         for (name, key_path, parse) in ENV_OVERRIDES {
             if let Some(value) = env.get(*name) {
                 let value = if *parse {
@@ -627,7 +645,7 @@ impl Config {
         }
 
         cfg.dirs = dirs;
-        cfg.raw = Some(raw);
+        cfg.raw = Some(raw.clone());
         cfg.templates = templates;
         Ok(cfg)
     }
