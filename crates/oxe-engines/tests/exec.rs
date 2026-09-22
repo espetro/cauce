@@ -200,6 +200,118 @@ async fn exec_cancelled_call_does_not_poison_next_search() {
     );
 }
 
+/// Issue #83, first half: an engine built inside a tokio runtime (the
+/// `oxe serve`/`oxe mcp` factory path) spawns its child eagerly, so the
+/// first request's deadline is not spent on the child's boot. A boot delay
+/// longer than the budget proves it: this search could only succeed if the
+/// child was already started before the request arrived.
+#[tokio::test]
+async fn exec_spawns_eagerly_inside_a_runtime() {
+    if !have_python3() {
+        eprintln!("python3 not on PATH; skipping exec_spawns_eagerly_inside_a_runtime");
+        return;
+    }
+    let engine = ExecEngine::new(echo_spec(&["--boot-delay", "1.5"]));
+    // Let the eagerly spawned child finish its boot delay.
+    tokio::time::sleep(Duration::from_millis(1800)).await;
+    let res = engine
+        .search(&req("warm"), Duration::from_millis(600))
+        .await
+        .expect("pre-booted child answers inside a tight budget");
+    assert_eq!(res.len(), 3);
+}
+
+/// The cold counterpart of the eager spawn: built outside a runtime the
+/// child is lazy and a tight first-request budget dies on the boot cost.
+/// This was the issue #83 repro at every request; it now only describes the
+/// lazy fallback path (engines built before a runtime exists).
+#[test]
+fn exec_lazy_spawn_burns_first_request_budget() {
+    if !have_python3() {
+        eprintln!("python3 not on PATH; skipping exec_lazy_spawn_burns_first_request_budget");
+        return;
+    }
+    let engine = ExecEngine::new(echo_spec(&["--boot-delay", "1.5"]));
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("tokio runtime");
+    let err = rt
+        .block_on(engine.search(&req("cold"), Duration::from_millis(500)))
+        .expect_err("cold boot overruns the budget");
+    assert_eq!(err, EngineError::Timeout);
+}
+
+/// Issue #83, second half: when a request's deadline kills the child
+/// mid-query (here through the pipeline's own pattern, an outer
+/// `tokio::time::timeout` that drops the in-flight `search` future) the
+/// engine re-warms immediately instead of leaving the next caller to
+/// cold-start inside its own deadline. The replacement boots during the
+/// gap between requests, so a budget smaller than the boot delay suffices.
+#[tokio::test]
+async fn exec_deadline_kill_rewarms_for_next_request() {
+    if !have_python3() {
+        eprintln!("python3 not on PATH; skipping exec_deadline_kill_rewarms_for_next_request");
+        return;
+    }
+    let engine = ExecEngine::new(echo_spec(&[
+        "--boot-delay",
+        "1.5",
+        "--sleep",
+        "3",
+        "--sleep-on",
+        "stall",
+    ]));
+    tokio::time::sleep(Duration::from_millis(1800)).await;
+    let r1 = engine
+        .search(&req("first"), Duration::from_secs(5))
+        .await
+        .expect("warm child answers");
+    let pid1 = pid_of(&r1);
+
+    // The outer deadline drops the in-flight future; kill_on_drop reaps
+    // the child and the drop path kicks off an eager respawn.
+    let dropped = tokio::time::timeout(
+        Duration::from_millis(300),
+        engine.search(&req("stall"), Duration::from_secs(30)),
+    )
+    .await;
+    assert!(dropped.is_err(), "outer deadline drops the in-flight call");
+
+    // Once the respawned child has had its boot window, the next request
+    // must not be paying cold start: a budget below the boot delay still
+    // answers.
+    tokio::time::sleep(Duration::from_millis(1800)).await;
+    let res = engine
+        .search(&req("next"), Duration::from_millis(600))
+        .await
+        .expect("re-warmed child answers inside a tight budget");
+    assert_ne!(pid_of(&res), pid1, "child was respawned");
+    assert!(
+        res[0].title.contains("next"),
+        "expected results for the new query, got {res:?}"
+    );
+}
+
+/// A `command` that does not exist must not fail construction or startup:
+/// the eager spawn degrades to lazy, and the first `search` surfaces the
+/// spawn error as `Transport`.
+#[tokio::test]
+async fn exec_missing_command_degrades_to_lazy() {
+    let mut spec = echo_spec(&[]);
+    spec.command = "oxe-no-such-binary-83".to_string();
+    spec.args = vec![];
+    let engine = ExecEngine::new(spec); // must not panic inside a runtime
+    let err = engine
+        .search(&req("q"), Duration::from_secs(5))
+        .await
+        .expect_err("lazy spawn surfaces the missing binary");
+    assert!(
+        matches!(err, EngineError::Transport(_)),
+        "expected Transport, got {err:?}"
+    );
+}
+
 #[test]
 fn sdk_malformed_lines_get_error_responses() {
     if !have_python3() {
