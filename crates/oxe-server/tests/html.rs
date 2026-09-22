@@ -215,6 +215,13 @@ async fn result_link_wrapper_pattern() {
         body.contains(r#"hx-headers='{"X-Oxe-Client":"ui"}'"#),
         "wrapper should send X-Oxe-Client: ui"
     );
+    // The beacon payload is JSON in hx-vals; form-flattening extensions like
+    // json-enc stringify scalars, so `position` may arrive as "0" — ClickRow
+    // tolerates both (covered by a core deserialization test).
+    assert!(
+        body.contains(r#"hx-vals="{"#) || body.contains("hx-vals=\"{&quot;"),
+        "hx-vals should carry the JSON beacon payload"
+    );
     assert!(
         body.contains(r#"target="_blank""#),
         "result link should open in a new tab"
@@ -302,4 +309,34 @@ async fn click_beacon_records_ui_client() {
         .expect("history");
     let clicked = history.iter().any(|h| matches!(h, oxe_core::HistoryItem::Click(c) if c.url.as_str() == "https://example.com/replay-result" && c.position == 3 && c.client == ClientKind::Ui));
     assert!(clicked, "click should be persisted with client=ui");
+}
+
+/// The real beacon body as the browser sends it: `hx-vals` passes through
+/// htmx's parameter flattening (all values become strings) before `json-enc`
+/// re-serializes, so `position` arrives as `"3"` not `3`. Regression test —
+/// this exact shape previously got a 400 from the wire.
+#[tokio::test]
+async fn click_beacon_accepts_stringified_scalars() {
+    let (app, state, _tmp) = app();
+    let request = Request::builder()
+        .method(Method::POST)
+        .uri("/api/click")
+        .header("Content-Type", "application/json")
+        .header("X-Oxe-Client", "ui")
+        .body(Body::from(
+            r#"{"position":"3","url":"https://example.com/stringified"}"#,
+        ))
+        .unwrap();
+    let resp = app.clone().oneshot(request).await.expect("response");
+    assert_eq!(resp.status(), StatusCode::NO_CONTENT);
+
+    let history = state
+        .store()
+        .list_history(&HistoryFilter::default())
+        .await
+        .expect("history");
+    let clicked = history
+        .iter()
+        .any(|h| matches!(h, oxe_core::HistoryItem::Click(c) if c.position == 3));
+    assert!(clicked, "stringified position should deserialize to 3");
 }
