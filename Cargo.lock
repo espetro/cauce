@@ -465,9 +465,12 @@ name = "oxe-engines"
 version = "0.0.0"
 dependencies = [
  "async-trait",
+ "chrono",
  "oxe-core",
  "serde",
  "serde_json",
+ "sha2",
+ "thiserror",
  "tokio",
  "tracing",
  "url",
