@@ -6,6 +6,7 @@
 
 pub mod config;
 pub mod engine;
+#[cfg(feature = "mcp")]
 pub mod mcp;
 pub mod record;
 pub mod serve;

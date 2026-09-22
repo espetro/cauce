@@ -138,6 +138,9 @@ async fn serve_async(opts: ServeOpts, cfg: Config, host: String) -> i32 {
     let evict = spawn_eviction_task(store.clone());
 
     let port = opts.port.unwrap_or(cfg.server.port);
+    if !opts.headless && !cfg!(feature = "ui") {
+        tracing::warn!("binary built without the `ui` feature; no pages will be served");
+    }
     let state = AppState::new(pipeline.clone(), store, cfg);
     let app = oxe_server::build_router_opts(
         state,
