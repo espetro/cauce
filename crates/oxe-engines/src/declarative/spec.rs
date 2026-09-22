@@ -557,10 +557,11 @@ pub(crate) struct TemplateVars<'a> {
     pub lang: &'a str,
 }
 
-/// `{q}` percent-encodes with the form-urlencoding byte serializer
-/// (space -> `%20`), the numeric names take `{name+N}`/`{name-N}`
-/// arithmetic clamped at 0, `{lang}` is verbatim. `{{` and `}}` are
-/// literal-brace escapes; a lone `}` is copied verbatim.
+/// `{q}` encodes with the form-urlencoding byte serializer (space ->
+/// `+`, the right flavor for query params), the numeric names take
+/// `{name+N}`/`{name-N}` arithmetic clamped at 0, `{lang}` is verbatim.
+/// `{{` and `}}` are literal-brace escapes; a lone `}` is copied
+/// verbatim.
 pub(crate) fn render_template(
     template: &str,
     vars: &TemplateVars<'_>,

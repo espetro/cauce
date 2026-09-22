@@ -1,5 +1,5 @@
-//! `oxe` binary: `serve`, `record`, `trace`, `config` are implemented;
-//! `search`, `engine` and `cache` land in later waves.
+//! `oxe` binary: `serve`, `record`, `engine`, `trace`, `config` are
+//! implemented; `search` and `cache` land in later waves.
 //!
 //! This Source Code Form is subject to the terms of the Mozilla Public
 //! License, v. 2.0. If a copy of the MPL was not distributed with this
