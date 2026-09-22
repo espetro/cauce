@@ -11,12 +11,13 @@
 
 use std::collections::BTreeSet;
 use std::sync::{Arc, OnceLock};
+use std::time::Duration;
 
 use axum::Router;
 use axum::body::{Body, to_bytes};
-use axum::http::{Method, Request, StatusCode};
+use axum::http::{Method, Request, StatusCode, header};
 use oxe_core::config::Config;
-use oxe_core::{SearchPipeline, StoreTuning};
+use oxe_core::{Admission, AdmissionLimits, SearchPipeline, StoreTuning};
 use oxe_engines::{Replay, ReplayOpts};
 use oxe_server::{AppState, ROUTES, RouteKind, build_router, mounted_routes};
 use oxe_store_sqlite::SqliteStore;
@@ -702,4 +703,47 @@ async fn config_get_redaction_and_put_roundtrip() {
     let (status, _, body) = call(&router, request).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_envelope(&body, "invalid_config");
+}
+
+/// W1-07 acceptance: `PipelineError::RateLimited` maps to 429 with a
+/// `Retry-After` header and the `rate_limited` envelope code.
+#[tokio::test]
+async fn search_queue_overflow_returns_429_retry_after() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let store = Arc::new(
+        SqliteStore::open(tmp.path().join("oxe.db"), StoreTuning::default()).expect("store"),
+    );
+    let engine = Arc::new(Replay::new(ReplayOpts {
+        latency_ms: 300,
+        ..ReplayOpts::default()
+    }));
+    let pipeline = Arc::new(
+        SearchPipeline::new(store.clone(), vec![engine.clone()]).with_admission(Admission::new(
+            AdmissionLimits {
+                max_wait: Duration::from_millis(1),
+                max_concurrent_per_engine: 1,
+            },
+        )),
+    );
+    let router = build_router(AppState::new(pipeline, store, Config::default()));
+
+    // Occupy the single engine slot with an in-flight request.
+    let holder = tokio::spawn({
+        let router = router.clone();
+        async move { router.oneshot(req("GET", "/api/search?q=holder")).await }
+    });
+    // `call_count` ticks at the top of `search`: 1 means the permit is held.
+    let deadline = std::time::Instant::now() + Duration::from_secs(2);
+    while engine.call_count() == 0 && std::time::Instant::now() < deadline {
+        tokio::time::sleep(Duration::from_millis(2)).await;
+    }
+    assert_eq!(engine.call_count(), 1, "holder never reached the engine");
+
+    let (status, headers, body) = get(&router, "/api/search?q=overflow").await;
+    assert_eq!(status, StatusCode::TOO_MANY_REQUESTS, "{body}");
+    assert_eq!(headers[header::RETRY_AFTER], "1");
+    assert_envelope(&body, "rate_limited");
+
+    let holder_resp = holder.await.unwrap().expect("holder response");
+    assert_eq!(holder_resp.status(), StatusCode::OK);
 }

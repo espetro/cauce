@@ -106,6 +106,15 @@ pub(crate) async fn search_inner(
         Err(e @ PipelineError::AllEnginesFailed(_)) => {
             Err(ctx.err(StatusCode::BAD_GATEWAY, "upstream_failed", e.to_string()))
         }
+        // Admission overflow with no stale row to serve (W1-07): 429 +
+        // `Retry-After`. W1-08 maps the same variant for MCP.
+        Err(PipelineError::RateLimited { retry_after_s }) => Err(ctx
+            .err(
+                StatusCode::TOO_MANY_REQUESTS,
+                "rate_limited",
+                format!("admission queue saturated; retry after {retry_after_s}s"),
+            )
+            .with_retry_after(retry_after_s)),
     }
 }
 
