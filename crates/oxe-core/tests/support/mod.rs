@@ -76,6 +76,7 @@ pub struct StubStore {
     pub puts: Mutex<Vec<(String, Duration)>>,
     pub logs: Mutex<Vec<SearchLogRow>>,
     pub fail_get: AtomicBool,
+    pub fail_lexical: AtomicBool,
 }
 
 #[async_trait]
@@ -96,6 +97,9 @@ impl Store for StubStore {
     /// pipeline's own gate decides acceptance, so a permissive candidate
     /// list is what the tier-2 tests want.
     async fn get_lexical(&self, q: &str, limit: u8) -> Result<Vec<CachedSearch>, StoreError> {
+        if self.fail_lexical.load(Ordering::SeqCst) {
+            return Err(StoreError::Backend("injected lexical failure".to_string()));
+        }
         let want: HashSet<String> = q.split_whitespace().map(|t| t.to_lowercase()).collect();
         let mut rows: Vec<CachedSearch> = self
             .entries

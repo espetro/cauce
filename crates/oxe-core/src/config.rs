@@ -104,6 +104,9 @@ pub enum ConfigError {
     /// `OXE_ENGINES` named an engine with no configured or built-in entry.
     #[error("OXE_ENGINES names unknown engine {0:?}")]
     UnknownEngine(String),
+    /// A field value outside its allowed range (semantic, post-schema).
+    #[error("{path}: {msg}")]
+    InvalidValue { path: String, msg: String },
     /// An `[[engines]]` entry is inconsistent (e.g. `kind = "exec"` without
     /// a `command`).
     #[error("invalid engine entry {id:?}: {msg}")]
@@ -272,7 +275,8 @@ pub struct LexicalConfig {
     /// Master switch for the tier-2 lookup.
     #[serde(default = "default_true")]
     pub enabled: bool,
-    /// Minimum Jaccard token similarity to accept a hit (`0.0..=1.0`).
+    /// Minimum Jaccard token similarity to accept a hit. Must be finite
+    /// and in `(0.0, 1.0]`; `Config::load` rejects anything else.
     #[serde(default = "default_lexical_threshold")]
     pub threshold: f64,
 }
@@ -636,6 +640,18 @@ impl Config {
         }
 
         let mut cfg: Config = merged.try_into().map_err(ConfigError::Invalid)?;
+
+        // `cache.lexical.threshold` gates a serve decision: reject
+        // non-finite and out-of-`(0.0, 1.0]` values rather than silently
+        // voiding the Jaccard gate (`nan` would make `score < threshold`
+        // always false, serving any same-params FTS candidate).
+        let threshold = cfg.cache.lexical.threshold;
+        if !threshold.is_finite() || threshold <= 0.0 || threshold > 1.0 {
+            return Err(ConfigError::InvalidValue {
+                path: "cache.lexical.threshold".to_string(),
+                msg: format!("expected a finite value in (0.0, 1.0], got {threshold}"),
+            });
+        }
 
         // Built-ins fill in entries the file did not define.
         for builtin in builtin_engines() {
@@ -1150,6 +1166,36 @@ mod tests {
             Config::load_with(&env),
             Err(ConfigError::Invalid(_))
         ));
+    }
+
+    /// `threshold` gates a serve decision: non-finite and out-of-
+    /// `(0.0, 1.0]` values are rejected at load rather than silently
+    /// widening tier 2 (`nan` would accept every same-params candidate).
+    #[test]
+    fn lexical_threshold_out_of_range_is_rejected() {
+        let (tmp, env) = sandbox(&[]);
+        for value in ["nan", "-nan", "inf", "0.0", "-0.5", "1.5"] {
+            write_config(
+                &tmp.path().join("cfg"),
+                &format!("[cache.lexical]\nthreshold = {value}\n"),
+            );
+            assert!(
+                matches!(
+                    Config::load_with(&env),
+                    Err(ConfigError::InvalidValue { .. })
+                ),
+                "threshold = {value} must be rejected"
+            );
+        }
+        // Boundaries: 1.0 is the inclusive upper bound.
+        write_config(
+            &tmp.path().join("cfg"),
+            "[cache.lexical]\nthreshold = 1.0\n",
+        );
+        assert_eq!(
+            Config::load_with(&env).unwrap().cache.lexical.threshold,
+            1.0
+        );
     }
 
     #[test]

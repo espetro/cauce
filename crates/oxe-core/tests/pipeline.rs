@@ -537,6 +537,27 @@ async fn tier2_skips_expired_candidates() {
     assert_eq!(engine.call_count(), 2);
 }
 
+/// A `get_lexical` failure degrades to a miss, same as tier 1: the warn
+/// arm logs and the request fans out to the engines.
+#[tokio::test]
+async fn lexical_lookup_failure_is_a_miss() {
+    let dir = tempfile::tempdir().unwrap();
+    let engine = Arc::new(replay_at(dir.path(), |_| {}));
+    let store = Arc::new(StubStore::default());
+    let pipe = SearchPipeline::new(store.clone(), vec![engine.clone()]);
+
+    pipe.search(&req("tanstack router docs")).await.unwrap();
+    store.fail_lexical.store(true, Ordering::SeqCst);
+
+    let resp = pipe.search(&req("docs tanstack router")).await.unwrap();
+    assert!(matches!(resp.meta.source, Source::Network));
+    assert_eq!(engine.call_count(), 2);
+    assert_eq!(
+        store.logs.lock().unwrap().last().unwrap().source,
+        LogSource::Network
+    );
+}
+
 /// A `get_exact` failure degrades to a miss instead of an error.
 #[tokio::test]
 async fn cache_lookup_failure_is_a_miss() {
