@@ -10,11 +10,13 @@
 //! License, v. 2.0. If a copy of the MPL was not distributed with this
 //! file, You can obtain one at <https://mozilla.org/MPL/2.0/>.
 
+mod admission;
 mod cache;
 pub mod config;
 #[cfg(feature = "conformance")]
 pub mod conformance;
 mod engine;
+mod health;
 pub mod http;
 mod normalize;
 mod pipeline;
@@ -22,12 +24,17 @@ mod request;
 mod response;
 mod store;
 
+pub use admission::{Admission, AdmissionLimits, FlightResult};
 pub use cache::{CacheKey, CachedSearch, normalize_query};
 pub use config::{
-    AiConfig, CacheConfig, Config, ConfigError, Dirs, EgressConfig, EngineEntry, EngineKind,
-    LexicalConfig, LogsConfig, MetaConfig, Resources, SearchConfig, ServerConfig,
+    AdmissionConfig, AiConfig, AuthConfig, CacheConfig, Config, ConfigError, Dirs, EgressConfig,
+    EngineEntry, EngineKind, LexicalConfig, LogsConfig, MetaConfig, Resources, SearchConfig,
+    ServerConfig, is_loopback_host,
 };
 pub use engine::{Engine, EngineError, EngineId, Tier};
+pub use health::{
+    EWMA_ALPHA, EngineHealth, Gate, HealthPolicy, HealthTracker, PERSIST_DEBOUNCE, ProbeGuard,
+};
 pub use normalize::normalize_url;
 pub use pipeline::{
     DEFAULT_DEADLINE, DEFAULT_TTL, DEFAULT_TTL_CAP, PipelineError, SearchOpts, SearchPipeline,
