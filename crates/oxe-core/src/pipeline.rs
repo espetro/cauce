@@ -1,6 +1,6 @@
-//! `SearchPipeline` v0 (W0-08, parent plan section 4.4 minus hedging,
-//! breakers and the tier-3 lookup, which land in W1/W3) plus W1-07
-//! admission control and the W1-10 tier-2 lexical lookup.
+//! `SearchPipeline` v0 (W0-08, parent plan section 4.4 minus hedging
+//! and the tier-3 lookup, which land in W3) plus the W1-06 breaker
+//! gate, W1-07 admission control and the W1-10 tier-2 lexical lookup.
 //!
 //! Request flow for [`SearchPipeline::search`] /
 //! [`SearchPipeline::search_opts`]:
@@ -35,7 +35,10 @@
 //!    `tokio::time::timeout(deadline)`. Engines cut off at the deadline
 //!    report `EngineStatus::Failed(EngineError::Timeout)` and set
 //!    `meta.deadline_hit`. `req.engines = Some(ids)` pins the fan-out to
-//!    the configured engines whose ids are in the set.
+//!    the configured engines whose ids are in the set. The breaker gate
+//!    ([`HealthTracker`]) skips `Open` engines and lets one probe through
+//!    for `HalfOpen`; every outcome updates EWMA/failures and persists
+//!    through `Store::put_health` (transitions urgent, rest debounced 1/s).
 //! 5. Merge: dedupe by [`normalize_url`], RRF `k = 60` summed across
 //!    engines (`score = sum 1/(60 + rank)`, rank 1-based per engine),
 //!    stable ordering by first-seen position; the occurrence with the
@@ -82,12 +85,13 @@ use crate::admission::{Admission, FlightResult, Lead};
 use crate::cache::{CacheKey, CachedSearch, lexical_tokens, normalize_query, token_jaccard};
 use crate::config::LexicalConfig;
 use crate::engine::{Engine, EngineError, EngineId, Tier};
+use crate::health::{Gate, HealthPolicy, HealthTracker};
 use crate::normalize::normalize_url;
 use crate::request::SearchRequest;
 use crate::response::{
     EngineReport, EngineStatus, SearchMeta, SearchResponse, SearchResult, Source,
 };
-use crate::store::{LogSource, SearchLogRow, Store};
+use crate::store::{LogSource, SearchLogRow, Store, StoreError};
 
 /// Hard fan-out deadline when the caller does not configure one
 /// (`search.deadline_ms` in config once W0-11 lands).
@@ -146,6 +150,11 @@ pub enum PipelineError {
         /// Seconds the client should wait before retrying.
         retry_after_s: u64,
     },
+    /// Every engine that matched the request (pin applied) was skipped by
+    /// an open circuit breaker — nothing was called. W1-06; the handler
+    /// maps it to 503 `breaker_open` regardless of pinning.
+    #[error("engines skipped by open breaker: {}", render_ids(.0))]
+    BreakerOpen(Vec<EngineId>),
 }
 
 impl PipelineError {
@@ -153,9 +162,16 @@ impl PipelineError {
     pub fn failures(&self) -> &[(EngineId, EngineError)] {
         match self {
             Self::AllEnginesFailed(failures) => failures,
-            Self::NoEngines | Self::RateLimited { .. } => &[],
+            Self::NoEngines | Self::RateLimited { .. } | Self::BreakerOpen(_) => &[],
         }
     }
+}
+
+fn render_ids(ids: &[EngineId]) -> String {
+    ids.iter()
+        .map(|id| id.as_str())
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 fn render_failures(failures: &[(EngineId, EngineError)]) -> String {
@@ -189,6 +205,9 @@ struct EngineOutcome {
 pub struct SearchPipeline {
     store: Arc<dyn Store>,
     engines: Vec<Arc<dyn Engine>>,
+    /// Per-engine EWMA/breaker state (W1-06): consulted before fan-out and
+    /// updated from every outcome.
+    health: Arc<HealthTracker>,
     deadline: Duration,
     default_ttl: Duration,
     ttl_cap: Duration,
@@ -204,9 +223,14 @@ impl SearchPipeline {
     /// A pipeline with the documented defaults (deadline 3000 ms, TTL
     /// 3600 s capped at 86400 s).
     pub fn new(store: Arc<dyn Store>, engines: Vec<Arc<dyn Engine>>) -> Self {
+        let health = Arc::new(HealthTracker::new(store.clone()));
+        for engine in &engines {
+            health.register(&engine.id());
+        }
         Self {
             store,
             engines,
+            health,
             deadline: DEFAULT_DEADLINE,
             default_ttl: DEFAULT_TTL,
             ttl_cap: DEFAULT_TTL_CAP,
@@ -246,6 +270,32 @@ impl SearchPipeline {
     pub fn with_admission(mut self, admission: Admission) -> Self {
         self.admission = admission;
         self
+    }
+
+    /// Override the breaker policy (breaker windows, timeout threshold).
+    /// Tests shrink the windows instead of sleeping minutes; production
+    /// uses [`HealthPolicy::default`].
+    pub fn with_health_policy(mut self, policy: HealthPolicy) -> Self {
+        let health = Arc::new(HealthTracker::with_policy(self.store.clone(), policy));
+        for engine in &self.engines {
+            health.register(&engine.id());
+        }
+        self.health = health;
+        self
+    }
+
+    /// The live per-engine health tracker (EWMA, breaker state) — also
+    /// what `GET /api/engines` and the reset route operate on, and what
+    /// the W1-09 metrics surface polls via `snapshot()`.
+    pub fn health(&self) -> &Arc<HealthTracker> {
+        &self.health
+    }
+
+    /// Load persisted `engine_health` rows into the tracker (startup, plan
+    /// 4.4.6: a restart must not hammer a blocked engine). Returns the
+    /// number of rows applied.
+    pub async fn load_health(&self) -> Result<usize, StoreError> {
+        self.health.load().await
     }
 
     /// Number of configured engines. `0` means the pipeline is
@@ -338,6 +388,9 @@ impl SearchPipeline {
         }
 
         // ---- fan-out set ---------------------------------------------------
+        // Pin first; the breaker gate (W1-06) runs inside `fetch` so a
+        // claimed half-open probe is always followed by its call — a
+        // tier-2 hit or an admission overflow never consumes the probe.
         let runnable = self.runnable(req);
         // `pipeline.search` is the current span here (via `instrument`).
         tracing::Span::current().record("engines", runnable.len() as u64);
@@ -692,7 +745,34 @@ impl SearchPipeline {
         request_id: Uuid,
         started: Instant,
     ) -> Result<SearchResponse, PipelineError> {
-        let outcomes = self.fan_out(req, runnable, request_id).await;
+        // ---- breaker gate (W1-06) -----------------------------------------
+        // `Open` engines are skipped, `HalfOpen` admits exactly one probe.
+        // Gated here — after the permit wait, immediately before fan-out —
+        // so a claimed probe is always followed by its call: the tier-2 hit
+        // and overflow paths return before this point and never consume the
+        // single probe slot.
+        let mut gated: Vec<Arc<dyn Engine>> = Vec::with_capacity(runnable.len());
+        let mut skipped: Vec<EngineId> = Vec::new();
+        for engine in runnable {
+            match self.health.admission(&engine.id(), request_id) {
+                Gate::Call | Gate::Probe => gated.push(engine.clone()),
+                Gate::Skip => skipped.push(engine.id()),
+            }
+        }
+        if !skipped.is_empty() {
+            info!(
+                skipped = render_ids(&skipped),
+                "engines skipped by open breaker"
+            );
+        }
+        if gated.is_empty() {
+            // Nothing ran; `shared_response` still writes this request's
+            // search_log row on the error path.
+            return Err(PipelineError::BreakerOpen(skipped));
+        }
+        let runnable = gated;
+
+        let outcomes = self.fan_out(req, &runnable, request_id).await;
 
         // ---- per-engine reports ------------------------------------------
         let mut reports: Vec<(usize, EngineReport)> = Vec::with_capacity(runnable.len());
@@ -772,6 +852,12 @@ impl SearchPipeline {
                 continue;
             }
             let id = engine.id();
+            self.health.record_err(
+                &id,
+                started.elapsed(),
+                &EngineError::Transport("engine task failed".to_string()),
+                request_id,
+            );
             reports.push((
                 idx,
                 EngineReport {
@@ -795,6 +881,12 @@ impl SearchPipeline {
         let engines_used: Vec<EngineReport> = reports.into_iter().map(|(_, r)| r).collect();
         let failures: Vec<(EngineId, EngineError)> =
             failures.into_iter().map(|(_, id, e)| (id, e)).collect();
+
+        // Persist health: breaker transitions flush urgently, routine
+        // EWMA/failure updates are debounced to 1/s (settled input).
+        if let Err(e) = self.health.flush_due().await {
+            warn!(error = %e, "engine health persist failed");
+        }
 
         if ok_results.is_empty() {
             warn!(failures = failures.len(), "all engines failed");
@@ -1023,24 +1115,42 @@ impl SearchPipeline {
             // A second handle on the same span for post-hoc `record`s;
             // `instrument` consumes the other.
             let recorder = span.clone();
+            // Health is recorded inside the task, the moment the call
+            // resolves — recording it later in `run` would leave a gap
+            // where a completed-but-unrecorded probe has already released
+            // the half-open gate. The guard releases that gate if the
+            // task is aborted instead (request cancelled, JoinSet
+            // dropped); for non-probe engines the drop is a no-op.
+            let health = self.health.clone();
             set.spawn(
                 async move {
+                    let _probe_guard = health.probe_guard(&id);
                     let t0 = Instant::now();
                     let outcome =
                         tokio::time::timeout(deadline, engine.search(&req2, deadline)).await;
                     let latency = t0.elapsed();
                     match &outcome {
                         Ok(Ok(r)) => {
+                            health.record_ok(&id, latency, request_id);
                             recorder.record("status", "ok");
                             recorder.record("results", r.len() as u64);
                             debug!(results = r.len(), "engine done");
                         }
+                        // `NoResults` is an answer, not a failure.
+                        Ok(Err(e @ EngineError::NoResults)) => {
+                            health.record_ok(&id, latency, request_id);
+                            recorder.record("status", "error");
+                            recorder.record("results", 0u64);
+                            debug!(error = %e, "engine failed");
+                        }
                         Ok(Err(e)) => {
+                            health.record_err(&id, latency, e, request_id);
                             recorder.record("status", "error");
                             recorder.record("results", 0u64);
                             debug!(error = %e, "engine failed");
                         }
                         Err(_) => {
+                            health.record_err(&id, latency, &EngineError::Timeout, request_id);
                             recorder.record("status", "timeout");
                             recorder.record("results", 0u64);
                             debug!("engine deadline exceeded");
