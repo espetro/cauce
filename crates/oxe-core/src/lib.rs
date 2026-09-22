@@ -9,6 +9,7 @@
 //! file, You can obtain one at <https://mozilla.org/MPL/2.0/>.
 
 mod cache;
+pub mod config;
 #[cfg(feature = "conformance")]
 pub mod conformance;
 mod engine;
@@ -18,6 +19,10 @@ mod response;
 mod store;
 
 pub use cache::{CacheKey, CachedSearch, normalize_query};
+pub use config::{
+    AiConfig, Config, ConfigError, Dirs, EngineEntry, EngineKind, LogsConfig, MetaConfig,
+    Resources, SearchConfig, ServerConfig,
+};
 pub use engine::{Engine, EngineError, EngineId, Tier};
 pub use normalize::normalize_url;
 pub use request::{ClientKind, SafeSearch, SearchRequest, TimeRange};
