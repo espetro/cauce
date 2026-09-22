@@ -54,3 +54,13 @@ rather than editing it away.
 - **Providers: Bing + Brave HTML natively, `ddgs` bridged through the `exec` engine, `replay`
   as the deterministic engine.** DuckDuckGo HTML fails 4/5 queries from a residential IP and
   cannot page; Bing and Brave were the reliable ones measured on 2026-09-21. — 2026-09-21
+- **`Source::Cache.ttl_s` is the remaining TTL** (seconds until expiry at serve time), not the
+  TTL the entry was written with; the `response.rs` doc comment was stale and is corrected in
+  W0-08. Matches the W0-10 UI line ("ttl 58 min"). — 2026-09-22
+- **`EngineError::NoResults` is an answer, not a failure.** A fan-out where at least one
+  engine answered (`Ok` or `NoResults`) yields a 200-shaped `SearchResponse`, possibly empty;
+  `AllEnginesFailed` requires every engine to error/timeout/panic. Kills the v2 "page 2 always
+  502" defect; `engines_used` still reports `Failed(NoResults)` for honesty. — 2026-09-22
+- **Store errors degrade, never fail a search.** `get_exact` failure → warn + treat as miss;
+  `put` failure → warn + serve; `log_search` failure → warn only. `/health` (W0-09) owns
+  store-failure surfacing. — 2026-09-22

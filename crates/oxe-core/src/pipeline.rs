@@ -33,8 +33,9 @@
 //! `RequestId::as_uuid()` here.
 //!
 //! Tracing: `pipeline.search` is the root span (`request_id`, `query`,
-//! `page`, `client`, `engines`). Children: `cache_lookup` (`tier`, `hit`,
-//! `age_s`), one `engine` span per fanned-out engine (`engine`, `tier`,
+//! `page`, `client`, `engines` = runnable count once the pin is applied).
+//! Children: `cache_lookup` (`tier`, `hit`, `age_s`), one `engine` span
+//! per fanned-out engine (`engine`, `tier`,
 //! `status`, `results`; wall duration lands in `busy_ms` on close),
 //! `merge` (`in`, `out`, `deadline_hit`), `persist` (`key`, `ttl_s`).
 //! The JSONL layer hoists `request_id` from the enclosing scope, so
@@ -96,6 +97,10 @@ pub struct SearchOpts {
 pub enum PipelineError {
     /// The engine pin in `req.engines` matched no configured engine, or
     /// the pipeline was built with an empty engine list.
+    ///
+    /// W0-09 maps the two cases differently: a bad pin is a 400, an
+    /// unconfigured pipeline a 503. Call [`SearchPipeline::configured_engines`]
+    /// to distinguish (`0` means no engines configured).
     #[error("no engines available for this request")]
     NoEngines,
     /// Every engine that ran returned an error. The response is not
@@ -136,7 +141,8 @@ struct EngineOutcome {
 /// hard deadline, RRF merge, persist, unconditional `search_log`.
 ///
 /// Build once at startup and share by reference; all fields are immutable
-/// after construction.
+/// after construction. `search*` must be called inside a tokio runtime;
+/// `JoinSet::spawn` panics outside one.
 pub struct SearchPipeline {
     store: Arc<dyn Store>,
     engines: Vec<Arc<dyn Engine>>,
@@ -180,6 +186,13 @@ impl SearchPipeline {
         self
     }
 
+    /// Number of configured engines. `0` means the pipeline is
+    /// unconfigured: W0-09 maps `NoEngines` + `0` to 503 and
+    /// `NoEngines` + `> 0` (pin matched nothing) to 400.
+    pub fn configured_engines(&self) -> usize {
+        self.engines.len()
+    }
+
     /// Search with a fresh UUIDv7 request id.
     pub async fn search(&self, req: &SearchRequest) -> Result<SearchResponse, PipelineError> {
         self.search_opts(req, SearchOpts::default()).await
@@ -215,7 +228,8 @@ impl SearchPipeline {
             query = %normalize_query(&req.q),
             page = req.page,
             client = %req.client,
-            engines = self.engines.len(),
+            // Runnable count (post-pin) is recorded in `run` once known.
+            engines = tracing::field::Empty,
         );
         self.run(req, opts.ttl, request_id).instrument(span).await
     }
@@ -261,6 +275,8 @@ impl SearchPipeline {
 
         // ---- fan-out ----------------------------------------------------
         let runnable = self.runnable(req);
+        // `pipeline.search` is the current span here (via `instrument`).
+        tracing::Span::current().record("engines", runnable.len() as u64);
         if runnable.is_empty() {
             warn!(pinned = ?req.engines, "no engines to run");
             self.write_log(
@@ -284,7 +300,7 @@ impl SearchPipeline {
         // ---- per-engine reports ------------------------------------------
         let mut reports: Vec<(usize, EngineReport)> = Vec::with_capacity(runnable.len());
         let mut ok_results: Vec<(usize, Vec<SearchResult>)> = Vec::new();
-        let mut failures: Vec<(EngineId, EngineError)> = Vec::new();
+        let mut failures: Vec<(usize, EngineId, EngineError)> = Vec::new();
         let mut deadline_hit = false;
         let mut answered = vec![false; runnable.len()];
 
@@ -305,6 +321,26 @@ impl SearchPipeline {
                     ));
                     ok_results.push((idx, results));
                 }
+                // `NoResults` is an answer, not a failure: the engine
+                // responded and there is simply no page to serve (the exec
+                // protocol's first-class code; `replay` uses it for pages
+                // beyond `page_limit`). It counts toward "an engine
+                // answered" so an all-`NoResults` fan-out is a 200-shaped
+                // empty response, not `AllEnginesFailed` (v2's "page 2
+                // always 502" defect). The report stays `Failed(NoResults)`
+                // for honesty.
+                Ok(Err(EngineError::NoResults)) => {
+                    reports.push((
+                        idx,
+                        EngineReport {
+                            engine: outcome.id.clone(),
+                            status: EngineStatus::Failed(EngineError::NoResults),
+                            latency_ms,
+                            result_count: 0,
+                        },
+                    ));
+                    ok_results.push((idx, Vec::new()));
+                }
                 Ok(Err(err)) => {
                     reports.push((
                         idx,
@@ -315,7 +351,7 @@ impl SearchPipeline {
                             result_count: 0,
                         },
                     ));
-                    failures.push((outcome.id, err));
+                    failures.push((idx, outcome.id, err));
                 }
                 Err(_elapsed) => {
                     deadline_hit = true;
@@ -328,7 +364,7 @@ impl SearchPipeline {
                             result_count: 0,
                         },
                     ));
-                    failures.push((outcome.id, EngineError::Timeout));
+                    failures.push((idx, outcome.id, EngineError::Timeout));
                 }
             }
         }
@@ -350,10 +386,18 @@ impl SearchPipeline {
                     result_count: 0,
                 },
             ));
-            failures.push((id, EngineError::Transport("engine task failed".to_string())));
+            failures.push((
+                idx,
+                id,
+                EngineError::Transport("engine task failed".to_string()),
+            ));
         }
+        // Fan-out order, not completion order: deterministic on replay.
         reports.sort_by_key(|(idx, _)| *idx);
+        failures.sort_by_key(|(idx, _, _)| *idx);
         let engines_used: Vec<EngineReport> = reports.into_iter().map(|(_, r)| r).collect();
+        let failures: Vec<(EngineId, EngineError)> =
+            failures.into_iter().map(|(_, id, e)| (id, e)).collect();
 
         if ok_results.is_empty() {
             warn!(failures = failures.len(), "all engines failed");
@@ -407,19 +451,24 @@ impl SearchPipeline {
 
         // ---- persist + unconditional log -----------------------------------
         let ttl = ttl_override.unwrap_or(self.default_ttl).min(self.ttl_cap);
-        {
-            let span = info_span!(
-                "persist",
-                request_id = %request_id,
-                key = %key,
-                ttl_s = ttl.as_secs(),
-            );
-            let _e = span.enter();
-            match self.store.put(&key, &resp, ttl).await {
-                Ok(()) => debug!("response cached"),
-                Err(e) => warn!(error = %e, "cache write failed; serving response anyway"),
-            }
-        }
+        let persist = info_span!(
+            "persist",
+            request_id = %request_id,
+            key = %key,
+            ttl_s = ttl.as_secs(),
+        );
+        // Instrument the awaited future; an `Entered` guard held across
+        // `.await` would leak the span onto unrelated tasks under a
+        // multi-threaded runtime.
+        let put = self
+            .store
+            .put(&key, &resp, ttl)
+            .instrument(persist.clone())
+            .await;
+        persist.in_scope(|| match put {
+            Ok(()) => debug!("response cached"),
+            Err(e) => warn!(error = %e, "cache write failed; serving response anyway"),
+        });
         self.write_log(
             req,
             &key,
@@ -468,8 +517,11 @@ impl SearchPipeline {
             hit = tracing::field::Empty,
             age_s = tracing::field::Empty,
         );
-        let _e = span.enter();
-        match self.store.get_exact(key).await {
+        // Instrument the awaited future; an `Entered` guard held across
+        // `.await` would leak the span onto unrelated tasks under a
+        // multi-threaded runtime.
+        let result = self.store.get_exact(key).instrument(span.clone()).await;
+        span.in_scope(|| match result {
             Ok(hit) => {
                 span.record("hit", hit.is_some());
                 if let Some(entry) = &hit {
@@ -489,7 +541,7 @@ impl SearchPipeline {
                 warn!(error = %e, "cache lookup failed; treating as miss");
                 None
             }
-        }
+        })
     }
 
     /// Parallel fan-out with a hard deadline per engine. Returns one
@@ -603,7 +655,7 @@ impl SearchPipeline {
     }
 
     /// The unconditional `search_log` write (section 5): called on every
-    /// path — cache hit, network, empty and failure. A write failure is
+    /// path: cache hit, network, empty and failure. A write failure is
     /// logged and swallowed: a logging outage must not break search.
     async fn write_log(
         &self,
@@ -658,6 +710,8 @@ fn merge_rrf<'a>(lists: impl Iterator<Item = &'a [SearchResult]>) -> Vec<SearchR
     for results in lists {
         for (rank0, r) in results.iter().enumerate() {
             let contrib = 1.0 / (RRF_K + rank0 as f32 + 1.0);
+            // Dedupe on the normalized form but emit the engine's raw URL:
+            // SearXNG-parity behaviour, the displayed link is untouched.
             let norm = normalize_url(&r.url);
             match map.entry(norm.clone()) {
                 std::collections::hash_map::Entry::Vacant(v) => {

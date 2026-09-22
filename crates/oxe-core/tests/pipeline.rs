@@ -1,5 +1,5 @@
 //! Acceptance tests for `SearchPipeline` (W0-08): deadline fan-out,
-//! unconditional `search_log`, RRF merge, failure and TTL semantics — all
+//! unconditional `search_log`, RRF merge, failure and TTL semantics, all
 //! driven on `Replay` engines and a recording stub `Store`.
 //!
 //! Integration test rather than a unit module deliberately: `oxe-engines`
@@ -294,6 +294,83 @@ async fn request_id_ttl_override_and_engine_pin() {
     let last = store.logs.lock().unwrap().last().unwrap().clone();
     assert_eq!(last.source, LogSource::Network);
     assert!(last.engines.is_empty());
+}
+
+/// `NoResults` is an answer, not a failure: an all-`NoResults` fan-out
+/// (replay `page_limit` exceeded) is a 200-shaped empty response that is
+/// persisted and logged like any network result, not `AllEnginesFailed`.
+#[tokio::test]
+async fn all_no_results_is_empty_ok_response() {
+    let dir = tempfile::tempdir().unwrap();
+    let a = replay_at(dir.path(), |o| o.page_limit = Some(0));
+    let b = replay_at(dir.path(), |o| o.page_limit = Some(0));
+    let store = Arc::new(StubStore::default());
+    let pipe = SearchPipeline::new(store.clone(), vec![Arc::new(a), Arc::new(b)]);
+
+    let resp = pipe.search(&req("past the last page")).await.unwrap();
+    assert!(resp.results.is_empty());
+    assert!(matches!(resp.meta.source, Source::Network));
+    assert!(!resp.meta.deadline_hit);
+    assert_eq!(resp.meta.engines_used.len(), 2);
+    assert!(
+        resp.meta
+            .engines_used
+            .iter()
+            .all(|r| r.status == EngineStatus::Failed(EngineError::NoResults))
+    );
+
+    assert_eq!(store.puts.lock().unwrap().len(), 1, "empty 200 is cached");
+    let logs = store.logs.lock().unwrap();
+    assert_eq!(logs.len(), 1);
+    assert_eq!(logs[0].source, LogSource::Network);
+    assert_eq!(logs[0].result_count, 0);
+    assert_eq!(logs[0].engines.len(), 2);
+}
+
+/// `page` beyond a replay's `page_limit` → `NoResults` → empty 200-path.
+#[tokio::test]
+async fn page_beyond_limit_is_empty_ok_response() {
+    let dir = tempfile::tempdir().unwrap();
+    let engine = replay_at(dir.path(), |o| o.page_limit = Some(1));
+    let store = Arc::new(StubStore::default());
+    let pipe = SearchPipeline::new(store, vec![Arc::new(engine)]);
+
+    let mut request = req("paging");
+    assert_eq!(pipe.search(&request).await.unwrap().results.len(), 10);
+    request.page = 2;
+    let resp = pipe.search(&request).await.unwrap();
+    assert!(resp.results.is_empty());
+    assert!(matches!(resp.meta.source, Source::Network));
+    assert_eq!(
+        resp.meta.engines_used[0].status,
+        EngineStatus::Failed(EngineError::NoResults)
+    );
+}
+
+/// Documented semantic: at least one engine answered (`Ok` or
+/// `NoResults`) → success response. `NoResults` + a deadline timeout is
+/// an empty 200 with `deadline_hit`, not `AllEnginesFailed`.
+#[tokio::test]
+async fn no_results_plus_timeout_is_empty_ok_response() {
+    let dir = tempfile::tempdir().unwrap();
+    let no_results = replay_at(dir.path(), |o| o.page_limit = Some(0));
+    let slow = replay_at(dir.path(), |o| o.latency_ms = 2_000);
+    let store = Arc::new(StubStore::default());
+    let pipe = SearchPipeline::new(store.clone(), vec![Arc::new(no_results), Arc::new(slow)])
+        .with_deadline(Duration::from_millis(300));
+
+    let resp = pipe.search(&req("mixed answers")).await.unwrap();
+    assert!(resp.results.is_empty());
+    assert!(resp.meta.deadline_hit);
+    assert_eq!(
+        resp.meta.engines_used[0].status,
+        EngineStatus::Failed(EngineError::NoResults)
+    );
+    assert_eq!(
+        resp.meta.engines_used[1].status,
+        EngineStatus::Failed(EngineError::Timeout)
+    );
+    assert_eq!(store.logs.lock().unwrap().len(), 1);
 }
 
 /// A `get_exact` failure degrades to a miss instead of an error.
