@@ -117,12 +117,11 @@ pub fn build_router(state: AppState) -> Router {
 // keep earlier-wave routes in the must-implement set, so `==` would be wrong.
 #[allow(clippy::absurd_extreme_comparisons)]
 pub fn build_router_opts(state: AppState, opts: RouterOptions) -> Router {
-    // Hard check: every wave-0 row that is not feature-gated must be
-    // implemented; a missing arm is a build-time bug, not a runtime 404.
-    for spec in ROUTES
-        .iter()
-        .filter(|s| s.wave <= CURRENT_WAVE && s.requires.is_none())
-    {
+    // Hard check: every wave-0 row must be implemented — `requires` is a
+    // runtime mount gate (RouterOptions), not a compile-time strip, so a
+    // gated row like `GET /` still needs a handler arm. A missing arm is a
+    // build-time bug, not a runtime 404.
+    for spec in ROUTES.iter().filter(|s| s.wave <= CURRENT_WAVE) {
         assert!(
             handler_for(spec).is_some(),
             "ROUTES: {} {} is wave-{} but has no handler",

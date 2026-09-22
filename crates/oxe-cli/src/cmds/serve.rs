@@ -11,14 +11,12 @@
 //! License, v. 2.0. If a copy of the MPL was not distributed with this
 //! file, You can obtain one at <https://mozilla.org/MPL/2.0/>.
 
-use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-use oxe_core::config::{Config, EngineEntry, EngineKind, Resources};
-use oxe_core::{Engine, SearchPipeline, Tier};
-use oxe_engines::exec::{ExecEngine, ExecSpec};
-use oxe_engines::replay::Replay;
+use oxe_core::SearchPipeline;
+use oxe_core::config::{Config, Resources};
+use oxe_engines::factory::build_engines;
 use oxe_server::{AppState, RouterOptions, observability};
 use oxe_store_sqlite::{SqliteStore, spawn_eviction_task};
 
@@ -29,8 +27,8 @@ struct ServeOpts {
     bind: Option<String>,
     /// `--port` override; else `server.port` (default 4479).
     port: Option<u16>,
-    /// `--headless`: API + MCP only (wave 0 has no pages yet, so this is
-    /// currently equivalent to a full serve).
+    /// `--headless`: API only; the `requires = "ui"` routes (`/`, `/search`
+    /// HTMX pages) stay unmounted.
     headless: bool,
 }
 
@@ -128,73 +126,6 @@ async fn serve_async(opts: ServeOpts, cfg: Config) -> i32 {
         Err(e) => {
             tracing::error!(error = %e, "serve failed");
             1
-        }
-    }
-}
-
-/// Construct the enabled engines (`[[engines]]` entries + `OXE_ENGINES`
-/// pinning, resolved by `Config::load`). Wave 0 knows `replay` and `exec`;
-/// `declarative` lands in W1 and is skipped with a warning.
-fn build_engines(cfg: &Config) -> Vec<Arc<dyn Engine>> {
-    let mut out: Vec<Arc<dyn Engine>> = Vec::new();
-    for entry in cfg.enabled_engines() {
-        match entry.kind {
-            EngineKind::Replay => {
-                if entry.id.as_str() != "replay" {
-                    tracing::warn!(
-                        id = %entry.id,
-                        "replay engines always run as id \"replay\"; a pin on this id will miss"
-                    );
-                }
-                out.push(Arc::new(Replay::from_env()));
-            }
-            EngineKind::Exec => {
-                let Some(command) = &entry.command else {
-                    tracing::warn!(id = %entry.id, "exec engine without command; skipped");
-                    continue;
-                };
-                out.push(Arc::new(ExecEngine::new(ExecSpec {
-                    id: entry.id.clone(),
-                    command: command.clone(),
-                    args: entry.args.clone(),
-                    env: entry
-                        .env
-                        .iter()
-                        .map(|(k, v)| (k.clone(), v.clone()))
-                        .collect(),
-                    cwd: entry
-                        .cwd
-                        .as_ref()
-                        .map(PathBuf::from)
-                        .or_else(|| resolve_exec_cwd(entry)),
-                    page_size: entry.page_size.unwrap_or(10),
-                    tier: entry.tier.unwrap_or(Tier::T2),
-                })));
-            }
-            EngineKind::Declarative => {
-                tracing::warn!(id = %entry.id, "declarative engines land in W1; skipped");
-            }
-        }
-    }
-    out
-}
-
-/// `cwd` for an exec entry without one: when the first arg is a relative
-/// script path (the `ddgs` built-in ships
-/// `sdk/python/oxe_engine_sdk/ddgs_auto.py`), walk up from the process cwd
-/// until the file is found so `oxe serve` also works outside the repo root.
-fn resolve_exec_cwd(entry: &EngineEntry) -> Option<PathBuf> {
-    let script = entry.args.first()?;
-    if Path::new(script).is_absolute() {
-        return None;
-    }
-    let mut dir = std::env::current_dir().ok()?;
-    loop {
-        if dir.join(script).is_file() {
-            return Some(dir);
-        }
-        if !dir.pop() {
-            return None;
         }
     }
 }

@@ -274,39 +274,22 @@ fn default_retention_days() -> u32 {
     7
 }
 
-/// `[ai]`: provider settings. Disabled until wave 4; `api_key` is the
-/// `${env:BIFROST_API_KEY}` template by default and is never resolved into
-/// a written file (templates are preserved on save).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// `[ai]`: provider settings. Disabled until wave 4 and blank by default —
+/// `base_url`/`api_key` are empty strings, not a reference to anyone's
+/// local gateway; point them at an OpenAI-compatible endpoint (e.g. an
+/// `api_key = "${env:...}"` template) to use them.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct AiConfig {
-    /// OpenAI-compatible endpoint (Bifrost locally).
-    #[serde(default = "default_ai_base_url")]
+    /// OpenAI-compatible endpoint.
+    #[serde(default)]
     pub base_url: String,
     /// API key or a `${env:...}`/`${file:...}` template.
-    #[serde(default = "default_ai_api_key")]
+    #[serde(default)]
     pub api_key: String,
     /// Master switch; `false` until W4.
     #[serde(default)]
     pub enabled: bool,
-}
-
-impl Default for AiConfig {
-    fn default() -> Self {
-        Self {
-            base_url: default_ai_base_url(),
-            api_key: default_ai_api_key(),
-            enabled: false,
-        }
-    }
-}
-
-fn default_ai_base_url() -> String {
-    "http://localhost:8317/v1".to_string()
-}
-
-fn default_ai_api_key() -> String {
-    "${env:BIFROST_API_KEY}".to_string()
 }
 
 /// `[config]`: meta settings about the config file itself.
@@ -580,9 +563,10 @@ impl Config {
     pub fn from_raw(raw: &toml::Value, env: &EnvMap) -> Result<Self, ConfigError> {
         let dirs = Dirs::detect_with(env);
 
-        // Resolution base is file + env only, never the defaults: a default
-        // like `api_key = "${env:BIFROST_API_KEY}"` must stay a harmless
-        // literal instead of failing when the variable is unset.
+        // Resolution base is file + env only, never the defaults: serde
+        // defaults are applied at `try_into` below, after interpolation, so
+        // a `${...}` template in a `default = ...` attribute would stay a
+        // harmless literal rather than failing on an unset variable.
         let mut merged = raw.clone();
         for (name, key_path, parse) in ENV_OVERRIDES {
             if let Some(value) = env.get(*name) {
@@ -694,13 +678,6 @@ impl Config {
     /// The raw (pre-interpolation) file layer `save` writes back.
     pub fn raw_tree(&self) -> Option<&toml::Value> {
         self.raw.as_ref()
-    }
-
-    /// Mutable access to the raw tree for `PUT /api/config` (W0-09): edit
-    /// values here, then `save` — templates elsewhere stay untouched.
-    pub fn raw_tree_mut(&mut self) -> &mut toml::Value {
-        self.raw
-            .get_or_insert_with(|| toml::Value::Table(toml::Table::new()))
     }
 
     /// Write the raw template tree to `config_path`, creating the directory
@@ -1057,8 +1034,8 @@ mod tests {
         assert_eq!(cfg.search.ttl_s, 3600);
         assert_eq!(cfg.search.ttl_cap_s, 86400);
         assert_eq!(cfg.logs.retention_days, 7);
-        assert_eq!(cfg.ai.base_url, "http://localhost:8317/v1");
-        assert_eq!(cfg.ai.api_key, "${env:BIFROST_API_KEY}");
+        assert_eq!(cfg.ai.base_url, "");
+        assert_eq!(cfg.ai.api_key, "");
         assert!(!cfg.ai.enabled);
         assert!(cfg.config.interpolation);
     }

@@ -22,6 +22,7 @@ oxe-server = { path = "../oxe-server" }
 oxe-store-sqlite = { path = "../oxe-store-sqlite" }
 tokio = { version = "1", features = ["net", "rt", "rt-multi-thread"] }
 tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["io-util", "macros", "process", "time"] }
