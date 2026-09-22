@@ -1,0 +1,107 @@
+{
+  "query": "tanstack router docs",
+  "page": 1,
+  "status": 200,
+  "results": [
+    {
+      "title": "Overview | TanStack Router Docs",
+      "url": "https://tanstack.com/router/latest/docs/overview",
+      "snippet": "AI/LLM: This documentation page is available in plain markdown format at/router/latest/docs/overview.md ... TanStack Router is a router for building React and Solid applications."
+    },
+    {
+      "title": "Quick Start | TanStack Router Docs",
+      "url": "https://tanstack.com/router/latest/docs/quick-start",
+      "snippet": "TanStack Router supports both file-based and code-based route configurations. You can specify your preference during the CLI setup, or use these commands directly: The file-based approach is the recommended option for most projects. It automatically creates routes based on your file structure, giving you the best mix of performance, simplicity, and developer experience. For more details, see the file-based routing documentation or"
+    },
+    {
+      "title": "TanStack Router",
+      "url": "https://tanstack.com/router/latest",
+      "snippet": "Router is the complete client-first application model. Start preserves that route tree and adds full-document rendering, server functions, server routes, middleware, and deployable server output."
+    },
+    {
+      "title": "Overview | TanStack Router React Docs",
+      "url": "https://tanstack.com/router/latest/docs/framework/react/overview",
+      "snippet": "AI/LLM: This documentation page is available in plain markdown format at/router/latest/docs/framework/react/overview.md ... TanStack Router is a router for building React and Solid applications."
+    },
+    {
+      "title": "Manual Setup | TanStack Router Docs",
+      "url": "https://tanstack.com/router/latest/docs/installation/manual",
+      "snippet": "import { StrictMode } from 'react' import ReactDOM from 'react-dom/client' import { RouterProvider, createRouter } from '@tanstack/react-router' // Import the generated route tree import { routeTree } from './routeTree.gen' // Create a new router instance const router = createRouter({ routeTree }) // Register the router instance for type safety declare module '@tanstack/react-router' { interface Register { router: typeof router } } // Render the app const rootElement = document.getElementById('root')!"
+    },
+    {
+      "title": "Routing Concepts | TanStack Router Docs",
+      "url": "https://tanstack.com/router/latest/docs/framework/react/routing/routing-concepts",
+      "snippet": "AI/LLM: This documentation page is available in plain markdown format at/router/latest/docs/routing/routing-concepts.md ... TanStack Router supports a number of powerful routing concepts that allow you to build complex and dynamic routing systems ..."
+    },
+    {
+      "title": "Creating a Router | TanStack Router Docs",
+      "url": "https://tanstack.com/router/latest/docs/guide/creating-a-router",
+      "snippet": "AI/LLM: This documentation page is available in plain markdown format at/router/latest/docs/guide/creating-a-router.md ... When you're ready to start using your router, you'll need to create a new Router instance. The router instance is the core brains of TanStack Router and is responsible for managing the route tree, matching routes, and coordinating navigations and route transitions."
+    },
+    {
+      "title": "TanStack Router Docs",
+      "url": "https://tanstack.com/router/latest/docs/framework",
+      "snippet": "Router Docs · React · v1LatestSearch... K · RouterMenuMenu · React · v1Latest · Menu · Home · Blog · Frameworks · Contributors · NPM Stats · GitHub · Discord · React · @tanstack/react-routerFull install instructions · Solid · @tanstack/solid-routerFull install instructions ·"
+    },
+    {
+      "title": "Creating a Router | TanStack Router React Docs",
+      "url": "https://tanstack.com/router/latest/docs/framework/react/guide/creating-a-router",
+      "snippet": "AI/LLM: This documentation page is available in plain markdown format at/router/latest/docs/framework/react/guide/creating-a-router.md ... When you're ready to start using your router, you'll need to create a new Router instance. The router instance is the core brains of TanStack Router and is responsible for managing the route tree, matching routes, and coordinating navigations and route transitions."
+    },
+    {
+      "title": "Quick Start | TanStack Router React Docs",
+      "url": "https://tanstack.com/router/latest/docs/framework/react/quick-start",
+      "snippet": "AI/LLM: This documentation page is available in plain markdown format at/router/latest/docs/framework/react/quick-start.md ... The fastest way to get started with TanStack Router is to scaffold a new project."
+    },
+    {
+      "title": "TanStack Router Documentation - TanStack Router",
+      "url": "https://tanstack-router-63.mintlify.app/",
+      "snippet": "Build applications with confidence using a router designed for the modern web · Full TypeScript inference for routes, params, search params, and loaders · Automatic caching and revalidation of route data with fine-grained control · Intelligent ..."
+    },
+    {
+      "title": "GitHub - TanStack/router: 🤖 A client-first, server-capable, fully type-safe router and full-stack framework for the web (React and more).",
+      "url": "https://github.com/TanStack/router",
+      "snippet": "A modern router designed for type safety, data‑driven navigation, and seamless developer experience."
+    },
+    {
+      "title": "Router API | TanStack Router Docs",
+      "url": "https://tanstack.com/router/v1/docs/api/router",
+      "snippet": "AI/LLM: This documentation page is available in plain markdown format at/router/v1/docs/api/router.md"
+    },
+    {
+      "title": "Manual Setup | TanStack Router React Docs",
+      "url": "https://tanstack.com/router/v1/docs/framework/react/installation/manual",
+      "snippet": "import { StrictMode } from 'react' import ReactDOM from 'react-dom/client' import { RouterProvider, createRouter } from '@tanstack/react-router' // Import the generated route tree import { routeTree } from './routeTree.gen' // Create a new router instance const router = createRouter({ routeTree }) // Register the router instance for type safety declare module '@tanstack/react-router' { interface Register { router: typeof router } } // Render the app const rootElement = document.getElementById('root')!"
+    },
+    {
+      "title": "Router Context | TanStack Router React Docs",
+      "url": "https://tanstack.com/router/v1/docs/framework/react/guide/router-context",
+      "snippet": "To constrain the type of the root router context, you must use the createRootRouteWithContext<YourContextTypeHere>()(routeOptions) function to create a new router context instead of the createRootRoute() function to create your root route. Here's an example: ... import { createRootRouteWithContext, createRouter, } from '@tanstack/react-router' interface MyRouterContext { user: User } // Use the routerContext to create your root route const rootRoute = createRootRouteWithContext<MyRouterContext>()({ component: App, }) const routeTree = rootRoute.addChildren([ // ..."
+    },
+    {
+      "title": "Navigation | TanStack Router Docs",
+      "url": "https://tanstack.com/router/latest/docs/guide/navigation",
+      "snippet": "AI/LLM: This documentation page is available in plain markdown format at/router/latest/docs/guide/navigation.md ... Believe it or not, every navigation within an app is relative, even if you aren't using explicit relative path syntax (../../somewhere). Any time a link is clicked or an imperative navigation call is made, you will always have an origin path and a destination path which means you are navigating from one route to another route. TanStack Router keeps this constant concept of relative navigation in mind for every navigation, so you'll constantly see two properties in the API:"
+    },
+    {
+      "title": "File-Based Routing | TanStack Router Docs",
+      "url": "https://tanstack.com/router/latest/docs/routing/file-based-routing",
+      "snippet": "AI/LLM: This documentation page is available in plain markdown format at/router/latest/docs/routing/file-based-routing.md ... Most of the TanStack Router documentation is written for file-based routing and is intended to help you understand in more detail how to configure file-based routing and the technical details behind how it works."
+    },
+    {
+      "title": "React TanStack Router Basic Example | TanStack Router Docs",
+      "url": "https://tanstack.com/router/latest/docs/framework/react/examples/basic",
+      "snippet": "import ReactDOM from 'react-dom/client' import { ErrorComponent, Link, Outlet, RouterProvider, createRootRoute, createRoute, createRouter, } from '@tanstack/react-router' import { TanStackRouterDevtools } from '@tanstack/react-router-devtools' import { NotFoundError, fetchPost, fetchPosts } from './posts' import type { ErrorComponentProps } from '@tanstack/react-router' import './styles.css' const rootRoute = createRootRoute({ component: RootComponent, notFoundComponent: () => { return ( <div> <p>This is the notFoundComponent configured on root route</p> <Link to=\"/\">Start Over</Link> </div> )"
+    },
+    {
+      "title": "Data Loading | TanStack Router Docs",
+      "url": "https://tanstack.com/router/latest/docs/guide/data-loading",
+      "snippet": "Data loading is a common concern for web applications and is related to routing. When loading a page for your app, it's ideal if all of the page's async requirements are fetched and fulfilled as early..."
+    },
+    {
+      "title": "Code-Based Routing | TanStack Router Docs",
+      "url": "https://tanstack.com/router/latest/docs/routing/code-based-routing",
+      "snippet": "Code-based routing is not recommended for most applications. It is recommended to use File-Based Routing instead. If you're using File-Based Routing, skip this guide. If you still insist on using..."
+    }
+  ]
+}
