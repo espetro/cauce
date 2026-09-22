@@ -10,7 +10,9 @@ mod cmds;
 fn main() {
     let sub = std::env::args().nth(1).unwrap_or_default();
     match sub.as_str() {
-        "serve" => eprintln!("oxe serve: not implemented yet"),
+        "serve" => std::process::exit(cmds::serve::run(
+            &std::env::args().skip(2).collect::<Vec<_>>(),
+        )),
         "record" => std::process::exit(cmds::record::run(
             &std::env::args().skip(2).collect::<Vec<_>>(),
         )),

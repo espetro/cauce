@@ -14,4 +14,6 @@ path = "src/main.rs"
 oxe-core = { path = "../oxe-core" }
 oxe-engines = { path = "../oxe-engines" }
 oxe-server = { path = "../oxe-server" }
-tokio = { version = "1", features = ["rt"] }
+oxe-store-sqlite = { path = "../oxe-store-sqlite" }
+tokio = { version = "1", features = ["net", "rt", "rt-multi-thread"] }
+tracing = "0.1"
