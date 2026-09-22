@@ -14,6 +14,7 @@ licenses follow.
 
 ## json-enc.js
 
-- Name: htmx `json-enc` extension
-- License: BSD-2-Clause
-- Source: https://github.com/bigskysoftware/htmx-extensions (`json-enc`)
+- Name: htmx `json-enc` extension (`htmx-ext-json-enc`)
+- Version: 2.0.2
+- License: 0BSD (BSD Zero Clause)
+- Source: https://github.com/bigskysoftware/htmx-extensions (`src/json-enc/json-enc.js`)
