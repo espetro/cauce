@@ -41,10 +41,17 @@ results over SSE. The owner uses the UI daily for a week and files findings.
   state kept incrementally, final RRF order sent in `meta.order`); the HTMX search page uses
   the SSE extension (`hx-ext="sse"`) to append batches below the fold and a small
   "N new results above" pill when a later batch outranks visible items, never reordering
-  what is on screen; falls back to the non-streaming page without JS.
+  what is on screen; falls back to the non-streaming page without JS. The SSE `meta` event
+  and the page meta line must carry a new `engines_skipped` field: engine ids suppressed by
+  an open breaker (pipeline already collects them in `skipped`; plumb into `SearchMeta`).
+  The results page meta line and the empty-results state must render failed and skipped
+  engines by name (e.g. `live · 640 ms · bing · brave failed (blocked) · ddgs skipped
+  (breaker)`).
 - Acceptance: with two replay engines (`latency_ms` 100 and 2000) the first `results` event
   arrives < 300 ms and `meta` at ~2000 ms; the page test sees the first titles before the
-  slow engine's.
+  slow engine's; a search with one ok engine, one failed engine, and one breaker-skipped
+  engine renders all three names with statuses in the meta line and in the SSE meta event
+  payload.
 - Follow-up: W2-08.
 
 ### W2-02 History page
@@ -65,9 +72,13 @@ results over SSE. The owner uses the UI daily for a week and files findings.
   no charting lib), hit rate by tier, TTFR and full-latency p50/p90/p99, client split
   (ui/api/mcp names), top queries, zero-result queries, deadline-hit and stale-served rates,
   engine table (median/p80/p95 http vs parse, reliability, breaker state) linking to
-  `/engines`, cache panel (rows, unexpired, db size, newest). Window selector 7/30 days.
+  `/engines`, cache panel (rows, unexpired, db size, newest). Window selector 7/30 days;
+  add an `outcome` label (`ok|error|rejected`) to `oxe_search_requests_total`, recorded in
+  the shared_response/error arms of the pipeline run; the dashboard surfaces the
+  error/rejected split.
 - Acceptance: page test after mixed replay traffic shows non-zero hit rate and the engine
-  rows; "no data yet" states render on an empty DB.
+  rows; "no data yet" states render on an empty DB; a forced 502 response increments
+  `oxe_search_requests_total{outcome=error}`.
 - Follow-up: W2-10.
 
 ### W2-04 Cache page
