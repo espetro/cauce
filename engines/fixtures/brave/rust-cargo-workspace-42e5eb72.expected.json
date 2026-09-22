@@ -1,0 +1,102 @@
+{
+  "query": "rust cargo workspace",
+  "page": 1,
+  "status": 200,
+  "results": [
+    {
+      "title": "Cargo Workspaces - The Rust Programming Language",
+      "url": "https://doc.rust-lang.org/book/ch14-03-cargo-workspaces.html",
+      "snippet": "As your project develops, you might find that the library crate continues to get bigger and you want to split your package further into multiple library crates. Cargo offers a feature called workspaces that can help manage multiple related packages that are developed in tandem."
+    },
+    {
+      "title": "Workspaces - The Cargo Book",
+      "url": "https://doc.rust-lang.org/cargo/reference/workspaces.html",
+      "snippet": "In a workspace, package-related Cargo commands like cargo build can use the -p / --package or --workspace command-line flags to determine which packages to operate on. If neither of those flags are specified, Cargo will use the package in the current working directory."
+    },
+    {
+      "title": "Cargo Workspaces - The Rust Programming Language",
+      "url": "https://web.mit.edu/rust-lang_v1.25/arch/amd64_ubuntu1404/share/doc/rust/html/book/second-edition/ch14-03-cargo-workspaces.html",
+      "snippet": "As your project develops, you might find that the library crate continues to get bigger and you want to split up your package further into multiple library crates. In this situation, Cargo offers a feature called workspaces that can help manage multiple related packages that are developed in tandem."
+    },
+    {
+      "title": "cargo-workspaces - crates.io: Rust Package Registry",
+      "url": "https://crates.io/crates/cargo-workspaces",
+      "snippet": "December 3, 2025 - Lists crates in the workspace. USAGE: cargo workspaces list [OPTIONS] OPTIONS: -h, --help Print help information LIST OPTIONS: -a, --all Show private crates that are normally hidden --json Show information as a JSON array -l, --long Show extended information"
+    },
+    {
+      "title": "r/rust on Reddit: Examples of Cargo workspaces?",
+      "url": "https://www.reddit.com/r/rust/comments/179qbch/examples_of_cargo_workspaces",
+      "snippet": "Reddit reddit.com › r/rust › examples of cargo workspaces? r/rust on Reddit: Examples of Cargo workspaces? October 17, 2023 - Can some of you give me examples for cargo workspace binary projects? Not library. Like ripgrep and helix. Thanks! Top answer 1 of 5 17 Rust Analyzer You might also want to read this: Large Rust Workspaces 2 of 5 6 Cargo itself is a workspace, check their source code https://github.com/rust-lang/cargo/blob/master/Cargo.toml"
+    },
+    {
+      "title": "Introduction to Cargo and Cargo Workspaces 🦀 | by Rohan Kotwani | Intro Zero | Medium",
+      "url": "https://medium.com/intro-zero/introduction-to-cargo-and-cargo-workspace-b4dece77d504",
+      "snippet": "January 20, 2025 - An introduction to Cargo and Cargo workspaces for Rust development including basic command, crate, types, creating and publishing crates, documentation, workspaces, testing, and modules."
+    },
+    {
+      "title": "1525-cargo-workspace - The Rust RFC Book",
+      "url": "https://rust-lang.github.io/rfcs/1525-cargo-workspace.html",
+      "snippet": "# crates/crate2/Cargo.toml [package] workspace = \"../../root\" Projects like the compiler will likely need exhaustively explicit configuration. The rust repo conceptually has two workspaces, the standard library and the compiler, and these would need to be manually configured with workspace.members ..."
+    },
+    {
+      "title": "Introduction to Cargo and Cargo Workspaces in Rust - 101 Blockchains",
+      "url": "https://101blockchains.com/cargo-and-cargo-workspaces-in-rust",
+      "snippet": "September 11, 2024 - The Cargo Workspace serves as the perfect toolkit that helps in detecting, troubleshooting and resolving issues in Rust applications. Explore the role of Cargo Workspaces in Rust."
+    },
+    {
+      "title": "Large Rust Workspaces",
+      "url": "https://matklad.github.io/2021/08/22/large-rust-workspaces.html",
+      "snippet": "August 22, 2021 - It’s not possible to write hir::def in Cargo.toml, so crates typically have prefixes in their names. Tree layout creates an alternative hierarchy, which adds a possibility for inconsistencies. Second, even comparatively large lists are easier to understand at a glance than even small trees. ls ./crates gives immediate bird’s eye view of the project, and this view is small enough: 16:22:57|~/projects/rust-analyzer|master✓ λ ls ./crates base_db cfg flycheck hir hir_def hir_expand hir_ty ide ide_assists ide_completion ide_db ide_diagnostics ide_ssr limit mbe parser paths proc_macro_api proc_macro_srv proc_macro_test profile project_model rust-analyzer sourcegen stdx syntax test_utils text_edit toolchain tt vfs"
+    },
+    {
+      "title": "Mastering Rust Workspaces: From Development to Production | by Nishantspatil | Medium",
+      "url": "https://medium.com/@nishantspatil0408/mastering-rust-workspaces-from-development-to-production-a57ca9545309",
+      "snippet": "August 18, 2025 - A workspace is a collection of one or more packages that are managed together, sharing the same Cargo.lock file and output directory[1]. Think of it as a container that organizes multiple related Rust projects (crates) under a unified build system."
+    },
+    {
+      "title": "Rust / Cargo workspace – El blog de Tinchicus",
+      "url": "https://tinchicus.com/2026/05/05/rust-cargo-workspace",
+      "snippet": "April 29, 2026 - Al igual que en otros lenguajes, podemos establecer un workspace (espacio de trabajo) donde podemos establecer que trabajarán bajo el ala de este. Esto está pensado principalmente cuando nuestros proyectos comienzan a tomar dimensiones muy grandes."
+    },
+    {
+      "title": "How to structure a big project in Rust - Ahmad Rosid",
+      "url": "https://ahmadrosid.com/blog/cargo-workspace",
+      "snippet": "March 21, 2022 - Working with cargo workspaces is very simple. So here is some story of my project and why I decided to split the project to several workspace. Since last january I'm working on code syntax highlighting for my side project heline.dev. The code highlighting it self was inspired from github. This project is containing several module. Rules => yaml file to define token to hightlight. Generator => for generating rust code from rules files."
+    },
+    {
+      "title": "Rust Cargo Workspaces: Organising Multi-Crate Projects | by The Shipping Engineer | Medium",
+      "url": "https://medium.com/@ashusk_1790/rust-cargo-workspaces-organising-multi-crate-projects-3e67aed55b6b",
+      "snippet": "November 21, 2025 - Rust Cargo Workspaces: Organising Multi-Crate Projects When your code outgrows one folder, Cargo workspaces let you scale without starting over. The cursor blinks. You’ve been staring at this …"
+    },
+    {
+      "title": "GitHub - Miosso/rust-workspace: A simple example on how to use workspace and shared module with Rust . · GitHub",
+      "url": "https://github.com/Miosso/rust-workspace",
+      "snippet": "A simple example on how to use workspace with Rust. The idea here is to create the folder/crates structure below. + my-project [lib type] | - main-one [main type] | - main-two [main type] | - shared [lib type] ... and to do this just run the following commands: cargo new my-project --lib cd my-project cargo new main-one cargo new main-two cargo new shared --lib"
+    },
+    {
+      "title": "Add `cargo new --workspace` to create a workspace · Issue #8365 · rust-lang/cargo",
+      "url": "https://github.com/rust-lang/cargo/issues/8365",
+      "snippet": "June 16, 2020 - Add the option --workspace to cargo new that creates a new workspace with the provided name. ... The feature is not too important, but it seems like it would streamline the process of creating a new workspace a bit."
+    },
+    {
+      "title": "Workspace - Rust Project Primer",
+      "url": "https://rustprojectprimer.com/organization/workspace.html",
+      "snippet": "Rust is designed to cope well with projects that contain a lot of crates. It even has a feature catered to exactly this use-case: the workspace. When you use a workspace, you tell Cargo that group of crates are related and should share the same build cache, and optionally some metadata."
+    },
+    {
+      "title": "Workspace in cargo::core - Rust",
+      "url": "https://doc.rust-lang.org/beta/nightly-rustc/cargo/core/struct.Workspace.html",
+      "snippet": "Show 21 fields gctx: &'gctx GlobalContext, current_manifest: PathBuf, packages: Packages<'gctx>, root_manifest: Option<PathBuf>, target_dir: Option<Filesystem>, build_dir: Option<Filesystem>, members: Vec<PathBuf>, member_ids: HashSet<PackageId>, default_members: Vec<PathBuf>, is_ephemeral: bool, require_optional_deps: bool, loaded_packages: RefCell<HashMap<PathBuf, Package>>, ignore_lock: bool, requested_lockfile_path: Option<PathBuf>, resolve_behavior: ResolveBehavior, resolve_honors_rust_version: bool, resolve_feature_unification: FeatureUnification, resolve_honors_publish_age: bool, resolve_publish_time: Option<Timestamp>, custom_metadata: Option<Value>, local_overlays: HashMap<SourceId, PathBuf>, } ... The core abstraction in Cargo for working with a workspace of crates."
+    },
+    {
+      "title": "Workspaces | rust-lang/cargo | DeepWiki",
+      "url": "https://deepwiki.com/rust-lang/cargo/2.2-workspaces",
+      "snippet": "August 22, 2026 - Workspaces in Cargo allow multiple related packages (crates) to be managed together in a single directory tree, sharing a common `Cargo.lock` file, build output directory, and configuration. This docu"
+    },
+    {
+      "title": "Cargo Workspaces - Cargo Workspaces - The Rust Programming Language",
+      "url": "https://phaiax.github.io/mdBook/rustbook/ch14-03-cargo-workspaces.html",
+      "snippet": "A workspace is a set of packages that will all share the same Cargo.lock and output directory. Let’s make a project using a workspace, using trivial code so we can concentrate on the structure of a workspace. We’ll have a binary that uses two libraries: one library that will provide an ..."
+    }
+  ]
+}
