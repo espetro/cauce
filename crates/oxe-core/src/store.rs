@@ -86,8 +86,10 @@ pub struct ClickRow {
     pub url: Url,
     #[serde(default)]
     pub title: String,
-    /// 0-based position in the result list that was clicked.
-    #[serde(default)]
+    /// 0-based position in the result list that was clicked. Beacons sent
+    /// through form-flattening extensions (htmx `json-enc`) stringify scalars,
+    /// so `"0"` and `0` are both accepted.
+    #[serde(default, deserialize_with = "u32_or_string")]
     pub position: u32,
     #[serde(default)]
     pub client: ClientKind,
@@ -95,6 +97,21 @@ pub struct ClickRow {
 
 fn now() -> DateTime<Utc> {
     Utc::now()
+}
+
+/// Accepts `0` or `"0"` — beacon clients that flatten params to strings
+/// (htmx `hx-vals` + `json-enc`) cannot preserve number types.
+fn u32_or_string<'de, D: serde::Deserializer<'de>>(d: D) -> Result<u32, D::Error> {
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum NumOrStr {
+        N(u32),
+        S(String),
+    }
+    match NumOrStr::deserialize(d)? {
+        NumOrStr::N(n) => Ok(n),
+        NumOrStr::S(s) => s.trim().parse().map_err(serde::de::Error::custom),
+    }
 }
 
 /// Breaker state persisted in `engine_health` (scheduler section 4.4.6).
