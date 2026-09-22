@@ -19,6 +19,40 @@ fn test_config(dir: &std::path::Path) -> ObservabilityConfig {
     }
 }
 
+/// `logs_dir`/`data_dir` delegate to `oxe_core::config::Dirs`: a host with
+/// only `XDG_DATA_HOME` set (no `OXE_DATA_DIR`) must resolve to
+/// `$XDG_DATA_HOME/oxe/logs`, the same place `serve` writes them.
+#[test]
+fn dirs_honour_xdg_data_home() {
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let tmp = tempfile::tempdir().unwrap();
+
+    let prev_oxe = std::env::var_os("OXE_DATA_DIR");
+    let prev_xdg = std::env::var_os("XDG_DATA_HOME");
+    // SAFETY: serialized by ENV_LOCK; nothing else in this test binary
+    // touches these variables. nextest also isolates per process.
+    unsafe {
+        std::env::remove_var("OXE_DATA_DIR");
+        std::env::set_var("XDG_DATA_HOME", tmp.path());
+    }
+    let (logs, data) = (super::logs_dir(), super::data_dir());
+    // SAFETY: same as above; restores the captured values.
+    unsafe {
+        match prev_oxe {
+            Some(v) => std::env::set_var("OXE_DATA_DIR", v),
+            None => std::env::remove_var("OXE_DATA_DIR"),
+        }
+        match prev_xdg {
+            Some(v) => std::env::set_var("XDG_DATA_HOME", v),
+            None => std::env::remove_var("XDG_DATA_HOME"),
+        }
+    }
+
+    assert_eq!(data, tmp.path().join("oxe"));
+    assert_eq!(logs, tmp.path().join("oxe").join("logs"));
+}
+
 /// Minimal `block_on` so tests can drive `Store` futures without a runtime.
 fn block_on<F: std::future::Future>(future: F) -> F::Output {
     use std::task::{Context, Poll};
@@ -98,6 +132,54 @@ fn trace_replays_engine_spans_in_order_with_durations() {
     assert!(out.contains("ms"), "durations missing:\n{out}");
     assert!(out.contains("tier=1"), "cache decision missing:\n{out}");
     assert!(out.contains("ERROR"), "error event missing:\n{out}");
+}
+
+/// The env-controlled filter (`OXE_LOG`/`RUST_LOG`) scopes stderr/OTLP only:
+/// the JSONL layer keeps its own `info` floor, so `filter = "warn"` must
+/// still record info-level span opens/closes and events — otherwise
+/// `oxe trace` silently goes empty.
+#[test]
+fn jsonl_layer_ignores_env_filter_floor() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut config = test_config(dir.path());
+    config.filter = "warn".to_string();
+    let (dispatch, guard) = build(&config).unwrap();
+    let request_id = RequestId::new();
+
+    tracing::dispatcher::with_default(&dispatch, || {
+        let request = request_span(request_id);
+        let _req = request.enter();
+        {
+            let engine = tracing::info_span!("engine", engine = "ddgs");
+            let _e = engine.enter();
+            tracing::info!(results = 3u32, "engine done");
+            tracing::warn!("slow upstream");
+        }
+    });
+    drop(guard);
+
+    let files = log_files(&config.logs_dir).unwrap();
+    assert_eq!(files.len(), 1, "expected one daily log file");
+    let content = std::fs::read_to_string(&files[0]).unwrap();
+    let kinds: Vec<String> = content
+        .lines()
+        .map(|l| {
+            serde_json::from_str::<serde_json::Value>(l).unwrap()["kind"]
+                .as_str()
+                .unwrap()
+                .to_string()
+        })
+        .collect();
+    assert!(
+        kinds.iter().any(|k| k == "span_open") && kinds.iter().any(|k| k == "span_close"),
+        "info-level spans must reach JSONL under a warn filter: {kinds:?}"
+    );
+    let records = trace_request(&config.logs_dir, &request_id.to_string()).unwrap();
+    let out = render_trace(&request_id.to_string(), &records);
+    assert!(
+        out.contains("ddgs"),
+        "info-level engine span missing from trace under warn filter:\n{out}"
+    );
 }
 
 /// `audit` emits the JSONL event and forwards to `Store::audit`.

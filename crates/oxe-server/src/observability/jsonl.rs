@@ -190,10 +190,12 @@ impl JsonlLayer {
         let mut line = serde_json::to_string(&record).unwrap_or_else(|_| "{}".to_string());
         line.push('\n');
         // One `write_all` per line: `NonBlocking::write` enqueues the whole
-        // buffer as one message, so lines never interleave.
-        if let Ok(mut w) = self.writer.lock() {
-            let _ = w.write_all(line.as_bytes());
-        }
+        // buffer as one message, so lines never interleave. A poisoned
+        // mutex means a previous emit panicked; the writer itself is still
+        // usable, so recover the guard rather than silently dropping lines
+        // (same contract as `store.rs`'s reader mutexes).
+        let mut w = self.writer.lock().unwrap_or_else(|e| e.into_inner());
+        let _ = w.write_all(line.as_bytes());
     }
 }
 

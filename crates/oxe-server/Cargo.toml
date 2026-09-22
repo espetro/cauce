@@ -30,7 +30,7 @@ thiserror = "2"
 # axum::serve + graceful-shutdown signals; the optional OTLP layer relies on
 # the multi-thread runtime feature set too.
 tokio = { version = "1", features = ["net", "rt", "rt-multi-thread", "signal", "sync", "time"] }
-# Same major version as oxe-core: `Config::raw_tree_mut` hands out a
+# Same major version as oxe-core: `Config::from_raw`/`raw_tree` hand out a
 # `toml::Value` and the types must be identical across the crates.
 toml = { version = "0.9", features = ["preserve_order"] }
 tracing = "0.1"

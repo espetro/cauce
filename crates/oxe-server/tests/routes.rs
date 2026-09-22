@@ -651,7 +651,9 @@ async fn config_get_redaction_and_put_roundtrip() {
     let (status, _, body) = call(&router, request).await;
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["search"]["deadline_ms"], 1234);
-    assert_eq!(body["ai"]["api_key"], "${env:BIFROST_API_KEY}");
+    // The PUT body is the whole new config; `ai.api_key` falls back to its
+    // blank default now that the file's `${env:...}` template is gone.
+    assert_eq!(body["ai"]["api_key"], "");
     assert_eq!(
         Config::load().unwrap().search.deadline_ms,
         1234,

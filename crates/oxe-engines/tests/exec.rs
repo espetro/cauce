@@ -154,6 +154,52 @@ async fn exec_kills_child_at_deadline() {
     );
 }
 
+/// The pipeline wraps `engine.search` in its own `tokio::time::timeout`, so
+/// the outer deadline wins and the search future is *dropped* mid-round-trip
+/// while a request is still in flight on the child. Dropping must reap the
+/// child: if the cancelled child stayed in `state`, it would write its stale
+/// response later, and the next `search` would read that line as the answer
+/// to its own (different) query — protocol v1 has no correlation field, so
+/// the wrong query's results would be cached under the new query's key.
+#[tokio::test]
+async fn exec_cancelled_call_does_not_poison_next_search() {
+    if !have_python3() {
+        eprintln!("python3 not on PATH; skipping exec_cancelled_call_does_not_poison_next_search");
+        return;
+    }
+    // Sleeps 1 s before answering any query containing "slow".
+    let engine = ExecEngine::new(echo_spec(&["--sleep", "1", "--sleep-on", "slow"]));
+
+    // Outer deadline drops the in-flight future; the engine's own 30 s
+    // budget never gets a chance to fire.
+    let cancelled = tokio::time::timeout(
+        Duration::from_millis(200),
+        engine.search(&req("slow query"), Duration::from_secs(30)),
+    )
+    .await;
+    assert!(
+        cancelled.is_err(),
+        "outer deadline drops the in-flight call"
+    );
+
+    // Let the abandoned child finish its sleep and write the stale line;
+    // the fixture stays alive afterwards, so a buggy implementation would
+    // still find it "alive" and reuse it.
+    tokio::time::sleep(Duration::from_millis(1500)).await;
+
+    let res = tokio::time::timeout(
+        Duration::from_secs(10),
+        engine.search(&req("fast"), Duration::from_secs(10)),
+    )
+    .await
+    .expect("second call completes")
+    .expect("fresh child answers");
+    assert!(
+        res[0].title.contains("fast"),
+        "stale response from the cancelled call poisoned this search: {res:?}"
+    );
+}
+
 #[test]
 fn sdk_malformed_lines_get_error_responses() {
     if !have_python3() {

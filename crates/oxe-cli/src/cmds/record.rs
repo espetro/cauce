@@ -6,15 +6,32 @@
 //! file, You can obtain one at <https://mozilla.org/MPL/2.0/>.
 
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use oxe_core::Engine;
-use oxe_engines::exec::{ExecEngine, ExecSpec};
-use oxe_engines::{Replay, record};
+use oxe_core::config::Config;
+use oxe_engines::factory::build_engine;
+use oxe_engines::record;
 
 const USAGE: &str = "usage: oxe record --engine <id> --query <q> [--out-dir <engines/fixtures>]";
 
 /// Entry point for the `record` subcommand. Returns the process exit code.
 pub fn run(args: &[String]) -> i32 {
+    // Exec children forward their stderr through `tracing` at warn; install
+    // a minimal stderr-only subscriber so those lines are visible. The
+    // JSONL/OTLP observability pipeline is `serve`'s, not the recorder's —
+    // and stdout stays clean for the printed cassette path.
+    let filter = std::env::var("OXE_LOG")
+        .ok()
+        .or_else(|| std::env::var("RUST_LOG").ok())
+        .unwrap_or_else(|| "warn".to_string());
+    let filter = tracing_subscriber::EnvFilter::try_new(filter)
+        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("warn"));
+    let _ = tracing_subscriber::fmt()
+        .with_env_filter(filter)
+        .with_writer(std::io::stderr)
+        .try_init();
+
     match parse(args).and_then(run_inner) {
         Ok(path) => {
             println!("{}", path.display());
@@ -27,40 +44,32 @@ pub fn run(args: &[String]) -> i32 {
     }
 }
 
-/// Map `--engine <id>` to a constructor (W0-06: only the engines that exist
-/// in wave 0).
-fn engine_for(id: &str) -> Result<Box<dyn Engine>, String> {
-    match id {
-        "replay" => Ok(Box::new(Replay::from_env())),
-        "ddgs" => Ok(Box::new(ExecEngine::new(ExecSpec::ddgs(repo_root())))),
-        other => Err(format!(
-            "unknown engine {other:?} (supported: ddgs, replay)"
-        )),
-    }
-}
-
-/// Directory the relative `sdk/python/oxe_engine_sdk/ddgs_auto.py` arg of
-/// `ExecSpec::ddgs` resolves against. `oxe record` is a repo-local dev tool:
-/// walk up from the process cwd until the script is found (works from any
-/// subdirectory of a checkout), else fall back to the compile-time
-/// `CARGO_MANIFEST_DIR` root, which covers `cargo run` from anywhere.
-fn repo_root() -> PathBuf {
-    const SCRIPT: &str = "sdk/python/oxe_engine_sdk/ddgs_auto.py";
-    if let Ok(mut dir) = std::env::current_dir() {
-        loop {
-            if dir.join(SCRIPT).is_file() {
-                return dir;
-            }
-            if !dir.pop() {
-                break;
-            }
-        }
-    }
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
+/// Resolve `--engine <id>` through the same factory `serve` uses:
+/// `Config::load()` picks up `[[engines]]` entries and `OXE_ENGINES`, and
+/// `build_engine` applies the entry's `command`/`args`/`env`/`cwd`/`tier`/
+/// `page_size`. Disabled entries are recordable — `engine()` looks up by
+/// id, not by enabled.
+fn engine_for(cfg: &Config, id: &str) -> Result<Arc<dyn Engine>, String> {
+    let entry = cfg.engine(id).ok_or_else(|| {
+        let known = cfg
+            .engines
+            .iter()
+            .map(|e| e.id.as_str())
+            .collect::<Vec<_>>()
+            .join(", ");
+        format!("unknown engine {id:?} (known: {known})")
+    })?;
+    build_engine(entry).ok_or_else(|| {
+        format!(
+            "engine {id:?} is not runnable in wave 0 (kind {:?})",
+            entry.kind
+        )
+    })
 }
 
 fn run_inner(opts: RecordArgs) -> Result<PathBuf, String> {
-    let engine = engine_for(&opts.engine)?;
+    let cfg = Config::load().map_err(|e| format!("config load: {e}"))?;
+    let engine = engine_for(&cfg, &opts.engine)?;
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
