@@ -7,4 +7,5 @@
 pub mod config;
 pub mod record;
 pub mod serve;
+pub mod tail;
 pub mod trace;
