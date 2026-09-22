@@ -99,7 +99,8 @@ async fn serve_async(opts: ServeOpts, cfg: Config) -> i32 {
         SearchPipeline::new(store.clone(), engines)
             .with_deadline(Duration::from_millis(cfg.search.deadline_ms))
             .with_default_ttl(Duration::from_secs(cfg.search.ttl_s))
-            .with_ttl_cap(Duration::from_secs(cfg.search.ttl_cap_s)),
+            .with_ttl_cap(Duration::from_secs(cfg.search.ttl_cap_s))
+            .with_lexical(cfg.cache.lexical),
     );
     let evict = spawn_eviction_task(store.clone());
 

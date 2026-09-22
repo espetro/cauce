@@ -104,6 +104,9 @@ pub enum ConfigError {
     /// `OXE_ENGINES` named an engine with no configured or built-in entry.
     #[error("OXE_ENGINES names unknown engine {0:?}")]
     UnknownEngine(String),
+    /// A field value outside its allowed range (semantic, post-schema).
+    #[error("{path}: {msg}")]
+    InvalidValue { path: String, msg: String },
     /// An `[[engines]]` entry is inconsistent (e.g. `kind = "exec"` without
     /// a `command`).
     #[error("invalid engine entry {id:?}: {msg}")]
@@ -251,6 +254,44 @@ fn default_ttl_s() -> u64 {
 
 fn default_ttl_cap_s() -> u64 {
     86400
+}
+
+/// `[cache]`: cache-tier behaviour beyond TTLs (those live in `[search]`).
+#[derive(Debug, Default, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CacheConfig {
+    /// `[cache.lexical]`: the tier-2 FTS lookup (W1-10).
+    #[serde(default)]
+    pub lexical: LexicalConfig,
+}
+
+/// `[cache.lexical]`: tier-2 acceptance gate (W1-10). On a tier-1 miss the
+/// pipeline FTS-matches stored entries and serves the best-ranked row whose
+/// query shares `threshold` of the request's tokens (Jaccard after
+/// normalisation and stopword removal) under the same page/lang.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LexicalConfig {
+    /// Master switch for the tier-2 lookup.
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    /// Minimum Jaccard token similarity to accept a hit. Must be finite
+    /// and in `(0.0, 1.0]`; `Config::load` rejects anything else.
+    #[serde(default = "default_lexical_threshold")]
+    pub threshold: f64,
+}
+
+impl Default for LexicalConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            threshold: default_lexical_threshold(),
+        }
+    }
+}
+
+fn default_lexical_threshold() -> f64 {
+    0.8
 }
 
 /// `[logs]`: JSONL log retention (W0-05 consumes `retention_days`).
@@ -458,6 +499,9 @@ pub struct Config {
     /// `[search]` section.
     #[serde(default)]
     pub search: SearchConfig,
+    /// `[cache]` section.
+    #[serde(default)]
+    pub cache: CacheConfig,
     /// `[logs]` section.
     #[serde(default)]
     pub logs: LogsConfig,
@@ -489,6 +533,7 @@ pub struct Config {
 struct ConfigSections<'a> {
     server: &'a ServerConfig,
     search: &'a SearchConfig,
+    cache: &'a CacheConfig,
     logs: &'a LogsConfig,
     ai: &'a AiConfig,
     engines: &'a [EngineEntry],
@@ -521,6 +566,7 @@ impl Default for Config {
         Self {
             server: ServerConfig::default(),
             search: SearchConfig::default(),
+            cache: CacheConfig::default(),
             logs: LogsConfig::default(),
             ai: AiConfig::default(),
             engines: builtin_engines(),
@@ -547,6 +593,7 @@ impl Config {
         ConfigSections {
             server: &self.server,
             search: &self.search,
+            cache: &self.cache,
             logs: &self.logs,
             ai: &self.ai,
             engines: &self.engines,
@@ -635,6 +682,18 @@ impl Config {
         }
 
         let mut cfg: Config = merged.try_into().map_err(ConfigError::Invalid)?;
+
+        // `cache.lexical.threshold` gates a serve decision: reject
+        // non-finite and out-of-`(0.0, 1.0]` values rather than silently
+        // voiding the Jaccard gate (`nan` would make `score < threshold`
+        // always false, serving any same-params FTS candidate).
+        let threshold = cfg.cache.lexical.threshold;
+        if !threshold.is_finite() || threshold <= 0.0 || threshold > 1.0 {
+            return Err(ConfigError::InvalidValue {
+                path: "cache.lexical.threshold".to_string(),
+                msg: format!("expected a finite value in (0.0, 1.0], got {threshold}"),
+            });
+        }
 
         // Built-ins fill in entries the file did not define.
         for builtin in builtin_engines() {
@@ -1083,6 +1142,8 @@ mod tests {
         assert_eq!(cfg.search.min_results, 5);
         assert_eq!(cfg.search.ttl_s, 3600);
         assert_eq!(cfg.search.ttl_cap_s, 86400);
+        assert!(cfg.cache.lexical.enabled);
+        assert_eq!(cfg.cache.lexical.threshold, 0.8);
         assert_eq!(cfg.logs.retention_days, 7);
         assert_eq!(cfg.ai.base_url, "");
         assert_eq!(cfg.ai.api_key, "");
@@ -1125,6 +1186,66 @@ mod tests {
         // Untouched fields keep their defaults.
         assert_eq!(cfg.server.host, "127.0.0.1");
         assert_eq!(cfg.search.min_results, 5);
+    }
+
+    #[test]
+    fn cache_lexical_section_loads() {
+        let (tmp, env) = sandbox(&[]);
+        write_config(
+            &tmp.path().join("cfg"),
+            "[cache.lexical]\nenabled = false\nthreshold = 0.5\n",
+        );
+        let cfg = Config::load_with(&env).unwrap();
+        assert!(!cfg.cache.lexical.enabled);
+        assert_eq!(cfg.cache.lexical.threshold, 0.5);
+
+        // A partial section fills the rest from defaults, and the section
+        // renders in the displayed/default tree.
+        write_config(
+            &tmp.path().join("cfg"),
+            "[cache.lexical]\nthreshold = 0.9\n",
+        );
+        let cfg = Config::load_with(&env).unwrap();
+        assert!(cfg.cache.lexical.enabled);
+        assert_eq!(cfg.cache.lexical.threshold, 0.9);
+        assert!(cfg.display_toml().unwrap().contains("lexical"));
+
+        // Unknown keys inside the section are still rejected.
+        write_config(&tmp.path().join("cfg"), "[cache.lexical]\nbogus = 1\n");
+        assert!(matches!(
+            Config::load_with(&env),
+            Err(ConfigError::Invalid(_))
+        ));
+    }
+
+    /// `threshold` gates a serve decision: non-finite and out-of-
+    /// `(0.0, 1.0]` values are rejected at load rather than silently
+    /// widening tier 2 (`nan` would accept every same-params candidate).
+    #[test]
+    fn lexical_threshold_out_of_range_is_rejected() {
+        let (tmp, env) = sandbox(&[]);
+        for value in ["nan", "-nan", "inf", "0.0", "-0.5", "1.5"] {
+            write_config(
+                &tmp.path().join("cfg"),
+                &format!("[cache.lexical]\nthreshold = {value}\n"),
+            );
+            assert!(
+                matches!(
+                    Config::load_with(&env),
+                    Err(ConfigError::InvalidValue { .. })
+                ),
+                "threshold = {value} must be rejected"
+            );
+        }
+        // Boundaries: 1.0 is the inclusive upper bound.
+        write_config(
+            &tmp.path().join("cfg"),
+            "[cache.lexical]\nthreshold = 1.0\n",
+        );
+        assert_eq!(
+            Config::load_with(&env).unwrap().cache.lexical.threshold,
+            1.0
+        );
     }
 
     #[test]
