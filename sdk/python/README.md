@@ -3,12 +3,20 @@
 Python SDK for the cauce exec-engine protocol plus `ddgs_auto.py`, the
 reference engine that bridges DuckDuckGo while native engine specs land.
 
-Protocol v1 is one JSON object per line on stdio, in each direction:
+Protocol v2 is one JSON object per line on stdio, in each direction:
 
 ```
--> {"v":1,"query":"tail tolerance rust","page":1,"lang":"en","timeout_ms":1500}
-<- {"v":1,"results":[{"title":"...","url":"...","snippet":"..."}],"error":null}
+-> {"v":2,"query":"tail tolerance rust","page":1,"lang":"en","timeout_ms":1500,
+    "safesearch":"moderate","time_range":"week","params":{"region":"wt-wt"}}
+<- {"v":2,"results":[{"title":"...","url":"...","snippet":"..."}],"error":null}
 ```
+
+`safesearch` is `off|moderate|strict`, `time_range` is `day|week|month|year`
+or absent, and `params` carries the engine's static `[engines.params]`
+config table. Version negotiation is optimistic: the parent speaks v2 to a
+fresh child and downgrades to v1 (fields omitted) when the child rejects
+the version, so engines built on this SDK must also accept `v:1` requests
+— a strict subset — and responses echo the request's `v`.
 
 `cauce_engine_sdk.run(fn)` reads `Request`s from stdin until EOF and writes
 one `Response` line each. Malformed lines and handler exceptions become
@@ -41,6 +49,10 @@ id = "myengine"
 kind = "exec"
 command = "python3"
 args = ["/path/to/myengine.py"]
+
+# Optional: static params forwarded on every v2 request as `req.params`.
+[engines.params]
+region = "wt-wt"
 ```
 
 ## The ddgs reference engine
