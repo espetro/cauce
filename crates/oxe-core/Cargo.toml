@@ -14,6 +14,21 @@ conformance = []
 [dependencies]
 async-trait = "0.1"
 chrono = { version = "0.4", features = ["serde"] }
+# Body streaming under the size cap in http.rs (reqwest `stream` feature
+# returns a `Stream`; `next()` comes from here).
+futures-util = "0.3"
+# Per-engine token bucket (http.rs).
+governor = "0.10"
+# Engine egress client (http.rs). `default-tls` in reqwest 0.13 is rustls
+# (platform verifier + aws-lc-rs); `system-proxy` stays off so egress is
+# only what `[engines.<id>.egress]` says it is.
+reqwest = { version = "0.13.5", default-features = false, features = [
+    "default-tls",
+    "charset",
+    "http2",
+    "socks",
+    "stream",
+] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
@@ -34,3 +49,4 @@ proptest = "1"
 tempfile = "3"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 tracing-subscriber = { version = "0.3", features = ["fmt"] }
+wiremock = "0.6"
