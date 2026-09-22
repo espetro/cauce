@@ -1459,6 +1459,9 @@ impl SearchPipeline {
             ts: Utc::now(),
             query_hash: key.clone(),
             query: query.to_string(),
+            // `query` stays normalized for stats/filtering; `query_raw`
+            // keeps the user's original casing for history displays (#89).
+            query_raw: Some(req.q.clone()),
             client: req.client.clone(),
             source: row.source,
             tier: row.tier,

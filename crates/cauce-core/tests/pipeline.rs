@@ -124,6 +124,11 @@ async fn cache_hit_is_fast_and_still_logged() {
     assert_eq!(logs[1].result_count, 10);
     assert_eq!(logs[1].engines, vec![EngineId::from("replay")]);
     assert_eq!(logs[1].query_hash, CacheKey::from(&request));
+    // #89: `query` is normalized; `query_raw` keeps the submitted casing.
+    for row in logs.iter() {
+        assert_eq!(row.query, "cached query");
+        assert_eq!(row.query_raw.as_deref(), Some("Cached   QUERY"));
+    }
 }
 
 /// Acceptance: RRF sums contributions, so a URL returned by both engines

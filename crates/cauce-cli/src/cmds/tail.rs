@@ -43,7 +43,11 @@ struct TailOpts {
 /// Entry point for the `tail` subcommand. Returns the process exit code.
 pub fn run(args: &[String]) -> i32 {
     let opts = match parse(args) {
-        Ok(opts) => opts,
+        Ok(Some(opts)) => opts,
+        Ok(None) => {
+            println!("{USAGE}");
+            return 0;
+        }
         Err(msg) => {
             eprintln!("cauce tail: {msg}\n{USAGE}");
             return 2;
@@ -165,7 +169,9 @@ fn drain(
     Ok(complete as u64)
 }
 
-fn parse(args: &[String]) -> Result<TailOpts, String> {
+/// `Ok(None)` is `-h`/`--help`: usage goes to stdout with exit 0, not
+/// through the error path.
+fn parse(args: &[String]) -> Result<Option<TailOpts>, String> {
     let mut opts = TailOpts {
         follow: false,
         request: None,
@@ -204,9 +210,9 @@ fn parse(args: &[String]) -> Result<TailOpts, String> {
                     .parse::<usize>()
                     .map_err(|_| format!("invalid --lines {raw:?}"))?;
             }
-            "-h" | "--help" => return Err("help requested".into()),
+            "-h" | "--help" => return Ok(None),
             other => return Err(format!("unknown flag {other:?}")),
         }
     }
-    Ok(opts)
+    Ok(Some(opts))
 }

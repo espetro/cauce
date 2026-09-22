@@ -113,3 +113,9 @@ rather than editing it away.
   (W3-06); new W3-07 breaker on Parse/Transport streaks; exec/replay empty → NoResults
   normalization. SearXNG `format=json` compat shim and engine-param forwarding deferred to
   `later/`. Project renamed oxe → cauce; CLI stays `cauce`. — 2026-09-22
+- **`search_log` keeps the user's raw query text in `query_raw`; `query` stays
+  normalized.** History displays need the original casing, but stats grouping
+  (`zero_result_queries`) and the history `q` LIKE filter want the normalized
+  form — so schema v2 adds a nullable `query_raw` column instead of changing
+  `query`'s semantics. NULL on pre-v2 rows; `SearchLogRow.query_raw` is
+  `Option<String>` on the wire. (#89) — 2026-09-23

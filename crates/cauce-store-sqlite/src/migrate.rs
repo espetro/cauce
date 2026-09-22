@@ -12,7 +12,13 @@ use cauce_core::StoreError;
 use rusqlite::Connection;
 
 /// `(name, sql)` pairs in apply order; index + 1 is the schema version.
-const MIGRATIONS: &[(&str, &str)] = &[("0001_init", include_str!("../migrations/0001_init.sql"))];
+const MIGRATIONS: &[(&str, &str)] = &[
+    ("0001_init", include_str!("../migrations/0001_init.sql")),
+    (
+        "0002_search_log_query_raw",
+        include_str!("../migrations/0002_search_log_query_raw.sql"),
+    ),
+];
 
 fn current_version(conn: &Connection) -> Result<u32, StoreError> {
     conn.query_row(

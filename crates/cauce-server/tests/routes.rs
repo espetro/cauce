@@ -494,7 +494,10 @@ async fn history_click_and_stats() {
     let (router, _state, _tmp) = app();
 
     // One network search + one cache hit = two history rows, hit rate 0.5.
-    get(&router, "/api/search?q=history-check").await;
+    // The first request uses different casing: the normalized query is
+    // identical, so the second request still hits the cache, and history
+    // keeps both the normalized `query` and the submitted `query_raw` (#89).
+    get(&router, "/api/search?q=History-CHECK").await;
     get(&router, "/api/search?q=history-check").await;
 
     let (status, _, body) = get(&router, "/api/history").await;
@@ -502,6 +505,10 @@ async fn history_click_and_stats() {
     let rows = body.as_array().unwrap();
     assert_eq!(rows.len(), 2, "{body}");
     assert_eq!(rows[0]["kind"], "search");
+    assert_eq!(rows[0]["query"], "history-check");
+    assert_eq!(rows[0]["query_raw"], "history-check");
+    assert_eq!(rows[1]["query"], "history-check");
+    assert_eq!(rows[1]["query_raw"], "History-CHECK");
 
     // History merges searches and clicks by (ts DESC, id DESC) at
     // millisecond precision; without a pause the click can share the last
@@ -613,9 +620,14 @@ async fn cache_bulk_delete_flags() {
 async fn error_envelope_and_param_validation() {
     let (router, _state, _tmp) = app();
 
-    // Missing q, unknown param, bad values -> 400 envelope.
+    // Missing/blank q, unknown param, bad values -> 400 envelope. A
+    // whitespace-only q must be rejected *before* the pipeline fans out
+    // on the empty normalized query (#89).
     for uri in [
         "/api/search",
+        "/api/search?q=",
+        "/api/search?q=%20%09",
+        "/api/search?q=%20%20%20",
         "/api/search?q=x&bogus=1",
         "/api/search?q=x&safesearch=9",
         "/api/search?q=x&page=0",
@@ -628,6 +640,11 @@ async fn error_envelope_and_param_validation() {
         assert_eq!(status, StatusCode::BAD_REQUEST, "{uri}: {body}");
         assert_envelope(&body, "bad_request");
     }
+
+    // No rejected request reached the pipeline: nothing was logged.
+    let (status, _, body) = get(&router, "/api/history").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body.as_array().unwrap().len(), 0, "{body}");
 
     // Malformed and absent cache keys.
     let (status, _, body) = get(&router, &format!("/api/cache/{}", "f".repeat(64))).await;
