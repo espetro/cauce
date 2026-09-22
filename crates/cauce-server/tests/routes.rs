@@ -494,7 +494,10 @@ async fn history_click_and_stats() {
     let (router, _state, _tmp) = app();
 
     // One network search + one cache hit = two history rows, hit rate 0.5.
-    get(&router, "/api/search?q=history-check").await;
+    // The first request uses different casing: the normalized query is
+    // identical, so the second request still hits the cache, and history
+    // keeps both the normalized `query` and the submitted `query_raw` (#89).
+    get(&router, "/api/search?q=History-CHECK").await;
     get(&router, "/api/search?q=history-check").await;
 
     let (status, _, body) = get(&router, "/api/history").await;
@@ -502,6 +505,10 @@ async fn history_click_and_stats() {
     let rows = body.as_array().unwrap();
     assert_eq!(rows.len(), 2, "{body}");
     assert_eq!(rows[0]["kind"], "search");
+    assert_eq!(rows[0]["query"], "history-check");
+    assert_eq!(rows[0]["query_raw"], "history-check");
+    assert_eq!(rows[1]["query"], "history-check");
+    assert_eq!(rows[1]["query_raw"], "History-CHECK");
 
     // History merges searches and clicks by (ts DESC, id DESC) at
     // millisecond precision; without a pause the click can share the last

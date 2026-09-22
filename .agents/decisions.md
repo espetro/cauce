@@ -104,6 +104,12 @@ rather than editing it away.
   The Anthropic Messages protocol (W4-05) is KEPT per the owner: supporting both protocols
   is adoption-critical since not every user runs Bifrost. Source:
   `/tmp/oxe-maintenance-area-review.md`. — 2026-09-22
+- **`search_log` keeps the user's raw query text in `query_raw`; `query` stays
+  normalized.** History displays need the original casing, but stats grouping
+  (`zero_result_queries`) and the history `q` LIKE filter want the normalized
+  form — so schema v2 adds a nullable `query_raw` column instead of changing
+  `query`'s semantics. NULL on pre-v2 rows; `SearchLogRow.query_raw` is
+  `Option<String>` on the wire. (#89) — 2026-09-23
 - **UX-complaint hardening applied from SearXNG research
   (`/tmp/oxe-searxng-ux-research.md`).** Never cache empty responses;
   `cache.degraded_ttl_s` for partial/degraded responses;
