@@ -1,7 +1,13 @@
-//! Engine construction from `[[engines]]` config entries — the single
-//! factory shared by `oxe serve` (all enabled engines) and `oxe record`
-//! (one engine by id), so both resolve `command`/`args`/`env`/`cwd`/`tier`/
-//! `page_size` the same way.
+//! Engine construction from `[[engines]]` config entries plus spec
+//! auto-registration — the single factory shared by `oxe serve` (all
+//! enabled engines) and `oxe record` (one engine by id), so both resolve
+//! `command`/`args`/`env`/`cwd`/`tier`/`page_size` the same way.
+//!
+//! Declarative engines (W1-02) resolve their YAML spec through
+//! [`declarative::resolve_spec_source`] (entry `spec` path/name, else the
+//! entry `id`, looking in `$OXE_CONFIG_DIR/engines/` before the embedded
+//! `engines/*.yaml`) and get their `HttpClient` from the entry's
+//! `[engines.<id>.egress]` table.
 //!
 //! This Source Code Form is subject to the terms of the Mozilla Public
 //! License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -10,24 +16,56 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use oxe_core::config::{Config, EngineEntry, EngineKind};
+use oxe_core::config::{Config, EngineEntry, EngineKind, system_env};
+use oxe_core::http::HttpClient;
 use oxe_core::{Engine, Tier};
 use tracing::warn;
 
+use crate::declarative::{CompiledSpec, DeclarativeEngine, resolve_spec_source};
 use crate::exec::{ExecEngine, ExecSpec};
 use crate::replay::Replay;
 
 /// Construct every `enabled` engine in `cfg` (`Config::load` already
-/// applied `OXE_ENGINES` pinning). Wave 0 knows `replay` and `exec`;
-/// `declarative` lands in W1 and is skipped with a warning.
+/// applied `OXE_ENGINES` pinning), then auto-register every *enabled*
+/// declarative spec that has no `[[engines]]` entry — dropping
+/// `engines/bing.yaml` into the repo (or the config dir) is all it takes
+/// to join the default fan-out.
+///
+/// Auto-registration is suppressed while `OXE_ENGINES` pins the set: the
+/// pin is exhaustive, so an unconfigured spec must not appear just
+/// because its file exists (the golden path pins `OXE_ENGINES=replay`).
 pub fn build_engines(cfg: &Config) -> Vec<Arc<dyn Engine>> {
-    cfg.enabled_engines().filter_map(build_engine).collect()
+    let mut engines: Vec<Arc<dyn Engine>> = cfg
+        .enabled_engines()
+        .filter_map(|e| build_engine(e, cfg.config_dir()))
+        .collect();
+
+    if !oxe_engines_pinned() {
+        for spec in crate::declarative::load_specs(cfg.config_dir(), &system_env()) {
+            let id = spec.id().clone();
+            if !spec.spec().enabled || cfg.engine(id.as_str()).is_some() {
+                continue;
+            }
+            match HttpClient::from_egress_config(id.clone(), None) {
+                Ok(http) => engines.push(Arc::new(DeclarativeEngine::new(spec, http))),
+                Err(e) => warn!(id = %id, error = %e, "declarative engine skipped"),
+            }
+        }
+    }
+    engines
+}
+
+/// `OXE_ENGINES` set and non-empty (config treats empty as unset).
+fn oxe_engines_pinned() -> bool {
+    std::env::var("OXE_ENGINES").is_ok_and(|v| !v.trim().is_empty())
 }
 
 /// Construct one engine from a config entry, regardless of its `enabled`
-/// flag (`oxe record --engine <id>` reaches disabled entries too). Returns
-/// `None` — with a warning — for entries this wave cannot run.
-pub fn build_engine(entry: &EngineEntry) -> Option<Arc<dyn Engine>> {
+/// flag (`oxe record --engine <id>` reaches disabled entries too).
+/// `config_dir` is `cfg.config_dir()` — spec overrides live under its
+/// `engines/` subdirectory. Returns `None` — with a warning — for entries
+/// this wave cannot run.
+pub fn build_engine(entry: &EngineEntry, config_dir: &Path) -> Option<Arc<dyn Engine>> {
     match entry.kind {
         EngineKind::Replay => {
             if entry.id.as_str() != "replay" {
@@ -61,11 +99,27 @@ pub fn build_engine(entry: &EngineEntry) -> Option<Arc<dyn Engine>> {
                 tier: entry.tier.unwrap_or(Tier::T2),
             })))
         }
-        EngineKind::Declarative => {
-            warn!(id = %entry.id, "declarative engines land in W1; skipped");
-            None
-        }
+        EngineKind::Declarative => match build_declarative(entry, config_dir) {
+            Ok(engine) => Some(Arc::new(engine)),
+            Err(e) => {
+                warn!(id = %entry.id, error = %e, "declarative engine skipped");
+                None
+            }
+        },
     }
+}
+
+/// `kind = "declarative"`: resolve the spec source, compile it (with the
+/// process env for `${...}` header interpolation), build the `HttpClient`
+/// from `[engines.<id>.egress]`, apply `tier`/`page_size` overrides.
+fn build_declarative(
+    entry: &EngineEntry,
+    config_dir: &Path,
+) -> Result<DeclarativeEngine, crate::declarative::SpecError> {
+    let source = resolve_spec_source(entry, config_dir)?;
+    let compiled = CompiledSpec::from_yaml(&source, &system_env())?;
+    let http = HttpClient::from_egress_config(entry.id.clone(), entry.egress.as_ref())?;
+    Ok(DeclarativeEngine::new(compiled, http).with_overrides(entry.tier, entry.page_size))
 }
 
 /// `cwd` for an exec entry without one: when the first arg is a relative

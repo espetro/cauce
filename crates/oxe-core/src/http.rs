@@ -239,6 +239,22 @@ impl HttpClient {
         })
     }
 
+    /// `new` with both the egress path and the policy derived from one
+    /// `[engines.<id>.egress]` table (`None` = direct + settled defaults).
+    /// The one-call wiring engine runtimes want; use [`HttpClient::new`]
+    /// when egress and policy come from different places.
+    pub fn from_egress_config(
+        engine: EngineId,
+        cfg: Option<&EgressConfig>,
+    ) -> Result<Self, EngineError> {
+        let egress = egress_from_config(cfg)?;
+        Self::new(
+            engine,
+            egress.as_ref(),
+            HttpPolicy::default().with_egress_config(cfg),
+        )
+    }
+
     /// The engine this client serves.
     pub fn engine(&self) -> &EngineId {
         &self.engine
@@ -254,6 +270,18 @@ impl HttpClient {
     /// statuses are returned as `Ok` — status-to-error mapping is the
     /// engine runtime's `detect` contract.
     pub async fn get(&self, url: &str, budget: Duration) -> Result<HttpResponse, EngineError> {
+        self.get_with_headers(url, budget, HeaderMap::new()).await
+    }
+
+    /// `get` with extra per-request headers (spec `request.headers` in
+    /// declarative engines). These override the default `User-Agent` /
+    /// `Accept-Language` pair when names collide.
+    pub async fn get_with_headers(
+        &self,
+        url: &str,
+        budget: Duration,
+        headers: HeaderMap,
+    ) -> Result<HttpResponse, EngineError> {
         self.limiter.until_ready().await;
 
         let span = info_span!(
@@ -266,7 +294,10 @@ impl HttpClient {
             error = tracing::field::Empty,
         );
         let started = Instant::now();
-        let result = self.send(url, budget).instrument(span.clone()).await;
+        let result = self
+            .send(url, budget, headers)
+            .instrument(span.clone())
+            .await;
         let ms = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
         span.record("ms", ms);
         match &result {
@@ -282,10 +313,16 @@ impl HttpClient {
         result
     }
 
-    async fn send(&self, url: &str, budget: Duration) -> Result<HttpResponse, EngineError> {
+    async fn send(
+        &self,
+        url: &str,
+        budget: Duration,
+        headers: HeaderMap,
+    ) -> Result<HttpResponse, EngineError> {
         let res = self
             .client
             .get(url)
+            .headers(headers)
             .timeout(budget)
             .send()
             .await
