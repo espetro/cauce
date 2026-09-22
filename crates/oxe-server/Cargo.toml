@@ -6,4 +6,41 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 
+[features]
+default = ["otlp"]
+# OTLP trace export via tracing-opentelemetry. Active only when
+# OTEL_EXPORTER_OTLP_ENDPOINT is set at runtime; the feature only controls
+# whether the code is compiled in.
+otlp = [
+    "dep:opentelemetry",
+    "dep:opentelemetry_sdk",
+    "dep:opentelemetry-otlp",
+    "dep:tracing-opentelemetry",
+    "dep:tokio",
+]
+
 [dependencies]
+oxe-core = { path = "../oxe-core" }
+chrono = { version = "0.4", features = ["serde"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+tracing = "0.1"
+tracing-appender = "0.2"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+uuid = { version = "1", features = ["v7", "serde"] }
+
+opentelemetry = { version = "0.32", optional = true }
+opentelemetry_sdk = { version = "0.32", optional = true }
+# default-features off: the default set pulls the HTTP/proto + reqwest
+# exporters; we only ship the gRPC/tonic span exporter.
+opentelemetry-otlp = { version = "0.32", default-features = false, features = [
+    "grpc-tonic",
+    "trace",
+], optional = true }
+tokio = { version = "1", features = ["rt-multi-thread"], optional = true }
+tracing-opentelemetry = { version = "0.33", optional = true }
+
+[dev-dependencies]
+async-trait = "0.1"
+tempfile = "3"
