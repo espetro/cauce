@@ -9,6 +9,8 @@ Flags:
                     (simulates a crash mid-call)
   --sleep S         sleep S seconds before answering a matching request
   --sleep-on STR    only sleep when STR is a substring of the query
+  --boot-delay S    sleep S seconds once at startup, before reading requests
+                    (simulates a slow cold start: interpreter + engine init)
 """
 import argparse
 import os
@@ -27,7 +29,10 @@ def main() -> None:
     ap.add_argument("--crash-after", type=int, default=0)
     ap.add_argument("--sleep", type=float, default=0.0)
     ap.add_argument("--sleep-on", default=None)
+    ap.add_argument("--boot-delay", type=float, default=0.0)
     opts = ap.parse_args()
+    if opts.boot_delay:
+        time.sleep(opts.boot_delay)
     state = {"n": 0}
 
     def echo(req: Request):
