@@ -44,7 +44,14 @@ pub struct SearchLogRow {
     pub ts: DateTime<Utc>,
     /// The `CacheKey` of the request; joins to `clicks.query_hash`.
     pub query_hash: CacheKey,
+    /// The normalized query (`normalize_query`: lowercased, whitespace
+    /// collapsed). Stays normalized because stats grouping and the
+    /// history `q` filter depend on it.
     pub query: String,
+    /// The query text exactly as submitted (original casing and spacing),
+    /// for history displays. `None` on rows written before schema v2.
+    #[serde(default)]
+    pub query_raw: Option<String>,
     pub client: ClientKind,
     pub source: LogSource,
     /// Cache tier that served the hit; `None` on `source = network`.

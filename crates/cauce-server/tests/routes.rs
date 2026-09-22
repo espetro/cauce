@@ -57,6 +57,11 @@ const EXPECTED_WAVE1_MOUNTED: &[(&str, &str)] = &[
     ("GET", "/metrics"),
 ];
 
+/// Wave-2 rows mounted so far: the favicon (#87). It is a `requires: "ui"`
+/// row, so it joins the mounted set only in `ui` builds and drops under
+/// `--headless` like the pages.
+const EXPECTED_WAVE2_UI_MOUNTED: &[(&str, &str)] = &[("GET", "/favicon.ico")];
+
 /// Serialises tests that mutate process env (`CAUCE_CONFIG_DIR` and friends).
 /// Under nextest each test is its own process anyway; this keeps plain
 /// `cargo test` (one process per test binary) safe too.
@@ -287,8 +292,8 @@ fn wave0_routes_match_plan_filter() {
 
 /// `mounted_routes` (the builder's own view) equals the wave-0 set plus
 /// every wave-1 row implemented so far (`* /mcp` from W1-08, the engine
-/// health pair from W1-06, `/metrics` from W1-09), filtered to the
-/// compiled cargo features.
+/// health pair from W1-06, `/metrics` from W1-09) and the wave-2 favicon
+/// (#87), filtered to the compiled cargo features.
 #[test]
 fn mounted_routes_match_declaration() {
     let (state, _tmp) = test_state();
@@ -304,6 +309,7 @@ fn mounted_routes_match_declaration() {
         expected.extend(
             EXPECTED_WAVE0_UI
                 .iter()
+                .chain(EXPECTED_WAVE2_UI_MOUNTED)
                 .map(|(m, p)| (m.to_string(), p.to_string())),
         );
     }
@@ -341,7 +347,7 @@ async fn headless_drops_ui_routes_keeps_api() {
     let headless: BTreeSet<(String, String)> = mounted_routes(&state, &RouterOptions::headless())
         .map(|r| (r.method.to_string(), r.path.to_string()))
         .collect();
-    for ui_row in EXPECTED_WAVE0_UI {
+    for ui_row in EXPECTED_WAVE0_UI.iter().chain(EXPECTED_WAVE2_UI_MOUNTED) {
         assert!(
             !headless.contains(&(ui_row.0.to_string(), ui_row.1.to_string())),
             "{ui_row:?} must not mount under --headless"
@@ -350,7 +356,7 @@ async fn headless_drops_ui_routes_keeps_api() {
     assert!(headless.contains(&("GET".to_string(), "/api/search".to_string())));
 
     let router = build_router_opts(state, RouterOptions::headless());
-    for uri in ["/", "/search?q=x"] {
+    for uri in ["/", "/search?q=x", "/favicon.ico"] {
         let (status, _, body) = get(&router, uri).await;
         assert_eq!(status, StatusCode::NOT_FOUND, "{uri}: {body}");
         assert_envelope(&body, "not_found");
@@ -443,6 +449,26 @@ async fn live_router_matches_routes_table() {
     }
 }
 
+/// `GET /favicon.ico` serves the embedded SVG icon — the wave-0 browser
+/// pass saw it 404 on every page load (#87). `ui` builds only.
+#[cfg(feature = "ui")]
+#[tokio::test]
+async fn favicon_is_served() {
+    let (router, _state, _tmp) = app();
+    let resp = router
+        .clone()
+        .oneshot(req("GET", "/favicon.ico"))
+        .await
+        .expect("response");
+    assert_eq!(resp.status(), StatusCode::OK);
+    assert_eq!(resp.headers()[header::CONTENT_TYPE], "image/svg+xml");
+    let bytes = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+    assert!(
+        bytes.starts_with(b"<svg"),
+        "favicon body should be the embedded SVG: {bytes:?}"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // Handler behaviour
 // ---------------------------------------------------------------------------
@@ -494,7 +520,10 @@ async fn history_click_and_stats() {
     let (router, _state, _tmp) = app();
 
     // One network search + one cache hit = two history rows, hit rate 0.5.
-    get(&router, "/api/search?q=history-check").await;
+    // The first request uses different casing: the normalized query is
+    // identical, so the second request still hits the cache, and history
+    // keeps both the normalized `query` and the submitted `query_raw` (#89).
+    get(&router, "/api/search?q=History-CHECK").await;
     get(&router, "/api/search?q=history-check").await;
 
     let (status, _, body) = get(&router, "/api/history").await;
@@ -502,6 +531,10 @@ async fn history_click_and_stats() {
     let rows = body.as_array().unwrap();
     assert_eq!(rows.len(), 2, "{body}");
     assert_eq!(rows[0]["kind"], "search");
+    assert_eq!(rows[0]["query"], "history-check");
+    assert_eq!(rows[0]["query_raw"], "history-check");
+    assert_eq!(rows[1]["query"], "history-check");
+    assert_eq!(rows[1]["query_raw"], "History-CHECK");
 
     // History merges searches and clicks by (ts DESC, id DESC) at
     // millisecond precision; without a pause the click can share the last
@@ -613,9 +646,14 @@ async fn cache_bulk_delete_flags() {
 async fn error_envelope_and_param_validation() {
     let (router, _state, _tmp) = app();
 
-    // Missing q, unknown param, bad values -> 400 envelope.
+    // Missing/blank q, unknown param, bad values -> 400 envelope. A
+    // whitespace-only q must be rejected *before* the pipeline fans out
+    // on the empty normalized query (#89).
     for uri in [
         "/api/search",
+        "/api/search?q=",
+        "/api/search?q=%20%09",
+        "/api/search?q=%20%20%20",
         "/api/search?q=x&bogus=1",
         "/api/search?q=x&safesearch=9",
         "/api/search?q=x&page=0",
@@ -628,6 +666,11 @@ async fn error_envelope_and_param_validation() {
         assert_eq!(status, StatusCode::BAD_REQUEST, "{uri}: {body}");
         assert_envelope(&body, "bad_request");
     }
+
+    // No rejected request reached the pipeline: nothing was logged.
+    let (status, _, body) = get(&router, "/api/history").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body.as_array().unwrap().len(), 0, "{body}");
 
     // Malformed and absent cache keys.
     let (status, _, body) = get(&router, &format!("/api/cache/{}", "f".repeat(64))).await;
@@ -673,15 +716,35 @@ async fn click_beacon_rejects_malformed_query_hash() {
     assert_eq!(body.as_array().unwrap().len(), 0, "{body}");
 }
 
-/// `NoEngines` mapping: a non-empty pin matching nothing is 400
-/// `unknown_engines` even with zero configured engines; an empty/zero
-/// configured set is 503 `no_engines`.
+/// `NoEngines`/`UnknownEngines` mapping: a pin naming any id outside the
+/// configured set is 400 `unknown_engines` naming the rejected ids and the
+/// configured set (issue #90 strict contract — partial pins no longer
+/// truncate), even with zero configured engines; an empty/zero configured
+/// set with no pin is 503 `no_engines`.
 #[tokio::test]
 async fn no_engines_status_mapping() {
     let (router, _state, _tmp) = app();
     let (status, _, body) = get(&router, "/api/search?q=x&engines=nosuch").await;
     assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
     assert_envelope(&body, "unknown_engines");
+    let message = body["error"]["message"].as_str().unwrap();
+    assert!(
+        message.contains("nosuch"),
+        "message names the rejected id: {message}"
+    );
+    assert!(
+        message.contains("replay"),
+        "message lists the configured set: {message}"
+    );
+
+    // A partially-valid pin rejects the whole request (issue #90): no
+    // silent truncation to the known ids.
+    let (status, _, body) = get(&router, "/api/search?q=x&engines=replay,nosuch").await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    assert_envelope(&body, "unknown_engines");
+    let message = body["error"]["message"].as_str().unwrap();
+    assert!(message.contains("nosuch"), "{message}");
+    assert!(message.contains("replay"), "{message}");
 
     // A valid pin on a configured engine runs (and keys the cache entry
     // separately from the unpinned search).
@@ -694,10 +757,13 @@ async fn no_engines_status_mapping() {
     let pipeline = Arc::new(SearchPipeline::new(store.clone(), vec![]));
     let router = build_router(AppState::new(pipeline, store, Config::default()));
 
-    // Non-empty pin with zero configured engines is still the caller's error.
+    // Non-empty pin with zero configured engines is still the caller's
+    // error — every pin id is unknown when nothing is configured.
     let (status, _, body) = get(&router, "/api/search?q=x&engines=replay").await;
     assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
     assert_envelope(&body, "unknown_engines");
+    let message = body["error"]["message"].as_str().unwrap();
+    assert!(message.contains("replay"), "{message}");
 
     // No pin with zero configured engines is the operator's error.
     let (status, _, body) = get(&router, "/api/search?q=x").await;

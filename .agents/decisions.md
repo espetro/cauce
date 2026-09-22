@@ -61,6 +61,11 @@ rather than editing it away.
   engine answered (`Ok` or `NoResults`) yields a 200-shaped `SearchResponse`, possibly empty;
   `AllEnginesFailed` requires every engine to error/timeout/panic. Kills the v2 "page 2 always
   502" defect; `engines_used` still reports `Failed(NoResults)` for honesty. — 2026-09-22
+  Amended 2026-09-23 (issue #120): an `Ok` engine response with zero results normalizes to
+  `NoResults` in the pipeline's fan-out, uniform across runtimes (exec `{"results":[],
+  "error":null}` included), so a wedged engine no longer reports `EngineStatus::Ok`. The
+  response is still an answer — health stays `record_ok`, the fan-out still yields a
+  200-shaped empty response — but the engine report and the `no_results` metric are honest.
 - **Store errors degrade, never fail a search.** `get_exact` failure → warn + treat as miss;
   `put` failure → warn + serve; `log_search` failure → warn only. `/health` (W0-09) owns
   store-failure surfacing. — 2026-09-22
@@ -116,3 +121,9 @@ rather than editing it away.
   children must accept `v:1` (a strict subset) and echo the request's `v`, so
   old parents still work against new children. Static `params` come from a new
   `[engines.params]` config table. — 2026-09-23
+- **`search_log` keeps the user's raw query text in `query_raw`; `query` stays
+  normalized.** History displays need the original casing, but stats grouping
+  (`zero_result_queries`) and the history `q` LIKE filter want the normalized
+  form — so schema v2 adds a nullable `query_raw` column instead of changing
+  `query`'s semantics. NULL on pre-v2 rows; `SearchLogRow.query_raw` is
+  `Option<String>` on the wire. (#89) — 2026-09-23

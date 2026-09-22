@@ -195,7 +195,7 @@ async fn reopen_is_idempotent() {
     let version: i64 = conn
         .query_row("SELECT max(version) FROM schema_version", [], |r| r.get(0))
         .unwrap();
-    assert_eq!(version, 1, "reopening must not re-run migrations");
+    assert_eq!(version, 2, "reopening must not re-run migrations");
 }
 
 /// `:memory:` would give every pooled connection a private database, so it is

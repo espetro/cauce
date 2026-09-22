@@ -115,5 +115,38 @@ class RunLoopTests(unittest.TestCase):
         self.assertIsNone(resps[0]["error"])
 
 
+class DdgsAutoTests(unittest.TestCase):
+    """ddgs_auto emits `no_results` instead of `Ok([])` on an empty page
+    (issue #120); `ddgs` is stubbed so the test needs no network/extra."""
+
+    def _search_with_hits(self, hits):
+        import types
+
+        from cauce_engine_sdk import ddgs_auto
+
+        fake_ddgs = types.SimpleNamespace(
+            DDGS=lambda: types.SimpleNamespace(text=lambda *a, **k: hits)
+        )
+        with patch.dict(sys.modules, {"ddgs": fake_ddgs}):
+            return ddgs_auto.search(Request(query="x"))
+
+    def test_empty_hits_emit_no_results(self):
+        resp = self._search_with_hits([])
+        self.assertEqual(resp.error, "no_results")
+        self.assertEqual(resp.results, [])
+
+    def test_hits_without_href_emit_no_results(self):
+        resp = self._search_with_hits([{"title": "t", "body": "s"}])
+        self.assertEqual(resp.error, "no_results")
+        self.assertEqual(resp.results, [])
+
+    def test_hits_return_results_without_error(self):
+        resp = self._search_with_hits(
+            [{"title": "t", "href": "https://example.com/", "body": "s"}]
+        )
+        self.assertIsNone(resp.error)
+        self.assertEqual(resp.results[0].url, "https://example.com/")
+
+
 if __name__ == "__main__":
     unittest.main()
