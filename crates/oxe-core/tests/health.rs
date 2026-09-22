@@ -200,39 +200,45 @@ async fn three_consecutive_timeouts_open_breaker() {
     // `Transport`/`Parse` increment failures but never open the breaker.
     let tracker = HealthTracker::new(store);
     let id = EngineId::from("flaky");
+    let err = |e: EngineError| {
+        tracker.record_err(&id, Duration::from_millis(10), &e, Uuid::now_v7());
+    };
     for _ in 0..5 {
-        tracker.record_err(
-            &id,
-            Duration::from_millis(10),
-            &EngineError::Transport("boom".to_string()),
-            Uuid::now_v7(),
-        );
+        err(EngineError::Transport("boom".to_string()));
     }
     let row = tracker.health_row(&id).unwrap();
     assert_eq!(row.failures, 5);
     assert_eq!(row.breaker, BreakerState::Closed);
 
-    // And a non-consecutive Timeout run resets on any answer.
-    tracker.record_err(
-        &id,
-        Duration::from_millis(10),
-        &EngineError::Timeout,
-        Uuid::now_v7(),
-    );
-    tracker.record_err(
-        &id,
-        Duration::from_millis(10),
-        &EngineError::Timeout,
-        Uuid::now_v7(),
-    );
-    tracker.record_ok(&id, Duration::from_millis(10), Uuid::now_v7());
-    tracker.record_err(
-        &id,
-        Duration::from_millis(10),
-        &EngineError::Timeout,
-        Uuid::now_v7(),
-    );
+    // "3 consecutive timeouts" is a streak: Parse, Parse, Timeout leaves
+    // the breaker Closed even though `failures` is already 8.
+    err(EngineError::Parse("bad html".to_string()));
+    err(EngineError::Parse("bad html".to_string()));
+    err(EngineError::Timeout);
     let row = tracker.health_row(&id).unwrap();
+    assert_eq!(row.failures, 8);
+    assert_eq!(
+        row.breaker,
+        BreakerState::Closed,
+        "a non-Timeout error between timeouts breaks the streak"
+    );
+
+    // The streak then accumulates from 1: two more timeouts open it.
+    err(EngineError::Timeout);
+    err(EngineError::Timeout);
+    let row = tracker.health_row(&id).unwrap();
+    assert_eq!(row.breaker, BreakerState::Open, "3 consecutive timeouts");
+
+    // And a non-consecutive Timeout run resets on any answer.
+    let id2 = EngineId::from("flaky2");
+    let err2 = |e: EngineError| {
+        tracker.record_err(&id2, Duration::from_millis(10), &e, Uuid::now_v7());
+    };
+    err2(EngineError::Timeout);
+    err2(EngineError::Timeout);
+    tracker.record_ok(&id2, Duration::from_millis(10), Uuid::now_v7());
+    err2(EngineError::Timeout);
+    let row = tracker.health_row(&id2).unwrap();
     assert_eq!(row.failures, 1, "a success resets consecutive failures");
     assert_eq!(row.breaker, BreakerState::Closed);
 }

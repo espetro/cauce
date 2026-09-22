@@ -78,12 +78,14 @@ impl Default for HealthPolicy {
 }
 
 /// In-memory health of one engine; [`EngineHealthRow`] is its persisted
-/// projection. `samples` and `probe_in_flight` are runtime-only.
+/// projection. `samples`, `timeout_streak` and `probe_in_flight` are
+/// runtime-only.
 #[derive(Debug, Clone)]
 pub struct EngineHealth {
     /// EWMA of observed call latency in ms (`alpha = 0.3`).
     pub ewma_ms: f64,
-    /// Consecutive failures; reset by any answer (`Ok` or `NoResults`).
+    /// Consecutive failures of any kind; reset by any answer (`Ok` or
+    /// `NoResults`).
     pub failures: u32,
     pub breaker: BreakerState,
     /// `Open` flips to `HalfOpen` at this instant.
@@ -94,6 +96,11 @@ pub struct EngineHealth {
     /// Latency samples seen; the first seeds the EWMA instead of blending
     /// toward zero.
     samples: u64,
+    /// Consecutive `Timeout`s specifically — the settled rule is "3
+    /// consecutive timeouts", so a `Parse` between two timeouts breaks the
+    /// streak. Runtime-only: `engine_health` has no column for it, and a
+    /// restart conservatively assumes the streak is broken.
+    timeout_streak: u32,
     /// `HalfOpen` single-probe gate: true while a probe call is in flight.
     /// Runtime-only — a restarted process has no probes in flight.
     probe_in_flight: bool,
@@ -109,6 +116,7 @@ impl Default for EngineHealth {
             last_ok_at: None,
             last_error: None,
             samples: 0,
+            timeout_streak: 0,
             probe_in_flight: false,
         }
     }
@@ -125,6 +133,9 @@ impl EngineHealth {
             last_error: row.last_error.clone(),
             // A persisted EWMA was already seeded; keep blending on top.
             samples: u64::from(row.ewma_ms > 0.0),
+            // The schema stores only the generic `failures`; a restart
+            // assumes no timeout streak rather than guessing one.
+            timeout_streak: 0,
             probe_in_flight: false,
         }
     }
@@ -291,6 +302,7 @@ impl HealthTracker {
             let health = inner.map.entry(id.clone()).or_default();
             health.observe(latency);
             health.failures = 0;
+            health.timeout_streak = 0;
             health.last_ok_at = Some(Utc::now());
             health.probe_in_flight = false;
             if health.breaker != BreakerState::Closed {
@@ -332,6 +344,13 @@ impl HealthTracker {
             health.observe(latency);
             health.failures += 1;
             health.last_error = Some(err.to_string());
+            // "3 consecutive timeouts" is a streak, not the generic
+            // failure count: any other error kind (or an answer) resets it.
+            health.timeout_streak = if matches!(err, EngineError::Timeout) {
+                health.timeout_streak + 1
+            } else {
+                0
+            };
             let probe = health.probe_in_flight;
             health.probe_in_flight = false;
 
@@ -343,7 +362,9 @@ impl HealthTracker {
                     EngineError::RateLimited | EngineError::Blocked => {
                         Some(self.policy.abuse_window)
                     }
-                    EngineError::Timeout if health.failures >= self.policy.timeout_threshold => {
+                    EngineError::Timeout
+                        if health.timeout_streak >= self.policy.timeout_threshold =>
+                    {
                         Some(self.policy.timeout_window)
                     }
                     _ => None,
