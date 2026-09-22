@@ -1,0 +1,13 @@
+#!/bin/sh
+# pre-push gate: run the full local validation before anything leaves.
+# Install with: mise run hooks:install  (sets core.hooksPath=.githooks)
+
+# mise may not be on PATH for non-interactive shells or GUI git clients.
+export PATH="$HOME/.local/share/mise/shims:/opt/homebrew/bin:/usr/local/bin:$PATH"
+
+if ! command -v mise >/dev/null 2>&1; then
+    echo "pre-push: mise not found on PATH; install mise or remove core.hooksPath" >&2
+    exit 1
+fi
+
+exec mise run validate

@@ -1,0 +1,52 @@
+# Toolchain and task gate for oxe. One gate: `mise run validate`.
+# Install everything: `mise install` (also installs the Rust toolchain).
+
+[tools]
+rust = "1.98.0"
+"cargo:cargo-deny" = "0.20.2"
+"cargo:cargo-nextest" = "0.9.146"
+
+[tasks.fmt]
+description = "Check formatting with rustfmt"
+run = "cargo fmt --all -- --check"
+
+[tasks."fmt:fix"]
+description = "Apply rustfmt"
+run = "cargo fmt --all"
+
+[tasks.lint]
+description = "Clippy on all targets, warnings as errors"
+run = "cargo clippy --all-targets -- -D warnings"
+
+[tasks.test]
+description = "Run tests (cargo-nextest when installed, else cargo test)"
+run = """
+#!/usr/bin/env bash
+set -euo pipefail
+threads="$(sysctl -n hw.ncpu 2>/dev/null || nproc 2>/dev/null || echo 4)"
+if command -v cargo-nextest >/dev/null 2>&1; then
+    cargo nextest run --workspace --test-threads "$threads" --no-tests=pass
+else
+    cargo test --workspace -- --test-threads "$threads"
+fi
+"""
+
+[tasks.deny]
+description = "cargo-deny: licenses, advisories, bans, sources"
+run = "cargo deny check"
+
+[tasks.validate]
+description = "Full local gate: fmt + lint + test + deny"
+depends = ["fmt", "lint", "test", "deny"]
+
+[tasks."validate:nightly"]
+description = "Nightly-only checks (stub until W0-12 budget/live tests land)"
+run = "echo 'validate:nightly is a stub for now'"
+
+[tasks.dev]
+description = "Run the oxe binary (oxe serve)"
+run = "cargo run -p oxe-cli -- serve"
+
+[tasks."hooks:install"]
+description = "Point git at .githooks/ (pre-push runs mise run validate)"
+run = "git config core.hooksPath .githooks && echo 'core.hooksPath=.githooks'"
