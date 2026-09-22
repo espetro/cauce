@@ -64,3 +64,23 @@ rather than editing it away.
 - **Store errors degrade, never fail a search.** `get_exact` failure → warn + treat as miss;
   `put` failure → warn + serve; `log_search` failure → warn only. `/health` (W0-09) owns
   store-failure surfacing. — 2026-09-22
+- **Exec engine cancellation contract: a dropped/cancelled `search` must not leave a pending
+  response in a reused child.** `ExecEngine::search` takes the `ChildIo` out of `state` for
+  the round trip and only puts it back on a fully decoded success; every other path drops it
+  and `kill_on_drop` reaps the process. Protocol v1 has no request-correlation field, so a
+  stale line would decode as the next query's answer — v2 should add a correlation field
+  (follow-up issue #88). — 2026-09-22
+- **Partial-unknown engine pins truncate, not 400.** `?engines=replay,nosuch` runs against the
+  known subset for wave 0; only a pin matching nothing at all is 400 `unknown_engines`. A
+  400-with-unknown-list response is deferred — this is a wire-visible semantic, revisit
+  deliberately. — 2026-09-22
+- **Config precedence: CLI flags > `OXE_*` env > config file > defaults.** One ordering, no
+  per-subcommand exceptions; `oxe record` resolves `--engine` through `Config::load()` like
+  `serve` does. — 2026-09-22
+- **The JSONL observability layer has a fixed `info` floor independent of
+  `RUST_LOG`/`OXE_LOG`.** The env filter scopes the stderr and OTLP layers only; the JSONL
+  file is `oxe trace`'s only input, so an env-set `warn` must not silently empty it.
+  — 2026-09-22
+- **`requires` strings on ROUTES are runtime mount gates, not cargo features.** `RouterOptions`
+  decides what mounts; real `ui`/`mcp`/`ai` feature stripping is deferred to the wave that
+  measures the headless/MCP memory budgets. — 2026-09-22
