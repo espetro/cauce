@@ -70,10 +70,13 @@ rather than editing it away.
   and `kill_on_drop` reaps the process. Protocol v1 has no request-correlation field, so a
   stale line would decode as the next query's answer — v2 should add a correlation field
   (follow-up issue #88). — 2026-09-22
-- **Partial-unknown engine pins truncate, not 400.** `?engines=replay,nosuch` runs against the
-  known subset for wave 0; only a pin matching nothing at all is 400 `unknown_engines`. A
-  400-with-unknown-list response is deferred — this is a wire-visible semantic, revisit
-  deliberately. — 2026-09-22
+- ~~**Partial-unknown engine pins truncate, not 400.**~~ Superseded 2026-09-22 (same day):
+  **any unknown id in a pin is 400 `unknown_engines`** naming the rejected ids and the
+  configured set, mirrored as MCP `invalid_params` (issue #90). SearXNG silently drops
+  unknown names (and a fully-unknown pin silently widens to the default fan-out); ES,
+  Stripe, GitHub, Exa and the Zalando guidelines all fail loud with names; silent
+  truncation is the worst failure mode for agents. Research: `/tmp/oxe-searxng-ux-research.md`.
+  — 2026-09-22
 - **Config precedence: CLI flags > `OXE_*` env > config file > defaults.** One ordering, no
   per-subcommand exceptions; `oxe record` resolves `--engine` through `Config::load()` like
   `serve` does. — 2026-09-22
