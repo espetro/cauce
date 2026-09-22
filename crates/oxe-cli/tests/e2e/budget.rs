@@ -25,7 +25,20 @@ async fn release_binary_size_and_rss() {
     }
 
     let ws = common::workspace_root();
-    let target_dir = ws.join("target/e2e-budget");
+    // The release dep-graph build lives outside `target/` by default: `du`/
+    // `cargo clean` on the main target dir stay honest, and every checkout/
+    // worktree on the host shares one copy instead of each building its own.
+    // CI sets OXE_BUDGET_TARGET_DIR back inside target/ so rust-cache covers
+    // it; a local override is useful too.
+    let target_dir = std::env::var_os("OXE_BUDGET_TARGET_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| {
+            let base = std::env::var_os("XDG_CACHE_HOME")
+                .map(PathBuf::from)
+                .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".cache")))
+                .unwrap_or_else(|| ws.join("target"));
+            base.join("oxe/e2e-budget")
+        });
     let bin = target_dir.join("release/oxe");
 
     let ws_owned: PathBuf = ws.to_path_buf();
