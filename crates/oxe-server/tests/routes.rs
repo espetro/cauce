@@ -271,14 +271,17 @@ fn wave0_routes_match_plan_filter() {
     assert_eq!(declared_wave0, expected_wave0_json);
 }
 
-/// `mounted_routes` (the builder's own view) equals the wave-0 set.
+/// `mounted_routes` (the builder's own view) equals the wave-0 set plus the
+/// wave-1 rows already implemented (`/metrics`, W1-09).
 #[test]
-fn mounted_routes_equal_wave0_declaration() {
+fn mounted_routes_equal_implemented_set() {
     let mounted: BTreeSet<(String, String)> = mounted_routes(&Default::default())
         .map(|r| (r.method.to_string(), r.path.to_string()))
         .collect();
     let expected: BTreeSet<(String, String)> = EXPECTED_WAVE0
         .iter()
+        .copied()
+        .chain([("GET", "/metrics")])
         .map(|(m, p)| (m.to_string(), p.to_string()))
         .collect();
     assert_eq!(mounted, expected);

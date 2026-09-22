@@ -25,6 +25,7 @@ use serde_json::{Value, json};
 
 use crate::app::AppState;
 use crate::error::ApiError;
+use crate::metrics::METRICS_CONTENT_TYPE;
 use crate::middleware::RequestCtx;
 use crate::observability::audit;
 
@@ -160,6 +161,9 @@ pub async fn click(
 }
 
 /// `GET /api/stats?days`: dashboard aggregates over the trailing window.
+/// The store serves the persisted aggregates (day series stay sourced from
+/// `search_log`); `merge_metrics` overlays the in-process engine percentiles
+/// and admission counters (W1-09).
 pub async fn stats(
     State(state): State<AppState>,
     Extension(ctx): Extension<RequestCtx>,
@@ -168,12 +172,30 @@ pub async fn stats(
     let params = QueryParams::parse(uri.query(), &ctx)?;
     params.allow(&ctx, &["days"])?;
     let days = params.u32(&ctx, "days", 7)?.clamp(1, 365);
-    state
-        .store()
-        .stats(days)
-        .await
-        .map(Json)
-        .map_err(|e| ctx.store(&e))
+    let mut snap = state.store().stats(days).await.map_err(|e| ctx.store(&e))?;
+    snap.merge_metrics();
+    Ok(Json(snap))
+}
+
+/// `GET /metrics` (W1-09): Prometheus text exposition of the process
+/// metrics. Loopback-only through the default loopback bind; no auth.
+/// The `oxe_cache_entries` gauge cell is refreshed from the store before
+/// each scrape so the pull model reports a live value.
+pub async fn metrics(State(state): State<AppState>) -> Response {
+    state.metrics().refresh_cache().await;
+    match state.metrics().render() {
+        Ok(body) => (
+            StatusCode::OK,
+            [(axum::http::header::CONTENT_TYPE, METRICS_CONTENT_TYPE)],
+            body,
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": format!("metrics encode: {e}") })),
+        )
+            .into_response(),
+    }
 }
 
 /// `GET /api/cache?limit&offset`: cache admin listing (includes
