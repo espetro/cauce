@@ -4,6 +4,9 @@
 //! License, v. 2.0. If a copy of the MPL was not distributed with this
 //! file, You can obtain one at <https://mozilla.org/MPL/2.0/>.
 
+// The HTMX pages exist only in `ui` builds (W1-12 feature gates).
+#![cfg(feature = "ui")]
+
 use std::sync::Arc;
 
 use axum::Router;

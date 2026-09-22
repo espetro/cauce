@@ -6,8 +6,29 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 
+# Cargo features (parent plan "Modes and budgets", W1-12): `ui`, `mcp` and
+# `ai` are the default set; `otlp` is non-default so tonic/prost stay out of
+# the default build. `archive`, `semantic` and `postgres` are declared for
+# the later waves that land their modules (`requires` rows in `ROUTES`
+# already name them); today they gate nothing.
 [features]
-default = ["otlp"]
+default = ["ui", "mcp", "ai"]
+# HTMX pages and embedded static assets (html.rs, askama templates).
+# `oxe serve --headless` can drop them at runtime; building without `ui`
+# drops them (and askama/rust-embed) at compile time.
+ui = ["dep:askama", "dep:rust-embed", "dep:urlencoding"]
+# MCP surfaces: the `/mcp` streamable-HTTP endpoint and `oxe mcp`'s stdio
+# transport (mcp.rs). schemars backs the tool arg schemas.
+mcp = ["dep:rmcp", "dep:schemars"]
+# AI answer pipeline (wave 4 `/api/answer`); no modules yet.
+ai = []
+# Page archive / fetch-and-index (wave 5 `/api/pages`, `/api/archive`); no
+# modules yet.
+archive = []
+# Semantic/vector search; no modules yet.
+semantic = []
+# Postgres Store impl (wave 6); no modules yet.
+postgres = []
 # OTLP trace export via tracing-opentelemetry. Active only when
 # OTEL_EXPORTER_OTLP_ENDPOINT is set at runtime; the feature only controls
 # whether the code is compiled in.
@@ -20,10 +41,8 @@ otlp = [
 
 [dependencies]
 oxe-core = { path = "../oxe-core" }
-askama = "0.13"
 axum = "0.8"
 chrono = { version = "0.4", features = ["serde"] }
-rust-embed = "8"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
@@ -37,8 +56,12 @@ tracing = "0.1"
 tracing-appender = "0.2"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 url = "2"
-urlencoding = "2"
 uuid = { version = "1", features = ["v7", "serde"] }
+
+# `ui` feature: HTMX templates and embedded static assets.
+askama = { version = "0.13", optional = true }
+rust-embed = { version = "8", optional = true }
+urlencoding = { version = "2", optional = true }
 
 opentelemetry = { version = "0.32", optional = true }
 opentelemetry_sdk = { version = "0.32", optional = true }
@@ -49,11 +72,14 @@ opentelemetry-otlp = { version = "0.32", default-features = false, features = [
     "trace",
 ], optional = true }
 tracing-opentelemetry = { version = "0.33", optional = true }
-# MCP transports (W1-08): streamable HTTP at /mcp + stdio for `oxe mcp`.
+# `mcp` feature (W1-08): streamable HTTP at /mcp + stdio for `oxe mcp`.
 # `schemars` is a direct dep because `rmcp` re-exports it and the tool arg
 # structs derive `schemars::JsonSchema`.
-rmcp = { version = "3", features = ["transport-streamable-http-server", "transport-io"] }
-schemars = "1"
+rmcp = { version = "3", features = [
+    "transport-streamable-http-server",
+    "transport-io",
+], optional = true }
+schemars = { version = "1", optional = true }
 
 [dev-dependencies]
 async-trait = "0.1"
