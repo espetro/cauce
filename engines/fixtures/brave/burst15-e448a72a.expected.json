@@ -1,0 +1,5 @@
+{
+  "query": "burst15",
+  "status": 429,
+  "error": "rate_limited"
+}
