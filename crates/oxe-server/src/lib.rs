@@ -7,7 +7,9 @@
 mod app;
 mod error;
 mod handlers;
+#[cfg(feature = "ui")]
 mod html;
+#[cfg(feature = "mcp")]
 pub mod mcp;
 mod metrics;
 mod middleware;
@@ -15,7 +17,8 @@ pub mod observability;
 mod routes;
 
 pub use app::{
-    AppState, CURRENT_WAVE, RouterOptions, build_router, build_router_opts, mounted_routes, serve,
+    AppState, CURRENT_WAVE, RouterOptions, build_router, build_router_opts, feature_enabled,
+    mounted_routes, serve,
 };
 pub use error::ApiError;
 pub use metrics::{METRICS_CONTENT_TYPE, MetricsHandle};

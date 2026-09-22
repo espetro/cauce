@@ -136,13 +136,16 @@ async fn replay_golden_path() {
     );
 
     // 7. HTML search page is served from cache and contains a replay title.
-    let (status, html) = common::http(addr, "GET", "/search?q=golden+path", None).await;
-    assert_eq!(status, 200, "html search failed");
-    assert!(
-        html.contains("golden path:"),
-        "HTML should contain a replay title"
-    );
-    assert!(html.contains("cached"), "HTML should show cached badge");
+    // `ui` builds only: `--no-default-features` binaries have no pages.
+    if cfg!(feature = "ui") {
+        let (status, html) = common::http(addr, "GET", "/search?q=golden+path", None).await;
+        assert_eq!(status, 200, "html search failed");
+        assert!(
+            html.contains("golden path:"),
+            "HTML should contain a replay title"
+        );
+        assert!(html.contains("cached"), "HTML should show cached badge");
+    }
 
     // 8. Delete the exact cache entry; the next search is network again.
     let (status, del_body) = common::http(

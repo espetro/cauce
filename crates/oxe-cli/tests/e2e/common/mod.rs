@@ -78,7 +78,7 @@ pub async fn spawn_oxe_bin(
     config_dir: impl AsRef<Path>,
     engines: &str,
 ) -> ServerGuard {
-    spawn_oxe_bin_env(bin, data_dir, config_dir, engines, &[]).await
+    spawn_oxe_bin_full(bin, data_dir, config_dir, engines, &[], &[]).await
 }
 
 pub async fn spawn_oxe_bin_env(
@@ -88,6 +88,18 @@ pub async fn spawn_oxe_bin_env(
     engines: &str,
     extra_env: &[(&str, &str)],
 ) -> ServerGuard {
+    spawn_oxe_bin_full(bin, data_dir, config_dir, engines, extra_env, &[]).await
+}
+
+/// Full form: extra env vars plus extra `oxe serve` args.
+pub async fn spawn_oxe_bin_full(
+    bin: &str,
+    data_dir: impl AsRef<Path>,
+    config_dir: impl AsRef<Path>,
+    engines: &str,
+    extra_env: &[(&str, &str)],
+    extra_args: &[&str],
+) -> ServerGuard {
     let mut cmd = Command::new(bin);
     cmd.current_dir(workspace_root())
         .arg("serve")
@@ -95,6 +107,7 @@ pub async fn spawn_oxe_bin_env(
         .arg("127.0.0.1")
         .arg("--port")
         .arg("0")
+        .args(extra_args)
         .env("OXE_DATA_DIR", data_dir.as_ref().as_os_str())
         .env("OXE_CONFIG_DIR", config_dir.as_ref().as_os_str())
         .env("OXE_ENGINES", engines)
