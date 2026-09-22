@@ -55,4 +55,4 @@ global store, and is never shared with or copied into another project.
 - Verified live: singleflight collapses 3 concurrent identical queries to 1 upstream call; `/metrics` exposes engine histograms + breaker state + admission wait; `/api/stats` mirrors. `search_web`+`exa_search` green via MCP.
 - #90: decided strict 400 naming unknown ids (reversed the earlier won't-fix recommendation after UX research — SearXNG silently widens on fully-unknown pins, industry norm is fail-loud-with-names). Issue commented with acceptance.
 - SearXNG UX-complaint research (`/tmp/oxe-searxng-ux-research.md`) applied to the v3 plans: W3-02 cache hygiene, W2-01 engines_skipped/failed rendering, W2-03 outcome label, W3-06 page-2 canary checks, new W3-07 degraded breaker (#119), empty→NoResults bug (#120); compat shim + param forwarding deferred to later/ (#121, #122).
-- Rename decided: project cauce → cauce, CLI `cauce`; rename step #123 scheduled in It 3 before W2 Batch I dispatch.
+- Rename decided: project oxe → cauce, CLI `cauce`; rename step #123 scheduled in It 3 before W2 Batch I dispatch.

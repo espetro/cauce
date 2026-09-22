@@ -36,7 +36,7 @@ directly):
 4. **Metadata row** (optional, below or beside the snippet): cauce adds a
    collapsed `<details>` "cached page text preview" per result, unique
    to cauce's cache-transparency requirement — not a pattern borrowed from
-   any harvested product, called out here as an cauce-specific addition
+   any harvested product, called out here as a cauce-specific addition
    rather than a convergent pattern.
 
 ## Vertical rhythm
@@ -54,7 +54,7 @@ directly):
 
 - `N results` count, optionally with cache/source provenance
   (`from cache · 3h old`), positioned as the first line of the results
-  block, not in the header. This is an cauce requirement (cache
+  block, not in the header. This is a cauce requirement (cache
   transparency) without a direct competitor precedent, since none of
   the harvested products expose cache state to end users; documented
   here as cauce-specific rather than implying convergence.

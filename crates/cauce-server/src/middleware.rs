@@ -183,7 +183,7 @@ pub async fn host_origin_guard(
     {
         return forbidden(
             &request,
-            format!("host {host:?} is not an cauce listen name"),
+            format!("host {host:?} is not a cauce listen name"),
         );
     }
     if is_mutating(request.method()) {

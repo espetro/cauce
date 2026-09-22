@@ -77,7 +77,7 @@ states, they are deliberately simpler, per `search.md` Mockup C:
   the pill (`AI mode is not configured - set a model in settings`) and
   the AI segment disables in place. No competitor in the harvested set
   needs this state (their AI surface is either always-on or a fully
-  separate product), so it is an cauce-specific addition, not
+  separate product), so it is a cauce-specific addition, not
   pattern-derived.
 
 ## Failure naming and stale results

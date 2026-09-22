@@ -68,7 +68,7 @@ Two sources of screenshots, both under `shots/`:
    pattern (e.g. `cauce-app-ai-answer-streaming-jsonleak-bug.png`, which
    caught the raw JSON metadata leak fixed by the
    `fix(ai): stream tail-stripped answer in delta frames` commit). These
-   are evidence, not pattern citations: do not cite an cauce screenshot as
+   are evidence, not pattern citations: do not cite a cauce screenshot as
    proof of a competitor convention.
 
 No automated capture pipeline exists yet (no Playwright harness pointed at

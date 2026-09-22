@@ -20,7 +20,7 @@ promote into the pattern docs and specs.
 | G4 | Skip shimmer-only thinking | covered | `patterns-states.md` (progressing status line) |
 | G5 | Low-confidence fallback to classic results | covered | `patterns-states.md` (AI mode unavailable) |
 | D1 | Keep per-claim `[n]` above DDG's weak citations | covered | `patterns-answer-streaming.md` `## Citations` (inline, at the claim) |
-| D2 | Stale cache on throttle state | promoted | `patterns-states.md` as an cauce-specific state. The service treats expired rows as misses today, so the behavior is queued in `search.md`. |
+| D2 | Stale cache on throttle state | promoted | `patterns-states.md` as a cauce-specific state. The service treats expired rows as misses today, so the behavior is queued in `search.md`. |
 | D3 | Privacy chrome: "served locally, cached on your machine" | queued | `history.md` and `search.md`. One product; copy decision only. |
 | D4 | Motion floor: no animation on SERP render | covered | `patterns-motion.md` lists only streaming, phase and expand/collapse motion, plus reduced-motion; no SERP entrance motion exists to remove |
 | D5 | Active model shown inline, capability annotations in the dropdown | queued | `landing.md` already has the in-pill model picker; only the annotations are new and need backend model metadata that `/v1/models` does not expose. |

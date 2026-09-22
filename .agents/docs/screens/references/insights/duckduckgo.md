@@ -189,7 +189,7 @@ in a way Duck.ai's proxy architecture does not surface.
   implication is that cauce's `cached · <age>` badge and "served from cache" honesty
   (rubric 2.5, 3.8) should also become the fallback surface when DDG throttles: a
   stale-cache-with-age-notice state beats a raw error. This state is not in
-  `patterns-states.md` yet and is worth adding as an cauce-specific finding.
+  `patterns-states.md` yet and is worth adding as a cauce-specific finding.
 - No result-count or timing metadata comes back reliably from DDG; cauce's meta line
   should not fabricate "about N results".
 
@@ -226,7 +226,7 @@ in a way Duck.ai's proxy architecture does not surface.
 2. Add a "stale cache on throttle" state. Because cauce's backend is DDG, intermittent
    403/CAPTCHA throttling is a first-class failure mode. When search fails, offer
    the cached result set with an age notice instead of a bare error; record this in
-   `patterns-states.md` as an cauce-specific state.
+   `patterns-states.md` as a cauce-specific state.
 3. Copy DDG's privacy-chrome placement, not its sparseness. The persistent
    "Anonymized" banner at the top of the thread and the one-word underlined trust
    copy on landing are cheap, effective patterns cauce can mirror (e.g. a "served

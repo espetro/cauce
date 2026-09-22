@@ -107,4 +107,4 @@ rather than editing it away.
   `cauce_search_requests_total` (W2-03); canary checks page-2 overlap + count regression
   (W3-06); new W3-07 breaker on Parse/Transport streaks; exec/replay empty → NoResults
   normalization. SearXNG `format=json` compat shim and engine-param forwarding deferred to
-  `later/`. Project renamed cauce → cauce; CLI stays `cauce`. — 2026-09-22
+  `later/`. Project renamed oxe → cauce; CLI stays `cauce`. — 2026-09-22
