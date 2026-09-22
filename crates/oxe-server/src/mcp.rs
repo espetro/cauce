@@ -19,9 +19,10 @@
 //! plan 6.1). The MCP client's `initialize.client_info.name` becomes
 //! [`ClientKind::Mcp(name)`] on every `SearchRequest`.
 //!
-//! Rate limiting (until W1-07 lands `PipelineError::RateLimited`): an
-//! `AllEnginesFailed` whose every failure is [`EngineError::RateLimited`] maps
-//! to a JSON-RPC server error carrying `rate_limited` + `retry_after_s`.
+//! Rate limiting: [`PipelineError::RateLimited`] (W1-07 admission) maps to a
+//! JSON-RPC server error carrying `rate_limited` + the real `retry_after_s`;
+//! an `AllEnginesFailed` whose every failure is [`EngineError::RateLimited`]
+//! maps to the same shape with a fixed hint as a fallback.
 //!
 //! This Source Code Form is subject to the terms of the Mozilla Public
 //! License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -56,12 +57,17 @@ use crate::observability::audit;
 /// settled `rate_limited` label and `data.retry_after_s` the hint.
 pub const MCP_RATE_LIMITED: ErrorCode = ErrorCode(-32029);
 
-/// `retry_after_s` hint until W1-07 admission supplies a real budget. One
+/// `retry_after_s` hint for the engine-level fallback (an `AllEnginesFailed`
+/// of pure `EngineError::RateLimited` carries no admission budget). One
 /// minute is well under the 15-minute breaker window a `RateLimited` engine
 /// trip opens in W1-06.
 const RATE_LIMIT_RETRY_AFTER_S: u64 = 60;
 
-/// Exa `num_results` bounds, frozen from `v2-legacy` (`_NUM_RESULTS_BOUNDS`).
+/// Exa `num_results` bounds, frozen from `v2-legacy` (`_NUM_RESULTS_BOUNDS`
+/// on `ExaSearchRequest`): v2 rejects out-of-range values through pydantic
+/// `ge`/`le` (a `ValidationError` surfaces as a tool error), applied only on
+/// the web/cache path — `source = "history"` passes `num_results` straight
+/// to `get_clicks(limit=)` unbounded.
 const NUM_RESULTS_MIN: u32 = 1;
 const NUM_RESULTS_MAX: u32 = 30;
 
@@ -177,8 +183,10 @@ pub struct CacheInvalidateArgs {
 pub struct ExaSearchArgs {
     /// Query text.
     pub query: String,
-    /// Results to return, 1-30 (default 10). Only ever slices *down*: fewer
-    /// engine results than `num_results` means fewer rows, not extra fetches.
+    /// Results to return, 1-30 (default 10) for `web`/`cache` — out of range
+    /// is rejected like v2's pydantic bound. `history` takes it unbounded as
+    /// the clicks limit. Only ever slices *down*: fewer engine results than
+    /// `num_results` means fewer rows, not extra fetches.
     pub num_results: Option<u32>,
     /// Exa search type echo (`auto` | `instant`; deep variants ignored),
     /// surfaced verbatim as `searchType`.
@@ -406,12 +414,6 @@ impl OxeMcp {
         );
         async move {
             let num_results = args.num_results.unwrap_or(10);
-            if !(NUM_RESULTS_MIN..=NUM_RESULTS_MAX).contains(&num_results) {
-                return Err(invalid_params(
-                    format!("num_results must be {NUM_RESULTS_MIN}-{NUM_RESULTS_MAX}"),
-                    request_id,
-                ));
-            }
             let source = match args.source.as_deref().unwrap_or("web") {
                 s @ ("history" | "cache") => s,
                 _ => "web",
@@ -445,6 +447,15 @@ impl OxeMcp {
                 );
             }
 
+            // v2 bounds `num_results` on `ExaSearchRequest` (pydantic ge=1,
+            // le=30), i.e. only on the web/cache path — history above takes
+            // it raw as the clicks limit.
+            if !(NUM_RESULTS_MIN..=NUM_RESULTS_MAX).contains(&num_results) {
+                return Err(invalid_params(
+                    format!("num_results must be {NUM_RESULTS_MIN}-{NUM_RESULTS_MAX}"),
+                    request_id,
+                ));
+            }
             let req = SearchRequest {
                 q: build_query_text(&args.query, args.exclude_domains.as_deref()),
                 page: 1,
@@ -603,6 +614,10 @@ struct ExaResultItem {
     published_date: Option<String>,
     author: Option<String>,
     image: Option<String>,
+    /// v2 sources this from `SearchResult.thumbnail` (NOT v1's Google
+    /// `s2/favicons` URL — v2 dropped that computation). v3's
+    /// `SearchResult` carries no thumbnail field, so this is always null
+    /// until one lands.
     favicon: Option<String>,
     extras: ExaExtras,
 }
@@ -850,6 +865,15 @@ mod tests {
         assert_eq!(extract_highlights(text), vec!["One.", "Two!", "Three?"]);
         assert!(extract_highlights("").is_empty());
         assert_eq!(extract_highlights("no terminator"), vec!["no terminator"]);
+    }
+
+    #[test]
+    fn admission_rate_limited_carries_real_retry_after() {
+        let err = PipelineError::RateLimited { retry_after_s: 7 };
+        let mcp = pipeline_error(&err, false, Uuid::nil());
+        assert_eq!(mcp.code, MCP_RATE_LIMITED);
+        assert_eq!(mcp.message.as_ref(), "rate_limited");
+        assert_eq!(mcp.data.as_ref().unwrap()["retry_after_s"], json!(7));
     }
 
     #[test]
