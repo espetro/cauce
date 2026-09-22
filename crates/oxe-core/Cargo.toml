@@ -6,6 +6,11 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 
+[features]
+# Reusable `Store` conformance suite (`src/conformance.rs`). Off by default;
+# Store impls enable it as a dev-dependency (oxe-store-sqlite, W6 postgres).
+conformance = []
+
 [dependencies]
 async-trait = "0.1"
 chrono = { version = "0.4", features = ["serde"] }
