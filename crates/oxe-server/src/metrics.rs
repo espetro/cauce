@@ -1,6 +1,6 @@
 //! Process metrics handle (W1-09): the owned in-process registry lives in
 //! `oxe_core::metrics`; this handle only bridges the async `Store` into the
-//! `oxe_cache_entries` gauge and hands out the `Metrics` record handle.
+//! `oxe_cache_entries` gauge before a scrape.
 //!
 //! `oxe_cache_entries` is a refreshed cell rather than a direct `Store`
 //! read: the `/metrics` render is synchronous and cannot await the store,
@@ -16,7 +16,6 @@
 
 use std::sync::Arc;
 
-use oxe_core::Metrics;
 use oxe_core::Store;
 use oxe_core::metrics::{render_prometheus, set_cache_entries};
 
@@ -34,12 +33,6 @@ pub struct MetricsHandle {
 impl MetricsHandle {
     pub fn new(store: Arc<dyn Store>) -> Self {
         Self { store }
-    }
-
-    /// The [`Metrics`] record handle (for `SearchPipeline::with_metrics`
-    /// wiring; recording works without it since the registry is global).
-    pub fn metrics(&self) -> Metrics {
-        Metrics
     }
 
     /// Refresh the `oxe_cache_entries` cell from the store. Called by the
