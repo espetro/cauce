@@ -130,7 +130,7 @@ async fn serve_async(opts: ServeOpts, cfg: Config, host: String) -> i32 {
     let port = opts.port.unwrap_or(cfg.server.port);
     let state = AppState::new(pipeline, store, cfg);
     let app = oxe_server::build_router_opts(
-        state,
+        state.clone(),
         RouterOptions {
             ui: !opts.headless,
             bind_host: host.clone(),
@@ -150,6 +150,8 @@ async fn serve_async(opts: ServeOpts, cfg: Config, host: String) -> i32 {
     }
     let result = oxe_server::serve(listener, app).await;
     evict.abort();
+    // Flush the metrics provider (OTLP PeriodicReader) before exit.
+    state.metrics().shutdown();
     match result {
         Ok(()) => 0,
         Err(e) => {
