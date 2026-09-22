@@ -26,8 +26,9 @@ mod store;
 pub use admission::{Admission, AdmissionLimits, FlightResult};
 pub use cache::{CacheKey, CachedSearch, normalize_query};
 pub use config::{
-    AdmissionConfig, AiConfig, CacheConfig, Config, ConfigError, Dirs, EgressConfig, EngineEntry,
-    EngineKind, LexicalConfig, LogsConfig, MetaConfig, Resources, SearchConfig, ServerConfig,
+    AdmissionConfig, AiConfig, AuthConfig, CacheConfig, Config, ConfigError, Dirs, EgressConfig,
+    EngineEntry, EngineKind, LexicalConfig, LogsConfig, MetaConfig, Resources, SearchConfig,
+    ServerConfig, is_loopback_host,
 };
 pub use engine::{Engine, EngineError, EngineId, Tier};
 pub use normalize::normalize_url;

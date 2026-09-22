@@ -221,6 +221,58 @@ fn default_port() -> u16 {
     4479
 }
 
+/// `[auth]`: the admin-auth switch (W1-13). The token mechanism itself is
+/// deferred to `v3/later/postgres-and-multi-instance.md`; until it lands,
+/// `enabled` is forced by the bind address — off on loopback, required off
+/// it, so `oxe serve` refuses a non-loopback bind.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AuthConfig {
+    /// Master switch. Forced `true` when the bind is not loopback (see
+    /// [`AuthConfig::enabled_for`]); ignored on loopback until token auth
+    /// exists, so setting it only earns a startup warning.
+    #[serde(default)]
+    pub enabled: bool,
+}
+
+impl AuthConfig {
+    /// The effective value for a bind to `host`: forced on off-loopback,
+    /// mirroring the former W6-03 line (`later/postgres-and-multi-instance.md`).
+    /// W1-13 enforces the forced case by refusing the bind.
+    pub fn enabled_for(&self, bind_host: &str) -> bool {
+        self.enabled || !is_loopback_host(bind_host)
+    }
+}
+
+/// The host part of an authority string (`host`, `host:port`, `[v6]`,
+/// `[v6]:port`), without a trailing root-zone dot. Bare IPv6 literals
+/// (more than one `:`) are returned whole.
+pub fn host_part(authority: &str) -> &str {
+    let a = authority.trim();
+    if let Some(rest) = a.strip_prefix('[') {
+        return rest.split(']').next().unwrap_or(rest);
+    }
+    let h = if a.matches(':').count() > 1 {
+        a // bare IPv6 literal; it cannot carry a `:port` suffix
+    } else {
+        a.rsplit_once(':').map(|(h, _)| h).unwrap_or(a)
+    };
+    h.trim_end_matches('.')
+}
+
+/// Loopback check shared by the `serve` bind refusal and the server's
+/// Host/Origin guard (W1-13): `localhost`, any `*.localhost` alias (the
+/// portless names), the whole `127.0.0.0/8` block and `::1`. Accepts both
+/// bare hosts and `host:port` / `[v6]:port` authority forms. Wildcard
+/// binds (`0.0.0.0`, `::`) are not loopback.
+pub fn is_loopback_host(authority: &str) -> bool {
+    let h = host_part(authority);
+    if let Ok(ip) = h.parse::<std::net::IpAddr>() {
+        return ip.is_loopback();
+    }
+    h.eq_ignore_ascii_case("localhost") || h.to_ascii_lowercase().ends_with(".localhost")
+}
+
 /// `[search]`: pipeline tunables (parent plan sections 3 and 4.4).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -553,6 +605,9 @@ pub struct Config {
     /// `[ai]` section.
     #[serde(default)]
     pub ai: AiConfig,
+    /// `[auth]` section.
+    #[serde(default)]
+    pub auth: AuthConfig,
     /// `[[engines]]` entries plus the built-ins (`replay`, `ddgs`).
     #[serde(default = "builtin_engines")]
     pub engines: Vec<EngineEntry>,
@@ -582,6 +637,7 @@ struct ConfigSections<'a> {
     cache: &'a CacheConfig,
     logs: &'a LogsConfig,
     ai: &'a AiConfig,
+    auth: &'a AuthConfig,
     engines: &'a [EngineEntry],
     config: &'a MetaConfig,
 }
@@ -616,6 +672,7 @@ impl Default for Config {
             cache: CacheConfig::default(),
             logs: LogsConfig::default(),
             ai: AiConfig::default(),
+            auth: AuthConfig::default(),
             engines: builtin_engines(),
             config: MetaConfig::default(),
             dirs: Dirs::default(),
@@ -644,6 +701,7 @@ impl Config {
             cache: &self.cache,
             logs: &self.logs,
             ai: &self.ai,
+            auth: &self.auth,
             engines: &self.engines,
             config: &self.config,
         }
@@ -1202,7 +1260,67 @@ mod tests {
         assert_eq!(cfg.ai.base_url, "");
         assert_eq!(cfg.ai.api_key, "");
         assert!(!cfg.ai.enabled);
+        assert!(!cfg.auth.enabled);
         assert!(cfg.config.interpolation);
+    }
+
+    /// W1-13: the loopback classification shared by the `serve` bind
+    /// refusal and the server's Host/Origin guard. Loopback means
+    /// `localhost`, any `*.localhost` portless alias, `127.0.0.0/8` and
+    /// `::1`, in bare or `host:port`/`[v6]:port` authority form.
+    #[test]
+    fn loopback_host_classification() {
+        for ok in [
+            "localhost",
+            "LOCALHOST",
+            "localhost.",
+            "localhost:4479",
+            "oxe.localhost",
+            "search.localhost:443",
+            "127.0.0.1",
+            "127.0.0.1:4479",
+            "127.53.0.9",
+            "::1",
+            "[::1]",
+            "[::1]:4479",
+        ] {
+            assert!(is_loopback_host(ok), "{ok} must be loopback");
+        }
+        for no in [
+            "0.0.0.0",
+            "0.0.0.0:4479",
+            "::",
+            "[::]:4479",
+            "192.168.1.10",
+            "10.0.0.5",
+            "example.com",
+            "localhost.evil.com",
+            "evil-localhost.com",
+            "notlocalhost",
+            "",
+        ] {
+            assert!(!is_loopback_host(no), "{no} must not be loopback");
+        }
+    }
+
+    /// `auth.enabled` parses from `[auth]`; `enabled_for` forces it when
+    /// the bind is not loopback (the former W6-03 line).
+    #[test]
+    fn auth_enabled_forces_on_non_loopback() {
+        let (_tmp, env) = sandbox(&[]);
+        write_config(
+            Path::new(env.get("OXE_CONFIG_DIR").unwrap()),
+            "[auth]\nenabled = true\n",
+        );
+        let cfg = Config::load_with(&env).unwrap();
+        assert!(cfg.auth.enabled);
+
+        let off = AuthConfig::default();
+        assert!(!off.enabled_for("127.0.0.1"));
+        assert!(!off.enabled_for("localhost"));
+        assert!(off.enabled_for("0.0.0.0"));
+        assert!(off.enabled_for("192.168.1.10"));
+        assert!(AuthConfig { enabled: true }.enabled_for("127.0.0.1"));
     }
 
     #[test]

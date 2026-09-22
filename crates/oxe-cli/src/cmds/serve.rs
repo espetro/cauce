@@ -14,7 +14,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use oxe_core::config::{Config, Resources};
+use oxe_core::config::{Config, Resources, is_loopback_host};
 use oxe_core::{Admission, AdmissionLimits, SearchPipeline};
 use oxe_engines::factory::build_engines;
 use oxe_server::{AppState, RouterOptions, observability};
@@ -48,6 +48,25 @@ pub fn run(args: &[String]) -> i32 {
             return 2;
         }
     };
+    // W1-13: `auth.enabled` is forced when the bind is not loopback, but
+    // admin auth itself is deferred (v3/later/postgres-and-multi-instance.md),
+    // so a non-loopback bind refuses to start rather than listen
+    // unauthenticated. Loopback requests are still guarded by the
+    // Host/Origin check in oxe-server.
+    let host = opts.bind.clone().unwrap_or_else(|| cfg.server.host.clone());
+    if cfg.auth.enabled_for(&host) {
+        if is_loopback_host(&host) {
+            eprintln!(
+                "oxe serve: warning: auth.enabled = true but admin auth is not implemented yet; ignoring"
+            );
+        } else {
+            eprintln!(
+                "oxe serve: refusing to bind {host}: non-loopback listen requires auth.enabled, \
+                 but admin auth is not implemented yet"
+            );
+            return 1;
+        }
+    }
     if let Err(e) = cfg.ensure_dirs() {
         eprintln!("oxe serve: cannot create data dirs: {e}");
         return 1;
@@ -74,13 +93,13 @@ pub fn run(args: &[String]) -> i32 {
             return 1;
         }
     };
-    let code = rt.block_on(serve_async(opts, cfg));
+    let code = rt.block_on(serve_async(opts, cfg, host));
     drop(rt);
     guard.shutdown();
     code
 }
 
-async fn serve_async(opts: ServeOpts, cfg: Config) -> i32 {
+async fn serve_async(opts: ServeOpts, cfg: Config, host: String) -> i32 {
     let tuning = Resources::detect().store_tuning;
     let store = match SqliteStore::open(cfg.db_path(), tuning) {
         Ok(store) => Arc::new(store),
@@ -108,10 +127,15 @@ async fn serve_async(opts: ServeOpts, cfg: Config) -> i32 {
     );
     let evict = spawn_eviction_task(store.clone());
 
-    let host = opts.bind.clone().unwrap_or_else(|| cfg.server.host.clone());
     let port = opts.port.unwrap_or(cfg.server.port);
     let state = AppState::new(pipeline, store, cfg);
-    let app = oxe_server::build_router_opts(state, RouterOptions { ui: !opts.headless });
+    let app = oxe_server::build_router_opts(
+        state,
+        RouterOptions {
+            ui: !opts.headless,
+            bind_host: host.clone(),
+        },
+    );
     let listener = match tokio::net::TcpListener::bind((host.as_str(), port)).await {
         Ok(listener) => listener,
         Err(e) => {
