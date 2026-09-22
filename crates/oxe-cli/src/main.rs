@@ -16,18 +16,21 @@ fn main() {
         "record" => std::process::exit(cmds::record::run(
             &std::env::args().skip(2).collect::<Vec<_>>(),
         )),
+        "engine" => std::process::exit(cmds::engine::run(
+            &std::env::args().skip(2).collect::<Vec<_>>(),
+        )),
         "trace" => std::process::exit(cmds::trace::run(std::env::args().nth(2))),
         "config" => std::process::exit(cmds::config::run(
             &std::env::args().skip(2).collect::<Vec<_>>(),
         )),
         // Declared in the plan but not implemented yet: say so instead of
         // falling into generic usage.
-        "search" | "engine" | "cache" => {
+        "search" | "cache" => {
             eprintln!("oxe {sub}: not implemented yet; lands in a later wave");
             std::process::exit(2);
         }
         _ => {
-            eprintln!("usage: oxe <serve|record|trace|config> [args]");
+            eprintln!("usage: oxe <serve|record|engine|trace|config> [args]");
             std::process::exit(2);
         }
     }
