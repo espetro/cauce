@@ -53,7 +53,8 @@ tests/e2e                golden path integration tests
 
 One binary: `oxe serve` (full: UI + API + MCP, < 80 MB idle), `oxe serve --headless` (API +
 MCP, < 50 MB), `oxe mcp` (stdio only, < 40 MB). Cargo features `ui mcp ai archive semantic
-postgres otlp`. Port 4479, loopback by default.
+postgres otlp`; defaults are `ui mcp ai` (`otlp` is non-default). Port 4479, loopback by
+default.
 
 ## Enforced
 
