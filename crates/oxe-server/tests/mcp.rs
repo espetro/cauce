@@ -345,3 +345,53 @@ async fn mcp_http_exa_search_frozen_shape() {
     client.cancel().await.expect("cancel");
     server.abort();
 }
+
+/// Portless-alias regression: a `/mcp` POST carrying `Host:
+/// search.localhost` (or any `*.localhost` name) must pass rmcp's host
+/// check because `host_origin_guard` already enforces the loopback rules
+/// upstream; a truly foreign Host must still be a 403 there.
+#[tokio::test]
+async fn mcp_http_allows_portless_alias_host() {
+    let (state, _tmp) = test_state();
+    let (addr, server) = spawn_server(state).await;
+    let url = format!("http://{addr}/mcp");
+    let body = json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "tools/list",
+        "params": {}
+    });
+    let http = reqwest::Client::new();
+
+    // search.localhost is loopback per W1-13: the request reaches the MCP
+    // handler rather than dying in rmcp's exact-match host list.
+    let resp = http
+        .post(&url)
+        .header("host", "search.localhost")
+        .header("content-type", "application/json")
+        .header("accept", "application/json, text/event-stream")
+        .json(&body)
+        .send()
+        .await
+        .expect("post");
+    assert_ne!(
+        resp.status(),
+        reqwest::StatusCode::FORBIDDEN,
+        "search.localhost must not be 403: {:?}",
+        resp.text().await
+    );
+
+    // A non-loopback host is still rejected by the W1-13 guard.
+    let resp = http
+        .post(&url)
+        .header("host", "evil.example.com")
+        .header("content-type", "application/json")
+        .header("accept", "application/json, text/event-stream")
+        .json(&body)
+        .send()
+        .await
+        .expect("post");
+    assert_eq!(resp.status(), reqwest::StatusCode::FORBIDDEN);
+
+    server.abort();
+}

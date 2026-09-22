@@ -567,14 +567,16 @@ impl ServerHandler for OxeMcp {}
 ///
 /// `LocalSessionManager` keeps per-session state in-process (v3.0 is a
 /// single-binary loopback service; cross-instance session restore is the
-/// `session_store` seam for later waves). `allowed_hosts` stays at the rmcp
-/// loopback default: oxe is a loopback server, so DNS-rebinding protection
-/// comes free.
+/// `session_store` seam for later waves). rmcp's own `allowed_hosts`
+/// check is disabled: `host_origin_guard` (W1-13) already wraps the whole
+/// router and enforces the loopback rules — including `*.localhost`
+/// aliases like `search.localhost`, which rmcp's exact-match default
+/// list would reject.
 pub fn streamable_service(state: AppState) -> StreamableHttpService<OxeMcp, LocalSessionManager> {
     StreamableHttpService::new(
         move || Ok(OxeMcp::new(state.clone())),
         Arc::new(LocalSessionManager::default()),
-        StreamableHttpServerConfig::default(),
+        StreamableHttpServerConfig::default().disable_allowed_hosts(),
     )
 }
 
