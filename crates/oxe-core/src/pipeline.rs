@@ -187,8 +187,10 @@ impl SearchPipeline {
     }
 
     /// Number of configured engines. `0` means the pipeline is
-    /// unconfigured: W0-09 maps `NoEngines` + `0` to 503 and
-    /// `NoEngines` + `> 0` (pin matched nothing) to 400.
+    /// unconfigured. W0-09 maps `NoEngines` + (zero configured engines or
+    /// an empty `engines` pin) to 503 `no_engines`, and `NoEngines` + a
+    /// non-empty `engines` pin that matched nothing to 400 `unknown_engines`
+    /// regardless of the configured count.
     pub fn configured_engines(&self) -> usize {
         self.engines.len()
     }

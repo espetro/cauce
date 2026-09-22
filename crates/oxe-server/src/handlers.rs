@@ -18,7 +18,8 @@ use axum::response::{IntoResponse, Json, Response};
 use chrono::{DateTime, NaiveDate, Utc};
 use oxe_core::{
     AuditFilter, AuditRow, CacheKey, ClickRow, EngineId, HistoryFilter, HistoryItem, PipelineError,
-    SafeSearch, SearchRequest, SearchResponse, StatsSnapshot, Store, TimeRange, config::Config,
+    SafeSearch, SearchRequest, SearchResponse, StatsSnapshot, Store, TimeRange,
+    config::{Config, system_env},
 };
 use serde_json::{Value, json};
 
@@ -32,9 +33,10 @@ const MAX_LIMIT: u32 = 1_000;
 
 /// `GET /api/search?q&page&lang&time_range&safesearch&engines`.
 ///
-/// `engines` is a comma-separated pin (`engines=replay,ddgs`); a pin that
-/// matches no configured engine is a 400, an engineless pipeline a 503 and
-/// an all-failed fan-out a 502 with the per-engine errors in the message.
+/// `engines` is a comma-separated pin (`engines=replay,ddgs`); a non-empty
+/// pin that matches no configured engine is 400 `unknown_engines` (even if
+/// no engines are configured), an empty pin or zero configured engines is
+/// 503 `no_engines`, and an all-failed fan-out is 502 `upstream_failed`.
 pub async fn search(
     State(state): State<AppState>,
     Extension(ctx): Extension<RequestCtx>,
@@ -324,13 +326,12 @@ pub async fn config_get(
 
 /// `PUT /api/config`: replace the config file with the submitted TOML tree.
 ///
-/// The body becomes the new raw file layer verbatim (templates such as
-/// `${env:NAME}` are preserved, never resolved-then-saved). Validation is a
-/// full reload: the candidate is written, `Config::load()` re-parses it
-/// with schema (`deny_unknown_fields`), interpolation and `OXE_*` env
-/// overlay — a failure restores the previous file and answers 400. A
-/// successful write is audited (`config.put`) and the redacted config is
-/// returned.
+/// Validation runs in-memory against the current process environment *before*
+/// any write, so a crash or `kill -9` cannot leave `config.toml` in an
+/// unbootable state. On success the new raw tree is written atomically and
+/// `state.config` is swapped; the running pipeline/engines still use the
+/// values they were started with, so the response carries
+/// `effective_after_restart: true`.
 pub async fn config_put(
     State(state): State<AppState>,
     Extension(ctx): Extension<RequestCtx>,
@@ -347,40 +348,28 @@ pub async fn config_put(
         )
     })?;
 
+    // In-memory validation: resolve `${...}` templates, apply `OXE_*` env
+    // overrides, check schema and engine pinning. The original file is not
+    // touched until we know the candidate is loadable.
+    let new_cfg = Config::from_raw(&tree, &system_env()).map_err(|e| {
+        ctx.err(
+            StatusCode::BAD_REQUEST,
+            "invalid_config",
+            format!("invalid config: {e}"),
+        )
+    })?;
+
     // All sync file IO inside the lock; nothing awaits in the closure.
     let loaded = state.with_config(|cfg| {
-        let path = cfg.config_path();
-        let existed = path.is_file();
-        let mut candidate = cfg.clone();
-        *candidate.raw_tree_mut() = tree;
-        if let Err(e) = candidate.save() {
+        if let Err(e) = new_cfg.save() {
             return Err(ctx.err(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "internal",
-                format!("cannot write {}: {e}", path.display()),
+                format!("cannot write {}: {e}", new_cfg.config_path().display()),
             ));
         }
-        match Config::load() {
-            Ok(new_cfg) => {
-                let out = new_cfg.clone();
-                *cfg = new_cfg;
-                Ok(out)
-            }
-            Err(e) => {
-                // Restore the pre-PUT state: rewrite the old raw tree, or
-                // remove the file if the PUT created it.
-                if existed {
-                    let _ = cfg.save();
-                } else {
-                    let _ = std::fs::remove_file(&path);
-                }
-                Err(ctx.err(
-                    StatusCode::BAD_REQUEST,
-                    "invalid_config",
-                    format!("invalid config: {e}"),
-                ))
-            }
-        }
+        *cfg = new_cfg.clone();
+        Ok(new_cfg)
     })?;
 
     write_audit(
@@ -392,9 +381,12 @@ pub async fn config_put(
         json!({}),
     )
     .await?;
-    serde_json::to_value(&loaded)
-        .map(Json)
-        .map_err(|e| ctx.err(StatusCode::INTERNAL_SERVER_ERROR, "internal", e.to_string()))
+    let mut body = serde_json::to_value(&loaded)
+        .map_err(|e| ctx.err(StatusCode::INTERNAL_SERVER_ERROR, "internal", e.to_string()))?;
+    if let Value::Object(m) = &mut body {
+        m.insert("effective_after_restart".to_string(), json!(true));
+    }
+    Ok(Json(body))
 }
 
 /// Emit + persist one audit row (observability helper: JSONL event first,

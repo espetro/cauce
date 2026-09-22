@@ -551,8 +551,9 @@ async fn error_envelope_and_param_validation() {
     assert_envelope(&body, "bad_request");
 }
 
-/// `NoEngines` mapping: a pin matching nothing is a 400; a pipeline with
-/// zero configured engines is a 503.
+/// `NoEngines` mapping: a non-empty pin matching nothing is 400
+/// `unknown_engines` even with zero configured engines; an empty/zero
+/// configured set is 503 `no_engines`.
 #[tokio::test]
 async fn no_engines_status_mapping() {
     let (router, _state, _tmp) = app();
@@ -570,6 +571,13 @@ async fn no_engines_status_mapping() {
         Arc::new(SqliteStore::open(tmp.path().join("oxe.db"), StoreTuning::default()).unwrap());
     let pipeline = Arc::new(SearchPipeline::new(store.clone(), vec![]));
     let router = build_router(AppState::new(pipeline, store, Config::default()));
+
+    // Non-empty pin with zero configured engines is still the caller's error.
+    let (status, _, body) = get(&router, "/api/search?q=x&engines=replay").await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    assert_envelope(&body, "unknown_engines");
+
+    // No pin with zero configured engines is the operator's error.
     let (status, _, body) = get(&router, "/api/search?q=x").await;
     assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE, "{body}");
     assert_envelope(&body, "no_engines");
