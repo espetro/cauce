@@ -62,18 +62,29 @@ fn like_pattern(s: &str) -> String {
 }
 
 /// Build a safe FTS5 MATCH expression: each whitespace-separated term becomes
-/// a quoted phrase, so user input can never inject FTS operators.
+/// a quoted phrase, so user input can never inject FTS operators. Terms with
+/// no alphanumeric character (e.g. `"*"`) tokenize to nothing and would raise
+/// an FTS5 syntax error, so they are dropped; an all-punctuation query yields
+/// `Ok(vec![])` rather than an error.
 fn fts_query(q: &str) -> Option<String> {
     let terms: Vec<String> = q
         .split_whitespace()
-        .map(|t| format!("\"{}\"", t.replace('"', "")))
-        .filter(|t| t != "\"\"")
+        .map(|t| t.replace('"', ""))
+        .filter(|t| t.chars().any(char::is_alphanumeric))
+        .map(|t| format!("\"{t}\""))
         .collect();
     if terms.is_empty() {
         None
     } else {
         Some(terms.join(" "))
     }
+}
+
+/// Largest `expires_at` (ms) that decodes back to a `DateTime`: anything
+/// bigger would make `from_timestamp_millis` fail and the row would decode as
+/// `Corrupt` forever, so absurd TTLs clamp here instead of at `i64::MAX`.
+fn max_ts_ms() -> i64 {
+    chrono::DateTime::<chrono::Utc>::MAX_UTC.timestamp_millis()
 }
 
 /// Nearest-rank percentile of an ascending-sorted slice.
@@ -89,6 +100,14 @@ impl SqliteStore {
     /// and run pending migrations.
     pub fn open(path: impl AsRef<Path>, tuning: StoreTuning) -> Result<Self, StoreError> {
         let path = path.as_ref();
+        if path == Path::new(":memory:") {
+            // Each pooled connection would open its own private database and
+            // reads would silently miss writes; use a temp file instead.
+            return Err(StoreError::Backend(
+                "SqliteStore does not support ':memory:' (per-connection private databases); pass a file path"
+                    .to_string(),
+            ));
+        }
         let mut writer = Connection::open(path).map_err(sql_err)?;
         configure(&writer, &tuning, true)?;
         migrate::apply_pending(&mut writer)?;
@@ -228,7 +247,9 @@ impl Store for SqliteStore {
         let resp = resp.clone();
         self.with_writer(move |conn| {
             let now = rows::now_ms();
-            let expires = now.saturating_add(ttl.as_millis().min(i64::MAX as u128) as i64);
+            let expires = now
+                .saturating_add(ttl.as_millis().min(i64::MAX as u128) as i64)
+                .min(max_ts_ms());
             let engines: Vec<_> = resp
                 .meta
                 .engines_used

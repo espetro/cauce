@@ -134,12 +134,8 @@ pub fn breaker_str(s: BreakerState) -> &'static str {
     }
 }
 
-fn engines_json(ids: &[EngineId]) -> Result<String, StoreError> {
-    serde_json::to_string(ids).map_err(StoreError::from)
-}
-
 pub fn engines_to_json(ids: &[EngineId]) -> Result<String, StoreError> {
-    engines_json(ids)
+    serde_json::to_string(ids).map_err(StoreError::from)
 }
 
 /// Decode one `cache_entries` row selected with [`CACHE_COLS`].
