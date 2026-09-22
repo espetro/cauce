@@ -792,6 +792,18 @@ fn pipeline_error(e: &PipelineError, pinned: bool, request_id: Uuid) -> ErrorDat
             invalid_params("engines pin matched no configured engine", request_id)
         }
         PipelineError::NoEngines => internal_error("no search engines configured", request_id),
+        // W1-07 admission rejection: the real retry budget, not the hint.
+        PipelineError::RateLimited { retry_after_s } => ErrorData::new(
+            MCP_RATE_LIMITED,
+            "rate_limited",
+            Some(json!({
+                "error": "rate_limited",
+                "retry_after_s": retry_after_s,
+                "request_id": request_id,
+            })),
+        ),
+        // Fallback while engines surface throttling as per-engine failures
+        // rather than an admission rejection.
         PipelineError::AllEnginesFailed(failures)
             if !failures.is_empty()
                 && failures

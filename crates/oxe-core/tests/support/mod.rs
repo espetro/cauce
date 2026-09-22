@@ -6,7 +6,7 @@
 //! License, v. 2.0. If a copy of the MPL was not distributed with this
 //! file, You can obtain one at <https://mozilla.org/MPL/2.0/>.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
@@ -46,6 +46,27 @@ pub fn replay_at(root: &std::path::Path, f: impl FnOnce(&mut ReplayOpts)) -> Rep
 /// What `put` stored: response, write time and TTL.
 type StoredEntry = (SearchResponse, DateTime<Utc>, Duration);
 
+/// Rebuild the `CachedSearch` a real store would decode for a `put` row
+/// (expired rows included; `get_exact` filters them itself).
+fn to_cached(key: &str, (resp, created, ttl): &StoredEntry) -> CachedSearch {
+    CachedSearch {
+        key: key.parse().expect("stored keys are CacheKey hex"),
+        query: resp.query.clone(),
+        params: serde_json::json!({ "q": resp.query }),
+        response: resp.clone(),
+        created_at: *created,
+        expires_at: *created + chrono::Duration::from_std(*ttl).unwrap(),
+        hits: 1,
+        engines: resp
+            .meta
+            .engines_used
+            .iter()
+            .filter(|r| matches!(r.status, EngineStatus::Ok))
+            .map(|r| r.engine.clone())
+            .collect(),
+    }
+}
+
 /// Recording in-memory `Store`: serves `get_exact` from what `put` wrote,
 /// captures every `put`/`log_search` call. Unused methods
 /// `unimplemented!()` so a stray call panics the test.
@@ -55,6 +76,7 @@ pub struct StubStore {
     pub puts: Mutex<Vec<(String, Duration)>>,
     pub logs: Mutex<Vec<SearchLogRow>>,
     pub fail_get: AtomicBool,
+    pub fail_lexical: AtomicBool,
 }
 
 #[async_trait]
@@ -64,29 +86,37 @@ impl Store for StubStore {
             return Err(StoreError::Backend("injected lookup failure".to_string()));
         }
         let entries = self.entries.lock().unwrap();
-        Ok(entries.get(key.as_str()).and_then(|(resp, created, ttl)| {
-            let expires = *created + chrono::Duration::from_std(*ttl).unwrap();
-            (expires > Utc::now()).then(|| CachedSearch {
-                key: key.clone(),
-                query: resp.query.clone(),
-                params: serde_json::json!({ "q": resp.query }),
-                response: resp.clone(),
-                created_at: *created,
-                expires_at: expires,
-                hits: 1,
-                engines: resp
-                    .meta
-                    .engines_used
-                    .iter()
-                    .filter(|r| matches!(r.status, EngineStatus::Ok))
-                    .map(|r| r.engine.clone())
-                    .collect(),
-            })
+        Ok(entries.get(key.as_str()).and_then(|entry| {
+            (to_cached(key.as_str(), entry).expires_at > Utc::now())
+                .then(|| to_cached(key.as_str(), entry))
         }))
     }
 
-    async fn get_lexical(&self, _: &str, _: u8) -> Result<Vec<CachedSearch>, StoreError> {
-        unimplemented!()
+    /// FTS stand-in: rows whose stored query shares a whitespace token with
+    /// `q`, expired included (the pinned `get_lexical` semantic). The
+    /// pipeline's own gate decides acceptance, so a permissive candidate
+    /// list is what the tier-2 tests want.
+    async fn get_lexical(&self, q: &str, limit: u8) -> Result<Vec<CachedSearch>, StoreError> {
+        if self.fail_lexical.load(Ordering::SeqCst) {
+            return Err(StoreError::Backend("injected lexical failure".to_string()));
+        }
+        let want: HashSet<String> = q.split_whitespace().map(|t| t.to_lowercase()).collect();
+        let mut rows: Vec<CachedSearch> = self
+            .entries
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(_, (resp, _, _))| {
+                resp.query
+                    .split_whitespace()
+                    .any(|t| want.contains(&t.to_lowercase()))
+            })
+            .map(|(key, entry)| to_cached(key, entry))
+            .collect();
+        // Deterministic order so tests do not depend on HashMap iteration.
+        rows.sort_by(|a, b| a.key.cmp(&b.key));
+        rows.truncate(usize::from(limit));
+        Ok(rows)
     }
 
     async fn put(
@@ -112,8 +142,13 @@ impl Store for StubStore {
     async fn list_cache(&self, _: u32, _: u32) -> Result<Vec<CachedSearch>, StoreError> {
         unimplemented!()
     }
-    async fn get_cache(&self, _: &CacheKey) -> Result<Option<CachedSearch>, StoreError> {
-        unimplemented!()
+    /// `get_exact` hides expired rows; `get_cache` returns them (stale
+    /// serving is the admission layer's call).
+    async fn get_cache(&self, key: &CacheKey) -> Result<Option<CachedSearch>, StoreError> {
+        let entries = self.entries.lock().unwrap();
+        Ok(entries
+            .get(key.as_str())
+            .map(|entry| to_cached(key.as_str(), entry)))
     }
     async fn delete_cache(&self, _: &CacheKey) -> Result<bool, StoreError> {
         unimplemented!()

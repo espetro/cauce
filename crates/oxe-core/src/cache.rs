@@ -5,6 +5,7 @@
 //! License, v. 2.0. If a copy of the MPL was not distributed with this
 //! file, You can obtain one at <https://mozilla.org/MPL/2.0/>.
 
+use std::collections::BTreeSet;
 use std::fmt;
 use std::str::FromStr;
 
@@ -24,6 +25,39 @@ pub fn normalize_query(q: &str) -> String {
         .collect::<Vec<_>>()
         .join(" ")
         .to_lowercase()
+}
+
+/// English function words removed before the tier-2 token comparison
+/// (W1-10: "normalisation and stopword removal"). Deliberately small and
+/// generic; content words (`docs`, `query`, `api`, ...) are never stopwords.
+const STOPWORDS: &[&str] = &[
+    "a", "an", "and", "are", "as", "at", "be", "been", "but", "by", "can", "could", "did", "do",
+    "does", "for", "from", "had", "has", "have", "how", "i", "if", "in", "into", "is", "it", "its",
+    "me", "my", "no", "not", "of", "on", "or", "our", "she", "so", "that", "the", "their", "them",
+    "then", "there", "these", "they", "this", "to", "too", "up", "us", "was", "we", "what", "when",
+    "where", "which", "who", "will", "with", "you", "your",
+];
+
+/// The token set a tier-2 candidate is scored against: `normalize_query`,
+/// split on non-alphanumeric boundaries (mirroring the FTS5 unicode61
+/// tokenizer that built `cache_fts`), stopwords dropped.
+pub(crate) fn lexical_tokens(q: &str) -> BTreeSet<String> {
+    normalize_query(q)
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|t| !t.is_empty())
+        .filter(|t| !STOPWORDS.contains(t))
+        .map(str::to_string)
+        .collect()
+}
+
+/// Jaccard similarity |A∩B| / |A∪B| over two token sets. Two empty sets
+/// score 0.0: a query of nothing but stopwords never matches.
+pub(crate) fn token_jaccard(a: &BTreeSet<String>, b: &BTreeSet<String>) -> f64 {
+    let union = a.union(b).count();
+    if union == 0 {
+        return 0.0;
+    }
+    a.intersection(b).count() as f64 / union as f64
 }
 
 /// sha256 hex digest identifying a cacheable request.
@@ -239,6 +273,46 @@ mod tests {
         ] {
             assert_ne!(key, CacheKey::from(&changed));
         }
+    }
+
+    #[test]
+    fn lexical_tokens_normalise_split_and_drop_stopwords() {
+        // Case, whitespace and punctuation collapse; stopwords leave.
+        let toks = lexical_tokens("  The TanStack  ROUTER-docs! ");
+        assert_eq!(
+            toks.iter().map(String::as_str).collect::<Vec<_>>(),
+            ["docs", "router", "tanstack"]
+        );
+        // Content words that look like engine vocabulary are kept.
+        assert!(lexical_tokens("docs query api").contains("docs"));
+        assert!(lexical_tokens("docs query api").contains("query"));
+        // A pure-stopword query yields an empty set.
+        assert!(lexical_tokens("the a an of").is_empty());
+    }
+
+    #[test]
+    fn token_jaccard_matches_the_w1_10_acceptance_numbers() {
+        // Issue #30: `docs tanstack router` vs stored `tanstack router docs`
+        // scores 1.0; `tanstack query docs` scores 0.5.
+        let stored = lexical_tokens("tanstack router docs");
+        assert_eq!(
+            token_jaccard(&lexical_tokens("docs tanstack router"), &stored),
+            1.0
+        );
+        assert_eq!(
+            token_jaccard(&lexical_tokens("tanstack query docs"), &stored),
+            0.5
+        );
+        // Identical text after stopword removal also scores 1.0.
+        assert_eq!(
+            token_jaccard(&lexical_tokens("the tanstack router docs"), &stored),
+            1.0
+        );
+        // Empty sets never match, even two of them.
+        assert_eq!(
+            token_jaccard(&lexical_tokens("the a"), &lexical_tokens("of to")),
+            0.0
+        );
     }
 
     #[test]
