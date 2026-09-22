@@ -42,15 +42,19 @@ pub async fn search(
     Extension(ctx): Extension<RequestCtx>,
     uri: Uri,
 ) -> Result<Json<SearchResponse>, ApiError> {
-    search_inner(&state, &ctx, &uri).await.map(Json)
+    search_inner(&state, &ctx, &uri)
+        .await
+        .map(|(_req, resp)| Json(resp))
 }
 
 /// Shared search execution used by `GET /api/search` and the HTML/HTMX page.
+/// Returns the canonical [`SearchRequest`] alongside the response so callers
+/// can compute the cache key and pagination URL without re-parsing params.
 pub(crate) async fn search_inner(
     state: &AppState,
     ctx: &RequestCtx,
     uri: &Uri,
-) -> Result<SearchResponse, ApiError> {
+) -> Result<(SearchRequest, SearchResponse), ApiError> {
     let params = QueryParams::parse(uri.query(), ctx)?;
     params.allow(
         ctx,
@@ -86,7 +90,7 @@ pub(crate) async fn search_inner(
         .search_with_id(&req, ctx.request_id.as_uuid())
         .await
     {
-        Ok(resp) => Ok(resp),
+        Ok(resp) => Ok((req, resp)),
         // A pin that selected nothing is the client's error; an empty
         // configured set is the operator's.
         Err(PipelineError::NoEngines) if req.engines.is_some() => Err(ctx.err(

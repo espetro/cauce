@@ -15,9 +15,7 @@ use axum::Extension;
 use axum::extract::State;
 use axum::http::{HeaderMap, Uri};
 use axum::response::{Html, IntoResponse, Response};
-use oxe_core::{
-    CacheKey, EngineStatus, SafeSearch, SearchRequest, SearchResponse, Source, TimeRange,
-};
+use oxe_core::{CacheKey, EngineStatus, SearchRequest, SearchResponse, Source};
 use rust_embed::Embed;
 use serde_json::json;
 
@@ -117,14 +115,13 @@ pub async fn search(
             .map(|j| j.into_response());
     }
 
-    let resp = search_inner(&state, &ctx, &uri).await?;
+    let (req, resp) = search_inner(&state, &ctx, &uri).await?;
     let params = QueryParams::parse(uri.query(), &ctx)?;
-    let page = params.page(&ctx)?;
     let is_hx = headers.get("hx-request").is_some();
 
     let rid = resp.meta.request_id.to_string();
-    let rows = result_rows(&resp, &params, &ctx)?;
-    let more_url = more_url(&resp, page);
+    let rows = result_rows(&req, &resp);
+    let more_url = more_url(&resp, &params, &req);
     let q = params.required(&ctx, "q")?.to_string();
 
     if is_hx {
@@ -181,32 +178,10 @@ fn badge(resp: &SearchResponse) -> String {
     }
 }
 
-fn result_rows(
-    resp: &SearchResponse,
-    params: &QueryParams,
-    ctx: &RequestCtx,
-) -> Result<Vec<Row>, ApiError> {
-    let page = params.page(ctx)?;
-    let cache_req = SearchRequest {
-        q: resp.query.clone(),
-        page,
-        lang: params.get("lang").map(str::to_string),
-        time_range: params
-            .get("time_range")
-            .map(|v| v.parse::<TimeRange>().map_err(|e| ctx.bad_request(e)))
-            .transpose()?,
-        safesearch: params
-            .get("safesearch")
-            .map(|v| v.parse::<SafeSearch>().map_err(|e| ctx.bad_request(e)))
-            .transpose()?
-            .unwrap_or_default(),
-        engines: None,
-        client: ctx.client.clone(),
-    };
-    let query_hash = CacheKey::from(&cache_req);
+fn result_rows(req: &SearchRequest, resp: &SearchResponse) -> Vec<Row> {
+    let query_hash = CacheKey::from(req);
 
-    let rows = resp
-        .results
+    resp.results
         .iter()
         .enumerate()
         .map(|(i, r)| {
@@ -232,16 +207,29 @@ fn result_rows(
                 hx_vals,
             }
         })
-        .collect::<Vec<_>>();
-    Ok(rows)
+        .collect::<Vec<_>>()
 }
 
-fn more_url(resp: &SearchResponse, current_page: u8) -> String {
+fn more_url(resp: &SearchResponse, params: &QueryParams, req: &SearchRequest) -> String {
     if resp.results.is_empty() {
         return String::new();
     }
-    let next = current_page.saturating_add(1);
-    format!("/search?q={}&page={next}", urlencoding::encode(&resp.query))
+    let mut parts = Vec::new();
+    parts.push(format!("q={}", urlencoding::encode(&req.q)));
+    parts.push(format!("page={}", req.page.saturating_add(1)));
+    if let Some(lang) = params.get("lang") {
+        parts.push(format!("lang={}", urlencoding::encode(lang)));
+    }
+    if let Some(time_range) = params.get("time_range") {
+        parts.push(format!("time_range={}", urlencoding::encode(time_range)));
+    }
+    if let Some(safesearch) = params.get("safesearch") {
+        parts.push(format!("safesearch={}", urlencoding::encode(safesearch)));
+    }
+    if let Some(engines) = params.get("engines") {
+        parts.push(format!("engines={}", urlencoding::encode(engines)));
+    }
+    format!("/search?{}", parts.join("&"))
 }
 
 fn short_id(request_id: &str) -> String {
