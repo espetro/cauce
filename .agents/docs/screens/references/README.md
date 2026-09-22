@@ -1,4 +1,4 @@
-# Reference docs: design pattern research for oxe
+# Reference docs: design pattern research for cauce
 
 This directory holds researched, cited design-pattern references that back
 the screen specs in `.agents/docs/screens/*.md`. It is research material,
@@ -43,7 +43,7 @@ when the underlying product research changes or widens.
 ## Per-product insights
 
 [`insights/`](insights/README.md) holds one deep-dive per product (Google,
-DuckDuckGo, Brave, Gemini, SearXNG), each ending in a `## Verdict for oxe`
+DuckDuckGo, Brave, Gemini, SearXNG), each ending in a `## Verdict for cauce`
 list. These are the evidence layer behind the `patterns-*.md` docs, not a
 second rule set: a Verdict item only becomes a rule once a second product
 converges on it and it is promoted into the matching pattern doc, or it is
@@ -63,12 +63,12 @@ Two sources of screenshots, both under `shots/`:
    `duckduckgo-serp-search-assist-dark.png`). File names describe product,
    surface, and state (`<product>-<surface>-<state>.png`); annotation
    boxes are incidental, not part of the naming.
-2. **oxe app captures**: screenshots of oxe's own running app, used to
+2. **cauce app captures**: screenshots of cauce's own running app, used to
    document a real bug or in-progress state rather than a competitor
-   pattern (e.g. `oxe-app-ai-answer-streaming-jsonleak-bug.png`, which
+   pattern (e.g. `cauce-app-ai-answer-streaming-jsonleak-bug.png`, which
    caught the raw JSON metadata leak fixed by the
    `fix(ai): stream tail-stripped answer in delta frames` commit). These
-   are evidence, not pattern citations: do not cite an oxe screenshot as
+   are evidence, not pattern citations: do not cite an cauce screenshot as
    proof of a competitor convention.
 
 No automated capture pipeline exists yet (no Playwright harness pointed at
@@ -78,7 +78,7 @@ adds automated capture, record the method here.
 ## The `## Applies to` convention
 
 Every `patterns-*.md` file has an `## Applies to` section naming which
-oxe checkpoints (from `userflow-checkpoints.md`) or screens (from
+cauce checkpoints (from `userflow-checkpoints.md`) or screens (from
 `landing.md` / `search.md` / `history.md` / `dashboard.md`) the doc
 governs. This is how a pattern doc stays a reference rather than becoming
 generic design trivia: if you can't name a checkpoint it applies to, the

@@ -29,7 +29,7 @@ segment communicates why (no redirect).
 
 ```
 +------------------------------------------------------------------+
-| oxe   search   [history]  dashboard   (?)  settings  [gh] v0.4.0 |
+| cauce   search   [history]  dashboard   (?)  settings  [gh] v0.4.0 |
 +------------------------------------------------------------------+
 |   (  python asyncio                ( Search|AI )  ()  )          |
 |                                                                  |
@@ -160,14 +160,14 @@ segment disabled in place.
 - Mode toggle (segmented Search / AI inside the results-header pill)
   re-runs the same query in the other mode and rewrites the url
   (`&mode=ai` added / stripped). Toggle state mirrors `localStorage`
-  (`oxe-mode`); the AI segment is visible but disabled when the AI
+  (`cauce-mode`); the AI segment is visible but disabled when the AI
   backend is unavailable.
 - Content negotiation unchanged: `Accept: application/json` on either
   url returns the Exa-shaped payload. AI mode additionally exposes the
   answer text in the HTML only; the JSON contract stays search-only.
 - Suggestions: the results-header pill shares the landing dropdown
   (landing.md State 5): local history matches first, debounced
-  DDG ac only when enabled (`oxe-ac` in `localStorage`).
+  DDG ac only when enabled (`cauce-ac` in `localStorage`).
   Enter selects and submits in the active mode, tab fills the input
   without submitting, escape closes. Anchoring and keyboard map are
   identical to the landing behavior; both inputs share `<SearchBox>`.

@@ -5,14 +5,14 @@ Parent: `../2026-09-21-v3-rust-core.md`. Index: `README.md`. Previous: `wave-5-a
 
 ## Goal
 
-The enterprise-readiness deliverable is the conformance suite itself: `oxe-core::conformance`
+The enterprise-readiness deliverable is the conformance suite itself: `cauce-core::conformance`
 hardened to cover every `Store` method and parameterised over a connection URL, so a second
 `Store` implementation is a config change when one is actually demanded. The Postgres impl,
 admin auth, and deployment docs are deferred to `later/postgres-and-multi-instance.md`.
 
 ## Settled inputs
 
-- `Store` conformance suite from W0-04 (`oxe-core::conformance`) is the contract; the suite
+- `Store` conformance suite from W0-04 (`cauce-core::conformance`) is the contract; the suite
   is parameterised over a connection URL so a second impl can plug in later.
 - The `Store` trait is the seam; `store.url` selects the impl (`sqlite:///path` is the only
   shipped one).

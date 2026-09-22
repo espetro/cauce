@@ -1,6 +1,6 @@
 # Contributing
 
-oxe is developed in waves. Every change maps to a refined issue on the GitHub
+cauce is developed in waves. Every change maps to a refined issue on the GitHub
 Project; there is no orphan work.
 
 ## Picking up a step
@@ -22,4 +22,4 @@ Read it before starting a step.
 - `crates/*` and the repository root are MPL-2.0; see `LICENSE`.
 - `engines/` and `sdk/` are Apache-2.0; see `engines/LICENSE` and `sdk/LICENSE`.
 - New files inherit the license of the tree they live in. Copyright line:
-  `Copyright (c) 2026 Joaquin Terrasa and oxe contributors`.
+  `Copyright (c) 2026 Joaquin Terrasa and cauce contributors`.

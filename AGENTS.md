@@ -1,4 +1,4 @@
-# oxe
+# cauce
 
 Metasearch for humans (web UI) and agents (HTTP API, MCP) with a shared TTL cache. v3 is a
 Rust rebuild; the authoritative plan is `.agents/plans/2026-09-21-v3-rust-core.md` and its
@@ -27,7 +27,7 @@ Full procedure: `.agents/plans/v3/README.md`. Short form:
 
 1. Pick an issue titled `W<n>-<nn> ...` whose dependencies are `Completed`; move it to `WIP`.
 2. Read the parent plan sections 4 to 7, the wave file's "Settled inputs", then the step.
-3. Worktree `~/.worktrees/oxe-<step-id>` on branch `v3/<step-id>-<slug>` from `main`.
+3. Worktree `~/.worktrees/cauce-<step-id>` on branch `v3/<step-id>-<slug>` from `main`.
 4. Implement only the step's "Do"; its "Acceptance" list is the PR's test list; the golden
    path stays green; commits signed off (`-s`).
 5. PR `Closes #<issue>`; on merge, move to `Completed` and read the step's "Follow-up".
@@ -38,11 +38,11 @@ with the proposed amendment to the parent plan. Do not improvise the contract.
 ## Layout (target, see the plan's section 4.1)
 
 ```
-crates/oxe-core          domain types, pipeline, scheduler, Store + Engine traits (MPL-2.0)
-crates/oxe-store-sqlite  rusqlite Store impl (MPL-2.0)
-crates/oxe-engines       declarative / exec / replay engine runtimes (MPL-2.0)
-crates/oxe-server        axum, HTMX templates, SSE, MCP, Exa adapter (MPL-2.0)
-crates/oxe-cli           oxe serve / search / engine test / cache / record (MPL-2.0)
+crates/cauce-core          domain types, pipeline, scheduler, Store + Engine traits (MPL-2.0)
+crates/cauce-store-sqlite  rusqlite Store impl (MPL-2.0)
+crates/cauce-engines       declarative / exec / replay engine runtimes (MPL-2.0)
+crates/cauce-server        axum, HTMX templates, SSE, MCP, Exa adapter (MPL-2.0)
+crates/cauce-cli           cauce serve / search / engine test / cache / record (MPL-2.0)
 engines/                 YAML engine specs + fixtures (Apache-2.0)
 sdk/python               exec-protocol SDK + ddgs reference engine (Apache-2.0)
 tests/e2e                golden path integration tests
@@ -51,8 +51,8 @@ tests/e2e                golden path integration tests
 
 ## Modes and budgets
 
-One binary: `oxe serve` (full: UI + API + MCP, < 80 MB idle), `oxe serve --headless` (API +
-MCP, < 50 MB), `oxe mcp` (stdio only, < 40 MB). Cargo features `ui mcp ai archive semantic
+One binary: `cauce serve` (full: UI + API + MCP, < 80 MB idle), `cauce serve --headless` (API +
+MCP, < 50 MB), `cauce mcp` (stdio only, < 40 MB). Cargo features `ui mcp ai archive semantic
 postgres otlp`; defaults are `ui mcp ai` (`otlp` is non-default). Port 4479, loopback by
 default.
 
@@ -68,5 +68,5 @@ test resolves.
 - Plans live in `.agents/plans/`; a plan exists on disk before implementation begins.
 - Agent memory: read `.agents/MEMORY.md` at session start, write dated notes at session end.
 - Verification policy is the plan's section 7: golden path on the `replay` engine first,
-  live canaries gated behind `OXE_LIVE=1`, no fixture-only UI states, every mounted route in
+  live canaries gated behind `CAUCE_LIVE=1`, no fixture-only UI states, every mounted route in
   the routes table.

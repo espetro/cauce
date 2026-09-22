@@ -57,7 +57,7 @@ states, they are deliberately simpler, per `search.md` Mockup C:
 - **AI empty sources**: a different failure shape than classic zero
   results: `no sources found for this query - try fewer words, or
   [view Search]`. The AI answer can still theoretically generate text with
-  no grounding sources; oxe's contract treats sourceless AI answers as a
+  no grounding sources; cauce's contract treats sourceless AI answers as a
   failure state rather than rendering an ungrounded answer, so this reads
   as an error-adjacent state even though the model itself did not error.
 - **AI mid-stream failure**: partial answer text is kept on screen, the
@@ -77,20 +77,20 @@ states, they are deliberately simpler, per `search.md` Mockup C:
   the pill (`AI mode is not configured - set a model in settings`) and
   the AI segment disables in place. No competitor in the harvested set
   needs this state (their AI surface is either always-on or a fully
-  separate product), so it is an oxe-specific addition, not
+  separate product), so it is an cauce-specific addition, not
   pattern-derived.
 
 ## Failure naming and stale results
 
 - **Name the failed source, stay silent on success** (SearXNG's collapsed
-  source-messages area). oxe has one upstream, so the failure line names the
+  source-messages area). cauce has one upstream, so the failure line names the
   engine and error class (`error: search failed: 502 (ddg)`) and nothing
   renders when the fetch worked.
 - **Empty copy differs by position** (SearXNG). First page with no results
   says so and offers an action (`ask AI instead` when AI is available);
   end of a continuous-scroll list says `end of results` with no action. Both
   use `role="alert"`-equivalent polite announcement, not a toast.
-- **Stale cache on throttle** (oxe-specific, from the DuckDuckGo verdict:
+- **Stale cache on throttle** (cauce-specific, from the DuckDuckGo verdict:
   the backend throttles with 403 or CAPTCHA, so this is a first-class
   failure). When a fetch fails and a cached result set for the same query
   exists, show it with an age notice (`cached 3h ago, refresh failed`)
@@ -105,4 +105,4 @@ states, they are deliberately simpler, per `search.md` Mockup C:
 - https://skills.smoothui.dev/docs/ai-chat
 - https://insideduckduckgo.substack.com/p/duck-tales-improving-ai-chat-organization
 - https://blakecrosley.com/guides/design/perplexity
-- `search.md` Mockup C (oxe's own hybrid empty/error contract)
+- `search.md` Mockup C (cauce's own hybrid empty/error contract)

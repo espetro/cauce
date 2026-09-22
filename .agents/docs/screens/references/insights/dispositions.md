@@ -1,6 +1,6 @@
 # Verdict dispositions
 
-Every `## Verdict for oxe` item from the five product docs, with exactly one
+Every `## Verdict for cauce` item from the five product docs, with exactly one
 disposition. Nothing is adopted by drift. Dispositions:
 
 - **covered**: already true in a pattern doc or spec; no change.
@@ -20,7 +20,7 @@ promote into the pattern docs and specs.
 | G4 | Skip shimmer-only thinking | covered | `patterns-states.md` (progressing status line) |
 | G5 | Low-confidence fallback to classic results | covered | `patterns-states.md` (AI mode unavailable) |
 | D1 | Keep per-claim `[n]` above DDG's weak citations | covered | `patterns-answer-streaming.md` `## Citations` (inline, at the claim) |
-| D2 | Stale cache on throttle state | promoted | `patterns-states.md` as an oxe-specific state. The service treats expired rows as misses today, so the behavior is queued in `search.md`. |
+| D2 | Stale cache on throttle state | promoted | `patterns-states.md` as an cauce-specific state. The service treats expired rows as misses today, so the behavior is queued in `search.md`. |
 | D3 | Privacy chrome: "served locally, cached on your machine" | queued | `history.md` and `search.md`. One product; copy decision only. |
 | D4 | Motion floor: no animation on SERP render | covered | `patterns-motion.md` lists only streaming, phase and expand/collapse motion, plus reduced-motion; no SERP entrance motion exists to remove |
 | D5 | Active model shown inline, capability annotations in the dropdown | queued | `landing.md` already has the in-pill model picker; only the annotations are new and need backend model metadata that `/v1/models` does not expose. |
@@ -36,6 +36,6 @@ promote into the pattern docs and specs.
 | M5 | Keep gradient branding and Google Sans at arm's length | covered | `patterns-typography.md` (system font stack, Google/Gemini divergence noted) |
 | S1 | Cache-first render, refetch only on `cached` click | covered | `search.md` transparency meta line with clickable `cached` badge |
 | S2 | Failure surface naming the failed source, silent on success | promoted | `patterns-states.md`. With one upstream the "source" is the backend, so the copy names the engine and error class. |
-| S3 | Distinct page-1 versus page-N empty copy | promoted | `patterns-states.md`; oxe uses continuous scroll, so page-N is "end of results". |
+| S3 | Distinct page-1 versus page-N empty copy | promoted | `patterns-states.md`; cauce uses continuous scroll, so page-N is "end of results". |
 | S4 | Collapsed answer box on load, citation-click behavior required | covered | `patterns-answer-streaming.md` (reserved space, collapsed full source list, citation aria-labels) |
 | S5 | Transparency budget goes to cache freshness affordances | queued | Same item as B5; one entry in `search.md`. |
