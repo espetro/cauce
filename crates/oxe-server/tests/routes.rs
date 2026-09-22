@@ -417,6 +417,11 @@ async fn history_click_and_stats() {
     assert_eq!(rows.len(), 2, "{body}");
     assert_eq!(rows[0]["kind"], "search");
 
+    // History merges searches and clicks by (ts DESC, id DESC) at
+    // millisecond precision; without a pause the click can share the last
+    // search's ms and lose the id tiebreak, flipping rows[0].
+    tokio::time::sleep(Duration::from_millis(2)).await;
+
     let request = Request::builder()
         .method("POST")
         .uri("/api/click")
