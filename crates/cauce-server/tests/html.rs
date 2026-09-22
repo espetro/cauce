@@ -314,6 +314,23 @@ async fn click_beacon_records_ui_client() {
     assert!(clicked, "click should be persisted with client=ui");
 }
 
+/// The vendored `json-enc` extension must be the htmx-2 build: the htmx-1
+/// version printed a console warning on every page load under htmx 2.0.4.
+#[tokio::test]
+async fn vendored_json_enc_has_no_htmx1_warning() {
+    let (app, _state, _tmp) = app();
+    let (status, body) = get_html(&app, "/search?q=x").await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(
+        body.contains("htmx.defineExtension('json-enc'"),
+        "json-enc extension should be inlined into the page"
+    );
+    assert!(
+        !body.contains("htmx 1 extension"),
+        "inlined json-enc must not carry the htmx-1 version warning"
+    );
+}
+
 /// The real beacon body as the browser sends it: `hx-vals` passes through
 /// htmx's parameter flattening (all values become strings) before `json-enc`
 /// re-serializes, so `position` arrives as `"3"` not `3`. Regression test —
