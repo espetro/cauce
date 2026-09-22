@@ -179,7 +179,11 @@ pub fn run_pair(spec: &CompiledSpec, pair: &FixturePair) -> Result<FixtureReport
             path: pair.expected_path.clone(),
             source,
         })?;
-    let body = std::fs::read_to_string(&pair.body_path).map_err(|source| FixtureError::Io {
+    // Bytes, not `read_to_string`: live parsing decodes with
+    // `from_utf8_lossy`, so `--record` can write a fixture whose body is
+    // not valid UTF-8 (latin-1 pages); a hard UTF-8 read here would make
+    // that fixture un-runnable.
+    let body = std::fs::read(&pair.body_path).map_err(|source| FixtureError::Io {
         path: pair.body_path.clone(),
         source,
     })?;
@@ -196,7 +200,7 @@ pub fn run_pair(spec: &CompiledSpec, pair: &FixturePair) -> Result<FixtureReport
     // No fetch happened, so the rendered request URL is the resolution
     // base (what `res.url` would be for a redirect-free live fetch).
     let base = spec.render_url(&req)?;
-    let outcome = match spec.parse_response(expected.status, body.as_bytes(), &base) {
+    let outcome = match spec.parse_response(expected.status, &body, &base) {
         Ok(results) => match (&expected.error, &expected.results) {
             (Some(err), _) => Err(format!(
                 "expected error {err:?}, got {} results",

@@ -339,6 +339,31 @@ fn fixture_pair_round_trip() {
 }
 
 #[test]
+fn non_utf8_fixture_body_round_trips() {
+    // Live parse decodes with `from_utf8_lossy`, so `--record` can write
+    // a fixture whose body is not valid UTF-8 (latin-1 pages); `run_pair`
+    // reads bytes and must not hard-fail on them.
+    let spec = spec();
+    let tmp = tempfile::tempdir().unwrap();
+    let mut body = b"<html><body><div class=\"result\"><h2 class=\"t\">T</h2>\
+        <a class=\"u\" href=\"/x\">l</a><p class=\"note\">caf"
+        .to_vec();
+    body.push(0xe9); // latin-1 `é`, invalid UTF-8 -> U+FFFD after lossy decode
+    body.extend_from_slice(b" s</p></div></body></html>");
+
+    let results = spec
+        .parse_response(200, &body, &base(&spec, "latin1"))
+        .unwrap();
+    assert_eq!(results[0].snippet, "caf\u{fffd} s");
+    write_pair(tmp.path(), &spec, "latin1", 200, &body, &Ok(results)).unwrap();
+
+    let pairs = fixture_pairs(tmp.path(), "fixture").unwrap();
+    assert_eq!(pairs.len(), 1);
+    let report = run_pair(&spec, &pairs[0]).unwrap();
+    assert_eq!(report.outcome, Ok(1));
+}
+
+#[test]
 fn fixture_pair_detects_drift_and_expected_errors() {
     let spec = spec();
     let tmp = tempfile::tempdir().unwrap();
