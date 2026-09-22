@@ -15,8 +15,9 @@
 //! while the store keeps serving the day series from `search_log`.
 //!
 //! Admission recording (`record_admission_wait` / `record_admission_rejected`
-//! / `record_stale_served`) is the hook set W1-07's admission code calls;
-//! until it lands the pipeline records a zero wait so the series exists.
+//! / `record_stale_served`) is wired to W1-07's bounded queue: the flight
+//! leader times its `acquire`, and per-waiter rejections/stale serves are
+//! counted in `shared_response`.
 //!
 //! This Source Code Form is subject to the terms of the Mozilla Public
 //! License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -626,16 +627,16 @@ impl Metrics {
         );
     }
 
-    /// `oxe_admission_wait_ms` — queue wait for the request. Pre-W1-07
-    /// admission is pass-through, so the pipeline records `Duration::ZERO`.
+    /// `oxe_admission_wait_ms` — time the flight leader spent in
+    /// `Admission::acquire` (the W1-07 bounded queue).
     pub fn record_admission_wait(&self, d: Duration) {
         let mut reg = registry();
         reg.admission_wait.observe(ms_f64(d));
         push(&mut reg.admission_waits, ms_u32(d));
     }
 
-    /// `oxe_admission_rejected_total{reason}` — W1-07 calls this on queue
-    /// overflow (`"queue_full"`, `"wait_timeout"`).
+    /// `oxe_admission_rejected_total{reason}` — one per request that got a
+    /// 429 (`"queue_full"`; recorded per waiter in `shared_response`).
     pub fn record_admission_rejected(&self, reason: &'static str) {
         let mut reg = registry();
         *reg.admission_rejected_series

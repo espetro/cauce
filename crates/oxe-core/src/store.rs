@@ -363,12 +363,12 @@ impl EngineStatsRow {
 
 /// Admission/queue aggregates for `/api/stats` (W1-09). Sourced from the
 /// in-process metrics registry by `StatsSnapshot::merge_metrics`; store
-/// impls emit it zeroed. Pre-W1-07 admission is pass-through, so `rejected`
-/// and `stale_served` stay 0 and `waits` counts pass-through records.
+/// impls emit it zeroed. Counts are per request: every waiter on a flight
+/// observes the same rejection/stale/deadline outcome.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct AdmissionStats {
-    /// Search requests that measured an admission wait (pre-W1-07: every
-    /// network search records a zero wait).
+    /// Flight leader acquires that measured a bounded-queue wait
+    /// (`oxe_admission_wait_ms` observations).
     pub waits: u64,
     pub wait_median_ms: u32,
     pub wait_p80_ms: u32,
