@@ -213,6 +213,38 @@ fn bing_redirect_inside_results_is_unwrapped() {
 }
 
 #[test]
+fn non_http_scheme_result_urls_are_dropped() {
+    use base64::Engine as _;
+    // A crafted `javascript:`/`data:` href, or a bing `u=` payload
+    // decoding to `javascript:`, must never land in a `SearchResult.url`
+    // that W2 renders as `<a href>`.
+    let js_payload = format!(
+        "a1{}",
+        base64::engine::general_purpose::URL_SAFE_NO_PAD.encode("javascript:alert(1)")
+    );
+    let body = format!(
+        r#"<html><body>
+           <div class="result"><h2 class="t">JS</h2>
+             <a class="u" href="javascript:alert(1)">l</a><p class="note">s</p></div>
+           <div class="result"><h2 class="t">DATA</h2>
+             <a class="u" href="data:text/html;base64,PHNjcmlwdD4=">l</a><p class="note">s</p></div>
+           <div class="result"><h2 class="t">FILE</h2>
+             <a class="u" href="file:///etc/passwd">l</a><p class="note">s</p></div>
+           <div class="result"><h2 class="t">REDIR-JS</h2>
+             <a class="u" href="https://www.bing.com/ck/a?u={js_payload}">l</a><p class="note">s</p></div>
+           <div class="result"><h2 class="t">OK</h2>
+             <a class="u" href="/good">l</a><p class="note">s</p></div>
+           </body></html>"#
+    );
+    let spec = spec();
+    let results = spec
+        .parse_response(200, body.as_bytes(), &base(&spec, "q"))
+        .unwrap();
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].url.as_str(), "https://search.test.local/good");
+}
+
+#[test]
 fn json_kind_parallel_arrays() {
     let yaml = r#"
 id: wiki

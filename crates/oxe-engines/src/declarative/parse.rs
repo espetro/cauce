@@ -194,9 +194,13 @@ fn apply_regex(raw: &str, f: &CompiledField) -> Option<String> {
 }
 
 /// Unwrap tracking redirects, resolve against `base`, normalize.
+/// Only `http`/`https` survive — a crafted `javascript:`/`data:`/`file:`
+/// href (or a `u=` payload decoding to one) must never reach a
+/// `SearchResult.url` that W2 renders as `<a href>`.
 fn resolve_url(raw: &str, base: &Url, spec: &CompiledSpec) -> Option<Url> {
     let url = base.join(raw.trim()).ok()?;
-    Some(normalize_url(&unwrap_redirect(&url, spec.redirects())))
+    let url = unwrap_redirect(&url, spec.redirects());
+    matches!(url.scheme(), "http" | "https").then(|| normalize_url(&url))
 }
 
 /// Collapse all whitespace runs (newlines/indentation inside scraped
