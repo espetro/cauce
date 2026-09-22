@@ -14,8 +14,8 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use oxe_core::SearchPipeline;
 use oxe_core::config::{Config, Resources};
+use oxe_core::{Admission, AdmissionLimits, SearchPipeline};
 use oxe_engines::factory::build_engines;
 use oxe_server::{AppState, observability};
 use oxe_store_sqlite::{SqliteStore, spawn_eviction_task};
@@ -98,13 +98,33 @@ async fn mcp_async(cfg: Config) -> i32 {
         SearchPipeline::new(store.clone(), engines)
             .with_deadline(Duration::from_millis(cfg.search.deadline_ms))
             .with_default_ttl(Duration::from_secs(cfg.search.ttl_s))
-            .with_ttl_cap(Duration::from_secs(cfg.search.ttl_cap_s)),
+            .with_ttl_cap(Duration::from_secs(cfg.search.ttl_cap_s))
+            .with_lexical(cfg.cache.lexical)
+            .with_admission(Admission::new(AdmissionLimits {
+                max_wait: Duration::from_millis(cfg.admission.max_wait_ms),
+                max_concurrent_per_engine: cfg.admission.max_concurrent_per_engine.max(1) as usize,
+            })),
     );
+    // Restore persisted breakers, same as `oxe serve`: a stdio process
+    // must respect a breaker `serve` opened (parallel agents share the
+    // egress IP) and its own writes must not clobber `serve`'s rows with
+    // stale all-Closed state.
+    match pipeline.load_health().await {
+        Ok(n) if n > 0 => tracing::info!(rows = n, "engine health restored"),
+        Ok(_) => {}
+        Err(e) => {
+            tracing::warn!(error = %e, "engine health load failed; starting with closed breakers")
+        }
+    }
     let evict = spawn_eviction_task(store.clone());
-    let state = AppState::new(pipeline, store, cfg);
+    let state = AppState::new(pipeline.clone(), store, cfg);
     tracing::info!("oxe mcp serving stdio");
     let result = oxe_server::mcp::serve_stdio(state).await;
     evict.abort();
+    // Best-effort final flush, same as `oxe serve`.
+    if let Err(e) = pipeline.health().flush().await {
+        tracing::warn!(error = %e, "engine health flush on shutdown failed");
+    }
     match result {
         Ok(()) => 0,
         Err(e) => {
