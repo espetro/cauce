@@ -25,6 +25,8 @@ pub struct ApiError {
     code: &'static str,
     message: String,
     request_id: Option<Uuid>,
+    /// `Retry-After` seconds for 429s (admission overflow, W1-07).
+    retry_after_s: Option<u64>,
 }
 
 impl ApiError {
@@ -34,6 +36,7 @@ impl ApiError {
             code,
             message: message.into(),
             request_id: None,
+            retry_after_s: None,
         }
     }
 
@@ -73,6 +76,13 @@ impl ApiError {
         self.request_id = request_id;
         self
     }
+
+    /// Attach a `Retry-After: <secs>` header (`PipelineError::RateLimited`
+    /// overflow path).
+    pub fn with_retry_after(mut self, retry_after_s: u64) -> Self {
+        self.retry_after_s = Some(retry_after_s);
+        self
+    }
 }
 
 impl IntoResponse for ApiError {
@@ -84,6 +94,14 @@ impl IntoResponse for ApiError {
                 "request_id": self.request_id,
             }
         });
-        (self.status, Json(body)).into_response()
+        let mut resp = (self.status, Json(body)).into_response();
+        if let Some(secs) = self.retry_after_s {
+            // A u64 is always a valid header value.
+            if let Ok(v) = axum::http::HeaderValue::from_str(&secs.to_string()) {
+                resp.headers_mut()
+                    .insert(axum::http::header::RETRY_AFTER, v);
+            }
+        }
+        resp
     }
 }

@@ -8,15 +8,15 @@
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::Duration;
 
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use oxe_core::{
-    AuditFilter, AuditRow, CacheKey, CachedSearch, ClickRow, ClientKind, EngineHealthRow,
-    EngineStatus, HistoryFilter, HistoryItem, SafeSearch, SearchLogRow, SearchRequest,
-    SearchResponse, StatsSnapshot, Store, StoreError,
+    AuditFilter, AuditRow, CacheKey, CachedSearch, ClickRow, ClientKind, Engine, EngineError,
+    EngineHealthRow, EngineId, EngineStatus, HistoryFilter, HistoryItem, SafeSearch, SearchLogRow,
+    SearchRequest, SearchResponse, StatsSnapshot, Store, StoreError, Tier,
 };
 use oxe_engines::{Replay, ReplayOpts};
 
@@ -41,6 +41,63 @@ pub fn replay_at(root: &std::path::Path, f: impl FnOnce(&mut ReplayOpts)) -> Rep
     };
     f(&mut opts);
     Replay::new(opts)
+}
+
+/// A `Replay` behind a health gate: while `healthy` is false every call
+/// fails with `EngineError::Blocked`; flipping it lets the next call
+/// through, which is what breaker-probe tests need (unlike the immutable
+/// `ReplayOpts::blocked`). Used only by `health.rs`; each test binary
+/// compiles this module separately.
+#[allow(dead_code)]
+pub struct GateEngine {
+    inner: Replay,
+    healthy: AtomicBool,
+    calls: AtomicU64,
+}
+
+#[allow(dead_code)]
+impl GateEngine {
+    /// `healthy = false` → every call returns `Blocked`.
+    pub fn new(inner: Replay, healthy: bool) -> Self {
+        Self {
+            inner,
+            healthy: AtomicBool::new(healthy),
+            calls: AtomicU64::new(0),
+        }
+    }
+
+    pub fn set_healthy(&self, healthy: bool) {
+        self.healthy.store(healthy, Ordering::SeqCst);
+    }
+
+    /// `search` calls seen, blocked ones included.
+    pub fn call_count(&self) -> u64 {
+        self.calls.load(Ordering::SeqCst)
+    }
+}
+
+#[async_trait]
+impl Engine for GateEngine {
+    fn id(&self) -> EngineId {
+        self.inner.id()
+    }
+    fn tier(&self) -> Tier {
+        self.inner.tier()
+    }
+    fn page_size(&self) -> u8 {
+        self.inner.page_size()
+    }
+    async fn search(
+        &self,
+        req: &SearchRequest,
+        budget: Duration,
+    ) -> Result<Vec<oxe_core::SearchResult>, EngineError> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        if !self.healthy.load(Ordering::SeqCst) {
+            return Err(EngineError::Blocked);
+        }
+        self.inner.search(req, budget).await
+    }
 }
 
 /// What `put` stored: response, write time and TTL.
@@ -75,6 +132,11 @@ pub struct StubStore {
     pub entries: Mutex<HashMap<String, StoredEntry>>,
     pub puts: Mutex<Vec<(String, Duration)>>,
     pub logs: Mutex<Vec<SearchLogRow>>,
+    /// Latest `engine_health` row per engine id (as `put_health` wrote it).
+    pub health_rows: Mutex<HashMap<String, EngineHealthRow>>,
+    /// Every `put_health` call, in order (debounce assertions).
+    pub health_writes: Mutex<Vec<EngineHealthRow>>,
+    pub audits: Mutex<Vec<AuditRow>>,
     pub fail_get: AtomicBool,
     pub fail_lexical: AtomicBool,
 }
@@ -142,8 +204,13 @@ impl Store for StubStore {
     async fn list_cache(&self, _: u32, _: u32) -> Result<Vec<CachedSearch>, StoreError> {
         unimplemented!()
     }
-    async fn get_cache(&self, _: &CacheKey) -> Result<Option<CachedSearch>, StoreError> {
-        unimplemented!()
+    /// `get_exact` hides expired rows; `get_cache` returns them (stale
+    /// serving is the admission layer's call).
+    async fn get_cache(&self, key: &CacheKey) -> Result<Option<CachedSearch>, StoreError> {
+        let entries = self.entries.lock().unwrap();
+        Ok(entries
+            .get(key.as_str())
+            .map(|entry| to_cached(key.as_str(), entry)))
     }
     async fn delete_cache(&self, _: &CacheKey) -> Result<bool, StoreError> {
         unimplemented!()
@@ -167,13 +234,19 @@ impl Store for StubStore {
         unimplemented!()
     }
     async fn health(&self) -> Result<Vec<EngineHealthRow>, StoreError> {
-        unimplemented!()
+        Ok(self.health_rows.lock().unwrap().values().cloned().collect())
     }
-    async fn put_health(&self, _: &EngineHealthRow) -> Result<(), StoreError> {
-        unimplemented!()
+    async fn put_health(&self, row: &EngineHealthRow) -> Result<(), StoreError> {
+        self.health_writes.lock().unwrap().push(row.clone());
+        self.health_rows
+            .lock()
+            .unwrap()
+            .insert(row.engine.as_str().to_string(), row.clone());
+        Ok(())
     }
-    async fn audit(&self, _: AuditRow) -> Result<(), StoreError> {
-        unimplemented!()
+    async fn audit(&self, row: AuditRow) -> Result<(), StoreError> {
+        self.audits.lock().unwrap().push(row);
+        Ok(())
     }
     async fn list_audit(&self, _: &AuditFilter) -> Result<Vec<AuditRow>, StoreError> {
         unimplemented!()
