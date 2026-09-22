@@ -72,7 +72,9 @@ fn req(q: &str) -> SearchRequest {
 
 /// A v1-only child: rejects `v != 1` with the reference SDK's
 /// `parse:unsupported protocol version` error (issue #88 downgrade path).
-fn v1_spec() -> ExecSpec {
+/// `extra_args` are forwarded to the fixture (`--bare-rejection` sends an
+/// out-of-contract rejection line with no `v` field).
+fn v1_spec(extra_args: &[&str]) -> ExecSpec {
     let mut spec = echo_spec(&[]);
     spec.args = vec![
         Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -80,6 +82,8 @@ fn v1_spec() -> ExecSpec {
             .to_string_lossy()
             .into_owned(),
     ];
+    spec.args
+        .extend(extra_args.iter().map(|s| (*s).to_string()));
     spec
 }
 
@@ -434,7 +438,7 @@ async fn exec_v1_child_downgrades_and_omits_v2_fields() {
         eprintln!("python3 not on PATH; skipping exec_v1_child_downgrades_and_omits_v2_fields");
         return;
     }
-    let engine = ExecEngine::new(v1_spec());
+    let engine = ExecEngine::new(v1_spec(&[]));
 
     let mut request = req("downgrade");
     request.safesearch = SafeSearch::Strict;
@@ -459,6 +463,36 @@ async fn exec_v1_child_downgrades_and_omits_v2_fields() {
         .await
         .expect("subsequent v1 call answers");
     assert!(res[0].title.contains("second"));
+}
+
+/// Issue #88 regression: a strict third-party v1 child whose rejection line
+/// lacks `v` entirely (`{"error":"unsupported protocol version: 2"}`) fails
+/// `ExecResponse` decode. The raw-substring fallback in
+/// `is_version_rejection` must still catch it — without it this child
+/// looped forever on Parse error, kill, respawn, re-probe v2.
+#[tokio::test]
+async fn exec_v1_child_bare_rejection_still_downgrades() {
+    if !have_python3() {
+        eprintln!("python3 not on PATH; skipping exec_v1_child_bare_rejection_still_downgrades");
+        return;
+    }
+    let engine = ExecEngine::new(v1_spec(&["--bare-rejection"]));
+
+    let mut request = req("bare downgrade");
+    request.safesearch = SafeSearch::Off;
+    request.time_range = Some(TimeRange::Month);
+    let res = engine
+        .search(&request, Duration::from_secs(10))
+        .await
+        .expect("v1 child answers after downgrade on a bare rejection");
+    assert!(
+        res[0].title.contains("bare downgrade"),
+        "expected results for the resent query: {res:?}"
+    );
+    assert!(
+        res[0].snippet.contains("leaked_fields=[]"),
+        "v2 fields must be omitted on the resent v1 request: {res:?}"
+    );
 }
 
 #[tokio::test]

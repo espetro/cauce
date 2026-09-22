@@ -163,13 +163,22 @@ pub struct ExecResponse {
 /// naming the protocol version is treated the same so strict third-party v1
 /// children downgrade too. One line in, one line out: the stream stays in
 /// sync and the request can be resent at the lower version.
+///
+/// Two checks: the structured one reads `error` off a decoded
+/// [`ExecResponse`]; when the line does not decode at all — e.g. an
+/// out-of-contract child sends `{"error":"unsupported protocol version"}`
+/// with no `v` — a raw substring fallback still catches the intent. Without
+/// the fallback such a child would loop forever: Parse error, kill, respawn,
+/// re-probe v2.
 fn is_version_rejection(line: &str) -> bool {
-    let Ok(resp) = serde_json::from_str::<ExecResponse>(line.trim()) else {
-        return false;
-    };
-    resp.error
-        .as_deref()
-        .is_some_and(|e| e.to_lowercase().contains("protocol version"))
+    let trimmed = line.trim();
+    match serde_json::from_str::<ExecResponse>(trimmed) {
+        Ok(resp) => resp
+            .error
+            .as_deref()
+            .is_some_and(|e| e.to_lowercase().contains("protocol version")),
+        Err(_) => trimmed.to_lowercase().contains("protocol version"),
+    }
 }
 
 /// Map a protocol `error` string to an `EngineError`. Recognised codes are
