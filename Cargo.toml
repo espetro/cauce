@@ -1,18 +1,18 @@
 [workspace]
 resolver = "3"
 members = [
-    "crates/oxe-cli",
-    "crates/oxe-core",
-    "crates/oxe-engines",
-    "crates/oxe-server",
-    "crates/oxe-store-sqlite",
+    "crates/cauce-cli",
+    "crates/cauce-core",
+    "crates/cauce-engines",
+    "crates/cauce-server",
+    "crates/cauce-store-sqlite",
 ]
 
 [workspace.package]
 version = "0.0.0"
 edition = "2024"
 license = "MPL-2.0"
-repository = "https://github.com/espetro/oxe"
+repository = "https://github.com/espetro/cauce"
 
 # Dev profile: line tables only for workspace crates, no debug info for
 # dependencies. Debuginfo is the dominant share of target/ (roughly half or

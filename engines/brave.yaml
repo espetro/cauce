@@ -1,4 +1,4 @@
-# Copyright (c) 2026 Joaquin Terrasa and oxe contributors. Apache-2.0.
+# Copyright (c) 2026 Joaquin Terrasa and cauce contributors. Apache-2.0.
 #
 # Brave Search web results (W1-04). Selectors verified against a live
 # 2026-09 SERP: `div.snippet[data-type="web"]` containers, the main link

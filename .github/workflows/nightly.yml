@@ -18,8 +18,8 @@ jobs:
           echo "$GITHUB_WORKSPACE/sdk/python/.venv/bin" >> "$GITHUB_PATH"
       - uses: Swatinem/rust-cache@v2
         # Keep the nightly release build under target/ so rust-cache covers
-        # it; locally it defaults to ~/.cache/oxe/e2e-budget (shared across
+        # it; locally it defaults to ~/.cache/cauce/e2e-budget (shared across
         # worktrees) instead of nesting a second dep-graph build in target/.
       - run: mise run validate:nightly
         env:
-          OXE_BUDGET_TARGET_DIR: target/e2e-budget
+          CAUCE_BUDGET_TARGET_DIR: target/e2e-budget

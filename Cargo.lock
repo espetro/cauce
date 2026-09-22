@@ -291,6 +291,129 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fc652a48c352aef3ea3aed32080501cf3ef6ed5da78602a020c991775b0aff04"
 
 [[package]]
+name = "cauce-cli"
+version = "0.0.0"
+dependencies = [
+ "cauce-core",
+ "cauce-engines",
+ "cauce-server",
+ "cauce-store-sqlite",
+ "rmcp",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
+name = "cauce-core"
+version = "0.0.0"
+dependencies = [
+ "async-trait",
+ "cauce-engines",
+ "chrono",
+ "futures-util",
+ "governor",
+ "proptest",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "sysinfo",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "toml",
+ "tracing",
+ "tracing-subscriber",
+ "url",
+ "uuid",
+ "wiremock",
+]
+
+[[package]]
+name = "cauce-engines"
+version = "0.0.0"
+dependencies = [
+ "async-trait",
+ "base64 0.22.1",
+ "cauce-core",
+ "chrono",
+ "percent-encoding",
+ "regex",
+ "reqwest",
+ "rust-embed",
+ "scraper",
+ "serde",
+ "serde_json",
+ "serde_json_path",
+ "serde_norway",
+ "sha2 0.10.9",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "toml",
+ "tracing",
+ "url",
+ "wiremock",
+]
+
+[[package]]
+name = "cauce-server"
+version = "0.0.0"
+dependencies = [
+ "askama",
+ "async-trait",
+ "axum",
+ "cauce-core",
+ "cauce-engines",
+ "cauce-store-sqlite",
+ "chrono",
+ "jsonschema",
+ "opentelemetry",
+ "opentelemetry-otlp",
+ "opentelemetry_sdk",
+ "prometheus-parse",
+ "reqwest",
+ "rmcp",
+ "rust-embed",
+ "schemars",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "toml",
+ "tower",
+ "tracing",
+ "tracing-appender",
+ "tracing-opentelemetry",
+ "tracing-subscriber",
+ "url",
+ "urlencoding",
+ "uuid",
+]
+
+[[package]]
+name = "cauce-store-sqlite"
+version = "0.0.0"
+dependencies = [
+ "async-trait",
+ "cauce-core",
+ "chrono",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "url",
+ "uuid",
+]
+
+[[package]]
 name = "cc"
 version = "1.4.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1832,129 +1955,6 @@ name = "outref"
 version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1a80800c0488c3a21695ea981a54918fbb37abf04f4d0720c453632255e2ff0e"
-
-[[package]]
-name = "oxe-cli"
-version = "0.0.0"
-dependencies = [
- "oxe-core",
- "oxe-engines",
- "oxe-server",
- "oxe-store-sqlite",
- "rmcp",
- "serde_json",
- "tempfile",
- "tokio",
- "tracing",
- "tracing-subscriber",
- "uuid",
-]
-
-[[package]]
-name = "oxe-core"
-version = "0.0.0"
-dependencies = [
- "async-trait",
- "chrono",
- "futures-util",
- "governor",
- "oxe-engines",
- "proptest",
- "reqwest",
- "serde",
- "serde_json",
- "sha2 0.10.9",
- "sysinfo",
- "tempfile",
- "thiserror",
- "tokio",
- "toml",
- "tracing",
- "tracing-subscriber",
- "url",
- "uuid",
- "wiremock",
-]
-
-[[package]]
-name = "oxe-engines"
-version = "0.0.0"
-dependencies = [
- "async-trait",
- "base64 0.22.1",
- "chrono",
- "oxe-core",
- "percent-encoding",
- "regex",
- "reqwest",
- "rust-embed",
- "scraper",
- "serde",
- "serde_json",
- "serde_json_path",
- "serde_norway",
- "sha2 0.10.9",
- "tempfile",
- "thiserror",
- "tokio",
- "toml",
- "tracing",
- "url",
- "wiremock",
-]
-
-[[package]]
-name = "oxe-server"
-version = "0.0.0"
-dependencies = [
- "askama",
- "async-trait",
- "axum",
- "chrono",
- "jsonschema",
- "opentelemetry",
- "opentelemetry-otlp",
- "opentelemetry_sdk",
- "oxe-core",
- "oxe-engines",
- "oxe-store-sqlite",
- "prometheus-parse",
- "reqwest",
- "rmcp",
- "rust-embed",
- "schemars",
- "serde",
- "serde_json",
- "tempfile",
- "thiserror",
- "tokio",
- "toml",
- "tower",
- "tracing",
- "tracing-appender",
- "tracing-opentelemetry",
- "tracing-subscriber",
- "url",
- "urlencoding",
- "uuid",
-]
-
-[[package]]
-name = "oxe-store-sqlite"
-version = "0.0.0"
-dependencies = [
- "async-trait",
- "chrono",
- "oxe-core",
- "rusqlite",
- "serde",
- "serde_json",
- "tempfile",
- "tokio",
- "tracing",
- "url",
- "uuid",
-]
 
 [[package]]
 name = "parking_lot"

@@ -1,0 +1,48 @@
+[package]
+name = "cauce-cli"
+description = "cauce binary: serve, search, engine test, cache, record."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+autotests = false
+
+[[bin]]
+name = "cauce"
+path = "src/main.rs"
+
+[[test]]
+name = "e2e"
+path = "tests/e2e/main.rs"
+
+# The binary's feature surface mirrors cauce-server's (W1-12): defaults are
+# `ui mcp ai`. `cargo build -p cauce-cli --no-default-features --features mcp`
+# produces the minimal agent build (`cauce mcp` + headless `cauce serve`, no
+# templates/assets, no OTLP); `mise run validate` keeps it compiling.
+[features]
+default = ["ui", "mcp", "ai"]
+ui = ["cauce-server/ui"]
+mcp = ["cauce-server/mcp"]
+ai = ["cauce-server/ai"]
+archive = ["cauce-server/archive"]
+semantic = ["cauce-server/semantic"]
+postgres = ["cauce-server/postgres"]
+otlp = ["cauce-server/otlp"]
+
+[dependencies]
+cauce-core = { path = "../cauce-core" }
+cauce-engines = { path = "../cauce-engines" }
+cauce-server = { path = "../cauce-server", default-features = false }
+cauce-store-sqlite = { path = "../cauce-store-sqlite" }
+serde_json = "1"
+tokio = { version = "1", features = ["net", "rt", "rt-multi-thread"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["io-util", "macros", "process", "time"] }
+tempfile = "3"
+# rmcp client side for the `cauce mcp` stdio e2e test (feature-unified with
+# the rmcp that cauce-server depends on).
+rmcp = { version = "3", features = ["client", "transport-async-rw"] }
+uuid = { version = "1", features = ["v7"] }
