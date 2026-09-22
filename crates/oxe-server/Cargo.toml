@@ -1,0 +1,9 @@
+[package]
+name = "oxe-server"
+description = "axum router, HTMX templates, SSE, MCP, Exa adapter, static assets."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]

@@ -1,0 +1,15 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/oxe-cli",
+    "crates/oxe-core",
+    "crates/oxe-engines",
+    "crates/oxe-server",
+    "crates/oxe-store-sqlite",
+]
+
+[workspace.package]
+version = "0.0.0"
+edition = "2024"
+license = "MPL-2.0"
+repository = "https://github.com/espetro/oxe"
