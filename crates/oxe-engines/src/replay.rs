@@ -18,13 +18,16 @@
 
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 
-use oxe_core::{Engine, EngineError, EngineId, SearchRequest, SearchResult, Tier, normalize_query};
+use oxe_core::{
+    Engine, EngineError, EngineId, EnginePhase, Metrics, SearchRequest, SearchResult, Tier,
+    normalize_query,
+};
 
-use crate::cassette::{Cassette, CassetteError, cassette_key};
+use crate::cassette::{Cassette, cassette_key};
 
 /// Configuration of a [`Replay`] engine instance.
 ///
@@ -69,6 +72,9 @@ impl Default for ReplayOpts {
 pub struct Replay {
     opts: ReplayOpts,
     calls: AtomicU64,
+    /// W1-09 phase timings (`oxe_engine_duration_ms{phase}`). Unbound until
+    /// the first record, which resolves the process-global meter provider.
+    metrics: Metrics,
 }
 
 impl Replay {
@@ -76,6 +82,7 @@ impl Replay {
         Self {
             opts,
             calls: AtomicU64::new(0),
+            metrics: Metrics,
         }
     }
 
@@ -180,33 +187,48 @@ impl Engine for Replay {
                 "injected failure (call {call})"
             )));
         }
+        // `phase=http` covers replay's fetch leg: the simulated upstream
+        // latency plus the cassette filesystem probe/read. `phase=parse`
+        // covers turning bytes (or the seeded RNG) into `SearchResult`s.
+        let fetch = Instant::now();
         if self.opts.latency_ms > 0 {
             tokio::time::sleep(Duration::from_millis(self.opts.latency_ms)).await;
         }
         if let Some(limit) = self.opts.page_limit
             && req.page > limit
         {
+            self.metrics
+                .record_engine_phase(&self.id(), EnginePhase::Http, fetch.elapsed());
             return Err(EngineError::NoResults);
         }
         if self.opts.empty {
+            self.metrics
+                .record_engine_phase(&self.id(), EnginePhase::Http, fetch.elapsed());
             return Ok(Vec::new());
         }
 
         if req.page == 1
             && let Some(path) = self.cassette_file(&req.q)
         {
-            let cassette = Cassette::load(&path).map_err(|e| match e {
-                CassetteError::Io(e) => EngineError::Transport(format!("{}: {e}", path.display())),
-                CassetteError::Json(e) => EngineError::Parse(format!("{}: {e}", path.display())),
-            })?;
+            let text = std::fs::read_to_string(&path)
+                .map_err(|e| EngineError::Transport(format!("{}: {e}", path.display())))?;
+            self.metrics
+                .record_engine_phase(&self.id(), EnginePhase::Http, fetch.elapsed());
+            let parse = Instant::now();
+            let cassette: Cassette = serde_json::from_str(&text)
+                .map_err(|e| EngineError::Parse(format!("{}: {e}", path.display())))?;
+            self.metrics
+                .record_engine_phase(&self.id(), EnginePhase::Parse, parse.elapsed());
             return Ok(cassette.results);
         }
 
-        Ok(synth::results(
-            &normalize_query(&req.q),
-            req.page,
-            &self.id(),
-        ))
+        self.metrics
+            .record_engine_phase(&self.id(), EnginePhase::Http, fetch.elapsed());
+        let parse = Instant::now();
+        let results = synth::results(&normalize_query(&req.q), req.page, &self.id());
+        self.metrics
+            .record_engine_phase(&self.id(), EnginePhase::Parse, parse.elapsed());
+        Ok(results)
     }
 }
 

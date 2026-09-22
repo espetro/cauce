@@ -4,14 +4,16 @@
 //!   (`<data_dir>/logs/oxe-YYYY-MM-DD.jsonl`, daily rotation via
 //!   `tracing-appender`, retention `retention_days`) and, when stderr is a
 //!   TTY or `OXE_LOG_PRETTY=1`, a pretty stderr layer.
-//! - With the `otlp` feature (non-default since W1-12), OTLP trace export
-//!   is wired but only activates when `OTEL_EXPORTER_OTLP_ENDPOINT` is set.
+//! - With the `otlp` feature (non-default), OTLP trace export is wired but
+//!   only activates when `OTEL_EXPORTER_OTLP_ENDPOINT` is set.
 //! - `RequestId` is a UUIDv7 carried as a `request_id` span field; the JSONL
 //!   layer hoists it to a top-level field on every line.
 //! - `audit` emits a JSONL event with `audit=true` and appends the `audit`
 //!   table row through `Store::audit`, one call site per audited action.
 //! - `trace` reads the JSONL files for `oxe trace <request_id>`; W2's
 //!   `/trace/{id}` page reuses the same reader.
+//! - `tail` renders JSONL records as terminal lines for `oxe tail`
+//!   (one line per event, spans collapsed at close).
 //!
 //! This Source Code Form is subject to the terms of the Mozilla Public
 //! License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -22,6 +24,7 @@ mod jsonl;
 #[cfg(feature = "otlp")]
 mod otlp;
 mod request;
+pub mod tail;
 pub mod trace;
 
 use std::io::IsTerminal;

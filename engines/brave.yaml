@@ -1,0 +1,43 @@
+# Copyright (c) 2026 Joaquin Terrasa and oxe contributors. Apache-2.0.
+#
+# Brave Search web results (W1-04). Selectors verified against a live
+# 2026-09 SERP: `div.snippet[data-type="web"]` containers, the main link
+# is `.result-content > a` (wraps favicon, site name and title), the
+# description sits in `.generic-snippet .content`. Cluster sub-links
+# (`a.title` inside `.result-cluster`) are nested in the same container
+# but always come after the main link in document order, so first-match
+# field selectors stay correct.
+#
+# Block detection: `detect.blocked` substrings must NOT appear in a
+# normal SERP. Strings like "captcha", "sorry", "security check" or
+# "verifying you're not a bot" ship inside the i18n bundle of every
+# page and would false-positive. Brave's security-check page marks
+# itself via `page:"/captcha"` in the Svelte hydration data (verified
+# on a captured HTTP 429 body), so `"/captcha"` is the canonical marker.
+id: brave
+tier: 1
+page_size: 20
+request:
+  url: "https://search.brave.com/search?q={q}&offset={page0}&source=web"
+  headers:
+    Accept-Language: "{lang}"
+  timeout_ms: 2500
+parse:
+  kind: html
+  results: 'div.snippet[data-type="web"]'
+  fields:
+    title:
+      css: [".search-snippet-title", "div.title", ".title"]
+    url:
+      css: [".result-content > a", "a"]
+      attr: href
+    snippet:
+      css: [".generic-snippet .content", ".snippet-description", ".generic-snippet"]
+detect:
+  # Only the hydration marker is echo-safe: every other candidate needle
+  # can appear in a healthy SERP via the echoed query or organic snippet
+  # text (see issue #109). JSON escaping turns a typed '"' into '\"' so
+  # '"/captcha"' can never be produced by echoed input.
+  blocked:
+    - '"/captcha"'
+  rate_limited_status: [429, 403]

@@ -75,6 +75,17 @@ const ENV_OVERRIDES: &[(&str, &[&str], bool)] = &[
 // (`OXE_ENGINES`) or other subsystems (`OXE_REPLAY_*`, `OXE_LOG_PRETTY`,
 // `OXE_LIVE`, `OXE_NIGHTLY`).
 
+/// What a secret leaf renders as in the display tree when it was not
+/// produced by an interpolation template (templates print as their raw
+/// `${...}` text instead).
+const REDACTED: &str = "<redacted>";
+
+/// Dotted paths whose values are secrets by position, so the display tree
+/// redacts them no matter the value's origin (`${env:...}` template, `OXE_*`
+/// override or a file literal). Engine `env` maps are covered separately:
+/// every `engines.<i>.env.*` value is secret-bearing.
+const SECRET_PATHS: &[&[&str]] = &[&["ai", "api_key"]];
+
 /// Errors from `Config::load`/`Config::save`.
 #[derive(Debug, thiserror::Error)]
 pub enum ConfigError {
@@ -931,7 +942,9 @@ impl Config {
 
     /// The resolved config as a TOML tree with secrets redacted: every
     /// value that came from an interpolation template is shown as its raw
-    /// `${...}` text instead of the resolved secret.
+    /// `${...}` text instead of the resolved secret, and secret paths that
+    /// were not template-produced (an `OXE_*` override or a file literal)
+    /// render as `<redacted>`.
     pub fn display_tree(&self) -> Result<toml::Value, ConfigError> {
         let mut tree = to_value(&self.sections())?;
         for (path, raw) in &self.templates {
@@ -940,6 +953,7 @@ impl Config {
                 toml::Value::String(raw.clone()),
             );
         }
+        redact_secret_paths(&mut tree, &self.templates);
         Ok(tree)
     }
 
@@ -979,6 +993,63 @@ fn tree_mut_at<'a>(tree: &'a mut toml::Value, path: &[String]) -> Option<&'a mut
 fn set_display(slot: Option<&mut toml::Value>, value: toml::Value) {
     if let Some(slot) = slot {
         *slot = value;
+    }
+}
+
+/// Replace the leaf at `path` with `<redacted>` unless `templates` covers
+/// that path (a `${...}` template already displays as its raw text, which
+/// reveals the indirection but never the secret) or the leaf is an empty
+/// string (no secret to hide; showing `<redacted>` would falsely imply one
+/// is set).
+fn redact_leaf(tree: &mut toml::Value, path: &[String], templates: &BTreeMap<Vec<String>, String>) {
+    if templates.contains_key(path) {
+        return;
+    }
+    let Some(slot) = tree_mut_at(tree, path) else {
+        return;
+    };
+    if let toml::Value::String(s) = &*slot
+        && !s.is_empty()
+    {
+        *slot = toml::Value::String(REDACTED.to_string());
+    }
+}
+
+/// Redact every secret-bearing leaf the template overlay did not already
+/// cover: the fixed `SECRET_PATHS` plus every `engines.<i>.env.*` value
+/// (child-process env vars are where engine credentials live). This is the
+/// guard for secrets that entered the resolved config as literals — an
+/// `OXE_*` override such as `OXE_AI_API_KEY` or a plain string in the file.
+fn redact_secret_paths(tree: &mut toml::Value, templates: &BTreeMap<Vec<String>, String>) {
+    for path in SECRET_PATHS {
+        let owned: Vec<String> = path.iter().map(|s| (*s).to_string()).collect();
+        redact_leaf(tree, &owned, templates);
+    }
+    // `engines` is a `&mut` borrow of `tree`, so the env leaves are
+    // redacted in place rather than via `redact_leaf`/`tree_mut_at`.
+    let Some(toml::Value::Array(engines)) = tree.get_mut("engines") else {
+        return;
+    };
+    for (i, entry) in engines.iter_mut().enumerate() {
+        let Some(toml::Value::Table(env)) = entry.get_mut("env") else {
+            continue;
+        };
+        for (key, value) in env.iter_mut() {
+            let path = vec![
+                "engines".to_string(),
+                i.to_string(),
+                "env".to_string(),
+                key.clone(),
+            ];
+            if templates.contains_key(&path) {
+                continue;
+            }
+            if let toml::Value::String(s) = value
+                && !s.is_empty()
+            {
+                *value = toml::Value::String(REDACTED.to_string());
+            }
+        }
     }
 }
 
@@ -1667,6 +1738,66 @@ mod tests {
             assert!(!rendered.contains("sk-bf-live-secret"), "{rendered}");
             assert!(rendered.contains("${env:BIFROST_API_KEY}"), "{rendered}");
         }
+    }
+
+    /// An `OXE_*` override lands as a literal in the resolved config — no
+    /// `${...}` template tracks it — yet secret paths are redacted by
+    /// position on every display surface (#82).
+    #[test]
+    fn display_redacts_env_override_secret() {
+        let (_tmp, env) = sandbox(&[("OXE_AI_API_KEY", "s3cret-from-env")]);
+        let cfg = Config::load_with(&env).unwrap();
+        assert_eq!(cfg.ai.api_key, "s3cret-from-env");
+
+        for rendered in [
+            cfg.display_toml().unwrap(),
+            format!("{cfg:?}"),
+            serde_json::to_string(&cfg).unwrap(),
+            toml::to_string_pretty(&cfg).unwrap(),
+        ] {
+            assert!(!rendered.contains("s3cret-from-env"), "{rendered}");
+            assert!(rendered.contains(REDACTED), "{rendered}");
+        }
+    }
+
+    /// File literals at secret paths are redacted too, and every
+    /// `engines.*.env.*` value is treated as secret-bearing — unless it
+    /// came from a template, which keeps its raw `${...}` display text.
+    #[test]
+    fn display_redacts_literal_and_engine_env_secrets() {
+        let (tmp, env) = sandbox(&[("ENGINE_TMPL", "tmpl-secret")]);
+        write_config(
+            &tmp.path().join("cfg"),
+            "[ai]\napi_key = \"literal-secret\"\n\n[[engines]]\nid = \"x\"\nkind = \"exec\"\ncommand = \"/bin/x\"\n\n[engines.env]\nMY_KEY = \"engine-secret\"\nOTHER = \"${env:ENGINE_TMPL}\"\n",
+        );
+        let cfg = Config::load_with(&env).unwrap();
+        assert_eq!(cfg.ai.api_key, "literal-secret");
+        assert_eq!(
+            cfg.engine("x")
+                .unwrap()
+                .env
+                .get("MY_KEY")
+                .map(String::as_str),
+            Some("engine-secret")
+        );
+
+        let shown = cfg.display_toml().unwrap();
+        for secret in ["literal-secret", "engine-secret", "tmpl-secret"] {
+            assert!(!shown.contains(secret), "{shown}");
+        }
+        // The template-valued env entry still shows its `${...}` text.
+        assert!(shown.contains("${env:ENGINE_TMPL}"), "{shown}");
+    }
+
+    /// Redacting an unset secret path must not fabricate one: an empty
+    /// `api_key` displays as `""`, not `<redacted>`.
+    #[test]
+    fn display_does_not_redact_empty_secret() {
+        let (_tmp, env) = sandbox(&[]);
+        let cfg = Config::load_with(&env).unwrap();
+        let shown = cfg.display_toml().unwrap();
+        assert!(!shown.contains(REDACTED), "{shown}");
+        assert!(shown.contains("api_key = \"\""), "{shown}");
     }
 
     #[test]

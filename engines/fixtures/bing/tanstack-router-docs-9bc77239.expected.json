@@ -1,0 +1,57 @@
+{
+  "query": "tanstack router docs",
+  "page": 1,
+  "status": 200,
+  "results": [
+    {
+      "title": "TanStack | The open-source application stack for the web.",
+      "url": "https://tanstack.com/",
+      "snippet": "Headless, type-safe, composable tools for building modern web applications that work naturally for developers and reliably for agents."
+    },
+    {
+      "title": "TanStack Start | Full-stack React and Solid Framework",
+      "url": "https://tanstack.com/start/latest",
+      "snippet": "TanStack Start is a full-stack framework for React and Solid, with type-safe routing, server-side rendering, streaming, and server …"
+    },
+    {
+      "title": "TanStack - GitHub",
+      "url": "https://github.com/TanStack",
+      "snippet": "Open source software for web developers. TanStack has 29 repositories available. Follow their code on GitHub."
+    },
+    {
+      "title": "TanStack for Beginners: A Complete Guide & Tutorial",
+      "url": "https://dev.to/codeparrot/tanstack-for-beginners-a-complete-guide-tutorial-2ch3",
+      "snippet": "Mar 13, 2025 · TanStack for beginners helps developers build scalable, efficient, and high-performance applications by solving …"
+    },
+    {
+      "title": "GitHub - TanStack/tanstack.com: The marketing and docs site for all ...",
+      "url": "https://github.com/tanstack/tanstack.com",
+      "snippet": "The documentation for all TanStack projects (except React Charts) is hosted on tanstack.com. In production, doc pages are fetched …"
+    },
+    {
+      "title": "What Is the TanStack Ecosystem and Why Are Developers ... - C",
+      "url": "https://www.c-sharpcorner.com/article/what-is-the-tanstack-ecosystem-and-why-are-developers-switching-to-it",
+      "snippet": "Apr 2, 2026 · The TanStack ecosystem is a powerful set of tools that helps developers build fast, scalable, and maintainable …"
+    },
+    {
+      "title": "TanStack for Beginners - Better Stack Community",
+      "url": "https://betterstack.com/community/guides/scaling-nodejs/tanstack-for-beginners",
+      "snippet": "Jul 8, 2025 · TanStack is a powerful collection of headless utilities for building modern web applications that has transformed how …"
+    },
+    {
+      "title": "@tanstack/react-query - npm",
+      "url": "https://www.npmjs.com/package/@tanstack/react-query",
+      "snippet": "Hooks for managing, caching and syncing asynchronous and remote data in React. Latest version: 5.103.1, last published: 3 days …"
+    },
+    {
+      "title": "TanStack | 高质量的面向 Web 开发者的开源软件 - TanStack 文档",
+      "url": "https://tanstack.com.cn/",
+      "snippet": "TanStack DB gives you a reactive, client-first store for your API data with collections, live queries and optimistic mutations that keep …"
+    },
+    {
+      "title": "Production-Ready SaaS Boilerplate | SoarStarter TanStack",
+      "url": "https://tanstack.soarstarter.com/",
+      "snippet": "Launch a modern SaaS faster with TanStack Start, Better Auth, payments, dashboard, docs, email, i18n, and AI examples already …"
+    }
+  ]
+}

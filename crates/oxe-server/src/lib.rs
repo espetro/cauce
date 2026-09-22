@@ -11,6 +11,7 @@ mod handlers;
 mod html;
 #[cfg(feature = "mcp")]
 pub mod mcp;
+mod metrics;
 mod middleware;
 pub mod observability;
 mod routes;
@@ -20,5 +21,6 @@ pub use app::{
     mounted_routes, serve,
 };
 pub use error::ApiError;
+pub use metrics::{METRICS_CONTENT_TYPE, MetricsHandle};
 pub use middleware::{HostGuard, RequestCtx, host_origin_guard, request_context};
 pub use routes::{ROUTES, RouteKind, RouteSpec};

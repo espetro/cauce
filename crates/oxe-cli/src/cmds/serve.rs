@@ -143,7 +143,7 @@ async fn serve_async(opts: ServeOpts, cfg: Config, host: String) -> i32 {
     }
     let state = AppState::new(pipeline.clone(), store, cfg);
     let app = oxe_server::build_router_opts(
-        state,
+        state.clone(),
         RouterOptions {
             ui: !opts.headless,
             bind_host: host.clone(),

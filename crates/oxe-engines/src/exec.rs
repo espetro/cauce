@@ -12,7 +12,7 @@
 
 use std::path::PathBuf;
 use std::process::Stdio;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -22,7 +22,9 @@ use tokio::sync::Mutex;
 use tokio::time::timeout;
 use tracing::{debug, warn};
 
-use oxe_core::{Engine, EngineError, EngineId, SearchRequest, SearchResult, Tier};
+use oxe_core::{
+    Engine, EngineError, EngineId, EnginePhase, Metrics, SearchRequest, SearchResult, Tier,
+};
 
 /// Version of the exec wire protocol implemented here (parent plan 4.3).
 pub const PROTOCOL_VERSION: u8 = 1;
@@ -146,6 +148,9 @@ struct State {
 pub struct ExecEngine {
     spec: ExecSpec,
     state: Mutex<State>,
+    /// W1-09 phase timings (`oxe_engine_duration_ms{phase}`): `http` is the
+    /// stdin/stdout round trip, `parse` the response decode.
+    metrics: Metrics,
 }
 
 impl ExecEngine {
@@ -153,6 +158,7 @@ impl ExecEngine {
         Self {
             spec,
             state: Mutex::new(State::default()),
+            metrics: Metrics,
         }
     }
 
@@ -309,24 +315,37 @@ impl Engine for ExecEngine {
         // Every failure path returns early with `io` still owned here:
         // dropping it kills the child (`kill_on_drop`), `state.child` stays
         // `None`, and the next call respawns on a clean stream.
+        let fetch = Instant::now();
         let buf = match timeout(budget, round_trip).await {
             Err(_) => {
+                self.metrics
+                    .record_engine_phase(&self.spec.id, EnginePhase::Http, fetch.elapsed());
                 warn!(engine = %self.spec.id, budget_ms = budget.as_millis() as u64,
                     "exec engine deadline hit; killing child");
                 return Err(EngineError::Timeout);
             }
             Ok(Err(e)) => {
+                self.metrics
+                    .record_engine_phase(&self.spec.id, EnginePhase::Http, fetch.elapsed());
                 warn!(engine = %self.spec.id, "exec child io failed ({e}); killing child");
                 return Err(EngineError::Transport(format!("child io: {e}")));
             }
             Ok(Ok(buf)) if buf.is_empty() => {
+                self.metrics
+                    .record_engine_phase(&self.spec.id, EnginePhase::Http, fetch.elapsed());
                 warn!(engine = %self.spec.id, "exec child closed stdout (EOF); will respawn");
                 return Err(EngineError::Transport("engine process exited".into()));
             }
             Ok(Ok(buf)) => buf,
         };
+        self.metrics
+            .record_engine_phase(&self.spec.id, EnginePhase::Http, fetch.elapsed());
 
-        match self.decode(&buf) {
+        let parse = Instant::now();
+        let decoded = self.decode(&buf);
+        self.metrics
+            .record_engine_phase(&self.spec.id, EnginePhase::Parse, parse.elapsed());
+        match decoded {
             Ok(results) => {
                 state.child = Some(io);
                 Ok(results)

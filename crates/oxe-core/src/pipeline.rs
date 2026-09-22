@@ -86,12 +86,13 @@ use crate::cache::{CacheKey, CachedSearch, lexical_tokens, normalize_query, toke
 use crate::config::LexicalConfig;
 use crate::engine::{Engine, EngineError, EngineId, Tier};
 use crate::health::{Gate, HealthPolicy, HealthTracker};
+use crate::metrics::{Metrics, engine_error_label};
 use crate::normalize::normalize_url;
 use crate::request::SearchRequest;
 use crate::response::{
     EngineReport, EngineStatus, SearchMeta, SearchResponse, SearchResult, Source,
 };
-use crate::store::{LogSource, SearchLogRow, Store, StoreError};
+use crate::store::{BreakerState, LogSource, SearchLogRow, Store, StoreError};
 
 /// Hard fan-out deadline when the caller does not configure one
 /// (`search.deadline_ms` in config once W0-11 lands).
@@ -213,6 +214,9 @@ pub struct SearchPipeline {
     ttl_cap: Duration,
     lexical: LexicalConfig,
     admission: Admission,
+    /// W1-09 metrics handle. A unit struct: every `record_*` writes into
+    /// the process-global registry, so pipelines share one set of series.
+    metrics: Metrics,
 }
 
 fn millis(d: Duration) -> u32 {
@@ -236,6 +240,7 @@ impl SearchPipeline {
             ttl_cap: DEFAULT_TTL_CAP,
             lexical: LexicalConfig::default(),
             admission: Admission::default(),
+            metrics: Metrics,
         }
     }
 
@@ -384,6 +389,12 @@ impl SearchPipeline {
                 elapsed_ms = resp.meta.elapsed_ms,
                 "search complete"
             );
+            let tier = match resp.meta.source {
+                Source::Cache { tier, .. } => Some(tier),
+                Source::Network => None,
+            };
+            self.metrics
+                .record_search(&req.client, "cache", tier, started.elapsed());
             return Ok(resp);
         }
 
@@ -523,7 +534,12 @@ impl SearchPipeline {
         }
 
         let ids: Vec<EngineId> = runnable.iter().map(|e| e.id()).collect();
-        let outcome = match self.admission.acquire(&ids).await {
+        // `oxe_admission_wait_ms` measures the bounded-queue wait; the
+        // singleflight join in `run()` is not queueing and stays uncounted.
+        let queued = Instant::now();
+        let permits = self.admission.acquire(&ids).await;
+        self.metrics.record_admission_wait(queued.elapsed());
+        let outcome = match permits {
             Ok(_permits) => self
                 .fetch(&req, &runnable, &key, ttl, request_id, started)
                 .await
@@ -707,6 +723,15 @@ impl SearchPipeline {
                     deadline_hit = resp.meta.deadline_hit,
                     "search complete"
                 );
+                // Per-request metrics: every waiter on the flight lands
+                // here, so counters count requests, not flights. A stale
+                // serve is observed by each waiter; the deadline hit was
+                // already counted per flight in `fetch`.
+                self.metrics
+                    .record_search(&req.client, label, tier, started.elapsed());
+                if matches!(resp.meta.source, Source::Cache { stale: true, .. }) {
+                    self.metrics.record_stale_served();
+                }
                 Ok(resp)
             }
             Err(e) => {
@@ -727,6 +752,13 @@ impl SearchPipeline {
                     started,
                 )
                 .await;
+                self.metrics
+                    .record_search(&req.client, "network", None, started.elapsed());
+                // A 429 reached the client: one rejection per waiter.
+                // `queue_full` matches the reason label in `rate_limited`.
+                if matches!(e, PipelineError::RateLimited { .. }) {
+                    self.metrics.record_admission_rejected("queue_full");
+                }
                 Err(e)
             }
         }
@@ -758,6 +790,14 @@ impl SearchPipeline {
                 Gate::Call | Gate::Probe => gated.push(engine.clone()),
                 Gate::Skip => skipped.push(engine.id()),
             }
+            // `oxe_engine_breaker_state` mirrors the tracker's live row:
+            // `admission` may have just flipped `Open` -> `HalfOpen`.
+            let state = self
+                .health
+                .health_row(&engine.id())
+                .map(|row| row.breaker)
+                .unwrap_or(BreakerState::Closed);
+            self.metrics.record_breaker_state(&engine.id(), state);
         }
         if !skipped.is_empty() {
             info!(
@@ -780,6 +820,7 @@ impl SearchPipeline {
         let mut failures: Vec<(usize, EngineId, EngineError)> = Vec::new();
         let mut deadline_hit = false;
         let mut answered = vec![false; runnable.len()];
+        let mut ttfr_recorded = false;
 
         for outcome in outcomes {
             let idx = outcome.idx;
@@ -787,6 +828,18 @@ impl SearchPipeline {
             let latency_ms = millis(outcome.latency);
             match outcome.outcome {
                 Ok(Ok(results)) => {
+                    self.metrics.record_engine_call(
+                        &outcome.id,
+                        "ok",
+                        outcome.latency,
+                        Some(results.len()),
+                    );
+                    if !ttfr_recorded {
+                        // Time to first engine result, measured from the
+                        // search start (includes the cache-miss lookup).
+                        self.metrics.record_ttfr(started.elapsed());
+                        ttfr_recorded = true;
+                    }
                     reports.push((
                         idx,
                         EngineReport {
@@ -807,6 +860,13 @@ impl SearchPipeline {
                 // always 502" defect). The report stays `Failed(NoResults)`
                 // for honesty.
                 Ok(Err(EngineError::NoResults)) => {
+                    // A completed call with an empty answer.
+                    self.metrics.record_engine_call(
+                        &outcome.id,
+                        "no_results",
+                        outcome.latency,
+                        Some(0),
+                    );
                     reports.push((
                         idx,
                         EngineReport {
@@ -819,6 +879,12 @@ impl SearchPipeline {
                     ok_results.push((idx, Vec::new()));
                 }
                 Ok(Err(err)) => {
+                    self.metrics.record_engine_call(
+                        &outcome.id,
+                        engine_error_label(&err),
+                        outcome.latency,
+                        None,
+                    );
                     reports.push((
                         idx,
                         EngineReport {
@@ -832,6 +898,8 @@ impl SearchPipeline {
                 }
                 Err(_elapsed) => {
                     deadline_hit = true;
+                    self.metrics
+                        .record_engine_call(&outcome.id, "timeout", outcome.latency, None);
                     reports.push((
                         idx,
                         EngineReport {
@@ -852,6 +920,8 @@ impl SearchPipeline {
                 continue;
             }
             let id = engine.id();
+            self.metrics
+                .record_engine_call(&id, "transport", started.elapsed(), None);
             self.health.record_err(
                 &id,
                 started.elapsed(),
@@ -881,6 +951,14 @@ impl SearchPipeline {
         let engines_used: Vec<EngineReport> = reports.into_iter().map(|(_, r)| r).collect();
         let failures: Vec<(EngineId, EngineError)> =
             failures.into_iter().map(|(_, id, e)| (id, e)).collect();
+
+        // `oxe_deadline_hit_total` counts flights the hard deadline cut,
+        // once per flight — including the all-engines-timed-out case that
+        // surfaces as `AllEnginesFailed` and never reaches the Ok metrics
+        // in `shared_response`.
+        if deadline_hit {
+            self.metrics.record_deadline_hit();
+        }
 
         // Persist health: breaker transitions flush urgently, routine
         // EWMA/failure updates are debounced to 1/s (settled input).

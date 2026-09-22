@@ -50,7 +50,7 @@ run = "cargo deny check"
 [tasks."check:features"]
 description = "Check oxe-cli --no-default-features --features mcp"
 env = { CARGO_INCREMENTAL = "0" }
-run = "cargo check -p oxe-cli --all-targets --no-default-features --features mcp"
+run = "cargo check -p oxe-cli -p oxe-server --all-targets --no-default-features --features mcp"
 
 [tasks.validate]
 description = "Full local gate: fmt + lint + test + deny + feature-matrix check"

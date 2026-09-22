@@ -29,9 +29,9 @@ archive = []
 semantic = []
 # Postgres Store impl (wave 6); no modules yet.
 postgres = []
-# OTLP trace export via tracing-opentelemetry. Active only when
-# OTEL_EXPORTER_OTLP_ENDPOINT is set at runtime; the feature only controls
-# whether the code is compiled in.
+# OTLP export (spans via tracing-opentelemetry). Non-default per the amended
+# W1-09 contract; active only when OTEL_EXPORTER_OTLP_ENDPOINT is set at
+# runtime — the feature only controls whether the code is compiled in.
 otlp = [
     "dep:opentelemetry",
     "dep:opentelemetry_sdk",
@@ -63,10 +63,13 @@ askama = { version = "0.13", optional = true }
 rust-embed = { version = "8", optional = true }
 urlencoding = { version = "2", optional = true }
 
+# OTLP trace export (observability/otlp.rs), all gated behind the
+# non-default `otlp` feature. `default-features` off on the exporter: its
+# default set pulls the HTTP/proto + reqwest exporters; we only ship the
+# gRPC/tonic one. W1-09 metrics need no SDK: the registry in oxe-core
+# renders Prometheus text itself.
 opentelemetry = { version = "0.32", optional = true }
 opentelemetry_sdk = { version = "0.32", optional = true }
-# default-features off: the default set pulls the HTTP/proto + reqwest
-# exporters; we only ship the gRPC/tonic span exporter.
 opentelemetry-otlp = { version = "0.32", default-features = false, features = [
     "grpc-tonic",
     "trace",
@@ -85,6 +88,8 @@ schemars = { version = "1", optional = true }
 async-trait = "0.1"
 oxe-engines = { path = "../oxe-engines" }
 oxe-store-sqlite = { path = "../oxe-store-sqlite" }
+# W1-09 acceptance: parse `/metrics` output with a real text parser.
+prometheus-parse = "0.2"
 tempfile = "3"
 tokio = { version = "1", features = ["macros"] }
 tower = { version = "0.5", features = ["util"] }
