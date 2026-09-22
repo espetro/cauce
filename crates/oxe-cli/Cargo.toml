@@ -28,3 +28,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tokio = { version = "1", features = ["io-util", "macros", "process", "time"] }
 serde_json = "1"
 tempfile = "3"
+# rmcp client side for the `oxe mcp` stdio e2e test (feature-unified with
+# the rmcp that oxe-server depends on).
+rmcp = { version = "3", features = ["client", "transport-async-rw"] }
+uuid = { version = "1", features = ["v7"] }
