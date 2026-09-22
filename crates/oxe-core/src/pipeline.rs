@@ -82,12 +82,13 @@ use crate::admission::{Admission, FlightResult, Lead};
 use crate::cache::{CacheKey, CachedSearch, lexical_tokens, normalize_query, token_jaccard};
 use crate::config::LexicalConfig;
 use crate::engine::{Engine, EngineError, EngineId, Tier};
+use crate::metrics::{Metrics, engine_error_label};
 use crate::normalize::normalize_url;
 use crate::request::SearchRequest;
 use crate::response::{
     EngineReport, EngineStatus, SearchMeta, SearchResponse, SearchResult, Source,
 };
-use crate::store::{LogSource, SearchLogRow, Store};
+use crate::store::{BreakerState, LogSource, SearchLogRow, Store};
 
 /// Hard fan-out deadline when the caller does not configure one
 /// (`search.deadline_ms` in config once W0-11 lands).
@@ -194,6 +195,9 @@ pub struct SearchPipeline {
     ttl_cap: Duration,
     lexical: LexicalConfig,
     admission: Admission,
+    /// W1-09 metrics handle. A unit struct: every `record_*` writes into
+    /// the process-global registry, so pipelines share one set of series.
+    metrics: Metrics,
 }
 
 fn millis(d: Duration) -> u32 {
@@ -212,7 +216,15 @@ impl SearchPipeline {
             ttl_cap: DEFAULT_TTL_CAP,
             lexical: LexicalConfig::default(),
             admission: Admission::default(),
+            metrics: Metrics::default(),
         }
+    }
+
+    /// Bind a specific `Metrics` handle (`oxe-server` passes the provider
+    /// installed for `GET /metrics` + OTLP; tests pass a test-local one).
+    pub fn with_metrics(mut self, metrics: Metrics) -> Self {
+        self.metrics = metrics;
+        self
     }
 
     /// Override the hard fan-out deadline (`search.deadline_ms`).
@@ -334,11 +346,60 @@ impl SearchPipeline {
                 elapsed_ms = resp.meta.elapsed_ms,
                 "search complete"
             );
+            let tier = match resp.meta.source {
+                Source::Cache { tier, .. } => Some(tier),
+                Source::Network => None,
+            };
+            self.metrics
+                .record_search(&req.client, "cache", tier, started.elapsed());
             return Ok(resp);
         }
 
         // ---- fan-out set ---------------------------------------------------
+        // ---- tier-2 lexical lookup (W1-10) ------------------------------
+        if self.lexical.enabled
+            && let Some(hit) = self.lexical_lookup(req, &query, request_id).await
+        {
+            let engines = hit.engines.clone();
+            let resp = self.cache_hit_response(hit, Tier::T2, request_id, started, false);
+            self.write_log(
+                req,
+                &key,
+                &query,
+                LogRow {
+                    source: LogSource::Cache,
+                    tier: Some(Tier::T2),
+                    result_count: resp.results.len() as u32,
+                    engines,
+                    deadline_hit: false,
+                },
+                started,
+            )
+            .await;
+            info!(
+                source = "cache",
+                tier = 2u8,
+                results = resp.results.len(),
+                elapsed_ms = resp.meta.elapsed_ms,
+                "search complete"
+            );
+            self.metrics.record_search(
+                &req.client,
+                "cache",
+                Some(Tier::T2),
+                started.elapsed(),
+            );
+            return Ok(resp);
+        }
+
+        // ---- fan-out ----------------------------------------------------
         let runnable = self.runnable(req);
+        // Pre-W1-06 there is no breaker bookkeeping: every runnable engine
+        // is Closed. W1-06 records real state transitions on this gauge.
+        for engine in &runnable {
+            self.metrics
+                .record_breaker_state(&engine.id(), BreakerState::Closed);
+        }
         // `pipeline.search` is the current span here (via `instrument`).
         tracing::Span::current().record("engines", runnable.len() as u64);
 
@@ -470,7 +531,12 @@ impl SearchPipeline {
         }
 
         let ids: Vec<EngineId> = runnable.iter().map(|e| e.id()).collect();
-        let outcome = match self.admission.acquire(&ids).await {
+        // `oxe_admission_wait_ms` measures the bounded-queue wait; the
+        // singleflight join in `run()` is not queueing and stays uncounted.
+        let queued = Instant::now();
+        let permits = self.admission.acquire(&ids).await;
+        self.metrics.record_admission_wait(queued.elapsed());
+        let outcome = match permits {
             Ok(_permits) => self
                 .fetch(&req, &runnable, &key, ttl, request_id, started)
                 .await
@@ -654,6 +720,17 @@ impl SearchPipeline {
                     deadline_hit = resp.meta.deadline_hit,
                     "search complete"
                 );
+                // Per-request metrics: every waiter on the flight lands
+                // here, so counters count requests, not flights. A stale
+                // serve or a deadline hit is observed by each waiter.
+                self.metrics
+                    .record_search(&req.client, label, tier, started.elapsed());
+                if matches!(resp.meta.source, Source::Cache { stale: true, .. }) {
+                    self.metrics.record_stale_served();
+                }
+                if resp.meta.deadline_hit {
+                    self.metrics.record_deadline_hit();
+                }
                 Ok(resp)
             }
             Err(e) => {
@@ -674,6 +751,13 @@ impl SearchPipeline {
                     started,
                 )
                 .await;
+                self.metrics
+                    .record_search(&req.client, "network", None, started.elapsed());
+                // A 429 reached the client: one rejection per waiter.
+                // `queue_full` matches the reason label in `rate_limited`.
+                if matches!(e, PipelineError::RateLimited { .. }) {
+                    self.metrics.record_admission_rejected("queue_full");
+                }
                 Err(e)
             }
         }
@@ -700,6 +784,7 @@ impl SearchPipeline {
         let mut failures: Vec<(usize, EngineId, EngineError)> = Vec::new();
         let mut deadline_hit = false;
         let mut answered = vec![false; runnable.len()];
+        let mut ttfr_recorded = false;
 
         for outcome in outcomes {
             let idx = outcome.idx;
@@ -707,6 +792,18 @@ impl SearchPipeline {
             let latency_ms = millis(outcome.latency);
             match outcome.outcome {
                 Ok(Ok(results)) => {
+                    self.metrics.record_engine_call(
+                        &outcome.id,
+                        "ok",
+                        outcome.latency,
+                        Some(results.len()),
+                    );
+                    if !ttfr_recorded {
+                        // Time to first engine result, measured from the
+                        // search start (includes the cache-miss lookup).
+                        self.metrics.record_ttfr(started.elapsed());
+                        ttfr_recorded = true;
+                    }
                     reports.push((
                         idx,
                         EngineReport {
@@ -727,6 +824,13 @@ impl SearchPipeline {
                 // always 502" defect). The report stays `Failed(NoResults)`
                 // for honesty.
                 Ok(Err(EngineError::NoResults)) => {
+                    // A completed call with an empty answer.
+                    self.metrics.record_engine_call(
+                        &outcome.id,
+                        "no_results",
+                        outcome.latency,
+                        Some(0),
+                    );
                     reports.push((
                         idx,
                         EngineReport {
@@ -739,6 +843,12 @@ impl SearchPipeline {
                     ok_results.push((idx, Vec::new()));
                 }
                 Ok(Err(err)) => {
+                    self.metrics.record_engine_call(
+                        &outcome.id,
+                        engine_error_label(&err),
+                        outcome.latency,
+                        None,
+                    );
                     reports.push((
                         idx,
                         EngineReport {
@@ -752,6 +862,8 @@ impl SearchPipeline {
                 }
                 Err(_elapsed) => {
                     deadline_hit = true;
+                    self.metrics
+                        .record_engine_call(&outcome.id, "timeout", outcome.latency, None);
                     reports.push((
                         idx,
                         EngineReport {
@@ -772,6 +884,8 @@ impl SearchPipeline {
                 continue;
             }
             let id = engine.id();
+            self.metrics
+                .record_engine_call(&id, "transport", started.elapsed(), None);
             reports.push((
                 idx,
                 EngineReport {
