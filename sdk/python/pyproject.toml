@@ -1,10 +1,10 @@
 [project]
-name = "oxe-engine-sdk"
+name = "cauce-engine-sdk"
 version = "0.0.0"
-description = "oxe exec engine protocol SDK (JSON lines over stdio, v1) and the ddgs reference engine"
+description = "cauce exec engine protocol SDK (JSON lines over stdio, v1) and the ddgs reference engine"
 requires-python = ">=3.10"
 license = "Apache-2.0"
-authors = [{ name = "Joaquin Terrasa and oxe contributors" }]
+authors = [{ name = "Joaquin Terrasa and cauce contributors" }]
 # Zero runtime dependencies on purpose: the SDK must run under a bare python3.
 dependencies = []
 
@@ -17,5 +17,5 @@ requires = ["uv_build>=0.9"]
 build-backend = "uv_build"
 
 [tool.uv.build-backend]
-# Flat layout: the package is sdk/python/oxe_engine_sdk, not src/oxe_engine_sdk.
+# Flat layout: the package is sdk/python/cauce_engine_sdk, not src/cauce_engine_sdk.
 module-root = ""

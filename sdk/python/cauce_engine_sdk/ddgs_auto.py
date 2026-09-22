@@ -1,8 +1,8 @@
-# Copyright (c) 2026 Joaquin Terrasa and oxe contributors. Apache-2.0.
-"""ddgs reference engine: `DDGS().text(..., backend="auto")` over the oxe exec
+# Copyright (c) 2026 Joaquin Terrasa and cauce contributors. Apache-2.0.
+"""ddgs reference engine: `DDGS().text(..., backend="auto")` over the cauce exec
 protocol. The day-1 bridge for real results.
 
-Run as `python3 sdk/python/oxe_engine_sdk/ddgs_auto.py` with the `ddgs` extra
+Run as `python3 sdk/python/cauce_engine_sdk/ddgs_auto.py` with the `ddgs` extra
 installed (`uv sync --extra ddgs` in sdk/python).
 """
 import sys
@@ -12,7 +12,7 @@ if __package__ in (None, ""):
     # Started as a script: put sdk/python on sys.path so the package resolves.
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from oxe_engine_sdk import Request, Response, Result, run
+from cauce_engine_sdk import Request, Response, Result, run
 
 MAX_RESULTS = 10
 

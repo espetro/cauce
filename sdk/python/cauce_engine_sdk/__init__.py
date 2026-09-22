@@ -1,5 +1,5 @@
-# Copyright (c) 2026 Joaquin Terrasa and oxe contributors. Apache-2.0.
-"""oxe exec engine SDK: protocol v1, one JSON object per line on stdio.
+# Copyright (c) 2026 Joaquin Terrasa and cauce contributors. Apache-2.0.
+"""cauce exec engine SDK: protocol v1, one JSON object per line on stdio.
 
 An engine is a `fn(Request) -> Iterable[Result] | Response` passed to `run()`.
 Wire shapes (parent plan 4.3):
