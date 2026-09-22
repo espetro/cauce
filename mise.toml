@@ -42,8 +42,8 @@ description = "Full local gate: fmt + lint + test + deny"
 depends = ["fmt", "lint", "test", "deny"]
 
 [tasks."validate:nightly"]
-description = "Nightly-only checks (stub until W0-12 budget/live tests land)"
-run = "echo 'validate:nightly is a stub for now'"
+description = "Nightly budget, live canary, and full gate"
+run = "OXE_NIGHTLY=1 OXE_LIVE=1 mise run validate"
 
 [tasks.dev]
 description = "Run the oxe binary (oxe serve)"

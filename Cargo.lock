@@ -1011,6 +1011,8 @@ dependencies = [
  "oxe-engines",
  "oxe-server",
  "oxe-store-sqlite",
+ "serde_json",
+ "tempfile",
  "tokio",
  "tracing",
 ]
