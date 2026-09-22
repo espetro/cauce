@@ -158,7 +158,7 @@ impl ExecEngine {
         Self {
             spec,
             state: Mutex::new(State::default()),
-            metrics: Metrics::default(),
+            metrics: Metrics,
         }
     }
 

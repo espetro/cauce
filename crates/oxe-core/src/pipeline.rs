@@ -216,12 +216,12 @@ impl SearchPipeline {
             ttl_cap: DEFAULT_TTL_CAP,
             lexical: LexicalConfig::default(),
             admission: Admission::default(),
-            metrics: Metrics::default(),
+            metrics: Metrics,
         }
     }
 
-    /// Bind a specific `Metrics` handle (`oxe-server` passes the provider
-    /// installed for `GET /metrics` + OTLP; tests pass a test-local one).
+    /// Bind a `Metrics` handle explicitly. The registry is process-global,
+    /// so this exists for readability at call sites, not isolation.
     pub fn with_metrics(mut self, metrics: Metrics) -> Self {
         self.metrics = metrics;
         self

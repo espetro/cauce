@@ -521,8 +521,8 @@ pub fn render_prometheus() -> String {
 // ---------------------------------------------------------------------------
 
 /// Cloneable handle over the settled W1-09 instrument set. The registry is
-/// process-global, so the handle carries no state: `Metrics::default()` and
-/// a handle passed through `SearchPipeline::with_metrics` record into the
+/// process-global, so the handle carries no state: a bare `Metrics` and a
+/// handle passed through `SearchPipeline::with_metrics` record into the
 /// same series.
 #[derive(Clone, Copy, Default)]
 pub struct Metrics;

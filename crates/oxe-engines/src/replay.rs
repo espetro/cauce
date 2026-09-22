@@ -82,7 +82,7 @@ impl Replay {
         Self {
             opts,
             calls: AtomicU64::new(0),
-            metrics: Metrics::default(),
+            metrics: Metrics,
         }
     }
 
