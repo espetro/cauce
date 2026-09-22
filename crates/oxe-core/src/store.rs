@@ -119,6 +119,35 @@ pub struct EngineHealthRow {
     pub last_error: Option<String>,
 }
 
+/// Storage tuning knobs derived from detected host resources
+/// (`Resources::detect`, W0-11) and passed to a `Store` constructor.
+///
+/// Lives in `oxe-core` because the dependency direction is one-way toward
+/// core: `oxe-core::config` produces these values and `oxe-store-sqlite`
+/// consumes them. Defaults are conservative for a small machine; per settled
+/// inputs, never a fixed large allocation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StoreTuning {
+    /// SQLite `PRAGMA cache_size` budget in kibibytes.
+    pub cache_size_kib: u32,
+    /// SQLite `PRAGMA mmap_size` in bytes (0 disables mmap).
+    pub mmap_size_bytes: u64,
+    /// SQLite `PRAGMA busy_timeout` in milliseconds.
+    pub busy_timeout_ms: u32,
+}
+
+impl Default for StoreTuning {
+    /// Conservative baseline for a ~4-8 GB host; `Resources::detect` scales
+    /// these up on bigger machines.
+    fn default() -> Self {
+        Self {
+            cache_size_kib: 64 * 1024,
+            mmap_size_bytes: 256 * 1024 * 1024,
+            busy_timeout_ms: 5_000,
+        }
+    }
+}
+
 /// `audit` row (section 5): attributed admin/AI/MCP events.
 ///
 /// `actor` follows the `ui | api | mcp:<client> | cli` convention

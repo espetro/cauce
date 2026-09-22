@@ -23,5 +23,5 @@ pub use response::{EngineReport, EngineStatus, SearchMeta, SearchResponse, Searc
 pub use store::{
     AuditFilter, AuditRow, BreakerState, ClickRow, ClientCount, DayCount, EngineHealthRow,
     HistoryFilter, HistoryItem, LatencyPercentiles, LogSource, SearchLogRow, StatsSnapshot, Store,
-    StoreError,
+    StoreError, StoreTuning,
 };
