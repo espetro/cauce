@@ -1,4 +1,4 @@
-//! OTLP trace export (`otlp` cargo feature, default on).
+//! OTLP trace export (`otlp` cargo feature, non-default).
 //!
 //! Inert unless `OTEL_EXPORTER_OTLP_ENDPOINT` is set at init time. Exports
 //! spans in batches over OTLP/gRPC (tonic). tonic spawns its channel worker

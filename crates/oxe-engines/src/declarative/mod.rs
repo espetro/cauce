@@ -19,14 +19,16 @@ mod parse;
 mod redirect;
 pub mod spec;
 
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use reqwest::header::HeaderMap;
 use url::Url;
 
 use oxe_core::http::HttpClient;
-use oxe_core::{Engine, EngineError, EngineId, SearchRequest, SearchResult, Tier};
+use oxe_core::{
+    Engine, EngineError, EngineId, EnginePhase, Metrics, SearchRequest, SearchResult, Tier,
+};
 
 pub use loading::{load_specs, resolve_spec_source};
 pub use spec::{CompiledSpec, EngineSpec, SpecError};
@@ -43,6 +45,10 @@ pub struct DeclarativeEngine {
     /// `[[engines]]` `tier`/`page_size` overrides win over the spec.
     tier: Tier,
     page_size: u8,
+    /// W1-09 phase timings (`oxe_engine_duration_ms{phase}`) recorded on
+    /// the `Engine::search` path only; `fetch`/`parse_response` stay
+    /// uninstrumented so `oxe engine test` runs don't pollute stats.
+    metrics: Metrics,
 }
 
 impl DeclarativeEngine {
@@ -55,6 +61,7 @@ impl DeclarativeEngine {
             http,
             tier,
             page_size,
+            metrics: Metrics,
         }
     }
 
@@ -137,7 +144,15 @@ impl Engine for DeclarativeEngine {
         req: &SearchRequest,
         budget: Duration,
     ) -> Result<Vec<SearchResult>, EngineError> {
-        let res = self.fetch(req, budget).await?;
-        self.parse_response(res.status, &res.body, &res.url)
+        let fetch_t = Instant::now();
+        let res = self.fetch(req, budget).await;
+        self.metrics
+            .record_engine_phase(&self.id(), EnginePhase::Http, fetch_t.elapsed());
+        let res = res?;
+        let parse_t = Instant::now();
+        let out = self.parse_response(res.status, &res.body, &res.url);
+        self.metrics
+            .record_engine_phase(&self.id(), EnginePhase::Parse, parse_t.elapsed());
+        out
     }
 }

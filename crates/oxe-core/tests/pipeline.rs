@@ -375,6 +375,40 @@ async fn no_results_plus_timeout_is_empty_ok_response() {
     assert_eq!(store.logs.lock().unwrap().len(), 1);
 }
 
+/// W1-09 fix: when every engine times out, the search surfaces as
+/// `AllEnginesFailed` with no `meta.deadline_hit` to observe — but the
+/// flight still hit the deadline, so `oxe_deadline_hit_total` must count
+/// it (per flight, not per waiter).
+#[tokio::test]
+async fn all_engines_timeout_still_counts_deadline_hit() {
+    let dir = tempfile::tempdir().unwrap();
+    let slow = replay_at(dir.path(), |o| o.latency_ms = 2_000);
+    let store = Arc::new(StubStore::default());
+    let pipe = SearchPipeline::new(store.clone(), vec![Arc::new(slow)])
+        .with_deadline(Duration::from_millis(100));
+
+    let before = oxe_core::metrics::admission_stats().deadline_hits;
+    let err = pipe.search(&req("all timed out")).await.unwrap_err();
+    match &err {
+        PipelineError::AllEnginesFailed(failures) => {
+            assert!(
+                failures
+                    .iter()
+                    .all(|(_, e)| matches!(e, EngineError::Timeout)),
+                "expected all Timeout, got {failures:?}"
+            );
+        }
+        other => panic!("expected AllEnginesFailed, got {other:?}"),
+    }
+    assert_eq!(
+        oxe_core::metrics::admission_stats().deadline_hits,
+        before + 1,
+        "an all-timeout flight still counts as a deadline hit"
+    );
+    // The failure row is still logged per request.
+    assert_eq!(store.logs.lock().unwrap().len(), 1);
+}
+
 // --- W1-10 tier-2 lexical cache ------------------------------------------
 
 /// Acceptance (issue #30): after caching `tanstack router docs`, the

@@ -15,6 +15,12 @@ path = "src/main.rs"
 name = "e2e"
 path = "tests/e2e/main.rs"
 
+[features]
+default = []
+# Opt-in OTLP trace export (`cargo install --features otlp`); non-default
+# per the wave-1 settled inputs. Feature wiring grows with W1-12.
+otlp = ["oxe-server/otlp"]
+
 [dependencies]
 oxe-core = { path = "../oxe-core" }
 oxe-engines = { path = "../oxe-engines" }

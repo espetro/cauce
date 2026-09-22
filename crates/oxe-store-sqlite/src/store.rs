@@ -16,9 +16,9 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use oxe_core::{
-    AuditFilter, AuditRow, CacheKey, CachedSearch, ClickRow, EngineHealthRow, EngineStatus,
-    HistoryFilter, HistoryItem, LatencyPercentiles, SearchLogRow, SearchResponse, StatsSnapshot,
-    Store, StoreError, StoreTuning,
+    AdmissionStats, AuditFilter, AuditRow, CacheKey, CachedSearch, ClickRow, EngineHealthRow,
+    EngineStatsRow, EngineStatus, HistoryFilter, HistoryItem, LatencyPercentiles, SearchLogRow,
+    SearchResponse, StatsSnapshot, Store, StoreError, StoreTuning,
 };
 use rusqlite::{Connection, OptionalExtension, params};
 use tokio::task::{JoinError, spawn_blocking};
@@ -594,8 +594,11 @@ impl Store for SqliteStore {
                     .map_err(sql_err)?;
                 stmt.query_map([], |r| rows::health(r).map_err(rows::as_sql))
                     .map_err(sql_err)?
-                    .collect::<Result<Vec<_>, _>>()
+                    .collect::<Result<Vec<EngineHealthRow>, _>>()
                     .map_err(sql_err)?
+                    .into_iter()
+                    .map(EngineStatsRow::from_health)
+                    .collect()
             };
 
             let cache_entries: i64 = conn
@@ -631,6 +634,9 @@ impl Store for SqliteStore {
                 engines,
                 cache_entries: cache_entries as u64,
                 cache_entries_expired: cache_entries_expired as u64,
+                // Filled from the in-process metrics registry by the
+                // `/api/stats` handler (`StatsSnapshot::merge_metrics`).
+                admission: AdmissionStats::default(),
             })
         })
         .await

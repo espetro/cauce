@@ -24,6 +24,7 @@ use crate::error::ApiError;
 use crate::handlers;
 use crate::html;
 use crate::mcp;
+use crate::metrics::MetricsHandle;
 use crate::middleware::{HostGuard, RequestCtx, host_origin_guard, request_context};
 use crate::routes::{ROUTES, RouteKind, RouteSpec};
 
@@ -31,8 +32,9 @@ use crate::routes::{ROUTES, RouteKind, RouteSpec};
 /// `wave <= CURRENT_WAVE` declarations to mounted handlers.
 pub const CURRENT_WAVE: u8 = 0;
 
-/// Shared handler state: the search pipeline, the store and the live config
-/// (`PUT /api/config` swaps it under the lock).
+/// Shared handler state: the search pipeline, the store, the live config
+/// (`PUT /api/config` swaps it under the lock) and the W1-09 metrics
+/// handle (`GET /metrics` scrape off the owned in-process registry).
 #[derive(Clone)]
 pub struct AppState {
     pipeline: Arc<SearchPipeline>,
@@ -40,12 +42,14 @@ pub struct AppState {
     /// `std::sync::Mutex` is deliberate: the critical sections hold a clone,
     /// a file write and a `Config::load()` — sync IO, no `.await` inside.
     config: Arc<Mutex<Config>>,
+    metrics: MetricsHandle,
 }
 
 impl AppState {
     pub fn new(pipeline: Arc<SearchPipeline>, store: Arc<dyn Store>, config: Config) -> Self {
         Self {
             pipeline,
+            metrics: MetricsHandle::new(store.clone()),
             store,
             config: Arc::new(Mutex::new(config)),
         }
@@ -57,6 +61,11 @@ impl AppState {
 
     pub fn store(&self) -> &Arc<dyn Store> {
         &self.store
+    }
+
+    /// The process metrics handle (`/metrics` render + cache gauge refresh).
+    pub fn metrics(&self) -> &MetricsHandle {
+        &self.metrics
     }
 
     /// Run `f` under the config lock. A poisoned lock is recovered (the
@@ -195,6 +204,7 @@ fn handler_for(spec: &RouteSpec, state: &AppState) -> Option<MethodRouter<AppSta
         ("GET", "/api/engines", RouteKind::Json) => Some(get(handlers::engines_list)),
         ("POST", "/api/engines/{id}/reset", RouteKind::Json) => Some(post(handlers::engine_reset)),
         ("GET", "/health", RouteKind::Json) => Some(get(handlers::health)),
+        ("GET", "/metrics", RouteKind::Json) => Some(get(handlers::metrics)),
         ("GET", "/api/config", RouteKind::Json) => Some(get(handlers::config_get)),
         ("PUT", "/api/config", RouteKind::Json) => Some(put(handlers::config_put)),
         // The MCP streamable-HTTP transport is a `tower::Service` serving

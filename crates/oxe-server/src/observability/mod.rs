@@ -4,8 +4,8 @@
 //!   (`<data_dir>/logs/oxe-YYYY-MM-DD.jsonl`, daily rotation via
 //!   `tracing-appender`, retention `retention_days`) and, when stderr is a
 //!   TTY or `OXE_LOG_PRETTY=1`, a pretty stderr layer.
-//! - With the `otlp` feature (default), OTLP trace export is wired but only
-//!   activates when `OTEL_EXPORTER_OTLP_ENDPOINT` is set.
+//! - With the `otlp` feature (non-default), OTLP trace export is wired but
+//!   only activates when `OTEL_EXPORTER_OTLP_ENDPOINT` is set.
 //! - `RequestId` is a UUIDv7 carried as a `request_id` span field; the JSONL
 //!   layer hoists it to a top-level field on every line.
 //! - `audit` emits a JSONL event with `audit=true` and appends the `audit`
