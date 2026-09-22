@@ -1,5 +1,6 @@
 //! `SearchPipeline` v0 (W0-08, parent plan section 4.4 minus hedging,
-//! breakers and tier-2/3 lookups, which land in W1/W3).
+//! breakers and the tier-3 lookup, which land in W1/W3; W1-10 added the
+//! tier-2 lexical lookup).
 //!
 //! Request flow for [`SearchPipeline::search`] /
 //! [`SearchPipeline::search_opts`]:
@@ -11,20 +12,29 @@
 //!    stale: false }` and *still* appends a `search_log` row
 //!    (`LogSource::Cache`): the unconditional write is the whole point of
 //!    the design (v2 skipped it and its hit-rate stats were fiction).
-//! 3. On a miss, fan out to every configured engine in parallel
+//! 3. Tier-2 `store.get_lexical(q, 5)` (W1-10, `cache.lexical.*`): on a
+//!    tier-1 miss, candidates are checked best-rank first. A row is
+//!    accepted when it is fresh, its stored `key` equals the key this
+//!    request's params would produce for the candidate's query (the
+//!    "same page/lang" gate — the preimage also pins
+//!    time_range/safesearch/engines, which is strictly conservative), and
+//!    its query's token set clears the Jaccard `threshold` (default 0.8)
+//!    after normalisation and stopword removal. Served as
+//!    `Source::Cache { tier: 2, matched_query: Some(..), .. }`.
+//! 4. On a miss, fan out to every configured engine in parallel
 //!    ([`tokio::task::JoinSet`]), each call wrapped in
 //!    `tokio::time::timeout(deadline)`. Engines cut off at the deadline
 //!    report `EngineStatus::Failed(EngineError::Timeout)` and set
 //!    `meta.deadline_hit`. `req.engines = Some(ids)` pins the fan-out to
 //!    the configured engines whose ids are in the set.
-//! 4. Merge: dedupe by [`normalize_url`], RRF `k = 60` summed across
+//! 5. Merge: dedupe by [`normalize_url`], RRF `k = 60` summed across
 //!    engines (`score = sum 1/(60 + rank)`, rank 1-based per engine),
 //!    stable ordering by first-seen position; the occurrence with the
 //!    best single contribution supplies the emitted `SearchResult`.
-//! 5. `store.put` with `ttl = opts.ttl.unwrap_or(default_ttl)` clamped to
+//! 6. `store.put` with `ttl = opts.ttl.unwrap_or(default_ttl)` clamped to
 //!    `ttl_cap` (defaults 3600 s / 86400 s). Never on the
 //!    `AllEnginesFailed` path.
-//! 6. `store.log_search` unconditionally: cache hit, network, empty and
+//! 7. `store.log_search` unconditionally: cache hit, network, empty and
 //!    error paths all write a row.
 //!
 //! Request ids: `search` mints a UUIDv7; `search_with_id`/`search_opts`
@@ -34,7 +44,8 @@
 //!
 //! Tracing: `pipeline.search` is the root span (`request_id`, `query`,
 //! `page`, `client`, `engines` = runnable count once the pin is applied).
-//! Children: `cache_lookup` (`tier`, `hit`, `age_s`), one `engine` span
+//! Children: `cache_lookup` (`tier`, `hit`, `age_s`; the tier-2 span also
+//! records `candidates` and `matched`), one `engine` span
 //! per fanned-out engine (`engine`, `tier`,
 //! `status`, `results`; wall duration lands in `busy_ms` on close),
 //! `merge` (`in`, `out`, `deadline_hit`), `persist` (`key`, `ttl_s`).
@@ -54,7 +65,8 @@ use tracing::{Instrument, debug, info, info_span, warn};
 use url::Url;
 use uuid::Uuid;
 
-use crate::cache::{CacheKey, CachedSearch, normalize_query};
+use crate::cache::{CacheKey, CachedSearch, lexical_tokens, normalize_query, token_jaccard};
+use crate::config::LexicalConfig;
 use crate::engine::{Engine, EngineError, EngineId, Tier};
 use crate::normalize::normalize_url;
 use crate::request::SearchRequest;
@@ -149,6 +161,7 @@ pub struct SearchPipeline {
     deadline: Duration,
     default_ttl: Duration,
     ttl_cap: Duration,
+    lexical: LexicalConfig,
 }
 
 fn millis(d: Duration) -> u32 {
@@ -165,6 +178,7 @@ impl SearchPipeline {
             deadline: DEFAULT_DEADLINE,
             default_ttl: DEFAULT_TTL,
             ttl_cap: DEFAULT_TTL_CAP,
+            lexical: LexicalConfig::default(),
         }
     }
 
@@ -183,6 +197,13 @@ impl SearchPipeline {
     /// Override the ceiling applied to every cache TTL.
     pub fn with_ttl_cap(mut self, cap: Duration) -> Self {
         self.ttl_cap = cap;
+        self
+    }
+
+    /// Tier-2 lexical cache settings (`cache.lexical.*`, W1-10). Defaults
+    /// to enabled with a 0.8 Jaccard threshold.
+    pub fn with_lexical(mut self, lexical: LexicalConfig) -> Self {
+        self.lexical = lexical;
         self
     }
 
@@ -251,7 +272,7 @@ impl SearchPipeline {
             // The `engines` column records the engines whose results are
             // being served (`cache_entries.engines_json` provenance).
             let engines = hit.engines.clone();
-            let resp = self.cache_hit_response(hit, request_id, started);
+            let resp = self.cache_hit_response(hit, Tier::T1, request_id, started);
             self.write_log(
                 req,
                 &key,
@@ -268,6 +289,36 @@ impl SearchPipeline {
             .await;
             info!(
                 source = "cache",
+                results = resp.results.len(),
+                elapsed_ms = resp.meta.elapsed_ms,
+                "search complete"
+            );
+            return Ok(resp);
+        }
+
+        // ---- tier-2 lexical lookup (W1-10) ------------------------------
+        if self.lexical.enabled
+            && let Some(hit) = self.lexical_lookup(req, &query, request_id).await
+        {
+            let engines = hit.engines.clone();
+            let resp = self.cache_hit_response(hit, Tier::T2, request_id, started);
+            self.write_log(
+                req,
+                &key,
+                &query,
+                LogRow {
+                    source: LogSource::Cache,
+                    tier: Some(Tier::T2),
+                    result_count: resp.results.len() as u32,
+                    engines,
+                    deadline_hit: false,
+                },
+                started,
+            )
+            .await;
+            info!(
+                source = "cache",
+                tier = 2u8,
                 results = resp.results.len(),
                 elapsed_ms = resp.meta.elapsed_ms,
                 "search complete"
@@ -546,6 +597,92 @@ impl SearchPipeline {
         })
     }
 
+    /// Tier-2 `get_lexical` under a `cache_lookup` span (W1-10).
+    ///
+    /// Candidates come back BM25-ranked; they are checked best-first and the
+    /// first one passing the gate is served. The gate: the row is fresh
+    /// (expired rows are skipped — serving stale belongs to admission,
+    /// W1-07), the stored `key` equals the key this request's params would
+    /// produce for the candidate's query — that is the "same page/lang"
+    /// requirement, checked via the key preimage because `params_json` does
+    /// not record page/lang; it also pins time_range/safesearch/engines,
+    /// which only ever rejects more, never wrongfully accepts — and the
+    /// Jaccard similarity of the stopword-free token sets clears
+    /// `lexical.threshold`.
+    ///
+    /// A store failure degrades to a miss, same as tier 1.
+    async fn lexical_lookup(
+        &self,
+        req: &SearchRequest,
+        query: &str,
+        request_id: Uuid,
+    ) -> Option<CachedSearch> {
+        let span = info_span!(
+            "cache_lookup",
+            request_id = %request_id,
+            tier = 2u8,
+            hit = tracing::field::Empty,
+            candidates = tracing::field::Empty,
+            age_s = tracing::field::Empty,
+            matched = tracing::field::Empty,
+        );
+        let want = lexical_tokens(query);
+        if want.is_empty() {
+            span.in_scope(|| {
+                span.record("hit", false);
+                span.record("candidates", 0u64);
+            });
+            debug!("query has no lexical tokens; skipping tier-2 lookup");
+            return None;
+        }
+        let result = self
+            .store
+            .get_lexical(query, 5)
+            .instrument(span.clone())
+            .await;
+        span.in_scope(|| {
+            let rows = match result {
+                Ok(rows) => rows,
+                Err(e) => {
+                    span.record("hit", false);
+                    warn!(error = %e, "lexical lookup failed; treating as miss");
+                    return None;
+                }
+            };
+            span.record("candidates", rows.len() as u64);
+            let now = Utc::now();
+            for cand in rows {
+                if cand.expires_at <= now {
+                    continue;
+                }
+                // Same page/lang (and the rest of the key preimage): rebuild
+                // the key this request would produce for the candidate's
+                // query and compare to the stored key.
+                let mut shadow = req.clone();
+                shadow.q.clone_from(&cand.query);
+                if CacheKey::from(&shadow) != cand.key {
+                    continue;
+                }
+                let score = token_jaccard(&want, &lexical_tokens(&cand.query));
+                if score < self.lexical.threshold {
+                    continue;
+                }
+                let age_s = now
+                    .signed_duration_since(cand.created_at)
+                    .num_seconds()
+                    .max(0) as u64;
+                span.record("hit", true);
+                span.record("age_s", age_s);
+                span.record("matched", cand.query.as_str());
+                debug!(matched = %cand.query, score, "tier-2 cache hit");
+                return Some(cand);
+            }
+            span.record("hit", false);
+            debug!("lexical candidates rejected by the gate");
+            None
+        })
+    }
+
     /// Parallel fan-out with a hard deadline per engine. Returns one
     /// [`EngineOutcome`] per task that answered or timed out; panicking
     /// tasks are logged and reconciled by the caller via `answered`.
@@ -624,9 +761,12 @@ impl SearchPipeline {
     /// Rebuild the stored payload as a fresh-hit response: provenance
     /// (`engines_used`, `query`) is kept while `source`, `elapsed_ms` and
     /// `request_id` describe this request. `ttl_s` is the remaining TTL.
+    /// Fuzzy tiers (2+) carry `matched_query` (the stored query); an exact
+    /// tier-1 hit leaves it `None`.
     fn cache_hit_response(
         &self,
         hit: CachedSearch,
+        tier: Tier,
         request_id: Uuid,
         started: Instant,
     ) -> SearchResponse {
@@ -640,13 +780,15 @@ impl SearchPipeline {
             .signed_duration_since(now)
             .num_seconds()
             .max(0) as u64;
+        let matched_query = (tier != Tier::T1).then(|| hit.query.clone());
         let mut resp = hit.response;
         resp.meta = SearchMeta {
             source: Source::Cache {
-                tier: Tier::T1,
+                tier,
                 age_s,
                 ttl_s,
                 stale: false,
+                matched_query,
             },
             engines_used: resp.meta.engines_used,
             deadline_hit: false,

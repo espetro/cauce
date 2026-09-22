@@ -16,6 +16,8 @@ use crate::engine::{EngineError, EngineId, Tier};
 ///
 /// Wire shape is externally tagged with snake_case variant names:
 /// `{"cache":{"tier":1,"age_s":12,"ttl_s":3600,"stale":false}}` or `"network"`.
+/// A fuzzy hit additionally carries `matched_query` (W1-10 tier-2 lexical,
+/// W5-05 tier-3 semantic).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Source {
@@ -27,6 +29,11 @@ pub enum Source {
         ttl_s: u64,
         /// True when the row was past `expires_at` (served stale).
         stale: bool,
+        /// The stored query a fuzzy tier (2 lexical, 3 semantic) matched.
+        /// Absent on an exact tier-1 hit, so the tier-1 wire shape is
+        /// unchanged.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        matched_query: Option<String>,
     },
     Network,
 }
