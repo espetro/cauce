@@ -21,8 +21,8 @@ mod store;
 
 pub use cache::{CacheKey, CachedSearch, normalize_query};
 pub use config::{
-    AiConfig, Config, ConfigError, Dirs, EngineEntry, EngineKind, LogsConfig, MetaConfig,
-    Resources, SearchConfig, ServerConfig,
+    AiConfig, CacheConfig, Config, ConfigError, Dirs, EngineEntry, EngineKind, LexicalConfig,
+    LogsConfig, MetaConfig, Resources, SearchConfig, ServerConfig,
 };
 pub use engine::{Engine, EngineError, EngineId, Tier};
 pub use normalize::normalize_url;

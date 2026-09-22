@@ -253,6 +253,43 @@ fn default_ttl_cap_s() -> u64 {
     86400
 }
 
+/// `[cache]`: cache-tier behaviour beyond TTLs (those live in `[search]`).
+#[derive(Debug, Default, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CacheConfig {
+    /// `[cache.lexical]`: the tier-2 FTS lookup (W1-10).
+    #[serde(default)]
+    pub lexical: LexicalConfig,
+}
+
+/// `[cache.lexical]`: tier-2 acceptance gate (W1-10). On a tier-1 miss the
+/// pipeline FTS-matches stored entries and serves the best-ranked row whose
+/// query shares `threshold` of the request's tokens (Jaccard after
+/// normalisation and stopword removal) under the same page/lang.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LexicalConfig {
+    /// Master switch for the tier-2 lookup.
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    /// Minimum Jaccard token similarity to accept a hit (`0.0..=1.0`).
+    #[serde(default = "default_lexical_threshold")]
+    pub threshold: f64,
+}
+
+impl Default for LexicalConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            threshold: default_lexical_threshold(),
+        }
+    }
+}
+
+fn default_lexical_threshold() -> f64 {
+    0.8
+}
+
 /// `[logs]`: JSONL log retention (W0-05 consumes `retention_days`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -416,6 +453,9 @@ pub struct Config {
     /// `[search]` section.
     #[serde(default)]
     pub search: SearchConfig,
+    /// `[cache]` section.
+    #[serde(default)]
+    pub cache: CacheConfig,
     /// `[logs]` section.
     #[serde(default)]
     pub logs: LogsConfig,
@@ -447,6 +487,7 @@ pub struct Config {
 struct ConfigSections<'a> {
     server: &'a ServerConfig,
     search: &'a SearchConfig,
+    cache: &'a CacheConfig,
     logs: &'a LogsConfig,
     ai: &'a AiConfig,
     engines: &'a [EngineEntry],
@@ -479,6 +520,7 @@ impl Default for Config {
         Self {
             server: ServerConfig::default(),
             search: SearchConfig::default(),
+            cache: CacheConfig::default(),
             logs: LogsConfig::default(),
             ai: AiConfig::default(),
             engines: builtin_engines(),
@@ -505,6 +547,7 @@ impl Config {
         ConfigSections {
             server: &self.server,
             search: &self.search,
+            cache: &self.cache,
             logs: &self.logs,
             ai: &self.ai,
             engines: &self.engines,
@@ -1033,6 +1076,8 @@ mod tests {
         assert_eq!(cfg.search.min_results, 5);
         assert_eq!(cfg.search.ttl_s, 3600);
         assert_eq!(cfg.search.ttl_cap_s, 86400);
+        assert!(cfg.cache.lexical.enabled);
+        assert_eq!(cfg.cache.lexical.threshold, 0.8);
         assert_eq!(cfg.logs.retention_days, 7);
         assert_eq!(cfg.ai.base_url, "");
         assert_eq!(cfg.ai.api_key, "");
@@ -1075,6 +1120,36 @@ mod tests {
         // Untouched fields keep their defaults.
         assert_eq!(cfg.server.host, "127.0.0.1");
         assert_eq!(cfg.search.min_results, 5);
+    }
+
+    #[test]
+    fn cache_lexical_section_loads() {
+        let (tmp, env) = sandbox(&[]);
+        write_config(
+            &tmp.path().join("cfg"),
+            "[cache.lexical]\nenabled = false\nthreshold = 0.5\n",
+        );
+        let cfg = Config::load_with(&env).unwrap();
+        assert!(!cfg.cache.lexical.enabled);
+        assert_eq!(cfg.cache.lexical.threshold, 0.5);
+
+        // A partial section fills the rest from defaults, and the section
+        // renders in the displayed/default tree.
+        write_config(
+            &tmp.path().join("cfg"),
+            "[cache.lexical]\nthreshold = 0.9\n",
+        );
+        let cfg = Config::load_with(&env).unwrap();
+        assert!(cfg.cache.lexical.enabled);
+        assert_eq!(cfg.cache.lexical.threshold, 0.9);
+        assert!(cfg.display_toml().unwrap().contains("lexical"));
+
+        // Unknown keys inside the section are still rejected.
+        write_config(&tmp.path().join("cfg"), "[cache.lexical]\nbogus = 1\n");
+        assert!(matches!(
+            Config::load_with(&env),
+            Err(ConfigError::Invalid(_))
+        ));
     }
 
     #[test]

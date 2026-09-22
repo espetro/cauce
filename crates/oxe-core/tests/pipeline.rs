@@ -17,8 +17,8 @@ use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 
 use oxe_core::{
-    CacheKey, EngineError, EngineId, EngineStatus, LogSource, PipelineError, SearchOpts,
-    SearchPipeline, SearchResult, Source, Tier, normalize_url,
+    CacheKey, EngineError, EngineId, EngineStatus, LexicalConfig, LogSource, PipelineError,
+    SearchOpts, SearchPipeline, SearchResult, Source, Tier, normalize_url,
 };
 use oxe_engines::{Cassette, cassette_path};
 use support::{StubStore, replay_at, req};
@@ -103,11 +103,13 @@ async fn cache_hit_is_fast_and_still_logged() {
             age_s,
             ttl_s,
             stale,
+            matched_query,
         } => {
             assert_eq!(tier, Tier::T1);
             assert!(!stale);
             assert_eq!(age_s, 0);
             assert!((3_500..=3_600).contains(&ttl_s), "remaining ttl {ttl_s}");
+            assert_eq!(matched_query, None, "exact hits carry no matched_query");
         }
         Source::Network => panic!("expected cache hit"),
     }
@@ -371,6 +373,168 @@ async fn no_results_plus_timeout_is_empty_ok_response() {
         EngineStatus::Failed(EngineError::Timeout)
     );
     assert_eq!(store.logs.lock().unwrap().len(), 1);
+}
+
+// --- W1-10 tier-2 lexical cache ------------------------------------------
+
+/// Acceptance (issue #30): after caching `tanstack router docs`, the
+/// reordered `docs tanstack router` is a tier-2 hit carrying the matched
+/// query in meta; `tanstack query docs` (Jaccard 0.5) misses to the
+/// network.
+#[tokio::test]
+async fn tier2_serves_token_permutation_and_rejects_half_overlap() {
+    let dir = tempfile::tempdir().unwrap();
+    let engine = Arc::new(replay_at(dir.path(), |_| {}));
+    let store = Arc::new(StubStore::default());
+    let pipe = SearchPipeline::new(store.clone(), vec![engine.clone()]);
+
+    let first = pipe.search(&req("tanstack router docs")).await.unwrap();
+    assert!(matches!(first.meta.source, Source::Network));
+    assert_eq!(engine.call_count(), 1);
+
+    // Same token set (Jaccard 1.0), same page/lang -> tier-2 hit; the
+    // engine is not re-run.
+    let second = pipe.search(&req("docs tanstack router")).await.unwrap();
+    assert_eq!(engine.call_count(), 1, "tier-2 hit must not fan out");
+    match &second.meta.source {
+        Source::Cache {
+            tier,
+            stale,
+            matched_query,
+            ..
+        } => {
+            assert_eq!(*tier, Tier::T2);
+            assert!(!stale);
+            assert_eq!(matched_query.as_deref(), Some("tanstack router docs"));
+        }
+        Source::Network => panic!("expected tier-2 cache hit, got network"),
+    }
+    assert_eq!(
+        second.results, first.results,
+        "tier-2 serves the stored payload"
+    );
+    assert_eq!(
+        second.query, "tanstack router docs",
+        "resp.query keeps the stored (matched) query"
+    );
+
+    let last = store.logs.lock().unwrap().last().unwrap().clone();
+    assert_eq!(last.source, LogSource::Cache);
+    assert_eq!(last.tier, Some(Tier::T2));
+    assert_eq!(last.query, "docs tanstack router");
+
+    // {tanstack, query, docs} vs {tanstack, router, docs} = 2/4 = 0.5 < 0.8
+    // -> miss, the engine runs.
+    let third = pipe.search(&req("tanstack query docs")).await.unwrap();
+    assert!(matches!(third.meta.source, Source::Network));
+    assert_eq!(engine.call_count(), 2);
+    let last = store.logs.lock().unwrap().last().unwrap().clone();
+    assert_eq!(last.source, LogSource::Network);
+    assert_eq!(last.tier, None);
+}
+
+/// The page/lang gate: a candidate stored under different request params
+/// must not serve, even at Jaccard 1.0. `safesearch`/`time_range`/`engines`
+/// ride along in the key preimage check, which is stricter than the spec's
+/// page/lang wording and only ever rejects more.
+#[tokio::test]
+async fn tier2_requires_same_page_and_lang() {
+    let dir = tempfile::tempdir().unwrap();
+    let engine = Arc::new(replay_at(dir.path(), |_| {}));
+    let store = Arc::new(StubStore::default());
+    let pipe = SearchPipeline::new(store.clone(), vec![engine.clone()]);
+
+    pipe.search(&req("tanstack router docs")).await.unwrap();
+    assert_eq!(engine.call_count(), 1);
+
+    // Different page -> miss.
+    let mut paged = req("docs tanstack router");
+    paged.page = 2;
+    let resp = pipe.search(&paged).await.unwrap();
+    assert!(matches!(resp.meta.source, Source::Network));
+    assert_eq!(engine.call_count(), 2);
+
+    // Different lang -> miss.
+    let mut langed = req("docs tanstack router");
+    langed.lang = Some("en".to_string());
+    let resp = pipe.search(&langed).await.unwrap();
+    assert!(matches!(resp.meta.source, Source::Network));
+    assert_eq!(engine.call_count(), 3);
+
+    // A pinned request never reuses the unpinned row.
+    let mut pinned = req("docs tanstack router");
+    pinned.engines = Some(vec![EngineId::from("replay")]);
+    let resp = pipe.search(&pinned).await.unwrap();
+    assert!(matches!(resp.meta.source, Source::Network));
+    assert_eq!(engine.call_count(), 4);
+}
+
+/// `cache.lexical.enabled = false` skips the tier-2 lookup entirely.
+#[tokio::test]
+async fn tier2_disabled_by_config() {
+    let dir = tempfile::tempdir().unwrap();
+    let engine = Arc::new(replay_at(dir.path(), |_| {}));
+    let store = Arc::new(StubStore::default());
+    let pipe =
+        SearchPipeline::new(store.clone(), vec![engine.clone()]).with_lexical(LexicalConfig {
+            enabled: false,
+            threshold: 0.8,
+        });
+
+    pipe.search(&req("tanstack router docs")).await.unwrap();
+    let resp = pipe.search(&req("docs tanstack router")).await.unwrap();
+    assert!(matches!(resp.meta.source, Source::Network));
+    assert_eq!(engine.call_count(), 2);
+}
+
+/// `cache.lexical.threshold` is the acceptance floor: 0.5 admits the
+/// `tanstack query docs` pair the default rejects.
+#[tokio::test]
+async fn tier2_threshold_is_configurable() {
+    let dir = tempfile::tempdir().unwrap();
+    let engine = Arc::new(replay_at(dir.path(), |_| {}));
+    let store = Arc::new(StubStore::default());
+    let pipe =
+        SearchPipeline::new(store.clone(), vec![engine.clone()]).with_lexical(LexicalConfig {
+            enabled: true,
+            threshold: 0.5,
+        });
+
+    pipe.search(&req("tanstack router docs")).await.unwrap();
+    let resp = pipe.search(&req("tanstack query docs")).await.unwrap();
+    match &resp.meta.source {
+        Source::Cache { tier, .. } => assert_eq!(*tier, Tier::T2),
+        Source::Network => panic!("threshold 0.5 should admit the 0.5 pair"),
+    }
+    assert_eq!(engine.call_count(), 1);
+}
+
+/// Expired rows are returned by `get_lexical` (pinned semantic) but are not
+/// served by tier 2: stale serving belongs to admission (W1-07).
+#[tokio::test]
+async fn tier2_skips_expired_candidates() {
+    let dir = tempfile::tempdir().unwrap();
+    let engine = Arc::new(replay_at(dir.path(), |_| {}));
+    let store = Arc::new(StubStore::default());
+    let pipe = SearchPipeline::new(store.clone(), vec![engine.clone()]);
+
+    // Cache with a zero TTL so the row expires immediately.
+    pipe.search_opts(
+        &req("tanstack router docs"),
+        SearchOpts {
+            request_id: None,
+            ttl: Some(Duration::ZERO),
+        },
+    )
+    .await
+    .unwrap();
+
+    let resp = pipe.search(&req("docs tanstack router")).await.unwrap();
+    assert!(
+        matches!(resp.meta.source, Source::Network),
+        "expired tier-2 candidate must not be served"
+    );
+    assert_eq!(engine.call_count(), 2);
 }
 
 /// A `get_exact` failure degrades to a miss instead of an error.
