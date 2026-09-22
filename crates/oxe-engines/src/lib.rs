@@ -7,6 +7,8 @@
 pub mod cassette;
 pub mod exec;
 pub mod record;
+pub mod replay;
 
 pub use cassette::{Cassette, CassetteError, cassette_key, cassette_path};
 pub use record::{RecordError, record};
+pub use replay::{Replay, ReplayOpts};
