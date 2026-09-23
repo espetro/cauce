@@ -8,7 +8,10 @@
 //!
 //! - EWMA latency with `alpha = 0.3`, seeded by the first sample.
 //! - `RateLimited`/`Blocked` open the breaker for 15 min; 3 consecutive
-//!   `Timeout`s open it for 5 min (`HealthPolicy`).
+//!   `Timeout`s open it for 5 min; 5 consecutive `Parse`/`Transport`
+//!   errors open it for 10 min (W3-07, `HealthPolicy`) — a drifted
+//!   selector or a captcha page that evades `detect.blocked` otherwise
+//!   fails on every request forever without ever being rested.
 //! - `Open` engines are skipped; once `breaker_until` passes the state
 //!   flips to `HalfOpen` and exactly one call is let through as a probe.
 //!   A successful probe closes the breaker; a failed one re-opens it.
@@ -63,8 +66,16 @@ pub struct HealthPolicy {
     /// Consecutive `Timeout`s that open the breaker (3).
     pub timeout_threshold: u32,
     /// Open window after `timeout_threshold` consecutive timeouts, and the
-    /// re-open window for a failed half-open probe (5 min).
+    /// re-open window for a half-open probe that timed out (5 min).
     pub timeout_window: Duration,
+    /// Consecutive `Parse`/`Transport` errors that open the breaker (5,
+    /// W3-07). One streak covers both kinds: they are the same "the call
+    /// completed but the answer is useless" degradation.
+    pub degraded_threshold: u32,
+    /// Open window after `degraded_threshold` consecutive `Parse`/
+    /// `Transport` errors, and the re-open window for a half-open probe
+    /// that failed with one of them (10 min).
+    pub degraded_window: Duration,
 }
 
 impl Default for HealthPolicy {
@@ -73,13 +84,15 @@ impl Default for HealthPolicy {
             abuse_window: Duration::from_secs(15 * 60),
             timeout_threshold: 3,
             timeout_window: Duration::from_secs(5 * 60),
+            degraded_threshold: 5,
+            degraded_window: Duration::from_secs(10 * 60),
         }
     }
 }
 
 /// In-memory health of one engine; [`EngineHealthRow`] is its persisted
-/// projection. `samples`, `timeout_streak` and `probe_in_flight` are
-/// runtime-only.
+/// projection. `samples`, `timeout_streak`, `degraded_streak` and
+/// `probe_in_flight` are runtime-only.
 #[derive(Debug, Clone)]
 pub struct EngineHealth {
     /// EWMA of observed call latency in ms (`alpha = 0.3`).
@@ -101,6 +114,10 @@ pub struct EngineHealth {
     /// streak. Runtime-only: `engine_health` has no column for it, and a
     /// restart conservatively assumes the streak is broken.
     timeout_streak: u32,
+    /// Consecutive `Parse`/`Transport` errors (W3-07) — `Ok`,
+    /// `NoResults`, `Timeout`, `RateLimited` and `Blocked` all break the
+    /// streak. Runtime-only like `timeout_streak`.
+    degraded_streak: u32,
     /// `HalfOpen` single-probe gate: true while a probe call is in flight.
     /// Runtime-only — a restarted process has no probes in flight.
     probe_in_flight: bool,
@@ -117,6 +134,7 @@ impl Default for EngineHealth {
             last_error: None,
             samples: 0,
             timeout_streak: 0,
+            degraded_streak: 0,
             probe_in_flight: false,
         }
     }
@@ -134,8 +152,10 @@ impl EngineHealth {
             // A persisted EWMA was already seeded; keep blending on top.
             samples: u64::from(row.ewma_ms > 0.0),
             // The schema stores only the generic `failures`; a restart
-            // assumes no timeout streak rather than guessing one.
+            // assumes no timeout or degraded streak rather than guessing
+            // one.
             timeout_streak: 0,
+            degraded_streak: 0,
             probe_in_flight: false,
         }
     }
@@ -205,8 +225,8 @@ pub struct HealthTracker {
 }
 
 impl HealthTracker {
-    /// Tracker with the settled policy (15 min abuse window, 3 timeouts,
-    /// 5 min timeout window).
+    /// Tracker with the settled policy (15 min abuse window, 3 timeouts
+    /// for 5 min, 5 consecutive `Parse`/`Transport` errors for 10 min).
     pub fn new(store: Arc<dyn Store>) -> Self {
         Self::with_policy(store, HealthPolicy::default())
     }
@@ -303,6 +323,7 @@ impl HealthTracker {
             health.observe(latency);
             health.failures = 0;
             health.timeout_streak = 0;
+            health.degraded_streak = 0;
             health.last_ok_at = Some(Utc::now());
             health.probe_in_flight = false;
             if health.breaker != BreakerState::Closed {
@@ -328,8 +349,9 @@ impl HealthTracker {
     /// Record a failed call: EWMA update, failure counter increment,
     /// `last_error`, and the breaker rules — `RateLimited`/`Blocked` open
     /// for `abuse_window`, `timeout_threshold` consecutive `Timeout`s open
-    /// for `timeout_window`, and a failed probe re-opens regardless of the
-    /// error kind.
+    /// for `timeout_window`, `degraded_threshold` consecutive `Parse`/
+    /// `Transport` errors open for `degraded_window` (W3-07), and a failed
+    /// probe re-opens regardless of the error kind.
     pub fn record_err(
         &self,
         id: &EngineId,
@@ -351,6 +373,14 @@ impl HealthTracker {
             } else {
                 0
             };
+            // Same shape for the W3-07 degraded streak: `Parse` and
+            // `Transport` share one streak, anything else breaks it.
+            health.degraded_streak =
+                if matches!(err, EngineError::Parse(_) | EngineError::Transport(_)) {
+                    health.degraded_streak + 1
+                } else {
+                    0
+                };
             let probe = health.probe_in_flight;
             health.probe_in_flight = false;
 
@@ -366,6 +396,11 @@ impl HealthTracker {
                         if health.timeout_streak >= self.policy.timeout_threshold =>
                     {
                         Some(self.policy.timeout_window)
+                    }
+                    EngineError::Parse(_) | EngineError::Transport(_)
+                        if health.degraded_streak >= self.policy.degraded_threshold =>
+                    {
+                        Some(self.policy.degraded_window)
                     }
                     _ => None,
                 }
@@ -532,6 +567,7 @@ impl HealthTracker {
     fn open_window(&self, err: &EngineError) -> Duration {
         match err {
             EngineError::RateLimited | EngineError::Blocked => self.policy.abuse_window,
+            EngineError::Parse(_) | EngineError::Transport(_) => self.policy.degraded_window,
             _ => self.policy.timeout_window,
         }
     }
