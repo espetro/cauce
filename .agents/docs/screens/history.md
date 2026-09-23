@@ -58,8 +58,8 @@ Empty state (filters matched nothing):
 ## Behavior
 
 - Data path: `GET /api/history` with `Accept: text/html` renders the page
-  with the API's own params: `since` (hours: `24`, `168`, `720`; absent
-  means all), `q` (query substring), `cached=1` (only rows whose query has
+  with the API's own params: `since` (`24h`, `7d`, `30d`; absent
+  means all; any other value is a 400), `q` (query substring), `cached=1` (only rows whose query has
   a live cache entry), `limit` (cap 200). A test asserts HTML rows equal the
   JSON rows for the same request. The `cached` param is new in W2-02 and
   is served by the same handler.
@@ -73,8 +73,9 @@ Empty state (filters matched nothing):
     entry; the age is the entry's age now, not at search time. Links to
     that entry's payload on `/cache` (`/cache?q=<query>` opening the row).
   - `cached · expired` when the entry exists but its TTL passed.
-  - `network · t<tier>` when this search fetched from the network (the
-    tier that answered), and no entry survives for it.
+  - `network · t<tier>` when this search fetched from the network and no
+    entry survives for it; the tier suffix appears only when the log row
+    recorded one (network rows may carry none, then it reads `network`).
   The value is computed at render time from `cache_entries`, so the same
   search row changes from `network` to `cached` as later identical searches
   refresh the entry.
@@ -101,12 +102,12 @@ Empty state (filters matched nothing):
 - Filters are a plain GET form (works without JS): a `<select>` for
   `since` (`all time`, `last 24h`, `last 7d`, `last 30d`), a text input for
   `q`, a `cached only` checkbox for `cached=1`. `clear` appears only when
-  any filter is active. Filters are URL state (`/history?since=24&q=py&cached=1`),
+  any filter is active. Filters are URL state (`/history?since=24h&q=py&cached=1`),
   so a QA agent can deep link every state.
 - Cap of 200 rows; when more exist a line under the table says `showing
   200 of N · use the filters to reach older searches`.
 - Acceptance (W2-02): after three replay searches the page shows three
-  rows with the right sources; `since=24` hides a row backdated in the temp
+  rows with the right sources; `since=24h` hides a row backdated in the temp
   DB; a row deleted through the page is gone and an audit row with actor
   `ui` exists.
 - Footer shows the full `request_id`, copyable.
