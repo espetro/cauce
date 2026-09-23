@@ -618,6 +618,10 @@ pub struct EngineEntry {
     /// Extra environment on top of the inherited one (`exec` kind).
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub env: BTreeMap<String, String>,
+    /// `[engines.params]` table: static per-engine params forwarded to `exec`
+    /// children on every v2-protocol request (issue #88).
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub params: BTreeMap<String, String>,
 }
 
 /// Built-in entries that always exist: `replay` (test engine, off unless
@@ -637,6 +641,7 @@ fn builtin_engines() -> Vec<EngineEntry> {
             page_size: None,
             egress: None,
             env: BTreeMap::new(),
+            params: BTreeMap::new(),
         },
         EngineEntry {
             id: EngineId::new("ddgs"),
@@ -650,6 +655,7 @@ fn builtin_engines() -> Vec<EngineEntry> {
             page_size: Some(10),
             egress: None,
             env: BTreeMap::new(),
+            params: BTreeMap::new(),
         },
     ]
 }
