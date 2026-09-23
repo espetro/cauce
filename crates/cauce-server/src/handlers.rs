@@ -20,8 +20,8 @@ use axum::response::{
     sse::{Event, KeepAlive},
 };
 use cauce_core::{
-    AuditFilter, AuditRow, CacheKey, ClickRow, ClientKind, EngineError, EngineHealthRow,
-    EngineId, HistoryFilter, HistoryItem, PipelineError, SafeSearch, SearchOpts, SearchRequest,
+    AuditFilter, AuditRow, CacheKey, ClickRow, ClientKind, EngineError, EngineHealthRow, EngineId,
+    HistoryFilter, HistoryItem, PipelineError, SafeSearch, SearchOpts, SearchRequest,
     SearchResponse, SearchResult, StatsSnapshot, Store, StreamEvent, TimeRange,
     config::{Config, system_env},
 };
@@ -282,8 +282,7 @@ pub(crate) async fn search_inner_classed(
 ) -> Result<(SearchRequest, SearchResponse), (ApiError, &'static str)> {
     use crate::strings::engines as copy;
 
-    let req =
-        parse_search_request(ctx, uri, &[]).map_err(|e| (e, copy::TEST_BAD_REQUEST))?;
+    let req = parse_search_request(ctx, uri, &[]).map_err(|e| (e, copy::TEST_BAD_REQUEST))?;
     match state
         .pipeline()
         .search_with_id(&req, ctx.request_id.as_uuid())

@@ -27,7 +27,6 @@ mod routes;
 mod settings;
 pub mod strings;
 
-
 pub use app::{
     AppState, CURRENT_WAVE, RouterOptions, build_router, build_router_opts, feature_enabled,
     mounted_routes, serve,
