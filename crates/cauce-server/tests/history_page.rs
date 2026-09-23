@@ -389,8 +389,8 @@ async fn history_row_joins_clicks() {
         "click joins the search row, not a new row: {body}"
     );
     assert!(
-        body.contains(">1 clicks<"),
-        "summary reads `N clicks`: {body}"
+        body.contains(">1 click<"),
+        "summary singular reads `1 click`: {body}"
     );
     // Nested line: domain, title link (new tab), 1-based #position.
     assert!(body.contains("example.com"), "{body}");
@@ -582,6 +582,17 @@ async fn history_row_actions_and_request_id() {
     assert!(
         body.contains(r#"hx-headers='{"X-Cauce-Client":"ui"}'"#),
         "delete sends the ui client header: {body}"
+    );
+    // A failed delete (e.g. 404 on an already-gone row) surfaces inline:
+    // htmx response-error writes `error: delete failed (<status>)` into
+    // the row's notice span.
+    assert!(
+        body.contains("hx-on::response-error"),
+        "delete wires a response-error handler: {body}"
+    );
+    assert!(
+        body.contains(r#"class="row-error""#),
+        "row carries the inline error slot: {body}"
     );
     // The footer carries the full request id as selectable text, never
     // abbreviated.

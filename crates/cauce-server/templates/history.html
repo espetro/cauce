@@ -76,7 +76,7 @@
           <span class="meta2">{{ row.result_count }} · {{ row.client }} · {{ row.when }}</span>
           {% if row.is_search %}
           <details{% if !row.clicks.is_empty() %} open{% endif %}>
-            <summary>{{ row.clicks.len() }} {{ crate::strings::history::CLICKS_WORD }}</summary>
+            <summary>{{ row.clicks.len() }} {{ row.clicks_word }}</summary>
             {% for c in row.clicks %}
             <div class="click-line">
               <span class="cdom">{{ c.domain }}</span>
@@ -95,7 +95,9 @@
               hx-swap="delete"
               hx-confirm="{{ row.delete_confirm }}"
               hx-headers='{"X-Cauce-Client":"ui"}'
+              hx-on::response-error="var p=this.closest('td').querySelector('.row-error');if(p)p.textContent='{{ crate::strings::history::DELETE_FAILED }}'.replace('{status}',event.detail.xhr.status)"
             >{{ crate::strings::history::DELETE }}</button>
+            <span class="row-error" role="status"></span>
           </span>
           <code class="copy-fallback" hidden></code>
           {% else %}
@@ -122,8 +124,22 @@
   <script>
     // `copy json`: fetch the cached /api/search payload into the clipboard;
     // fall back to a selectable <code> with the URL when the clipboard API
-    // is unavailable or the fetch fails.
+    // is unavailable or the fetch fails. The footer request id copies its
+    // text on click (selection fallback when the clipboard API is absent).
     document.addEventListener('click', async (e) => {
+      const rid = e.target.closest('.request-id');
+      if (rid) {
+        try {
+          await navigator.clipboard.writeText(rid.textContent.trim());
+        } catch (_) {
+          const r = document.createRange();
+          r.selectNodeContents(rid);
+          const s = window.getSelection();
+          s.removeAllRanges();
+          s.addRange(r);
+        }
+        return;
+      }
       const a = e.target.closest('a.copy-json');
       if (!a) return;
       e.preventDefault();

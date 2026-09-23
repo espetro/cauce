@@ -13,6 +13,7 @@
     --border: #d1d5db;
     --accent: #2563eb;
     --radius: 0.5rem;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -76,7 +77,7 @@ button {
 }
 
 .request-id {
-    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-family: var(--mono);
     cursor: pointer;
 }
 
@@ -280,7 +281,7 @@ fieldset.greyed {
 }
 
 .engine-id {
-    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-family: var(--mono);
     font-weight: 600;
 }
 
@@ -554,6 +555,15 @@ table.history td.c-by {
     white-space: nowrap;
 }
 
+/* "Domain / mono meta" (references/tokens.md): engine ids, the client
+   column, click domains and positions render in the mono stack. */
+table.history td.c-engines,
+table.history td.c-by,
+.click-line .cdom,
+.click-line .cpos {
+    font-family: var(--mono);
+}
+
 table.history td.c-query a {
     display: inline-block;
     max-width: 20rem;
@@ -623,7 +633,15 @@ table.history details[open] summary {
     cursor: pointer;
 }
 
-.copy-fallback {
+/* Inline notice a failed row delete writes into (same error red the
+   settings `.form-status.error` uses). */
+.row-error {
+    color: #b91c1c;
+}
+
+/* `:not([hidden])` keeps `display: block` from overriding the `hidden`
+   attribute, which would render an empty code block under every row. */
+.copy-fallback:not([hidden]) {
     display: block;
     margin-top: 0.4rem;
     font-size: 0.8rem;
@@ -681,9 +699,12 @@ table.history details[open] summary {
 
     /* click lines keep domain and title only, on one line; long titles
        truncate with an ellipsis (the nowrap + hidden container clips the
-       inline link) */
+       inline link). `max-width` pins the line under the viewport; the
+       nowrap content would otherwise inflate the auto-layout table's
+       min-content width and scroll the whole page horizontally. */
     .click-line {
         padding-left: 0.75rem;
+        max-width: calc(100vw - 4rem);
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;

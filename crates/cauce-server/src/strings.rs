@@ -269,6 +269,9 @@ pub mod history {
     /// `hx-confirm` prefix when the row has nested clicks, composed as
     /// `Delete this search and its {n} {click|clicks}?`.
     pub const DELETE_CONFIRM_CLICKS_PRE: &str = "Delete this search and its";
+    /// Inline error a failed `DELETE /api/history/<id>` writes into the
+    /// row (htmx `response-error`); `{status}` is replaced client-side.
+    pub const DELETE_FAILED: &str = "error: delete failed ({status})";
     pub const REQUEST_LABEL: &str = "request";
 }
 pub mod audit {
