@@ -12,19 +12,183 @@
   <style>{{ style_css|safe }}</style>
 </head>
 <body>
-  <form action="/search" method="get">
-    <input type="search" name="q" value="{{ q }}" placeholder="Search..." autofocus>
-    <button type="submit">Search</button>
+  <form id="search-form" action="/search" method="get">
+    <input type="search" name="q" value="{{ q }}" placeholder="{{ crate::strings::search::PLACEHOLDER }}" autofocus>
+    <button type="submit">{{ crate::strings::search::SUBMIT }}</button>
   </form>
   {% if has_results %}
   <div class="meta">
-    <span>{{ result_count }} results</span>
-    <span>{{ badge }}</span>
-    <span class="request-id" title="{{ request_id }}">{{ short_request_id }}</span>
+    <span id="result-count">{{ result_count }} {{ crate::strings::search::RESULTS }}</span>
+    <span id="search-meta">{{ badge }}</span>
+    <span id="request-id" class="request-id" title="{{ request_id }}">{{ short_request_id }}</span>
   </div>
+  {% if is_streaming %}
+  <div id="search-stream" hx-ext="sse" sse-connect="{{ stream_url }}" sse-close="meta,error"
+       data-query-hash="{{ query_hash }}" aria-live="polite" aria-busy="true">
+    <span id="stream-status" role="status">{{ crate::strings::search::WAITING }}</span>
+    <noscript><p>{{ crate::strings::search::NOSCRIPT_STREAM }}</p></noscript>
+  </div>
+  <p id="new-results-above" class="new-results-above" role="status" hidden></p>
+  {% endif %}
   {% include "results.html" %}
   {% endif %}
   <script>{{ htmx_js|safe }}</script>
   <script>{{ json_enc_js|safe }}</script>
+  <script>{{ sse_js|safe }}</script>
+  <script>
+    (function () {
+      var form = document.getElementById("search-form");
+      if (form) {
+        form.addEventListener("submit", function (event) {
+          var input = form.querySelector('input[name="q"]');
+          if (!input || !input.value.trim()) return;
+          event.preventDefault();
+          var url = new URL(form.action, window.location.origin);
+          url.searchParams.set("q", input.value);
+          url.searchParams.set("stream", "1");
+          window.location.assign(url.pathname + url.search);
+        });
+      }
+
+      {% if is_streaming %}
+      var S = {{ stream_strings|safe }};
+      var ERR_KINDS = {
+        rate_limited: S.err_rate_limited,
+        blocked: S.err_blocked,
+        timeout: S.err_timeout,
+        parse: S.err_parse,
+        transport: S.err_transport,
+        no_results: S.err_no_results
+      };
+      function fmt(template, values) {
+        return template.replace(/\{(\w+)\}/g, function (_, name) {
+          return values[name] != null ? values[name] : "";
+        });
+      }
+      var stream = document.getElementById("search-stream");
+      var results = document.getElementById("results");
+      var status = document.getElementById("stream-status");
+      var count = document.getElementById("result-count");
+      var metaLine = document.getElementById("search-meta");
+      var requestId = document.getElementById("request-id");
+      var above = document.getElementById("new-results-above");
+      var queryHash = stream.dataset.queryHash;
+      var arrivals = [];
+      var seen = new Set();
+
+      function appendBatch(batch) {
+        batch.results.forEach(function (result) {
+          var url = result.url;
+          // The server dedupes on the normalized URL; dedupe on `key`
+          // (its normalized form) so variant spellings cannot render twice.
+          var key = result.key || url;
+          if (seen.has(key)) return;
+          seen.add(key);
+          arrivals.push(key);
+
+          var article = document.createElement("article");
+          article.dataset.key = key;
+          var host = "";
+          try { host = new URL(url).hostname; } catch (_) {}
+          if (host) {
+            var icon = document.createElement("img");
+            icon.src = "https://icons.duckduckgo.com/ip3/" + encodeURIComponent(host) + ".ico";
+            icon.width = 16;
+            icon.height = 16;
+            icon.alt = "";
+            icon.loading = "lazy";
+            article.appendChild(icon);
+          }
+          var position = arrivals.length - 1;
+          var link = document.createElement("a");
+          link.href = url;
+          link.target = "_blank";
+          link.rel = "noopener";
+          link.textContent = result.title;
+          link.addEventListener("click", function () {
+            fetch("/api/click", {
+              method: "POST",
+              headers: { "Content-Type": "application/json", "X-Cauce-Client": "ui" },
+              body: JSON.stringify({ url: url, title: result.title, position: position, query_hash: queryHash }),
+              keepalive: true
+            });
+          });
+          article.appendChild(link);
+          if (host) {
+            var hostLine = document.createElement("span");
+            hostLine.className = "host";
+            hostLine.textContent = host;
+            article.appendChild(hostLine);
+          }
+          var snippet = document.createElement("p");
+          snippet.className = "snippet";
+          snippet.textContent = result.snippet;
+          article.appendChild(snippet);
+          results.appendChild(article);
+        });
+        count.textContent = arrivals.length + " " + S.results;
+      }
+
+      function errorKind(value) {
+        var kind = typeof value === "string" ? value : Object.keys(value || {})[0];
+        return ERR_KINDS[kind] || S.err_unknown;
+      }
+
+      function renderMeta(meta) {
+        var statuses = meta.engines_used.map(function (report) {
+          if (report.status === "ok") return report.engine;
+          return fmt(S.engine_failed, { engine: report.engine, kind: errorKind(report.status.failed) });
+        });
+        (meta.engines_skipped || []).forEach(function (engine) {
+          statuses.push(fmt(S.engine_skipped, { engine: engine }));
+        });
+        var base = meta.source === "network" ? fmt(S.live_badge, { ms: meta.elapsed_ms }) : S.cached;
+        metaLine.textContent = statuses.length ? base + " · " + statuses.join(" · ") : base;
+        requestId.title = meta.request_id;
+        requestId.textContent = meta.request_id.slice(0, 8);
+        status.textContent = S.complete;
+        stream.setAttribute("aria-busy", "false");
+
+        var rank = new Map(meta.order.map(function (key, index) { return [key, index]; }));
+        // Hide anything the final merge did not keep (e.g. a duplicate
+        // spelling that streamed before its canonical sibling).
+        Array.prototype.forEach.call(results.querySelectorAll("article[data-key]"), function (article) {
+          if (!rank.has(article.dataset.key)) article.hidden = true;
+        });
+        var previousRanks = [];
+        var outranking = 0;
+        arrivals.forEach(function (key) {
+          var currentRank = rank.has(key) ? rank.get(key) : Infinity;
+          if (previousRanks.some(function (previousRank) { return currentRank < previousRank; })) {
+            outranking += 1;
+          }
+          previousRanks.push(currentRank);
+        });
+        if (outranking > 0) {
+          above.textContent = fmt(S.new_above, { n: outranking });
+          above.hidden = false;
+        }
+        if (arrivals.length === 0) {
+          var empty = document.createElement("p");
+          empty.textContent = statuses.length ? S.no_results + " · " + statuses.join(" · ") : S.no_results;
+          results.appendChild(empty);
+        }
+      }
+
+      document.body.addEventListener("cauce:sse", function (event) {
+        var message = event.detail;
+        var payload;
+        try { payload = JSON.parse(message.data); }
+        catch (_) { status.textContent = S.invalid_stream; return; }
+        if (message.name === "results") appendBatch(payload);
+        if (message.name === "meta") renderMeta(payload);
+        if (message.name === "error") {
+          status.textContent = payload.error.message;
+          stream.setAttribute("aria-busy", "false");
+        }
+      });
+      {% endif %}
+    })();
+  </script>
 </body>
 </html>

@@ -71,6 +71,7 @@ pub fn response(q: &str, results: &[(&str, &str, &str)]) -> SearchResponse {
                 latency_ms: 12,
                 result_count: results.len() as u32,
             }],
+            engines_skipped: Vec::new(),
             deadline_hit: false,
             elapsed_ms: 12,
             request_id: Uuid::now_v7(),

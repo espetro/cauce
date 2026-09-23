@@ -8,21 +8,26 @@
 //! License, v. 2.0. If a copy of the MPL was not distributed with this
 //! file, You can obtain one at <https://mozilla.org/MPL/2.0/>.
 
+use std::convert::Infallible;
 use std::sync::Arc;
 
 use axum::Extension;
 use axum::body::Bytes;
 use axum::extract::{Path, State};
 use axum::http::{HeaderMap, StatusCode, Uri};
-use axum::response::{IntoResponse, Json, Response};
+use axum::response::{
+    IntoResponse, Json, Response, Sse,
+    sse::{Event, KeepAlive},
+};
 use cauce_core::{
-    AuditFilter, AuditRow, CacheKey, ClickRow, EngineHealthRow, EngineId, HistoryFilter,
-    HistoryItem, PipelineError, SafeSearch, SearchRequest, SearchResponse, StatsSnapshot, Store,
-    TimeRange,
+    AuditFilter, AuditRow, CacheKey, ClickRow, ClientKind, EngineHealthRow, EngineId,
+    HistoryFilter, HistoryItem, PipelineError, SafeSearch, SearchOpts, SearchRequest,
+    SearchResponse, SearchResult, StatsSnapshot, Store, StreamEvent, TimeRange,
     config::{Config, system_env},
 };
 use chrono::{DateTime, NaiveDate, Utc};
 use serde_json::{Value, json};
+use tokio_stream::StreamExt;
 
 use crate::app::AppState;
 use crate::error::ApiError;
@@ -59,12 +64,29 @@ pub(crate) async fn search_inner(
     ctx: &RequestCtx,
     uri: &Uri,
 ) -> Result<(SearchRequest, SearchResponse), ApiError> {
+    let req = parse_search_request(ctx, uri, &[])?;
+    match state
+        .pipeline()
+        .search_with_id(&req, ctx.request_id.as_uuid())
+        .await
+    {
+        Ok(resp) => Ok((req, resp)),
+        Err(error) => Err(search_error(ctx, &req, error)),
+    }
+}
+
+/// Parse the canonical search parameters. A page can opt into one additional
+/// private query parameter (`stream`) without widening the JSON API contract.
+pub(crate) fn parse_search_request(
+    ctx: &RequestCtx,
+    uri: &Uri,
+    extra: &[&str],
+) -> Result<SearchRequest, ApiError> {
     let params = QueryParams::parse(uri.query(), ctx)?;
-    params.allow(
-        ctx,
-        &["q", "page", "lang", "time_range", "safesearch", "engines"],
-    )?;
-    let req = SearchRequest {
+    let mut allowed = vec!["q", "page", "lang", "time_range", "safesearch", "engines"];
+    allowed.extend_from_slice(extra);
+    params.allow(ctx, &allowed)?;
+    Ok(SearchRequest {
         q: params.required(ctx, "q")?.to_string(),
         page: params.page(ctx)?,
         lang: params.get("lang").map(str::to_string),
@@ -88,51 +110,155 @@ pub(crate) async fn search_inner(
             })
             .filter(|v| !v.is_empty()),
         client: ctx.client.clone(),
-    };
-    match state
-        .pipeline()
-        .search_with_id(&req, ctx.request_id.as_uuid())
-        .await
+    })
+}
+
+/// `GET /api/search/stream?q=...`: `results` per engine completion,
+/// followed by one terminal `meta` or `error` frame.
+///
+/// Two pre-stream rejections answer with their real status instead of an
+/// SSE body: request-parameter errors (`parse_search_request`, 400
+/// `bad_request`) and a rejected engine pin (400 `unknown_engines` /
+/// 503 `no_engines`, mapped through [`search_error`] like `/api/search`).
+/// Failures past that point (fan-out, admission, store) are terminal
+/// `error` events on the open stream.
+///
+/// `client=ui|api|mcp[:<name>]|cli` is accepted as a client-kind hint when
+/// the `X-Cauce-Client` header is absent: `EventSource` cannot set
+/// headers, so the page passes `client=ui` to keep the dashboard's
+/// ui/api split honest. Same trust level as the header (a caller-supplied
+/// hint), so invalid values are ignored, not rejected.
+pub async fn search_stream(
+    State(state): State<AppState>,
+    Extension(ctx): Extension<RequestCtx>,
+    headers: HeaderMap,
+    uri: Uri,
+) -> Result<Response, ApiError> {
+    let params = QueryParams::parse(uri.query(), &ctx)?;
+    let mut req = parse_search_request(&ctx, &uri, &["client"])?;
+    if headers.get("x-cauce-client").is_none()
+        && let Some(client) = params.get("client").and_then(client_hint)
     {
-        Ok(resp) => Ok((req, resp)),
-        // A pin naming ids outside the configured set is the client's
-        // error; the message names the offenders and the configured set
-        // (issue #90).
-        Err(e @ PipelineError::UnknownEngines { .. }) => {
-            Err(ctx.err(StatusCode::BAD_REQUEST, "unknown_engines", e.to_string()))
-        }
-        // A bare `Some([])` pin that selected nothing is the client's
-        // error; an empty configured set is the operator's.
-        Err(PipelineError::NoEngines) if req.engines.is_some() => Err(ctx.err(
+        req.client = client;
+    }
+    let receiver = state
+        .pipeline()
+        .search_stream(
+            &req,
+            SearchOpts {
+                request_id: Some(ctx.request_id.as_uuid()),
+                ttl: None,
+            },
+        )
+        .await
+        .map_err(|error| search_error(&ctx, &req, error))?;
+    let stream_ctx = ctx.clone();
+    let stream_req = req.clone();
+    let events = tokio_stream::wrappers::UnboundedReceiverStream::new(receiver).map(move |event| {
+        let wire_event = match event {
+            StreamEvent::Results {
+                engine,
+                results,
+                elapsed_ms,
+            } => Event::default()
+                .event("results")
+                .json_data(json!({
+                    "engine": engine,
+                    "results": results.iter().map(stream_result_json).collect::<Vec<_>>(),
+                    "elapsed_ms": elapsed_ms,
+                }))
+                .expect("search result event serializes"),
+            StreamEvent::Meta(meta) => Event::default()
+                .event("meta")
+                .json_data(meta)
+                .expect("search meta event serializes"),
+            StreamEvent::Error(error) => Event::default()
+                .event("error")
+                .json_data(search_error_payload(&stream_ctx, &stream_req, error))
+                .expect("search error event serializes"),
+        };
+        Ok::<Event, Infallible>(wire_event)
+    });
+    Ok(Sse::new(events)
+        .keep_alive(KeepAlive::default())
+        .into_response())
+}
+
+/// A `client` query-param value parsed like the `X-Cauce-Client` header
+/// (`ui`, `api`, `cli`, `mcp` or `mcp:<name>`); anything else is `None`
+/// and ignored by the caller.
+fn client_hint(value: &str) -> Option<ClientKind> {
+    let lower = value.trim().to_ascii_lowercase();
+    match lower.as_str() {
+        "ui" | "web" => return Some(ClientKind::Ui),
+        "api" => return Some(ClientKind::Api),
+        "cli" => return Some(ClientKind::Cli),
+        "mcp" => return Some(ClientKind::Mcp("unknown".to_string())),
+        _ => {}
+    }
+    lower.strip_prefix("mcp:").map(|name| {
+        let name = name.trim();
+        ClientKind::Mcp(if name.is_empty() {
+            "unknown".to_string()
+        } else {
+            name.to_string()
+        })
+    })
+}
+
+/// A streamed result plus `key`, the server-side dedupe key
+/// (`normalize_url` of its URL — the same form `meta.order` carries). The
+/// progressive page dedupes appended articles on `key`: the merge drops
+/// duplicate URL spellings the raw `url` field would render twice.
+fn stream_result_json(result: &SearchResult) -> Value {
+    let mut value = serde_json::to_value(result).expect("SearchResult serializes");
+    value["key"] = json!(cauce_core::normalize_url(&result.url));
+    value
+}
+
+pub(crate) fn search_error(
+    ctx: &RequestCtx,
+    req: &SearchRequest,
+    error: PipelineError,
+) -> ApiError {
+    match error {
+        error @ PipelineError::UnknownEngines { .. } => ctx.err(
+            StatusCode::BAD_REQUEST,
+            "unknown_engines",
+            error.to_string(),
+        ),
+        PipelineError::NoEngines if req.engines.is_some() => ctx.err(
             StatusCode::BAD_REQUEST,
             "unknown_engines",
             "engines pin matched no configured engine",
-        )),
-        Err(PipelineError::NoEngines) => Err(ctx.err(
+        ),
+        PipelineError::NoEngines => ctx.err(
             StatusCode::SERVICE_UNAVAILABLE,
             "no_engines",
             "no search engines configured",
-        )),
-        Err(e @ PipelineError::AllEnginesFailed(_)) => {
-            Err(ctx.err(StatusCode::BAD_GATEWAY, "upstream_failed", e.to_string()))
-        }
-        // Admission overflow with no stale row to serve (W1-07): 429 +
-        // `Retry-After`. W1-08 maps the same variant for MCP.
-        Err(PipelineError::RateLimited { retry_after_s }) => Err(ctx
+        ),
+        error @ PipelineError::AllEnginesFailed(_) => ctx.err(
+            StatusCode::BAD_GATEWAY,
+            "upstream_failed",
+            error.to_string(),
+        ),
+        PipelineError::RateLimited { retry_after_s } => ctx
             .err(
                 StatusCode::TOO_MANY_REQUESTS,
                 "rate_limited",
                 format!("admission queue saturated; retry after {retry_after_s}s"),
             )
-            .with_retry_after(retry_after_s)),
-        // Every matched engine was breaker-skipped (W1-06): temporary,
-        // so 503 regardless of pinning — the pin *did* match.
-        Err(e @ PipelineError::BreakerOpen(_)) => Err(ctx.err(
+            .with_retry_after(retry_after_s),
+        error @ PipelineError::BreakerOpen(_) => ctx.err(
             StatusCode::SERVICE_UNAVAILABLE,
             "breaker_open",
-            e.to_string(),
-        )),
+            error.to_string(),
+        ),
     }
+}
+
+fn search_error_payload(ctx: &RequestCtx, req: &SearchRequest, error: PipelineError) -> Value {
+    search_error(ctx, req, error).envelope()
 }
 
 /// `GET /api/history?since&q&limit`: searches and clicks, newest first.

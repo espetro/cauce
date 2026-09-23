@@ -42,7 +42,10 @@ pub use pipeline::{
     DEFAULT_DEADLINE, DEFAULT_TTL, DEFAULT_TTL_CAP, PipelineError, SearchOpts, SearchPipeline,
 };
 pub use request::{ClientKind, SafeSearch, SearchRequest, TimeRange};
-pub use response::{EngineReport, EngineStatus, SearchMeta, SearchResponse, SearchResult, Source};
+pub use response::{
+    EngineReport, EngineStatus, SearchMeta, SearchResponse, SearchResult, Source, StreamEvent,
+    StreamMeta,
+};
 pub use store::{
     AdmissionStats, AuditFacets, AuditFilter, AuditRow, BreakerState, ClickRow, ClientCount,
     DayCount, EngineHealthRow, EngineStatsRow, HistoryFilter, HistoryItem, LatencyPercentiles,
