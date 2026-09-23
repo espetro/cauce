@@ -49,10 +49,12 @@
       </tr>
     </thead>
     {% for row in rows %}
-    <tbody>
-      {% if let Some(day) = row.day_header %}
+    {% if let Some(day) = row.day_header %}
+    <tbody class="day-group">
       <tr class="day"><td colspan="7">{{ day }}</td></tr>
-      {% endif %}
+    </tbody>
+    {% endif %}
+    <tbody>
       <tr class="{% if row.is_search %}search{% else %}click{% endif %}">
         <td class="c-when">{{ row.when }}</td>
         <td class="c-query">
