@@ -13,6 +13,7 @@
     --border: #d1d5db;
     --accent: #2563eb;
     --radius: 0.5rem;
+    --greyed-bg: #f4f4f5;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -22,6 +23,7 @@
         --muted: #a3a3a3;
         --border: #3f3f46;
         --accent: #60a5fa;
+        --greyed-bg: #17171a;
     }
 }
 
@@ -242,9 +244,17 @@ fieldset.greyed input:disabled {
     opacity: 0.55;
 }
 
+/* "greyed" is muted chrome (tokens.md `neutral`), not lowered opacity: a
+   fieldset-wide opacity drags `.hint` text under the 4.5:1 contrast floor
+   while still reading as disabled to the eye. Muted text + dashed border +
+   a tinted background keep the dormant look at full contrast. */
+.greyed {
+    color: var(--muted);
+}
+
 fieldset.greyed {
-    opacity: 0.85;
     border-style: dashed;
+    background: var(--greyed-bg);
 }
 
 .hint {
@@ -277,6 +287,10 @@ fieldset.greyed {
 
 .engine-row select {
     width: auto;
+}
+
+.mono {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
 .engine-id {
@@ -422,9 +436,12 @@ article.cache-entry + article.cache-entry {
         flex-direction: column;
     }
 
-    /* `<details>` does not shrink below its expanded content under
+    /* The details block does not shrink below its expanded content under
        cross-axis stretch; pin it to the row width so the payload block
-       scrolls inside itself instead of widening the page. */
+       scrolls inside itself instead of widening the page. (The literal
+       element name must stay out of this comment: every page inlines this
+       stylesheet, so the test asserting no rendered details element would
+       match the comment itself.) */
     .cache-details {
         width: 100%;
     }
