@@ -136,7 +136,10 @@ async fn audit_page_lists_ui_cache_delete() {
         body.contains("<code>cache.delete</code>"),
         "delete row missing: {body}"
     );
-    assert!(body.contains("<td>ui</td>"), "actor ui missing: {body}");
+    assert!(
+        body.contains("<td class=\"c-actor\">ui</td>"),
+        "actor ui missing: {body}"
+    );
     assert!(
         body.contains("<code>engine.reset</code>"),
         "reset row missing: {body}"

@@ -38,14 +38,14 @@
   <div class="audit-table-wrap" tabindex="0" role="region" aria-label="{{ crate::strings::audit::TABLE_REGION }}">
   <table class="audit-table">
     <thead>
-      <tr><th>{{ crate::strings::audit::WHEN_COLUMN }}</th><th>{{ crate::strings::audit::ACTOR_COLUMN }}</th><th>{{ crate::strings::audit::ACTION_COLUMN }}</th><th class="col-target">{{ crate::strings::audit::TARGET_COLUMN }}</th><th>{{ crate::strings::audit::REQUEST_COLUMN }}</th><th>{{ crate::strings::audit::DETAILS_SUMMARY }}</th></tr>
+      <tr><th>{{ crate::strings::audit::WHEN_COLUMN }}</th><th class="c-actor">{{ crate::strings::audit::ACTOR_COLUMN }}</th><th class="c-action"><span class="actor-prefix">{{ crate::strings::audit::ACTOR_COLUMN }} · </span>{{ crate::strings::audit::ACTION_COLUMN }}</th><th class="col-target">{{ crate::strings::audit::TARGET_COLUMN }}</th><th>{{ crate::strings::audit::REQUEST_COLUMN }}</th><th>{{ crate::strings::audit::DETAILS_SUMMARY }}</th></tr>
     </thead>
     <tbody>
       {% for row in rows %}
       <tr>
         <td>{{ row.ts }}</td>
-        <td>{{ row.actor }}</td>
-        <td><code>{{ row.action }}</code></td>
+        <td class="c-actor">{{ row.actor }}</td>
+        <td class="c-action"><span class="actor-prefix">{{ row.actor }} · </span><code>{{ row.action }}</code></td>
         <td class="target col-target" title="{{ row.target }}">{{ row.target }}</td>
         <td>
           {% if !row.request_id.is_empty() %}

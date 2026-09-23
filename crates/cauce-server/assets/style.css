@@ -167,6 +167,24 @@ details.span pre {
     }
 }
 
+/* Below 640 px `actor` and `action` share one cell rendered
+   `ui · cache.delete`: the actor column hides and the action cell's
+   inline prefix supplies the actor (the same single-cell merge the
+   history table uses for its card layout). */
+.audit-table .actor-prefix {
+    display: none;
+}
+
+@media (max-width: 640px) {
+    .audit-table .c-actor {
+        display: none;
+    }
+
+    .audit-table .actor-prefix {
+        display: inline;
+    }
+}
+
 /* /settings (W2-07) */
 .topnav {
     margin-bottom: 1rem;
