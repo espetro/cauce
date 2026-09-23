@@ -119,3 +119,14 @@ rather than editing it away.
   form — so schema v2 adds a nullable `query_raw` column instead of changing
   `query`'s semantics. NULL on pre-v2 rows; `SearchLogRow.query_raw` is
   `Option<String>` on the wire. (#89) — 2026-09-23
+- **Cache is a cross-screen feature; `/cache` stays as its inspection surface.** The
+  owner's model: history tracks searches (with clicked results nested, like a browser),
+  so history's `source` column carries the live cache state and a `cached only` filter;
+  the dashboard owns hit-rate and cache stats; settings gets a cache block with bulk
+  deletes. `/cache` keeps what none of those can hold (full list of agent-written
+  entries, FTS over payloads, payload inspection, deletes next to the list they act on)
+  and leaves the primary nav for an operator group `engines · cache · audit`. No
+  `/advanced` merge: dashboard is a daily page, `/cache` a maintenance one, and the
+  dashboard already links to both operator pages. v3 screen specs written for history
+  (rewritten), cache, engines, audit/trace, settings; checkpoints 21-36 and rubric
+  section 9 added. (#34, #36, #39) — 2026-09-23
