@@ -54,6 +54,7 @@
   <article class="cache-entry{% if row.expired %} expired{% endif %}">
     <div class="cache-row">
       <details
+        id="{{ row.key }}"
         class="cache-details"
         hx-get="/api/cache/{{ row.key }}"
         hx-trigger="toggle once"
@@ -97,5 +98,13 @@
   </footer>
 
   <script>{{ htmx_js|safe }}</script>
+  <script>
+    window.addEventListener("load", function () {
+      if (location.hash.length > 1) {
+        var d = document.getElementById(location.hash.slice(1));
+        if (d) d.open = true;
+      }
+    });
+  </script>
 </body>
 </html>
