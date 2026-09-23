@@ -1038,11 +1038,10 @@ fn history_rows(
                         false,
                     ),
                     None => (
-                        format!(
-                            "{} · t{}",
-                            s.src_network,
-                            s_row.tier.map(|t| t.as_u8()).unwrap_or(1)
-                        ),
+                        match s_row.tier {
+                            Some(t) => format!("{} · t{}", s.src_network, t.as_u8()),
+                            None => s.src_network.to_string(),
+                        },
                         String::new(),
                         false,
                     ),

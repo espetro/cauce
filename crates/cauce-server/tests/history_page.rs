@@ -199,10 +199,7 @@ async fn history_source_tracks_live_cache_state() {
 
     let (status, body) = get_html(&app, "/history").await;
     assert_eq!(status, StatusCode::OK);
-    assert!(
-        body.contains("network · t1"),
-        "entry gone → network source: {body}"
-    );
+    assert!(body.contains("network"), "entry gone → network source: {body}");
     assert!(!body.contains("cached ·"), "{body}");
 
     search(&app, "w2-src-flip").await;
