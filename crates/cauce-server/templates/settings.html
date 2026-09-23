@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<!-- This Source Code Form is subject to the terms of the Mozilla Public
+     License, v. 2.0. If a copy of the MPL was not distributed with this
+     file, You can obtain one at https://mozilla.org/MPL/2.0/. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ crate::strings::settings::PAGE_TITLE }} - {{ crate::strings::common::BRAND }}</title>
+<style>{{ style_css|safe }}</style>
+</head>
+<body>
+<nav class="topnav">
+  <a href="/">{{ crate::strings::common::NAV_SEARCH }}</a>
+</nav>
+<main>
+<h1>{{ crate::strings::settings::PAGE_TITLE }}</h1>
+<p class="hint">{{ crate::strings::settings::EDITING }} <code>{{ config_path }}</code> · {{ crate::strings::settings::RESTART_NOTE }}</p>
+
+<form class="settings-form" hx-put="/api/config"
+      hx-target="#settings-status"
+      hx-swap="innerHTML"
+      hx-headers='{"X-Cauce-Client":"ui"}'
+      hx-on::response-error="document.getElementById('settings-status').innerHTML='<span class=&quot;form-status error&quot;>{{ crate::strings::settings::COULD_NOT_SAVE }} ('+event.detail.xhr.status+')</span>'">
+
+<fieldset>
+  <legend>{{ crate::strings::settings::SECTION_SEARCH }}</legend>
+  <label>{{ crate::strings::settings::DEADLINE }}
+    <input type="text" name="search.deadline_ms" value="{{ deadline.value }}" {% if !deadline.env.is_empty() %}disabled{% endif %}>
+  </label>
+  {% if !deadline.env.is_empty() %}<p class="hint">{{ crate::strings::settings::SET_BY }} {{ deadline.env }}</p>{% endif %}
+  <p class="field-error" id="fe-search.deadline_ms"></p>
+  <label>{{ crate::strings::settings::TTL }}
+    <input type="text" name="search.ttl_s" value="{{ ttl.value }}" {% if !ttl.env.is_empty() %}disabled{% endif %}>
+  </label>
+  {% if !ttl.env.is_empty() %}<p class="hint">{{ crate::strings::settings::SET_BY }} {{ ttl.env }}</p>{% endif %}
+  <p class="field-error" id="fe-search.ttl_s"></p>
+  <label class="greyed">{{ crate::strings::settings::HEDGE }}
+    <input disabled placeholder="{{ crate::strings::settings::HEDGE_WAVE }}">
+  </label>
+</fieldset>
+
+<fieldset {% if engines_pinned %}class="greyed"{% endif %}>
+  <legend>{{ crate::strings::settings::SECTION_ENGINES }}</legend>
+  {% if engines_pinned %}<p class="hint">{{ crate::strings::settings::ENGINES_PINNED }}</p>{% endif %}
+  {% for e in engines %}
+  <div class="engine-row">
+    <strong>{{ e.id }}</strong>
+    <span class="hint">{{ e.kind }}</span>
+    <label>
+      <input type="hidden" name="engines.{{ e.id }}.enabled" value="false" {% if engines_pinned %}disabled{% endif %}>
+      <input type="checkbox" name="engines.{{ e.id }}.enabled" value="true" {% if e.enabled %}checked{% endif %} {% if engines_pinned %}disabled{% endif %}>
+      {{ crate::strings::settings::ENABLED }}
+    </label>
+    <label>{{ crate::strings::settings::TIER }}
+      <select name="engines.{{ e.id }}.tier">
+        <option value="" {% if e.tier.is_empty() %}selected{% endif %}>{{ crate::strings::settings::TIER_DEFAULT }}</option>
+        <option value="1" {% if e.tier == "1" %}selected{% endif %}>1</option>
+        <option value="2" {% if e.tier == "2" %}selected{% endif %}>2</option>
+        <option value="3" {% if e.tier == "3" %}selected{% endif %}>3</option>
+      </select>
+    </label>
+    <label>{{ crate::strings::settings::PROXY }}
+      <input type="text" name="engines.{{ e.id }}.egress.proxy" value="{{ e.proxy }}" placeholder="{{ crate::strings::settings::PROXY_PLACEHOLDER }}">
+    </label>
+    <p class="field-error" id="fe-engines.{{ e.id }}"></p>
+  </div>
+  {% endfor %}
+  <a href="/engines">{{ crate::strings::settings::BROWSE_ENGINES }}</a>
+</fieldset>
+
+<fieldset>
+  <legend>{{ crate::strings::settings::SECTION_ADMISSION }}</legend>
+  <label>{{ crate::strings::settings::MAX_WAIT }}
+    <input type="text" name="admission.max_wait_ms" value="{{ max_wait.value }}" {% if !max_wait.env.is_empty() %}disabled{% endif %}>
+  </label>
+  {% if !max_wait.env.is_empty() %}<p class="hint">{{ crate::strings::settings::SET_BY }} {{ max_wait.env }}</p>{% endif %}
+  <p class="field-error" id="fe-admission.max_wait_ms"></p>
+  <label>{{ crate::strings::settings::MAX_CONCURRENT }}
+    <input type="text" name="admission.max_concurrent_per_engine" value="{{ max_concurrent.value }}" {% if !max_concurrent.env.is_empty() %}disabled{% endif %}>
+  </label>
+  {% if !max_concurrent.env.is_empty() %}<p class="hint">{{ crate::strings::settings::SET_BY }} {{ max_concurrent.env }}</p>{% endif %}
+  <p class="field-error" id="fe-admission.max_concurrent_per_engine"></p>
+</fieldset>
+
+<fieldset>
+  <legend>{{ crate::strings::settings::SECTION_LOGGING }}</legend>
+  <label>{{ crate::strings::settings::RETENTION }}
+    <input type="text" name="logs.retention_days" value="{{ retention.value }}" {% if !retention.env.is_empty() %}disabled{% endif %}>
+  </label>
+  {% if !retention.env.is_empty() %}<p class="hint">{{ crate::strings::settings::SET_BY }} {{ retention.env }}</p>{% endif %}
+  <p class="field-error" id="fe-logs.retention_days"></p>
+</fieldset>
+
+{{ cache_block|safe }}
+
+<fieldset class="greyed">
+  <legend>{{ crate::strings::settings::SECTION_AI }} ({{ crate::strings::settings::AI_WAVE }})</legend>
+  <label>{{ crate::strings::settings::AI_BASE_URL }}
+    <input type="text" name="ai.base_url" value="{{ ai_base_url.value }}" {% if !ai_base_url.env.is_empty() %}disabled{% endif %}>
+  </label>
+  {% if !ai_base_url.env.is_empty() %}<p class="hint">{{ crate::strings::settings::SET_BY }} {{ ai_base_url.env }}</p>{% endif %}
+  <p class="field-error" id="fe-ai.base_url"></p>
+  <label>{{ crate::strings::settings::AI_API_KEY }}
+    <input type="text" name="ai.api_key" value="{{ ai_api_key.value }}" placeholder="{{ crate::strings::settings::AI_API_KEY_PLACEHOLDER }}" {% if !ai_api_key.env.is_empty() %}disabled{% endif %}>
+  </label>
+  {% if !ai_api_key.env.is_empty() %}<p class="hint">{{ crate::strings::settings::SET_BY }} {{ ai_api_key.env }}</p>{% endif %}
+  {% if !ai_key_status.is_empty() %}<p class="hint">{{ ai_key_status }}</p>{% endif %}
+  <p class="field-error" id="fe-ai.api_key"></p>
+  <label>{{ crate::strings::settings::AI_MODEL }}
+    <input type="text" name="ai.model" value="{{ ai_model.value }}" list="ai-models" placeholder="{{ crate::strings::settings::AI_MODEL_PLACEHOLDER }}" {% if !ai_model.env.is_empty() %}disabled{% endif %}>
+    <datalist id="ai-models">
+      {% for m in ai_models %}<option value="{{ m }}" />{% endfor %}
+    </datalist>
+  </label>
+  {% if !ai_model.env.is_empty() %}<p class="hint">{{ crate::strings::settings::SET_BY }} {{ ai_model.env }}</p>{% endif %}
+  {% if ai_models_failed %}<p class="hint">{{ crate::strings::settings::MODELS_UNREACHABLE }}</p>{% endif %}
+  <p class="field-error" id="fe-ai.model"></p>
+  <label>
+    <input type="checkbox" disabled {% if ai_enabled %}checked{% endif %}> {{ crate::strings::settings::ENABLED }} {{ crate::strings::settings::AI_PIPELINE_NOTE }}
+  </label>
+  {% if !ai_enabled_env.is_empty() %}<p class="hint">{{ crate::strings::settings::SET_BY }} {{ ai_enabled_env }}</p>{% endif %}
+</fieldset>
+
+<button type="submit">{{ crate::strings::settings::SAVE }}</button>
+<span id="settings-status" role="status" aria-live="polite"></span>
+<noscript><p class="hint">{{ crate::strings::settings::NOSCRIPT }}</p></noscript>
+</form>
+</main>
+<footer>
+  <code class="request-id">{{ request_id }}</code>
+</footer>
+<script>{{ htmx_js|safe }}</script>
+</body>
+</html>

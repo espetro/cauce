@@ -1,0 +1,60 @@
+<!doctype html>
+<!-- This Source Code Form is subject to the terms of the Mozilla Public
+     License, v. 2.0. If a copy of the MPL was not distributed with this
+     file, You can obtain one at https://mozilla.org/MPL/2.0/. -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ crate::strings::trace::PAGE_TITLE|lower }} {{ traced_short }} · {{ crate::strings::common::BRAND }}</title>
+  <style>{{ style_css|safe }}</style>
+</head>
+<body>
+<nav class="topnav">
+  <a href="/">{{ crate::strings::common::NAV_SEARCH }}</a>
+</nav>
+<main>
+  <h1>{{ crate::strings::trace::PAGE_TITLE }}</h1>
+  <div class="meta">
+    <code class="request-id" id="traced-id">{{ traced_id }}</code>
+    <button type="button" id="copy-traced">{{ crate::strings::trace::COPY }}</button>
+    <a href="/audit">{{ crate::strings::trace::BACK_TO_AUDIT }}</a>
+  </div>
+  {% if !notice.is_empty() %}
+  <p class="empty">{{ notice }}</p>
+  {% else %}
+  {% if !kind.is_empty() %}
+  <p class="meta">{{ kind }}{% if has_query %} "{{ query }}"{% endif %}{% if !summary_ts.is_empty() %} · {{ summary_ts }}{% endif %} · {{ summary_ms }} · {{ outcome }}</p>
+  {% endif %}
+  <pre class="trace" tabindex="0" role="region" aria-label="{{ crate::strings::trace::TIMELINE_REGION }}">{{ timeline }}</pre>
+  {% if !spans.is_empty() %}
+  <h2>{{ crate::strings::trace::SPANS_HEADING }}</h2>
+  {% for span in spans %}
+  <details class="span"><summary>{{ span.name }} · {{ span.elapsed }}{% if !span.status.is_empty() %} · <span{% if !span.status_class.is_empty() %} class="{{ span.status_class }}"{% endif %}>{{ span.status }}</span>{% endif %}{% if !span.results.is_empty() %} · {{ span.results }}{% endif %}</summary><pre tabindex="0" role="group" aria-label="{{ crate::strings::trace::SPAN_REGION }}">{{ span.fields_json }}</pre></details>
+  {% endfor %}
+  {% endif %}
+  {% endif %}
+  <div class="meta">
+    {{ crate::strings::common::REQUEST_LABEL }} <code class="request-id">{{ request_id }}</code>
+  </div>
+  </main>
+  <script>
+    (function () {
+      var btn = document.getElementById("copy-traced");
+      var el = document.getElementById("traced-id");
+      if (!btn || !el) return;
+      btn.addEventListener("click", function () {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(el.textContent);
+        } else {
+          var r = document.createRange();
+          r.selectNodeContents(el);
+          var s = window.getSelection();
+          s.removeAllRanges();
+          s.addRange(r);
+        }
+      });
+    })();
+  </script>
+</body>
+</html>

@@ -61,6 +61,17 @@ impl ApiError {
         Self::new(StatusCode::INTERNAL_SERVER_ERROR, "internal", message)
     }
 
+    /// The human-readable message (the `/settings` HTMX fragment renders it
+    /// inline instead of the JSON envelope).
+    pub fn message(&self) -> &str {
+        &self.message
+    }
+
+    /// The HTTP status (`error: could not save (<status>)` fragments).
+    pub fn status(&self) -> StatusCode {
+        self.status
+    }
+
     /// A `Store` failure. The store's message carries SQL/IO detail (never
     /// secrets), so it is passed through for the operator.
     pub fn store(e: &cauce_core::StoreError) -> Self {
@@ -89,17 +100,22 @@ impl ApiError {
         self.retry_after_s = Some(retry_after_s);
         self
     }
-}
 
-impl IntoResponse for ApiError {
-    fn into_response(self) -> Response {
-        let body = json!({
+    /// The stable JSON envelope reused by SSE `error` frames.
+    pub(crate) fn envelope(&self) -> serde_json::Value {
+        json!({
             "error": {
                 "code": self.code,
                 "message": self.message,
                 "request_id": self.request_id,
             }
-        });
+        })
+    }
+}
+
+impl IntoResponse for ApiError {
+    fn into_response(self) -> Response {
+        let body = self.envelope();
         let mut resp = (self.status, Json(body)).into_response();
         if let Some(secs) = self.retry_after_s {
             // A u64 is always a valid header value.

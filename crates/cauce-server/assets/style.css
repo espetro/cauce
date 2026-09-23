@@ -113,6 +113,347 @@ article a:hover {
     color: var(--muted);
 }
 
+.audit-table-wrap {
+    overflow-x: auto;
+}
+
+.audit-table td,
+.audit-table th {
+    padding: 0.25rem 0.5rem;
+    text-align: left;
+    font-size: 0.875rem;
+    white-space: nowrap;
+}
+
+.audit-table td.target {
+    max-width: 18ch;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.audit-table td.details-cell {
+    white-space: normal;
+}
+
+.audit-table td.details-cell pre {
+    overflow-x: auto;
+    max-width: 40rem;
+}
+
+pre.trace {
+    overflow-x: auto;
+}
+
+/* Span field dumps can carry lines wider than the column; they scroll
+   inside themselves so the page never gains a horizontal scrollbar.
+   The template makes each block keyboard-focusable (axe
+   scrollable-region-focusable). */
+details.span pre {
+    overflow-x: auto;
+}
+
+/* Span status color roles reuse the settings `.form-status` palette. */
+.span-status-ok {
+    color: #15803d;
+}
+
+.span-status-error {
+    color: #b91c1c;
+}
+
+@media (max-width: 768px) {
+    .audit-table .col-target {
+        display: none;
+    }
+}
+
+/* Below 640 px `actor` and `action` share one cell rendered
+   `ui · cache.delete`: the actor column hides and the action cell's
+   inline prefix supplies the actor (the same single-cell merge the
+   history table uses for its card layout). */
+.audit-table .actor-prefix {
+    display: none;
+}
+
+@media (max-width: 640px) {
+    .audit-table .c-actor {
+        display: none;
+    }
+
+    .audit-table .actor-prefix {
+        display: inline;
+    }
+}
+
+/* /settings (W2-07) */
+.topnav {
+    margin-bottom: 1rem;
+    color: var(--muted);
+}
+
+.topnav a {
+    color: var(--accent);
+    text-decoration: none;
+}
+
+/* The global `form { display: flex }` rule is the search box's; the settings
+   form stacks its fieldsets vertically. */
+form.settings-form {
+    display: block;
+}
+
+.settings-form fieldset,
+fieldset {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    margin-bottom: 1rem;
+    padding: 0.75rem;
+}
+
+fieldset legend {
+    padding: 0 0.25rem;
+    font-weight: 600;
+}
+
+fieldset label {
+    display: block;
+    margin: 0.5rem 0;
+}
+
+fieldset input[type="text"],
+fieldset input[type="number"],
+fieldset select {
+    width: 100%;
+    max-width: 28rem;
+    padding: 0.35rem 0.5rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    font-size: 0.95rem;
+    background: var(--bg);
+    color: var(--fg);
+}
+
+fieldset input[type="checkbox"] {
+    margin-right: 0.25rem;
+}
+
+fieldset input:disabled,
+fieldset.greyed input:disabled {
+    opacity: 0.55;
+}
+
+fieldset.greyed {
+    opacity: 0.85;
+    border-style: dashed;
+}
+
+.hint {
+    color: var(--muted);
+    font-size: 0.85rem;
+    margin: 0.15rem 0 0;
+}
+
+.engine-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.5rem 1rem;
+    padding: 0.5rem 0;
+    border-bottom: 1px solid var(--border);
+}
+
+.engine-row:last-child {
+    border-bottom: none;
+}
+
+.engine-row label {
+    margin: 0;
+    font-size: 0.9rem;
+}
+
+.engine-row input[type="text"] {
+    max-width: 14rem;
+}
+
+.engine-row select {
+    width: auto;
+}
+
+.engine-id {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-weight: 600;
+}
+
+.form-status.ok {
+    color: #15803d;
+}
+
+.form-status.error {
+    color: #b91c1c;
+}
+
+#settings-status {
+    margin-left: 0.75rem;
+    font-size: 0.9rem;
+}
+
+.field-error:empty {
+    display: none;
+}
+.field-error {
+    color: #b00;
+    font-size: 0.85em;
+    margin: 0.15em 0 0.5em;
+}
+.cache-actions {
+    display: flex;
+    gap: 0.75em;
+    align-items: baseline;
+}
+
+/* /cache page (W2-04). Strictly additive; shared base styles above.
+   The page body carries `cache-page` so the wider content column and
+   heading scale stay scoped to this route (the search page keeps
+   720px / default h1). */
+
+body.cache-page {
+    max-width: 72rem;
+}
+
+.cache-page h1 {
+    font-size: 1.5rem;
+    font-weight: 600;
+}
+
+.cache-actions {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    margin-bottom: 1rem;
+}
+
+.cache-actions button,
+.cache-delete {
+    padding: 0.25rem 0.75rem;
+    font-size: 0.875rem;
+    background: var(--bg);
+    color: var(--fg);
+    border: 1px solid var(--border);
+}
+
+.cache-actions button.danger {
+    color: #dc2626;
+    border-color: #dc2626;
+}
+
+.cache-noscript {
+    color: var(--muted);
+    font-size: 0.8125rem;
+}
+
+/* Table-like list: no per-row cards, a hairline between rows. */
+article.cache-entry {
+    margin: 0;
+    padding: 0.75rem 0;
+    border: none;
+    border-radius: 0;
+}
+
+article.cache-entry + article.cache-entry {
+    border-top: 1px solid var(--border);
+}
+
+/* Expired rows keep their place but render muted, never hidden. */
+.cache-entry.expired {
+    opacity: 0.6;
+}
+
+.cache-row {
+    display: flex;
+    gap: 0.5rem;
+    align-items: flex-start;
+}
+
+.cache-details {
+    flex: 1;
+    min-width: 0;
+}
+
+.cache-query {
+    font-weight: 500;
+}
+
+.cache-meta {
+    color: var(--muted);
+    font-size: 0.8125rem;
+}
+
+.cache-meta span + span::before {
+    content: " · ";
+}
+
+.cache-payload {
+    color: var(--muted);
+    font-size: 0.8125rem;
+}
+
+.cache-payload-json {
+    overflow-x: auto;
+    font-size: 0.8rem;
+    padding: 0.5rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--fg);
+    white-space: pre;
+}
+
+.cache-pager {
+    display: flex;
+    gap: 1rem;
+}
+
+.cache-pager a {
+    color: var(--accent);
+}
+
+@media (max-width: 640px) {
+    /* The row delete drops under the meta line; bulk actions stack. */
+    .cache-row {
+        flex-direction: column;
+    }
+
+    /* `<details>` does not shrink below its expanded content under
+       cross-axis stretch; pin it to the row width so the payload block
+       scrolls inside itself instead of widening the page. */
+    .cache-details {
+        width: 100%;
+    }
+
+    .cache-delete {
+        align-self: flex-end;
+    }
+
+    .cache-actions {
+        flex-direction: column;
+        align-items: stretch;
+    }
+}
+
+.new-results-above {
+    display: inline-block;
+    margin: 0.5rem 0;
+    padding: 0.25rem 0.75rem;
+    border: 1px solid var(--border);
+    border-radius: 9999px;
+    color: var(--muted);
+    font-size: 0.875rem;
+}
+
+.new-results-above[hidden] {
+    display: none;
+}
+
+
 /* W2-05 /engines page and cards. The page body carries `engines-page`
    so the card grid gets the wider content column (same rule as the
    dashboard panels); `auto-fit` stacks the cards to one column below

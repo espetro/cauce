@@ -8,21 +8,26 @@
 //! License, v. 2.0. If a copy of the MPL was not distributed with this
 //! file, You can obtain one at <https://mozilla.org/MPL/2.0/>.
 
+use std::convert::Infallible;
 use std::sync::Arc;
 
 use axum::Extension;
 use axum::body::Bytes;
 use axum::extract::{Path, State};
 use axum::http::{HeaderMap, StatusCode, Uri};
-use axum::response::{IntoResponse, Json, Response};
+use axum::response::{
+    IntoResponse, Json, Response, Sse,
+    sse::{Event, KeepAlive},
+};
 use cauce_core::{
-    AuditFilter, AuditRow, CacheKey, ClickRow, EngineError, EngineHealthRow, EngineId,
-    HistoryFilter, HistoryItem, PipelineError, SafeSearch, SearchRequest, SearchResponse,
-    StatsSnapshot, Store, TimeRange,
+    AuditFilter, AuditRow, CacheKey, ClickRow, ClientKind, EngineError, EngineHealthRow,
+    EngineId, HistoryFilter, HistoryItem, PipelineError, SafeSearch, SearchOpts, SearchRequest,
+    SearchResponse, SearchResult, StatsSnapshot, Store, StreamEvent, TimeRange,
     config::{Config, system_env},
 };
 use chrono::{DateTime, NaiveDate, Utc};
 use serde_json::{Value, json};
+use tokio_stream::StreamExt;
 
 use crate::app::AppState;
 use crate::error::ApiError;
@@ -68,9 +73,201 @@ pub(crate) async fn search_inner(
     ctx: &RequestCtx,
     uri: &Uri,
 ) -> Result<(SearchRequest, SearchResponse), ApiError> {
-    search_inner_classed(state, ctx, uri)
+    let req = parse_search_request(ctx, uri, &[])?;
+    match state
+        .pipeline()
+        .search_with_id(&req, ctx.request_id.as_uuid())
         .await
-        .map_err(|(e, _class)| e)
+    {
+        Ok(resp) => Ok((req, resp)),
+        Err(error) => Err(search_error(ctx, &req, error)),
+    }
+}
+
+/// Parse the canonical search parameters. A page can opt into one additional
+/// private query parameter (`stream`) without widening the JSON API contract.
+pub(crate) fn parse_search_request(
+    ctx: &RequestCtx,
+    uri: &Uri,
+    extra: &[&str],
+) -> Result<SearchRequest, ApiError> {
+    let params = QueryParams::parse(uri.query(), ctx)?;
+    let mut allowed = vec!["q", "page", "lang", "time_range", "safesearch", "engines"];
+    allowed.extend_from_slice(extra);
+    params.allow(ctx, &allowed)?;
+    Ok(SearchRequest {
+        q: params.required(ctx, "q")?.to_string(),
+        page: params.page(ctx)?,
+        lang: params.get("lang").map(str::to_string),
+        time_range: params
+            .get("time_range")
+            .map(|v| v.parse::<TimeRange>().map_err(|e| ctx.bad_request(e)))
+            .transpose()?,
+        safesearch: params
+            .get("safesearch")
+            .map(|v| v.parse::<SafeSearch>().map_err(|e| ctx.bad_request(e)))
+            .transpose()?
+            .unwrap_or_default(),
+        engines: params
+            .get("engines")
+            .map(|v| {
+                v.split(',')
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .map(EngineId::from)
+                    .collect::<Vec<_>>()
+            })
+            .filter(|v| !v.is_empty()),
+        client: ctx.client.clone(),
+    })
+}
+
+/// `GET /api/search/stream?q=...`: `results` per engine completion,
+/// followed by one terminal `meta` or `error` frame.
+///
+/// Two pre-stream rejections answer with their real status instead of an
+/// SSE body: request-parameter errors (`parse_search_request`, 400
+/// `bad_request`) and a rejected engine pin (400 `unknown_engines` /
+/// 503 `no_engines`, mapped through [`search_error`] like `/api/search`).
+/// Failures past that point (fan-out, admission, store) are terminal
+/// `error` events on the open stream.
+///
+/// `client=ui|api|mcp[:<name>]|cli` is accepted as a client-kind hint when
+/// the `X-Cauce-Client` header is absent: `EventSource` cannot set
+/// headers, so the page passes `client=ui` to keep the dashboard's
+/// ui/api split honest. Same trust level as the header (a caller-supplied
+/// hint), so invalid values are ignored, not rejected.
+pub async fn search_stream(
+    State(state): State<AppState>,
+    Extension(ctx): Extension<RequestCtx>,
+    headers: HeaderMap,
+    uri: Uri,
+) -> Result<Response, ApiError> {
+    let params = QueryParams::parse(uri.query(), &ctx)?;
+    let mut req = parse_search_request(&ctx, &uri, &["client"])?;
+    if headers.get("x-cauce-client").is_none()
+        && let Some(client) = params.get("client").and_then(client_hint)
+    {
+        req.client = client;
+    }
+    let receiver = state
+        .pipeline()
+        .search_stream(
+            &req,
+            SearchOpts {
+                request_id: Some(ctx.request_id.as_uuid()),
+                ttl: None,
+            },
+        )
+        .await
+        .map_err(|error| search_error(&ctx, &req, error))?;
+    let stream_ctx = ctx.clone();
+    let stream_req = req.clone();
+    let events = tokio_stream::wrappers::UnboundedReceiverStream::new(receiver).map(move |event| {
+        let wire_event = match event {
+            StreamEvent::Results {
+                engine,
+                results,
+                elapsed_ms,
+            } => Event::default()
+                .event("results")
+                .json_data(json!({
+                    "engine": engine,
+                    "results": results.iter().map(stream_result_json).collect::<Vec<_>>(),
+                    "elapsed_ms": elapsed_ms,
+                }))
+                .expect("search result event serializes"),
+            StreamEvent::Meta(meta) => Event::default()
+                .event("meta")
+                .json_data(meta)
+                .expect("search meta event serializes"),
+            StreamEvent::Error(error) => Event::default()
+                .event("error")
+                .json_data(search_error_payload(&stream_ctx, &stream_req, error))
+                .expect("search error event serializes"),
+        };
+        Ok::<Event, Infallible>(wire_event)
+    });
+    Ok(Sse::new(events)
+        .keep_alive(KeepAlive::default())
+        .into_response())
+}
+
+/// A `client` query-param value parsed like the `X-Cauce-Client` header
+/// (`ui`, `api`, `cli`, `mcp` or `mcp:<name>`); anything else is `None`
+/// and ignored by the caller.
+fn client_hint(value: &str) -> Option<ClientKind> {
+    let lower = value.trim().to_ascii_lowercase();
+    match lower.as_str() {
+        "ui" | "web" => return Some(ClientKind::Ui),
+        "api" => return Some(ClientKind::Api),
+        "cli" => return Some(ClientKind::Cli),
+        "mcp" => return Some(ClientKind::Mcp("unknown".to_string())),
+        _ => {}
+    }
+    lower.strip_prefix("mcp:").map(|name| {
+        let name = name.trim();
+        ClientKind::Mcp(if name.is_empty() {
+            "unknown".to_string()
+        } else {
+            name.to_string()
+        })
+    })
+}
+
+/// A streamed result plus `key`, the server-side dedupe key
+/// (`normalize_url` of its URL — the same form `meta.order` carries). The
+/// progressive page dedupes appended articles on `key`: the merge drops
+/// duplicate URL spellings the raw `url` field would render twice.
+fn stream_result_json(result: &SearchResult) -> Value {
+    let mut value = serde_json::to_value(result).expect("SearchResult serializes");
+    value["key"] = json!(cauce_core::normalize_url(&result.url));
+    value
+}
+
+pub(crate) fn search_error(
+    ctx: &RequestCtx,
+    req: &SearchRequest,
+    error: PipelineError,
+) -> ApiError {
+    match error {
+        error @ PipelineError::UnknownEngines { .. } => ctx.err(
+            StatusCode::BAD_REQUEST,
+            "unknown_engines",
+            error.to_string(),
+        ),
+        PipelineError::NoEngines if req.engines.is_some() => ctx.err(
+            StatusCode::BAD_REQUEST,
+            "unknown_engines",
+            "engines pin matched no configured engine",
+        ),
+        PipelineError::NoEngines => ctx.err(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "no_engines",
+            "no search engines configured",
+        ),
+        error @ PipelineError::AllEnginesFailed(_) => ctx.err(
+            StatusCode::BAD_GATEWAY,
+            "upstream_failed",
+            error.to_string(),
+        ),
+        PipelineError::RateLimited { retry_after_s } => ctx
+            .err(
+                StatusCode::TOO_MANY_REQUESTS,
+                "rate_limited",
+                format!("admission queue saturated; retry after {retry_after_s}s"),
+            )
+            .with_retry_after(retry_after_s),
+        error @ PipelineError::BreakerOpen(_) => ctx.err(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "breaker_open",
+            error.to_string(),
+        ),
+    }
+}
+
+fn search_error_payload(ctx: &RequestCtx, req: &SearchRequest, error: PipelineError) -> Value {
+    search_error(ctx, req, error).envelope()
 }
 
 /// [`search_inner`] plus a display class on the error side (`blocked`,
@@ -85,111 +282,37 @@ pub(crate) async fn search_inner_classed(
 ) -> Result<(SearchRequest, SearchResponse), (ApiError, &'static str)> {
     use crate::strings::engines as copy;
 
-    let params = QueryParams::parse(uri.query(), ctx).map_err(|e| (e, copy::TEST_BAD_REQUEST))?;
-    params
-        .allow(
-            ctx,
-            &["q", "page", "lang", "time_range", "safesearch", "engines"],
-        )
-        .map_err(|e| (e, copy::TEST_BAD_REQUEST))?;
-    let req = SearchRequest {
-        q: params
-            .required(ctx, "q")
-            .map_err(|e| (e, copy::TEST_BAD_REQUEST))?
-            .to_string(),
-        page: params.page(ctx).map_err(|e| (e, copy::TEST_BAD_REQUEST))?,
-        lang: params.get("lang").map(str::to_string),
-        time_range: params
-            .get("time_range")
-            .map(|v| {
-                v.parse::<TimeRange>()
-                    .map_err(|e| (ctx.bad_request(e), copy::TEST_BAD_REQUEST))
-            })
-            .transpose()?,
-        safesearch: params
-            .get("safesearch")
-            .map(|v| {
-                v.parse::<SafeSearch>()
-                    .map_err(|e| (ctx.bad_request(e), copy::TEST_BAD_REQUEST))
-            })
-            .transpose()?
-            .unwrap_or_default(),
-        engines: params
-            .get("engines")
-            .map(|v| {
-                v.split(',')
-                    .map(str::trim)
-                    .filter(|s| !s.is_empty())
-                    .map(EngineId::from)
-                    .collect::<Vec<_>>()
-            })
-            .filter(|v| !v.is_empty()),
-        client: ctx.client.clone(),
-    };
+    let req =
+        parse_search_request(ctx, uri, &[]).map_err(|e| (e, copy::TEST_BAD_REQUEST))?;
     match state
         .pipeline()
         .search_with_id(&req, ctx.request_id.as_uuid())
         .await
     {
         Ok(resp) => Ok((req, resp)),
-        // A pin naming ids outside the configured set is the client's
-        // error; the message names the offenders and the configured set
-        // (issue #90).
-        Err(e @ PipelineError::UnknownEngines { .. }) => Err((
-            ctx.err(StatusCode::BAD_REQUEST, "unknown_engines", e.to_string()),
-            copy::TEST_UNKNOWN_ENGINES,
-        )),
-        // A bare `Some([])` pin that selected nothing is the client's
-        // error; an empty configured set is the operator's.
-        Err(PipelineError::NoEngines) if req.engines.is_some() => Err((
-            ctx.err(
-                StatusCode::BAD_REQUEST,
-                "unknown_engines",
-                "engines pin matched no configured engine",
-            ),
-            copy::TEST_UNKNOWN_ENGINES,
-        )),
-        Err(PipelineError::NoEngines) => Err((
-            ctx.err(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "no_engines",
-                "no search engines configured",
-            ),
-            copy::TEST_NO_ENGINES,
-        )),
-        Err(PipelineError::AllEnginesFailed(failures)) => {
-            let class = engine_error_class(&failures);
-            Err((
-                ctx.err(
-                    StatusCode::BAD_GATEWAY,
-                    "upstream_failed",
-                    PipelineError::AllEnginesFailed(failures).to_string(),
-                ),
-                class,
-            ))
-        }
-        // Admission overflow with no stale row to serve (W1-07): 429 +
-        // `Retry-After`. W1-08 maps the same variant for MCP.
-        Err(PipelineError::RateLimited { retry_after_s }) => Err((
-            ctx.err(
-                StatusCode::TOO_MANY_REQUESTS,
-                "rate_limited",
-                format!("admission queue saturated; retry after {retry_after_s}s"),
-            )
-            .with_retry_after(retry_after_s),
-            copy::TEST_RATE_LIMITED,
-        )),
-        // Every matched engine was breaker-skipped (W1-06): temporary,
-        // so 503 regardless of pinning — the pin *did* match.
-        Err(e @ PipelineError::BreakerOpen(_)) => Err((
-            ctx.err(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "breaker_open",
-                e.to_string(),
-            ),
-            copy::TEST_BREAKER_OPEN,
-        )),
+        Err(error) => Err(search_error_classed(ctx, &req, error)),
     }
+}
+
+/// [`search_error`] plus the display class the engines page's inline test
+/// renders: the class mirrors the error arm, `upstream failed` or the
+/// single engine's [`EngineError`] class for an all-failed fan-out.
+pub(crate) fn search_error_classed(
+    ctx: &RequestCtx,
+    req: &SearchRequest,
+    error: PipelineError,
+) -> (ApiError, &'static str) {
+    use crate::strings::engines as copy;
+
+    let class = match &error {
+        PipelineError::UnknownEngines { .. } => copy::TEST_UNKNOWN_ENGINES,
+        PipelineError::NoEngines if req.engines.is_some() => copy::TEST_UNKNOWN_ENGINES,
+        PipelineError::NoEngines => copy::TEST_NO_ENGINES,
+        PipelineError::AllEnginesFailed(failures) => engine_error_class(failures),
+        PipelineError::RateLimited { .. } => copy::TEST_RATE_LIMITED,
+        PipelineError::BreakerOpen(_) => copy::TEST_BREAKER_OPEN,
+    };
+    (search_error(ctx, req, error), class)
 }
 
 /// The error class an engines-page test query renders for an all-failed
@@ -283,40 +406,116 @@ pub async fn metrics(State(state): State<AppState>) -> Response {
         .into_response()
 }
 
-/// `GET /api/cache?limit&offset`: cache admin listing (includes
-/// expired-but-not-yet-evicted rows).
+/// `GET /api/cache?limit&offset&q`: cache admin listing (includes
+/// expired-but-not-yet-evicted rows). `q` switches to the tier-2 lexical
+/// index (`Store::get_lexical`): FTS over stored queries, titles and
+/// snippets, ranked, capped at 255 rows, `offset` ignored.
 pub async fn cache_list(
     State(state): State<AppState>,
     Extension(ctx): Extension<RequestCtx>,
     uri: Uri,
 ) -> Result<Json<Vec<cauce_core::CachedSearch>>, ApiError> {
-    let params = QueryParams::parse(uri.query(), &ctx)?;
-    params.allow(&ctx, &["limit", "offset"])?;
-    let limit = params.u32(&ctx, "limit", 50)?.clamp(1, MAX_LIMIT);
-    let offset = params.u32(&ctx, "offset", 0)?;
-    state
-        .store()
-        .list_cache(limit, offset)
+    cache_list_data(&state, &ctx, &uri, false)
         .await
-        .map(Json)
-        .map_err(|e| ctx.store(&e))
+        .map(|listing| Json(listing.entries))
+}
+
+/// Shared cache listing logic for the JSON API and `/cache` page. The page
+/// requests one additional unfiltered row to determine whether a next page
+/// exists; parsing, filter semantics, limits, and store selection remain
+/// authoritative here for both surfaces.
+pub(crate) struct CacheListing {
+    pub(crate) entries: Vec<cauce_core::CachedSearch>,
+    pub(crate) limit: u32,
+    pub(crate) offset: u32,
+    pub(crate) query: Option<String>,
+}
+
+pub(crate) async fn cache_list_data(
+    state: &AppState,
+    ctx: &RequestCtx,
+    uri: &Uri,
+    include_next: bool,
+) -> Result<CacheListing, ApiError> {
+    let params = QueryParams::parse(uri.query(), ctx)?;
+    params.allow(ctx, &["limit", "offset", "q"])?;
+    let limit = params.u32(ctx, "limit", 50)?.clamp(1, MAX_LIMIT);
+    let offset = params.u32(ctx, "offset", 0)?;
+    let query = params
+        .get("q")
+        .filter(|value| !value.is_empty())
+        .map(str::to_string);
+    let entries = if let Some(q) = &query {
+        state
+            .store()
+            .get_lexical(q, limit.min(u8::MAX as u32) as u8)
+            .await
+            .map_err(|e| ctx.store(&e))?
+    } else {
+        state
+            .store()
+            .list_cache(limit.saturating_add(u32::from(include_next)), offset)
+            .await
+            .map_err(|e| ctx.store(&e))?
+    };
+    Ok(CacheListing {
+        entries,
+        limit,
+        offset,
+        query,
+    })
 }
 
 /// `GET /api/cache/{key}`: one entry by hex `CacheKey` (400 malformed,
-/// 404 absent).
+/// 404 absent). `Accept: text/html` renders the stored payload as a
+/// pretty-JSON fragment for the `/cache` row expander (W2-04); that arm
+/// exists only in `ui` builds, and under it error statuses answer a
+/// one-line fragment instead of the JSON envelope so the expander can
+/// swap the failure in place.
+#[cfg_attr(not(feature = "ui"), allow(unused_variables))]
 pub async fn cache_get(
     State(state): State<AppState>,
     Extension(ctx): Extension<RequestCtx>,
+    headers: HeaderMap,
     Path(key): Path<String>,
-) -> Result<Json<cauce_core::CachedSearch>, ApiError> {
-    let key = cache_key(&ctx, &key)?;
+) -> Result<Response, ApiError> {
+    match cache_get_entry(&state, &ctx, &headers, &key).await {
+        Ok(resp) => Ok(resp),
+        Err(e) => {
+            #[cfg(feature = "ui")]
+            if crate::cache_page::accepts_html(&headers) {
+                return Ok(crate::cache_page::payload_error(
+                    e.status(),
+                    crate::cache_page::is_htmx(&headers),
+                ));
+            }
+            Err(e)
+        }
+    }
+}
+
+#[cfg_attr(not(feature = "ui"), allow(unused_variables))]
+async fn cache_get_entry(
+    state: &AppState,
+    ctx: &RequestCtx,
+    headers: &HeaderMap,
+    key: &str,
+) -> Result<Response, ApiError> {
+    let key = cache_key(ctx, key)?;
     match state
         .store()
         .get_cache(&key)
         .await
         .map_err(|e| ctx.store(&e))?
     {
-        Some(entry) => Ok(Json(entry)),
+        Some(entry) => {
+            #[cfg(feature = "ui")]
+            if crate::cache_page::accepts_html(headers) {
+                return crate::cache_page::payload(&entry, ctx.request_id.as_uuid())
+                    .map(IntoResponse::into_response);
+            }
+            Ok(Json(entry).into_response())
+        }
         None => Err(ctx.not_found(format!("no cache entry for key {key}"))),
     }
 }
@@ -775,20 +974,39 @@ pub async fn audit_list(
     Extension(ctx): Extension<RequestCtx>,
     uri: Uri,
 ) -> Result<Json<Vec<AuditRow>>, ApiError> {
-    let params = QueryParams::parse(uri.query(), &ctx)?;
-    params.allow(&ctx, &["since", "actor", "action", "limit"])?;
+    audit_list_data(state.store().as_ref(), uri, &ctx)
+        .await
+        .map(|(_, rows)| Json(rows))
+}
+
+/// Shared audit query path for JSON and HTML responses.
+///
+/// Empty actor/action values are treated as unset for both surfaces. The
+/// limit default and cap also stay identical regardless of content type.
+pub(crate) async fn audit_list_data(
+    store: &dyn Store,
+    uri: Uri,
+    ctx: &RequestCtx,
+) -> Result<(AuditFilter, Vec<AuditRow>), ApiError> {
+    let params = QueryParams::parse(uri.query(), ctx)?;
+    params.allow(ctx, &["since", "actor", "action", "limit"])?;
     let filter = AuditFilter {
-        since: params.since(&ctx, "since")?,
-        actor: params.get("actor").map(str::to_string),
-        action: params.get("action").map(str::to_string),
-        limit: params.u32(&ctx, "limit", 50)?.clamp(1, MAX_LIMIT),
+        since: params.since(ctx, "since")?,
+        actor: params
+            .get("actor")
+            .filter(|value| !value.is_empty())
+            .map(str::to_string),
+        action: params
+            .get("action")
+            .filter(|value| !value.is_empty())
+            .map(str::to_string),
+        limit: params.u32(ctx, "limit", 50)?.clamp(1, MAX_LIMIT),
     };
-    state
-        .store()
+    let rows = store
         .list_audit(&filter)
         .await
-        .map(Json)
-        .map_err(|e| ctx.store(&e))
+        .map_err(|error| ctx.store(&error))?;
+    Ok((filter, rows))
 }
 
 /// `GET /health`: liveness plus store connectivity. The pipeline degrades
@@ -828,7 +1046,13 @@ pub async fn config_get(
         .map_err(|e| ctx.err(StatusCode::INTERNAL_SERVER_ERROR, "internal", e.to_string()))
 }
 
-/// `PUT /api/config`: replace the config file with the submitted TOML tree.
+/// `PUT /api/config`: replace the config file with the submitted tree.
+///
+/// Two body encodings are accepted: the canonical TOML document and, for
+/// the `/settings` page (W2-07), `application/x-www-form-urlencoded` fields
+/// named after dotted config paths that [`crate::settings`] merges onto the
+/// raw file tree. Both encodings share the rest of the pipeline below, so
+/// there is one write path.
 ///
 /// Validation runs in-memory against the current process environment *before*
 /// any write, so a crash or `kill -9` cannot leave `config.toml` in an
@@ -836,22 +1060,92 @@ pub async fn config_get(
 /// `state.config` is swapped; the running pipeline/engines still use the
 /// values they were started with, so the response carries
 /// `effective_after_restart: true`.
+///
+/// A form submit marked `HX-Request` gets an HTML fragment back (200 on both
+/// success and validation failure, so htmx swaps it inline); everything else
+/// gets the JSON body / envelope.
 pub async fn config_put(
     State(state): State<AppState>,
     Extension(ctx): Extension<RequestCtx>,
     headers: HeaderMap,
     body: Bytes,
-) -> Result<Json<Value>, ApiError> {
-    let text = std::str::from_utf8(&body)
-        .map_err(|_| ctx.bad_request("PUT /api/config expects a UTF-8 TOML body"))?;
-    let mut tree = toml::from_str::<toml::Value>(text).map_err(|e| {
-        ctx.err(
-            StatusCode::BAD_REQUEST,
-            "invalid_config",
-            format!("TOML: {e}"),
-        )
-    })?;
+) -> Result<Response, ApiError> {
+    let form = headers
+        .get(axum::http::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|v| v.starts_with("application/x-www-form-urlencoded"));
+    let result = config_put_inner(&state, &ctx, &headers, &body, form).await;
+    #[cfg(feature = "ui")]
+    if form && headers.get("hx-request").is_some() {
+        // On a failed save, re-run the fields one by one so the fragment can
+        // place an error line under each offending input.
+        let pairs: Vec<(String, String)> =
+            url::form_urlencoded::parse(std::str::from_utf8(&body).unwrap_or("").as_bytes())
+                .map(|(k, v)| (k.into_owned(), v.into_owned()))
+                .collect();
+        let submitted: Vec<String> = pairs.iter().map(|(k, _)| k.clone()).collect();
+        let (engine_ids, field_errors) = state.with_config(|cfg| {
+            let ids = cfg
+                .engines
+                .iter()
+                .map(|e| e.id.to_string())
+                .collect::<Vec<_>>();
+            let errs = if result.is_err() {
+                crate::settings::field_errors(cfg, &pairs)
+            } else {
+                Vec::new()
+            };
+            (ids, errs)
+        });
+        return Ok(crate::html::settings_status(
+            result,
+            field_errors,
+            submitted,
+            &engine_ids,
+        ));
+    }
+    result.map(Json::into_response)
+}
 
+async fn config_put_inner(
+    state: &AppState,
+    ctx: &RequestCtx,
+    headers: &HeaderMap,
+    body: &Bytes,
+    form: bool,
+) -> Result<Json<Value>, ApiError> {
+    let text = std::str::from_utf8(body)
+        .map_err(|_| ctx.bad_request("PUT /api/config expects a UTF-8 TOML or form body"))?;
+    // Snapshot the file layer before the merge so the audit row can name the
+    // keys that actually changed (`{"changed": ["search.deadline_ms"]}`).
+    let old_tree = state.with_config(|cfg| {
+        cfg.raw_tree()
+            .cloned()
+            .or_else(|| cfg.display_tree().ok())
+            .unwrap_or_else(|| toml::Value::Table(toml::Table::new()))
+    });
+    let mut tree = if form {
+        let pairs: Vec<(String, String)> = url::form_urlencoded::parse(text.as_bytes())
+            .map(|(k, v)| (k.into_owned(), v.into_owned()))
+            .collect();
+        state
+            .with_config(|cfg| crate::settings::merge_form_config(cfg, &pairs))
+            .map_err(|e| {
+                ctx.err(
+                    StatusCode::BAD_REQUEST,
+                    "invalid_config",
+                    format!("invalid config: {e}"),
+                )
+            })?
+    } else {
+        toml::from_str::<toml::Value>(text).map_err(|e| {
+            ctx.err(
+                StatusCode::BAD_REQUEST,
+                "invalid_config",
+                format!("TOML: {e}"),
+            )
+        })?
+    };
     // `<redacted>` leaves from a `GET /api/config` roundtrip get their real
     // values back from the current config; a literal `<redacted>` with no
     // current secret behind it is rejected rather than persisted.
@@ -867,6 +1161,10 @@ pub async fn config_put(
     if !restored.is_empty() {
         tracing::info!(paths = ?restored, "restored redacted config secrets on PUT");
     }
+
+    // Computed after `restore_redacted`: a `<redacted>` leaf the restore
+    // just filled back with the file's own secret is no change at all.
+    let changed = changed_config_paths(&old_tree, &tree);
 
     // In-memory validation: resolve `${...}` templates, apply `CAUCE_*` env
     // overrides, check schema and engine pinning. The original file is not
@@ -894,11 +1192,11 @@ pub async fn config_put(
 
     write_audit(
         state.store(),
-        &ctx,
-        &headers,
+        ctx,
+        headers,
         "config.put",
         loaded.config_path().display().to_string(),
-        json!({}),
+        json!({"changed": changed}),
     )
     .await?;
     let mut body = serde_json::to_value(&loaded)
@@ -1039,4 +1337,61 @@ impl QueryParams {
             "invalid {key} {v:?}: expected RFC 3339 or YYYY-MM-DD"
         )))
     }
+}
+
+/// Dotted paths whose values differ between two raw config trees, for the
+/// `config.put` audit detail. `[[engines]]` entries pair by `id` so a tier
+/// edit reports `engines.ddgs.tier`, not the whole array.
+fn changed_config_paths(old: &toml::Value, new: &toml::Value) -> Vec<String> {
+    fn walk(path: &str, a: &toml::Value, b: &toml::Value, out: &mut Vec<String>) {
+        if path == "engines"
+            && let (Some(ea), Some(eb)) = (a.as_array(), b.as_array())
+        {
+            let ids: std::collections::BTreeSet<String> = ea
+                .iter()
+                .chain(eb.iter())
+                .filter_map(|e| e.get("id").and_then(|v| v.as_str()).map(String::from))
+                .collect();
+            for id in ids {
+                fn find_engine<'v>(arr: &'v [toml::Value], id: &str) -> Option<&'v toml::Value> {
+                    arr.iter()
+                        .find(|e| e.get("id").and_then(|v| v.as_str()) == Some(id))
+                }
+                match (find_engine(ea, &id), find_engine(eb, &id)) {
+                    (Some(va), Some(vb)) => walk(&format!("engines.{id}"), va, vb, out),
+                    (entry_a, entry_b) => {
+                        if entry_a.is_some() != entry_b.is_some() {
+                            out.push(format!("engines.{id}"));
+                        }
+                    }
+                }
+            }
+            return;
+        }
+        match (a.as_table(), b.as_table()) {
+            (Some(ta), Some(tb)) => {
+                let keys: std::collections::BTreeSet<&String> =
+                    ta.keys().chain(tb.keys()).collect();
+                for k in keys {
+                    let p = if path.is_empty() {
+                        k.clone()
+                    } else {
+                        format!("{path}.{k}")
+                    };
+                    match (ta.get(k), tb.get(k)) {
+                        (Some(va), Some(vb)) => walk(&p, va, vb, out),
+                        _ => out.push(p),
+                    }
+                }
+            }
+            _ => {
+                if a != b {
+                    out.push(path.to_string());
+                }
+            }
+        }
+    }
+    let mut out = Vec::new();
+    walk("", old, new, &mut out);
+    out
 }

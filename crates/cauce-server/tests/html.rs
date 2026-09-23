@@ -8,15 +8,17 @@
 #![cfg(feature = "ui")]
 
 use std::sync::Arc;
+use std::time::Duration;
 
+use async_trait::async_trait;
 use axum::Router;
 use axum::body::{Body, to_bytes};
 use axum::http::{Method, Request, StatusCode};
 use cauce_core::SearchPipeline;
 use cauce_core::config::Config;
 use cauce_core::{
-    CacheKey, ClientKind, EngineId, HistoryFilter, SafeSearch, SearchRequest, SearchResponse,
-    StoreTuning,
+    CacheKey, ClientKind, Engine, EngineError, EngineId, HistoryFilter, SafeSearch, SearchRequest,
+    SearchResponse, SearchResult, StoreTuning, Tier,
 };
 use cauce_engines::{Replay, ReplayOpts};
 use cauce_server::{AppState, build_router};
@@ -40,6 +42,86 @@ fn test_state() -> (AppState, tempfile::TempDir) {
 fn app() -> (Router, AppState, tempfile::TempDir) {
     let (state, tmp) = test_state();
     (build_router(state.clone()), state, tmp)
+}
+
+struct StatusEngine {
+    id: EngineId,
+    failure: bool,
+    empty: bool,
+}
+
+#[async_trait]
+impl Engine for StatusEngine {
+    fn id(&self) -> EngineId {
+        self.id.clone()
+    }
+
+    fn tier(&self) -> Tier {
+        Tier::T1
+    }
+
+    fn page_size(&self) -> u8 {
+        10
+    }
+
+    async fn search(
+        &self,
+        _req: &SearchRequest,
+        _budget: Duration,
+    ) -> Result<Vec<SearchResult>, EngineError> {
+        if self.failure {
+            return Err(EngineError::Blocked);
+        }
+        if self.empty {
+            return Err(EngineError::NoResults);
+        }
+        Ok(vec![SearchResult {
+            url: "https://good.example/result".parse().unwrap(),
+            title: "Good result".to_string(),
+            snippet: "A replay result".to_string(),
+            engine: self.id.clone(),
+            published: None,
+            score: 1.0,
+        }])
+    }
+}
+
+fn status_app(empty_success: bool) -> (Router, tempfile::TempDir) {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let store = Arc::new(
+        SqliteStore::open(tmp.path().join("cauce.db"), StoreTuning::default()).expect("store"),
+    );
+    let good = EngineId::from("bing");
+    let failed = EngineId::from("brave");
+    let skipped = EngineId::from("ddgs");
+    let pipeline = Arc::new(SearchPipeline::new(
+        store.clone(),
+        vec![
+            Arc::new(StatusEngine {
+                id: good,
+                failure: false,
+                empty: empty_success,
+            }),
+            Arc::new(StatusEngine {
+                id: failed,
+                failure: true,
+                empty: false,
+            }),
+            Arc::new(StatusEngine {
+                id: skipped.clone(),
+                failure: false,
+                empty: false,
+            }),
+        ],
+    ));
+    pipeline.health().record_err(
+        &skipped,
+        Duration::from_millis(1),
+        &EngineError::Blocked,
+        uuid::Uuid::now_v7(),
+    );
+    let state = AppState::new(pipeline, store, Config::default());
+    (build_router(state), tmp)
 }
 
 fn req_html(method: Method, uri: &str) -> Request<Body> {
@@ -135,6 +217,115 @@ async fn search_page_renders_replay_results_and_live_badge() {
         body.contains("https://icons.duckduckgo.com/ip3/"),
         "favicon src should use the DuckDuckGo icon service"
     );
+}
+
+#[tokio::test]
+async fn streaming_search_page_returns_sse_shell_before_search_finishes() {
+    let (app, _state, _tmp) = app();
+    let (status, body) = get_html(&app, "/search?q=streaming-shell&stream=1").await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(body.contains(r#"hx-ext="sse""#), "SSE extension missing");
+    // `client=ui` stands in for the `X-Cauce-Client` header EventSource
+    // cannot send, so UI-originated streams log client=ui (the `&#38;`
+    // is askama's HTML escape of `&` in the attribute).
+    assert!(
+        body.contains(r#"sse-connect="/api/search/stream?q=streaming-shell&#38;client=ui""#),
+        "stream URL missing: {body}"
+    );
+    assert!(body.contains("new-results-above"));
+    assert!(body.contains("Waiting for engines..."));
+    assert!(
+        body.contains("<noscript>"),
+        "streamed page must degrade without JavaScript: {body}"
+    );
+    assert!(
+        !body.contains("streaming-shell:"),
+        "shell must not await engine results"
+    );
+}
+
+/// A rejected engine pin on the streaming page is a real 400 (matching
+/// `/api/search/stream` and `/api/search`), not a 200 shell that opens
+/// straight into an error frame.
+#[tokio::test]
+async fn streaming_search_page_unknown_engine_pin_is_400() {
+    let (app, _state, _tmp) = app();
+    let (status, body) = get_html(&app, "/search?q=bad-pin&stream=1&engines=nope").await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    assert!(body.contains("unknown_engines"), "{body}");
+    assert!(
+        !body.contains(r#"hx-ext="sse""#),
+        "a rejected pin must not render the streaming shell"
+    );
+}
+
+#[tokio::test]
+async fn page_and_sse_meta_name_success_failed_and_breaker_skipped_engines() {
+    let (page_app, _tmp) = status_app(false);
+    let (status, page) =
+        get_html(&page_app, "/search?q=engine-status&engines=bing,brave,ddgs").await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(
+        page.contains("bing"),
+        "successful engine name missing: {page}"
+    );
+    assert!(
+        page.contains("brave failed (blocked)"),
+        "failed engine missing: {page}"
+    );
+    assert!(
+        page.contains("ddgs skipped (breaker)"),
+        "breaker-skipped engine missing: {page}"
+    );
+
+    let (stream_app, _tmp) = status_app(false);
+    let request = Request::builder()
+        .method(Method::GET)
+        .uri("/api/search/stream?q=engine-status&engines=bing,brave,ddgs")
+        .body(Body::empty())
+        .unwrap();
+    let response = stream_app.oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let body = String::from_utf8(bytes.to_vec()).unwrap();
+    let meta_frame = body
+        .split("\n\n")
+        .find(|frame| frame.starts_with("event: meta"))
+        .expect("terminal metadata event");
+    let meta: Value = serde_json::from_str(
+        meta_frame
+            .lines()
+            .find_map(|line| line.strip_prefix("data: "))
+            .expect("metadata data"),
+    )
+    .unwrap();
+    assert_eq!(meta["engines_used"][0]["engine"], "bing");
+    assert_eq!(meta["engines_used"][0]["status"], "ok");
+    assert_eq!(meta["engines_used"][1]["engine"], "brave");
+    assert_eq!(meta["engines_used"][1]["status"]["failed"], "blocked");
+    assert_eq!(meta["engines_skipped"], json!(["ddgs"]));
+
+    let (empty_app, _tmp) = status_app(true);
+    let (status, empty_page) = get_html(
+        &empty_app,
+        "/search?q=empty-engine-status&engines=bing,brave,ddgs",
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(
+        empty_page.contains("No results · bing failed (no results) · brave failed (blocked) · ddgs skipped (breaker)"),
+        "empty state must identify failed and skipped engines: {empty_page}"
+    );
+}
+
+#[tokio::test]
+async fn non_streaming_page_is_server_rendered_as_no_javascript_fallback() {
+    let (app, _state, _tmp) = app();
+    let (status, body) = get_html(&app, "/search?q=server-fallback").await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(body.contains("server-fallback:"), "server results missing");
+    assert!(!body.contains(r#"hx-ext="sse""#));
+    assert!(!body.contains("/api/search/stream"));
 }
 
 #[tokio::test]
