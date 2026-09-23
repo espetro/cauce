@@ -79,10 +79,6 @@ const EXPECTED_WAVE2_UI_MOUNTED: &[(&str, &str)] = &[
     ("GET", "/trace/{id}"),
 ];
 
-/// Wave-2 API rows mounted so far: the SSE stream endpoint (W2-01). It is
-/// not a `ui`-gated page, so it mounts in every build including headless.
-const EXPECTED_WAVE2_MOUNTED: &[(&str, &str)] = &[("GET", "/api/search/stream")];
-
 /// Serialises tests that mutate process env (`CAUCE_CONFIG_DIR` and friends).
 /// Under nextest each test is its own process anyway; this keeps plain
 /// `cargo test` (one process per test binary) safe too.
