@@ -173,7 +173,12 @@ pub(crate) async fn history_inner(
     params.allow(ctx, &["since", "q", "cached", "limit"])?;
     let filter = HistoryFilter {
         since: params.since(ctx, "since")?,
-        q: params.get("q").map(str::to_string),
+        // Blank `q=` is no filter at all — JSON and the page must agree,
+        // and a blank substring would match every row anyway.
+        q: params
+            .get("q")
+            .filter(|v| !v.trim().is_empty())
+            .map(str::to_string),
         cached: params.flag(ctx, "cached")?,
         limit: params
             .u32(ctx, "limit", default_limit)?

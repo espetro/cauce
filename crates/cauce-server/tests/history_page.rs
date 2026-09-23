@@ -784,3 +784,31 @@ async fn history_page_caps_at_200_rows() {
         "the cap note renders when the feed is truncated: {body}"
     );
 }
+
+/// Blank `q=` is no filter: JSON and HTML agree, the page shows the
+/// fresh-store empty copy and offers no `clear`.
+#[tokio::test]
+async fn history_blank_q_is_no_filter() {
+    let (app, _state, _tmp) = app();
+
+    let (status, body) = get_html(&app, "/history?since=all&q=").await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(
+        body.contains("nothing searched yet"),
+        "blank q renders the unfiltered empty state: {body}"
+    );
+    assert!(
+        !body.contains(">clear<"),
+        "no clear link when no filter is active: {body}"
+    );
+
+    search(&app, "w2-blank-q").await;
+    let (status, feed) = get_json(&app, "/api/history?q=%20").await;
+    assert_eq!(status, StatusCode::OK);
+    let feed = feed.as_array().unwrap();
+    assert_eq!(
+        feed.iter().filter(|i| i["kind"] == "search").count(),
+        1,
+        "whitespace q must not filter rows: {feed:?}"
+    );
+}
