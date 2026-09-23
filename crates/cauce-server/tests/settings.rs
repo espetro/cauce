@@ -160,6 +160,14 @@ async fn settings_page_renders_sections_and_request_id() {
     ] {
         assert!(body.contains(needle), "settings page missing {needle:?}");
     }
+    // The delete buttons live inside the settings form: without
+    // `hx-params="none"` htmx appends every enabled field to the DELETE
+    // URL and `DELETE /api/cache` 400s on the unknown params.
+    assert_eq!(
+        body.matches("hx-params=\"none\"").count(),
+        2,
+        "both cache delete buttons must opt out of form params: {body}"
+    );
     assert!(
         !body.contains("hx-ext="),
         "the form PUTs urlencoded fields; json-enc is not loaded here: {body}"
@@ -738,6 +746,11 @@ async fn cache_fragment_returns_block_only() {
     assert!(body.contains("id=\"cache-block\""), "{body}");
     assert!(body.contains("entries"), "{body}");
     assert!(body.contains("unexpired"), "{body}");
+    assert_eq!(
+        body.matches("hx-params=\"none\"").count(),
+        2,
+        "the refreshed block keeps the delete buttons' hx-params opt-out: {body}"
+    );
     assert!(
         !body.contains("<legend>Search</legend>"),
         "fragment must not carry the full page: {body}"
