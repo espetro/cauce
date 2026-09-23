@@ -588,3 +588,28 @@ async fn load_restores_persisted_state() {
     assert_eq!(tracker.admission(&open_id, Uuid::now_v7()), Gate::Probe);
     assert!(tracker.reset(&EngineId::from("unknown")).is_none());
 }
+
+/// W3-01: `p90_ms` is the nearest-rank P90 over the pooled rolling
+/// latency histograms of the given engines; `0` on empty history (the
+/// hedge floor applies). Runtime-only, so `load` restores no samples.
+#[tokio::test]
+async fn p90_pools_rolling_latency_histograms() {
+    let store = Arc::new(StubStore::default());
+    let tracker = HealthTracker::new(store);
+    let a = EngineId::from("a");
+    let b = EngineId::from("b");
+    tracker.register(&a);
+    tracker.register(&b);
+    assert_eq!(tracker.p90_ms(&[a.clone(), b.clone()]), 0);
+
+    // Pooled across engines: ten samples at 100 ms from `a`, one at 900
+    // ms from `b` -> sorted [100 x10, 900], nearest-rank p90 index
+    // ceil(11*90/100)-1 = 9 -> 100; a b-only p90 is 900.
+    for _ in 0..10 {
+        tracker.record_ok(&a, Duration::from_millis(100), Uuid::now_v7());
+    }
+    tracker.record_ok(&b, Duration::from_millis(900), Uuid::now_v7());
+    assert_eq!(tracker.p90_ms(&[a.clone(), b.clone()]), 100);
+    assert_eq!(tracker.p90_ms(std::slice::from_ref(&b)), 900);
+    assert_eq!(tracker.p90_ms(&[EngineId::from("unknown")]), 0);
+}

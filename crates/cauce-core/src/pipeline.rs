@@ -1,6 +1,7 @@
-//! `SearchPipeline` v0 (W0-08, parent plan section 4.4 minus hedging
-//! and the tier-3 lookup, which land in W3) plus the W1-06 breaker
-//! gate, W1-07 admission control and the W1-10 tier-2 lexical lookup.
+//! `SearchPipeline` v0 (W0-08, parent plan section 4.4 minus the tier-3
+//! lookup, which lands in W3) plus the W1-06 breaker gate, W1-07
+//! admission control, the W1-10 tier-2 lexical lookup and the W3-01
+//! P90 hedge to tier 2.
 //!
 //! Request flow for [`SearchPipeline::search`] /
 //! [`SearchPipeline::search_opts`]:
@@ -30,9 +31,14 @@
 //!    rows serve as a normal hit, expired rows go out
 //!    `Source::Cache{stale:true}` and a background refresh is enqueued)
 //!    else fails with [`PipelineError::RateLimited`].
-//! 4. The flight fans out to every configured engine in parallel
-//!    ([`tokio::task::JoinSet`]), each call wrapped in
-//!    `tokio::time::timeout(deadline)`. Engines cut off at the deadline
+//! 4. The flight fans out to every configured tier-1 (and specialised
+//!    tier-3) engine in parallel ([`tokio::task::JoinSet`]), each call
+//!    wrapped in `tokio::time::timeout(deadline)`; tier-2 is the W3-01
+//!    hedge set: at `clamp(P90(tier-1 latency history), hedge floor,
+//!    hedge ceiling)` it joins the fan-out on the remaining budget while
+//!    fewer than `search.min_results` merged results have arrived
+//!    (`meta.hedged`, `meta.hedge_at_ms`, `cauce_hedge_total{reason}`).
+//!    Engines cut off at the deadline
 //!    report `EngineStatus::Failed(EngineError::Timeout)` and set
 //!    `meta.deadline_hit`. `req.engines = Some(ids)` pins the fan-out to
 //!    the configured engines whose ids are in the set; any id outside the
@@ -112,6 +118,32 @@ pub const DEFAULT_TTL_CAP: Duration = Duration::from_secs(86_400);
 
 /// RRF constant (parent plan 4.4 step 5).
 const RRF_K: f32 = 60.0;
+
+/// W3-01 hedge knobs (`search.hedge_floor_ms`,
+/// `search.hedge_ceiling_ms`, `search.min_results`); see
+/// [`SearchPipeline::with_hedge`].
+#[derive(Debug, Clone)]
+pub struct HedgePolicy {
+    /// Earliest hedge point — tier-1 gets at least this long to answer.
+    pub floor: Duration,
+    /// Latest hedge point — a slow tier-1 history never delays the hedge
+    /// past this.
+    pub ceiling: Duration,
+    /// Merged results wanted before the hedge is called off.
+    pub min_results: usize,
+}
+
+impl Default for HedgePolicy {
+    /// The wave-3 settled defaults: floor 300 ms, ceiling 1500 ms,
+    /// `min_results` 5.
+    fn default() -> Self {
+        Self {
+            floor: Duration::from_millis(300),
+            ceiling: Duration::from_millis(1_500),
+            min_results: 5,
+        }
+    }
+}
 
 /// Per-call options for [`SearchPipeline::search_opts`].
 ///
@@ -291,6 +323,10 @@ struct FanOut {
     deadline_hit: bool,
     had_answer: bool,
     ttfr_recorded: bool,
+    /// W3-01: the hedge fired tier-2 engines this flight.
+    hedged: bool,
+    /// Elapsed ms at which it fired (`meta.hedge_at_ms`).
+    hedge_at_ms: Option<u32>,
     started_at: Instant,
 }
 
@@ -303,9 +339,27 @@ impl FanOut {
             deadline_hit: false,
             had_answer: false,
             ttfr_recorded: false,
+            hedged: false,
+            hedge_at_ms: None,
             started_at,
         }
     }
+}
+
+/// One gated engine plus its index in the request's runnable list, so
+/// merge tie-breaks and `engines_used` keep configured order even though
+/// the hedge wave spawns late (W3-01).
+type Gated = (usize, Arc<dyn Engine>);
+
+/// The fan-out's two waves (W3-01): `gated` runs at t=0 (tier-1 plus
+/// specialised tier-3), `deferred` is the tier-2 hedge set the scheduler
+/// fires at the hedge point — gated then, so a claimed `HalfOpen` probe
+/// always precedes a real call. `skipped` accumulates the ids both gates
+/// suppress (`meta.engines_skipped`).
+struct Waves {
+    gated: Vec<Gated>,
+    deferred: Vec<Gated>,
+    skipped: Vec<EngineId>,
 }
 
 /// Borrowed context shared by the fetch completion stages.
@@ -348,6 +402,8 @@ pub struct SearchPipeline {
     ttl_cap: Duration,
     lexical: LexicalConfig,
     admission: Admission,
+    /// W3-01 hedge knobs (floor/ceiling on the P90 trigger, `min_results`).
+    hedge: HedgePolicy,
     /// W1-09 metrics handle. A unit struct: every `record_*` writes into
     /// the process-global registry, so pipelines share one set of series.
     metrics: Metrics,
@@ -374,6 +430,7 @@ impl SearchPipeline {
             ttl_cap: DEFAULT_TTL_CAP,
             lexical: LexicalConfig::default(),
             admission: Admission::default(),
+            hedge: HedgePolicy::default(),
             metrics: Metrics,
         }
     }
@@ -408,6 +465,15 @@ impl SearchPipeline {
     /// (1500 ms wait, 3 concurrent calls per engine).
     pub fn with_admission(mut self, admission: Admission) -> Self {
         self.admission = admission;
+        self
+    }
+
+    /// Override the hedge policy (`search.hedge_floor_ms`,
+    /// `search.hedge_ceiling_ms`, `search.min_results`, W3-01).
+    /// Default: [`HedgePolicy::default`] (300 ms floor, 1500 ms ceiling,
+    /// 5 results).
+    pub fn with_hedge(mut self, hedge: HedgePolicy) -> Self {
+        self.hedge = hedge;
         self
     }
 
@@ -1306,23 +1372,9 @@ impl SearchPipeline {
         request_id: Uuid,
         started: Instant,
     ) -> Result<SearchResponse, PipelineError> {
-        let (runnable, skipped) = self.breaker_gate(runnable, request_id);
-        if runnable.is_empty() {
-            // Nothing ran; `shared_response` still writes this request's
-            // search_log row on the error path.
-            return Err(PipelineError::BreakerOpen(skipped));
-        }
-
+        let (mut waves, hedge_at) = self.gate_waves(runnable, request_id)?;
         let mut fan = FanOut::new(runnable.len(), started);
-        let mut ok_results: Vec<(usize, Vec<SearchResult>)> = Vec::new();
-        for outcome in self.fan_out(req, &runnable, request_id).await {
-            let idx = outcome.idx;
-            if let Some(results) = self.fold_outcome(&mut fan, outcome, started) {
-                ok_results.push((idx, results));
-            }
-        }
-        let merged = self.merge_outcomes(&runnable, &mut fan, ok_results, request_id);
-
+        let mut merge = RrfMerge::new();
         let ctx = FetchCtx {
             req,
             key,
@@ -1330,7 +1382,10 @@ impl SearchPipeline {
             request_id,
             started,
         };
-        self.finish_fetch(skipped, fan, merged, ctx).await
+        self.drive_fan_out(&ctx, &mut waves, hedge_at, &mut fan, &mut merge, |_, _| {})
+            .await;
+        let merged = self.merge_outcomes(&waves.gated, &mut fan, merge, request_id);
+        self.finish_fetch(waves.skipped, fan, merged, ctx).await
     }
 
     /// The streaming fan-out (W2-01): identical stages to
@@ -1345,45 +1400,33 @@ impl SearchPipeline {
         stream: &StreamCtx<'_>,
         runnable: &[Arc<dyn Engine>],
     ) -> Result<SearchResponse, PipelineError> {
-        let (runnable, skipped) = self.breaker_gate(runnable, stream.request_id);
-        if runnable.is_empty() {
-            return Err(PipelineError::BreakerOpen(skipped));
-        }
-
+        let (mut waves, hedge_at) = self.gate_waves(runnable, stream.request_id)?;
         let mut fan = FanOut::new(runnable.len(), stream.started);
         let mut merge = RrfMerge::new();
-        self.fan_out_stream(stream, &runnable, &mut fan, &mut merge)
-            .await;
-        self.reconcile_unanswered(&runnable, &mut fan, stream.request_id);
-        let merge_span = info_span!(
-            "merge",
-            request_id = %stream.request_id,
-            r#in = tracing::field::Empty,
-            out = tracing::field::Empty,
-            deadline_hit = fan.deadline_hit,
-        );
-        let merged = {
-            let _entered = merge_span.enter();
-            let raw = merge.raw_count;
-            let merged = merge.finish();
-            merge_span.record("in", raw as u64);
-            merge_span.record("out", merged.len() as u64);
-            debug!(
-                raw,
-                merged = merged.len(),
-                deadline_hit = fan.deadline_hit,
-                "merged results"
-            );
-            merged
-        };
-        let fetch = FetchCtx {
+        let ctx = FetchCtx {
             req: stream.req,
             key: stream.key,
             ttl: stream.ttl,
             request_id: stream.request_id,
             started: stream.started,
         };
-        let resp = self.finish_fetch(skipped, fan, merged, fetch).await?;
+        self.drive_fan_out(
+            &ctx,
+            &mut waves,
+            hedge_at,
+            &mut fan,
+            &mut merge,
+            |engine, results| {
+                let _ = stream.tx.send(StreamEvent::Results {
+                    engine,
+                    results,
+                    elapsed_ms: millis(stream.started.elapsed()),
+                });
+            },
+        )
+        .await;
+        let merged = self.merge_outcomes(&waves.gated, &mut fan, merge, stream.request_id);
+        let resp = self.finish_fetch(waves.skipped, fan, merged, ctx).await?;
         let _ = stream.tx.send(StreamEvent::Meta(StreamMeta {
             meta: resp.meta.clone(),
             order: resp.results.iter().map(|r| normalize_url(&r.url)).collect(),
@@ -1394,20 +1437,18 @@ impl SearchPipeline {
     /// The breaker gate (W1-06), extracted so `fetch` and `fetch_stream`
     /// share it verbatim: `Open` engines are skipped, `HalfOpen` admits
     /// exactly one probe. Gated here — after the permit wait, immediately
-    /// before fan-out — so a claimed probe is always followed by its call:
-    /// the tier-2 hit and overflow paths return before this point and
-    /// never consume the single probe slot. Returns the admitted engines
-    /// (fan-out order) and the ids the open breakers suppressed.
-    fn breaker_gate(
-        &self,
-        runnable: &[Arc<dyn Engine>],
-        request_id: Uuid,
-    ) -> (Vec<Arc<dyn Engine>>, Vec<EngineId>) {
-        let mut gated: Vec<Arc<dyn Engine>> = Vec::with_capacity(runnable.len());
+    /// before a wave spawns — so a claimed probe is always followed by
+    /// its call: the tier-2 hit and overflow paths return before this
+    /// point and never consume the single probe slot, and the W3-01
+    /// deferred wave only gates at fire time. Returns the admitted
+    /// engines (with their runnable indices) and the ids the open
+    /// breakers suppressed.
+    fn breaker_gate(&self, runnable: &[Gated], request_id: Uuid) -> (Vec<Gated>, Vec<EngineId>) {
+        let mut gated: Vec<Gated> = Vec::with_capacity(runnable.len());
         let mut skipped: Vec<EngineId> = Vec::new();
-        for engine in runnable {
+        for (idx, engine) in runnable {
             match self.health.admission(&engine.id(), request_id) {
-                Gate::Call | Gate::Probe => gated.push(engine.clone()),
+                Gate::Call | Gate::Probe => gated.push((*idx, engine.clone())),
                 Gate::Skip => skipped.push(engine.id()),
             }
             // `cauce_engine_breaker_state` mirrors the tracker's live row:
@@ -1426,6 +1467,67 @@ impl SearchPipeline {
             );
         }
         (gated, skipped)
+    }
+
+    /// Split `runnable` into the fan-out's two waves and breaker-gate the
+    /// t=0 one (W3-01): tier-1 and specialised tier-3 engines run
+    /// immediately; tier-2 is the hedge set, gated only at fire time so a
+    /// claimed `HalfOpen` probe always precedes a real call. When the
+    /// t=0 gate leaves nothing runnable — every tier-1/3 skipped, or the
+    /// pin/config has none — the deferred set runs immediately instead:
+    /// deferring it would add dead time to every such request. Returns
+    /// the waves and the hedge point (`None` when there is no tier-2 to
+    /// fire or none left waiting on a primary call).
+    fn gate_waves(
+        &self,
+        runnable: &[Arc<dyn Engine>],
+        request_id: Uuid,
+    ) -> Result<(Waves, Option<Duration>), PipelineError> {
+        let (primary, mut deferred): (Vec<Gated>, Vec<Gated>) = runnable
+            .iter()
+            .cloned()
+            .enumerate()
+            .partition(|(_, e)| e.tier() != Tier::T2);
+        let (mut gated, mut skipped) = self.breaker_gate(&primary, request_id);
+        if gated.is_empty() {
+            let (now, now_skipped) = self.breaker_gate(&deferred, request_id);
+            gated = now;
+            skipped.extend(now_skipped);
+            deferred.clear();
+        }
+        if gated.is_empty() {
+            // Nothing ran; `shared_response` still writes this request's
+            // search_log row on the error path.
+            return Err(PipelineError::BreakerOpen(skipped));
+        }
+        let hedge_at = self.hedge_point(&primary, &deferred);
+        Ok((
+            Waves {
+                gated,
+                deferred,
+                skipped,
+            },
+            hedge_at,
+        ))
+    }
+
+    /// `t = clamp(P90(tier-1 history), floor, ceiling)` for this flight
+    /// (W3-01), `None` when the hedge has nothing to fire. An empty
+    /// history yields `P90 = 0`, which the floor turns into the earliest
+    /// hedge point.
+    fn hedge_point(&self, primary: &[Gated], deferred: &[Gated]) -> Option<Duration> {
+        if deferred.is_empty() {
+            return None;
+        }
+        let t1: Vec<EngineId> = primary
+            .iter()
+            .filter(|(_, e)| e.tier() == Tier::T1)
+            .map(|(_, e)| e.id())
+            .collect();
+        Some(
+            Duration::from_millis(self.health.p90_ms(&t1))
+                .clamp(self.hedge.floor, self.hedge.ceiling),
+        )
     }
 
     /// Fold one [`EngineOutcome`] into the [`FanOut`] bookkeeping: metrics,
@@ -1532,22 +1634,17 @@ impl SearchPipeline {
         }
     }
 
-    /// Final merge for the non-streaming fan-out: fill the slots whose
-    /// tasks never answered (a `JoinError` — panic/cancel — never names
-    /// its engine), then dedupe-by-URL + RRF in fan-out order.
+    /// Final merge for the fan-out: fill the slots whose tasks never
+    /// answered (a `JoinError` — panic/cancel — never names its engine),
+    /// then the incremental [`RrfMerge`] finishes dedupe-by-URL + RRF.
     fn merge_outcomes(
         &self,
-        runnable: &[Arc<dyn Engine>],
+        gated: &[Gated],
         fan: &mut FanOut,
-        mut ok_results: Vec<(usize, Vec<SearchResult>)>,
+        merge: RrfMerge,
         request_id: Uuid,
     ) -> Vec<SearchResult> {
-        self.reconcile_unanswered(runnable, fan, request_id);
-        ok_results.sort_by_key(|(idx, _)| *idx);
-        let mut merge = RrfMerge::new();
-        for (idx, results) in &ok_results {
-            merge.add(*idx, results);
-        }
+        self.reconcile_unanswered(gated, fan, request_id);
         let raw = merge.raw_count;
         let span = info_span!(
             "merge",
@@ -1571,13 +1668,9 @@ impl SearchPipeline {
 
     /// Mark panicked/cancelled engine tasks as transport failures. A JoinError
     /// does not carry its engine id, so unanswered slots identify them.
-    fn reconcile_unanswered(
-        &self,
-        runnable: &[Arc<dyn Engine>],
-        fan: &mut FanOut,
-        request_id: Uuid,
-    ) {
-        for (idx, engine) in runnable.iter().enumerate() {
+    fn reconcile_unanswered(&self, gated: &[Gated], fan: &mut FanOut, request_id: Uuid) {
+        for (idx, engine) in gated {
+            let idx = *idx;
             if fan.answered[idx] {
                 continue;
             }
@@ -1604,8 +1697,8 @@ impl SearchPipeline {
     /// ordering, deadline metric, health flush, the all-failed error,
     /// response assembly (with breaker-skipped ids in `engines_skipped`,
     /// W2-01), and the cache persist. `merged` is the final RRF list —
-    /// computed incrementally on the stream path, batch-sorted here on the
-    /// collect path.
+    /// accumulated incrementally on both paths so the W3-01 hedge can
+    /// read the merged count mid-flight.
     async fn finish_fetch(
         &self,
         skipped: Vec<EngineId>,
@@ -1650,6 +1743,8 @@ impl SearchPipeline {
                 engines_used,
                 engines_skipped: skipped,
                 deadline_hit: fan.deadline_hit,
+                hedged: fan.hedged,
+                hedge_at_ms: fan.hedge_at_ms,
                 elapsed_ms: millis(ctx.started.elapsed()),
                 request_id: ctx.request_id,
             },
@@ -1814,19 +1909,150 @@ impl SearchPipeline {
         })
     }
 
-    /// Spawn one bounded-deadline task per engine. Both result collectors
-    /// share this path so streaming cannot diverge in health or error rules.
+    /// The hedged fan-out loop shared by `fetch` and `fetch_stream`
+    /// (W3-01): joins engine tasks as they answer, folds each outcome
+    /// (metrics, health, report, incremental merge), and at the hedge
+    /// point — or earlier, once every primary call answered short —
+    /// fires the healthy tier-2 set on the remaining budget while fewer
+    /// than `hedge.min_results` merged results have arrived. `on_results`
+    /// receives each answering engine's non-empty page (the stream path
+    /// emits it as a `results` event; the collect path discards it).
+    async fn drive_fan_out(
+        &self,
+        ctx: &FetchCtx<'_>,
+        waves: &mut Waves,
+        hedge_at: Option<Duration>,
+        fan: &mut FanOut,
+        merge: &mut RrfMerge,
+        mut on_results: impl FnMut(EngineId, Vec<SearchResult>),
+    ) {
+        let mut set = self.spawn_engine_calls(ctx.req, &waves.gated, ctx.request_id, self.deadline);
+        let mut hedge_pending = hedge_at.is_some();
+        let hedge_deadline = hedge_at.map(|at| tokio::time::Instant::from_std(ctx.started + at));
+        loop {
+            if set.is_empty() && !hedge_pending {
+                break;
+            }
+            tokio::select! {
+                joined = set.join_next(), if !set.is_empty() => {
+                    match joined {
+                        Some(Ok(outcome)) => {
+                            let idx = outcome.idx;
+                            let engine = outcome.id.clone();
+                            if let Some(results) = self.fold_outcome(fan, outcome, ctx.started)
+                                && !results.is_empty()
+                            {
+                                merge.add(idx, &results);
+                                on_results(engine, results);
+                            }
+                            // Early resolve: every primary call answered.
+                            // A short merged page fires the hedge now
+                            // rather than at the hedge point; a full one
+                            // cancels it.
+                            if hedge_pending
+                                && waves
+                                    .gated
+                                    .iter()
+                                    .all(|(idx, _)| fan.answered[*idx])
+                            {
+                                if merge.map.len() < self.hedge.min_results {
+                                    self.fire_hedge(&mut set, waves, fan, ctx);
+                                }
+                                hedge_pending = false;
+                            }
+                        }
+                        Some(Err(join_err)) => {
+                            warn!(error = %join_err, "engine task failed to join")
+                        }
+                        None => {}
+                    }
+                }
+                _ = async {
+                    match hedge_deadline {
+                        Some(t) => tokio::time::sleep_until(t).await,
+                        None => std::future::pending().await,
+                    }
+                }, if hedge_pending => {
+                    if merge.map.len() < self.hedge.min_results {
+                        self.fire_hedge(&mut set, waves, fan, ctx);
+                    }
+                    hedge_pending = false;
+                }
+            }
+        }
+    }
+
+    /// Fire the hedge (W3-01): gate the deferred tier-2 set — suppressions
+    /// land on `engines_skipped` like the t=0 gate's — spawn the healthy
+    /// ones on the deadline budget remaining at fire time, and mark
+    /// `meta.hedged`/`meta.hedge_at_ms` + `cauce_hedge_total{reason}`.
+    /// `reason` is `few` once every primary call answered, `slow` while
+    /// one is still in flight.
+    fn fire_hedge(
+        &self,
+        set: &mut tokio::task::JoinSet<EngineOutcome>,
+        waves: &mut Waves,
+        fan: &mut FanOut,
+        ctx: &FetchCtx<'_>,
+    ) {
+        let reason = if waves.gated.iter().all(|(idx, _)| fan.answered[*idx]) {
+            "few"
+        } else {
+            "slow"
+        };
+        let elapsed = ctx.started.elapsed();
+        let remaining = self.deadline.saturating_sub(elapsed);
+        let (now, now_skipped) = self.breaker_gate(&waves.deferred, ctx.request_id);
+        waves.skipped.extend(now_skipped);
+        waves.deferred.clear();
+        if now.is_empty() {
+            debug!("hedge point reached but every tier-2 engine is breaker-skipped");
+            return;
+        }
+        self.metrics.record_hedge(reason);
+        fan.hedged = true;
+        fan.hedge_at_ms = Some(millis(elapsed));
+        info!(
+            hedge_at_ms = millis(elapsed),
+            reason,
+            engines = now.len(),
+            "hedged to tier-2"
+        );
+        self.spawn_into(set, ctx.req, &now, ctx.request_id, remaining);
+        waves.gated.extend(now);
+    }
+
+    /// Spawn one bounded-deadline task per gated engine. Both waves share
+    /// this path so streaming cannot diverge in health or error rules:
+    /// the t=0 wave gets the full deadline, the W3-01 hedge wave the
+    /// budget remaining at fire time.
     fn spawn_engine_calls(
         &self,
         req: &SearchRequest,
-        runnable: &[Arc<dyn Engine>],
+        gated: &[Gated],
         request_id: Uuid,
+        budget: Duration,
     ) -> tokio::task::JoinSet<EngineOutcome> {
         let mut set = tokio::task::JoinSet::new();
-        for (idx, engine) in runnable.iter().enumerate() {
+        self.spawn_into(&mut set, req, gated, request_id, budget);
+        set
+    }
+
+    /// [`spawn_engine_calls`] for a `JoinSet` that already exists — the
+    /// hedge wave joining the flight's set late (W3-01).
+    fn spawn_into(
+        &self,
+        set: &mut tokio::task::JoinSet<EngineOutcome>,
+        req: &SearchRequest,
+        gated: &[Gated],
+        request_id: Uuid,
+        budget: Duration,
+    ) {
+        for (idx, engine) in gated {
+            let idx = *idx;
             let engine = engine.clone();
             let id = engine.id();
-            let deadline = self.deadline;
+            let deadline = budget;
             let span = info_span!(
                 "engine",
                 request_id = %request_id,
@@ -1886,60 +2112,6 @@ impl SearchPipeline {
                 .instrument(span),
             );
         }
-        set
-    }
-
-    /// Collect outcomes after the fan-out barrier (non-streaming search).
-    async fn fan_out(
-        &self,
-        req: &SearchRequest,
-        runnable: &[Arc<dyn Engine>],
-        request_id: Uuid,
-    ) -> Vec<EngineOutcome> {
-        let mut set = self.spawn_engine_calls(req, runnable, request_id);
-        let mut outcomes = Vec::with_capacity(runnable.len());
-        while let Some(joined) = set.join_next().await {
-            match joined {
-                Ok(outcome) => outcomes.push(outcome),
-                Err(join_err) => warn!(error = %join_err, "engine task failed to join"),
-            }
-        }
-        outcomes
-    }
-
-    /// Fold and emit each engine as soon as its task completes. The shared
-    /// `RrfMerge` keeps contribution and stable tie-break state by engine
-    /// index, so arrival order never changes the terminal ranking.
-    async fn fan_out_stream(
-        &self,
-        stream: &StreamCtx<'_>,
-        runnable: &[Arc<dyn Engine>],
-        fan: &mut FanOut,
-        merge: &mut RrfMerge,
-    ) {
-        let mut set = self.spawn_engine_calls(stream.req, runnable, stream.request_id);
-        while let Some(joined) = set.join_next().await {
-            let outcome = match joined {
-                Ok(outcome) => outcome,
-                Err(join_err) => {
-                    warn!(error = %join_err, "engine task failed to join");
-                    continue;
-                }
-            };
-            let idx = outcome.idx;
-            let engine = outcome.id.clone();
-            if let Some(results) = self.fold_outcome(fan, outcome, stream.started) {
-                if results.is_empty() {
-                    continue;
-                }
-                merge.add(idx, &results);
-                let _ = stream.tx.send(StreamEvent::Results {
-                    engine,
-                    results,
-                    elapsed_ms: millis(stream.started.elapsed()),
-                });
-            }
-        }
     }
 
     /// Rebuild a stored row as a cache response: provenance
@@ -1980,6 +2152,10 @@ impl SearchPipeline {
             engines_used: resp.meta.engines_used,
             engines_skipped: Vec::new(),
             deadline_hit: false,
+            // Per-request fields like `engines_skipped`: a cached row
+            // answers without a fan-out, so it was never hedged.
+            hedged: false,
+            hedge_at_ms: None,
             elapsed_ms: millis(started.elapsed()),
             request_id,
         };

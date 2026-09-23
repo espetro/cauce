@@ -185,8 +185,9 @@ pub mod settings {
     pub const SECTION_SEARCH: &str = "Search";
     pub const DEADLINE: &str = "Deadline (ms)";
     pub const TTL: &str = "Cache TTL (s)";
-    pub const HEDGE: &str = "Hedge threshold (ms)";
-    pub const HEDGE_WAVE: &str = "lands in wave 3";
+    pub const MIN_RESULTS: &str = "Min results before hedge";
+    pub const HEDGE_FLOOR: &str = "Hedge floor (ms)";
+    pub const HEDGE_CEILING: &str = "Hedge ceiling (ms)";
 
     pub const SECTION_ENGINES: &str = "Engines";
     pub const ENGINES_PINNED: &str = "enabled flags are pinned by CAUCE_ENGINES";

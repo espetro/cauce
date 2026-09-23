@@ -48,6 +48,16 @@ const ENV_OVERRIDES: &[(&str, &[&str], bool)] = &[
     ("CAUCE_SERVER_PUBLIC_URL", &["server", "public_url"], false),
     ("CAUCE_SEARCH_DEADLINE_MS", &["search", "deadline_ms"], true),
     ("CAUCE_SEARCH_MIN_RESULTS", &["search", "min_results"], true),
+    (
+        "CAUCE_SEARCH_HEDGE_FLOOR_MS",
+        &["search", "hedge_floor_ms"],
+        true,
+    ),
+    (
+        "CAUCE_SEARCH_HEDGE_CEILING_MS",
+        &["search", "hedge_ceiling_ms"],
+        true,
+    ),
     ("CAUCE_SEARCH_TTL_S", &["search", "ttl_s"], true),
     ("CAUCE_SEARCH_TTL_CAP_S", &["search", "ttl_cap_s"], true),
     (
@@ -364,6 +374,14 @@ pub struct SearchConfig {
     /// Results wanted before the hedge point is considered satisfied.
     #[serde(default = "default_min_results")]
     pub min_results: u32,
+    /// Earliest tier-2 hedge point in ms (W3-01): tier-1 gets at least
+    /// this long to answer before the hedge can fire.
+    #[serde(default = "default_hedge_floor_ms")]
+    pub hedge_floor_ms: u64,
+    /// Latest tier-2 hedge point in ms (W3-01): a slow tier-1 history
+    /// never delays the hedge past this.
+    #[serde(default = "default_hedge_ceiling_ms")]
+    pub hedge_ceiling_ms: u64,
     /// Default cache TTL in seconds.
     #[serde(default = "default_ttl_s")]
     pub ttl_s: u64,
@@ -377,6 +395,8 @@ impl Default for SearchConfig {
         Self {
             deadline_ms: default_deadline_ms(),
             min_results: default_min_results(),
+            hedge_floor_ms: default_hedge_floor_ms(),
+            hedge_ceiling_ms: default_hedge_ceiling_ms(),
             ttl_s: default_ttl_s(),
             ttl_cap_s: default_ttl_cap_s(),
         }
@@ -389,6 +409,14 @@ fn default_deadline_ms() -> u64 {
 
 fn default_min_results() -> u32 {
     5
+}
+
+fn default_hedge_floor_ms() -> u64 {
+    300
+}
+
+fn default_hedge_ceiling_ms() -> u64 {
+    1500
 }
 
 fn default_ttl_s() -> u64 {
