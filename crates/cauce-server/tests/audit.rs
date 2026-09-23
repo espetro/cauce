@@ -330,8 +330,13 @@ async fn trace_page_lists_replay_span() {
     // racy. A global default makes every thread's lazy registration
     // evaluate against this dispatch instead; `set_default` still scopes
     // the request itself. Only this test builds a dispatch, so the
-    // once-per-process global cannot conflict.
-    let _ = tracing::dispatcher::set_global_default(dispatch.clone());
+    // once-per-process global cannot conflict; the `.expect` pins that
+    // single-dispatcher invariant. `rebuild_interest_cache` then drops
+    // any `Interest::never` a callsite cached before the global landed,
+    // closing the residual registration window.
+    tracing::dispatcher::set_global_default(dispatch.clone())
+        .expect("only this test installs a global dispatcher");
+    tracing::callsite::rebuild_interest_cache();
     let request_id = {
         let _default = tracing::dispatcher::set_default(&dispatch);
         let request = Request::builder()
