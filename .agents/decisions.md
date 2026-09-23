@@ -144,3 +144,8 @@ rather than editing it away.
   or COPY bundles. Templates reference `crate::strings::<page>::NAME`. Set because four
   parallel wave 2 branches each created the file with a different shape; W2-04 lands
   first and defines it, the others rebase. — 2026-09-23
+- **The usage week (W2-10) runs alongside W3 and gates W4, not W3-01.** W3-01's Do and
+  Acceptance are replay-verified scheduler changes tuned against owner latency numbers that
+  are already settled inputs; W2-10 only adds W3 steps from findings. Holding W3 for seven
+  calendar days after the last W2 page merged bought nothing. W3-01 now depends on
+  W2-01..W2-09; W4-01 gains W2-10. (#42) — 2026-09-23
