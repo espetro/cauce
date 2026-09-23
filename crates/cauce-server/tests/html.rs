@@ -237,6 +237,21 @@ async fn streaming_search_page_returns_sse_shell_before_search_finishes() {
     );
 }
 
+/// A rejected engine pin on the streaming page is a real 400 (matching
+/// `/api/search/stream` and `/api/search`), not a 200 shell that opens
+/// straight into an error frame.
+#[tokio::test]
+async fn streaming_search_page_unknown_engine_pin_is_400() {
+    let (app, _state, _tmp) = app();
+    let (status, body) = get_html(&app, "/search?q=bad-pin&stream=1&engines=nope").await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    assert!(body.contains("unknown_engines"), "{body}");
+    assert!(
+        !body.contains(r#"hx-ext="sse""#),
+        "a rejected pin must not render the streaming shell"
+    );
+}
+
 #[tokio::test]
 async fn page_and_sse_meta_name_success_failed_and_breaker_skipped_engines() {
     let (page_app, _tmp) = status_app(false);

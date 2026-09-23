@@ -115,19 +115,29 @@ pub(crate) fn parse_search_request(
 
 /// `GET /api/search/stream?q=...`: `results` per engine completion,
 /// followed by one terminal `meta` or `error` frame.
+///
+/// Two pre-stream rejections answer with their real status instead of an
+/// SSE body: request-parameter errors (`parse_search_request`, 400
+/// `bad_request`) and a rejected engine pin (400 `unknown_engines`,
+/// mapped through [`search_error`] like `/api/search`). Failures past
+/// that point are terminal `error` events on the open stream.
 pub async fn search_stream(
     State(state): State<AppState>,
     Extension(ctx): Extension<RequestCtx>,
     uri: Uri,
 ) -> Result<Response, ApiError> {
     let req = parse_search_request(&ctx, &uri, &[])?;
-    let receiver = state.pipeline().search_stream(
-        &req,
-        SearchOpts {
-            request_id: Some(ctx.request_id.as_uuid()),
-            ttl: None,
-        },
-    );
+    let receiver = state
+        .pipeline()
+        .search_stream(
+            &req,
+            SearchOpts {
+                request_id: Some(ctx.request_id.as_uuid()),
+                ttl: None,
+            },
+        )
+        .await
+        .map_err(|error| search_error(&ctx, &req, error))?;
     let stream_ctx = ctx.clone();
     let stream_req = req.clone();
     let events = tokio_stream::wrappers::UnboundedReceiverStream::new(receiver).map(move |event| {
@@ -160,7 +170,7 @@ pub async fn search_stream(
         .into_response())
 }
 
-fn search_error(ctx: &RequestCtx, req: &SearchRequest, error: PipelineError) -> ApiError {
+pub(crate) fn search_error(ctx: &RequestCtx, req: &SearchRequest, error: PipelineError) -> ApiError {
     match error {
         error @ PipelineError::UnknownEngines { .. } => ctx.err(
             StatusCode::BAD_REQUEST,

@@ -493,6 +493,11 @@ impl SearchPipeline {
     /// instead of waiting for the whole fan-out. Same cache/admission/
     /// breaker semantics as `search`:
     ///
+    /// - the engine pin is validated *before* the stream task spawns, so a
+    ///   rejected pin is a synchronous [`PipelineError`] the inbound
+    ///   surface can answer with its real status (400 `unknown_engines`
+    ///   like `/api/search`) instead of a terminal `error` event on an
+    ///   already-open stream;
     /// - a tier-1 hit emits one `results` batch per producing engine plus
     ///   the terminal `meta`, still writing its `search_log` row;
     /// - a miss elects a singleflight leader whose stream emits batches as
@@ -500,19 +505,19 @@ impl SearchPipeline {
     ///   final RRF order goes out in `meta.order`); a follower joining an
     ///   in-flight flight emits the shared response once it publishes,
     ///   batched per producing engine;
-    /// - pipeline failures arrive as a terminal `error` event; the inbound
-    ///   surface maps the typed [`PipelineError`] to its wire code.
+    /// - pipeline failures past the pin check arrive as a terminal `error`
+    ///   event; the inbound surface maps the typed [`PipelineError`] to
+    ///   its wire code.
     ///
     /// The work runs in a spawned task holding a pipeline clone, so a
     /// dropped receiver (disconnected SSE client) still finishes the
     /// flight, persists, and publishes to followers. The channel closes
     /// after the terminal `meta`/`error` event.
-    pub fn search_stream(
+    pub async fn search_stream(
         &self,
         req: &SearchRequest,
         opts: SearchOpts,
-    ) -> mpsc::UnboundedReceiver<StreamEvent> {
-        let (tx, rx) = mpsc::unbounded_channel();
+    ) -> Result<mpsc::UnboundedReceiver<StreamEvent>, PipelineError> {
         let request_id = opts.request_id.unwrap_or_else(Uuid::now_v7);
         let span = info_span!(
             "pipeline.search",
@@ -524,12 +529,26 @@ impl SearchPipeline {
             engines = tracing::field::Empty,
             streaming = true,
         );
+        self.validate_pin(req).instrument(span.clone()).await?;
+        let (tx, rx) = mpsc::unbounded_channel();
         let pipe = self.clone();
         let req = req.clone();
         tokio::spawn(
             async move { pipe.run_stream(&req, opts.ttl, request_id, tx).await }.instrument(span),
         );
-        rx
+        Ok(rx)
+    }
+
+    /// Strict engine-pin validation, exposed for surfaces that must reject
+    /// a bad pin without opening a stream (the `GET /search?stream=1`
+    /// shell renders a 400 rather than a page that immediately errors).
+    /// The rejected request still gets its `search_log` row, exactly like
+    /// [`SearchPipeline::run`].
+    pub async fn validate_pin(&self, req: &SearchRequest) -> Result<(), PipelineError> {
+        let started = Instant::now();
+        let query = normalize_query(&req.q);
+        let key = CacheKey::from(req);
+        self.validate_engine_pin(req, &key, &query, started).await
     }
 
     /// Reject invalid engine pins before cache lookups on both the ordinary
@@ -582,7 +601,10 @@ impl SearchPipeline {
     /// — leaders run [`SearchPipeline::lead_stream`] (which emits events as
     /// it goes) while followers await the shared outcome and emit it at
     /// once. Every request lands in [`SearchPipeline::shared_response`] for
-    /// its own `search_log` row and metrics, exactly like `run`.
+    /// its own `search_log` row and metrics, exactly like `run`. Pin
+    /// validation is deliberately absent here: `search_stream` runs it
+    /// before spawning so a rejected pin is a synchronous error, never an
+    /// `error` event.
     async fn run_stream(
         &self,
         req: &SearchRequest,
@@ -593,10 +615,6 @@ impl SearchPipeline {
         let started = Instant::now();
         let query = normalize_query(&req.q);
         let key = CacheKey::from(req);
-        if let Err(error) = self.validate_engine_pin(req, &key, &query, started).await {
-            let _ = tx.send(StreamEvent::Error(error));
-            return;
-        }
 
         // ---- tier-1 exact lookup ---------------------------------------
         if let Some(hit) = self.cache_lookup(&key, request_id).await {

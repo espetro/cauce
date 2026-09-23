@@ -60,7 +60,10 @@ async fn search_stream_emits_fast_batch_before_slow_engine_and_final_order() {
     let request = req(query);
 
     let started = Instant::now();
-    let mut events = pipe.search_stream(&request, SearchOpts::default());
+    let mut events = pipe
+        .search_stream(&request, SearchOpts::default())
+        .await
+        .expect("pin is valid");
     let first = tokio::time::timeout(Duration::from_millis(300), events.recv())
         .await
         .expect("first result must arrive before the slow engine")

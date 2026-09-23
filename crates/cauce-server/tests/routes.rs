@@ -566,12 +566,42 @@ async fn search_stream_sends_result_batches_then_flattened_meta() {
     assert_eq!(meta_json["order"].as_array().unwrap().len(), 10);
 }
 
+/// A rejected engine pin is a real 400 before the stream opens (matching
+/// `/api/search`), not a 200 carrying an `error` event.
 #[tokio::test]
-async fn search_stream_maps_pipeline_failures_to_error_events() {
+async fn search_stream_unknown_engine_pin_is_400() {
     let (router, _state, _tmp) = app();
     let request = Request::builder()
         .method("GET")
         .uri("/api/search/stream?q=sse-error&engines=unknown")
+        .body(Body::empty())
+        .unwrap();
+    let response = router.oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let body: Value = serde_json::from_slice(&bytes).unwrap();
+    assert_envelope(&body, "unknown_engines");
+}
+
+/// Failures past the pin check still arrive as a terminal `error` event
+/// on the open stream (here: an all-failed fan-out from a blocked engine).
+#[tokio::test]
+async fn search_stream_maps_mid_flight_failures_to_error_events() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let store = Arc::new(
+        SqliteStore::open(tmp.path().join("cauce.db"), StoreTuning::default()).expect("store"),
+    );
+    let pipeline = Arc::new(SearchPipeline::new(
+        store.clone(),
+        vec![Arc::new(Replay::new(ReplayOpts {
+            blocked: true,
+            ..ReplayOpts::default()
+        }))],
+    ));
+    let router = build_router(AppState::new(pipeline, store, Config::default()));
+    let request = Request::builder()
+        .method("GET")
+        .uri("/api/search/stream?q=sse-error")
         .body(Body::empty())
         .unwrap();
     let response = router.oneshot(request).await.unwrap();
@@ -580,7 +610,7 @@ async fn search_stream_maps_pipeline_failures_to_error_events() {
     let body = String::from_utf8(bytes.to_vec()).unwrap();
     assert!(body.contains("event: error\n"), "{body}");
     assert!(!body.contains("event: meta\n"), "{body}");
-    assert!(body.contains("\"code\":\"unknown_engines\""), "{body}");
+    assert!(body.contains("\"code\":\"upstream_failed\""), "{body}");
 }
 
 /// An inbound `X-Request-Id` that parses as a UUID is honoured end to end.

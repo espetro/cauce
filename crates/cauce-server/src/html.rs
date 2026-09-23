@@ -152,6 +152,14 @@ pub async fn search(
 
     if is_streaming {
         let req = crate::handlers::parse_search_request(&ctx, &uri, &["stream"])?;
+        // A rejected pin answers with its real status (400
+        // `unknown_engines`, like `/api/search/stream` and `/api/search`)
+        // rather than a streaming shell that opens into an error frame.
+        state
+            .pipeline()
+            .validate_pin(&req)
+            .await
+            .map_err(|e| crate::handlers::search_error(&ctx, &req, e))?;
         let rid = ctx.request_id.as_uuid().to_string();
         let page = Page {
             q,
