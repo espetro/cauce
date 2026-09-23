@@ -1,0 +1,150 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  OpenSearch 1.1 (draft 6) description-document schema for the
+  `/opensearch.xml` acceptance test (W2-11).
+
+  The specification (https://github.com/dewitt/opensearch,
+  opensearch-1-1-draft-6.md) never shipped a formal XSD; the copy that
+  circulates (wkriebel/geoserver) misspells `Description` as `Desciption`
+  and caps `Url` at one instance inside xs:all. This fixture is written
+  from the spec text and targets XSD 1.1, where xs:all children may
+  repeat, so the real cardinalities hold: `Url` is 1..n and
+  `Query`/`Language`/`InputEncoding`/`OutputEncoding` are 0..n while the
+  singleton elements stay 0..1 and `ShortName`/`Description` are
+  required.
+-->
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+           xmlns="http://a9.com/-/spec/opensearch/1.1/"
+           targetNamespace="http://a9.com/-/spec/opensearch/1.1/"
+           elementFormDefault="qualified">
+
+  <xs:element name="OpenSearchDescription">
+    <xs:complexType>
+      <xs:all>
+        <xs:element name="ShortName" minOccurs="1" maxOccurs="1">
+          <xs:simpleType>
+            <xs:restriction base="xs:string">
+              <xs:maxLength value="16"/>
+            </xs:restriction>
+          </xs:simpleType>
+        </xs:element>
+        <xs:element name="Description" minOccurs="1" maxOccurs="1">
+          <xs:simpleType>
+            <xs:restriction base="xs:string">
+              <xs:maxLength value="1024"/>
+            </xs:restriction>
+          </xs:simpleType>
+        </xs:element>
+        <xs:element name="Url" minOccurs="1" maxOccurs="unbounded">
+          <xs:complexType>
+            <xs:simpleContent>
+              <!-- template carries {searchTerms} braces, which are not
+                   legal anyURI characters: xs:string is deliberate. -->
+              <xs:extension base="xs:string">
+                <xs:attribute name="template" type="xs:string" use="required"/>
+                <xs:attribute name="type" type="xs:string" use="required"/>
+                <xs:attribute name="rel" use="optional">
+                  <xs:simpleType>
+                    <xs:restriction base="xs:string">
+                      <xs:enumeration value="results"/>
+                      <xs:enumeration value="suggestions"/>
+                      <xs:enumeration value="self"/>
+                      <xs:enumeration value="collection"/>
+                    </xs:restriction>
+                  </xs:simpleType>
+                </xs:attribute>
+                <xs:attribute name="method" type="xs:string" use="optional"/>
+                <xs:attribute name="indexOffset" type="xs:integer" use="optional" default="1"/>
+                <xs:attribute name="pageOffset" type="xs:integer" use="optional" default="1"/>
+              </xs:extension>
+            </xs:simpleContent>
+          </xs:complexType>
+        </xs:element>
+        <xs:element name="Contact" minOccurs="0" maxOccurs="1" type="xs:string"/>
+        <xs:element name="Tags" minOccurs="0" maxOccurs="1">
+          <xs:simpleType>
+            <xs:restriction base="xs:string">
+              <xs:maxLength value="256"/>
+            </xs:restriction>
+          </xs:simpleType>
+        </xs:element>
+        <xs:element name="LongName" minOccurs="0" maxOccurs="1">
+          <xs:simpleType>
+            <xs:restriction base="xs:string">
+              <xs:maxLength value="48"/>
+            </xs:restriction>
+          </xs:simpleType>
+        </xs:element>
+        <xs:element name="Image" minOccurs="0" maxOccurs="unbounded">
+          <xs:complexType>
+            <xs:simpleContent>
+              <xs:extension base="xs:anyURI">
+                <xs:attribute name="height" type="xs:positiveInteger" use="optional"/>
+                <xs:attribute name="width" type="xs:positiveInteger" use="optional"/>
+                <xs:attribute name="type" type="xs:string" use="optional"/>
+              </xs:extension>
+            </xs:simpleContent>
+          </xs:complexType>
+        </xs:element>
+        <xs:element name="Query" minOccurs="0" maxOccurs="unbounded" type="QueryType"/>
+        <xs:element name="Developer" minOccurs="0" maxOccurs="1">
+          <xs:simpleType>
+            <xs:restriction base="xs:string">
+              <xs:maxLength value="64"/>
+            </xs:restriction>
+          </xs:simpleType>
+        </xs:element>
+        <xs:element name="Attribution" minOccurs="0" maxOccurs="1">
+          <xs:simpleType>
+            <xs:restriction base="xs:string">
+              <xs:maxLength value="256"/>
+            </xs:restriction>
+          </xs:simpleType>
+        </xs:element>
+        <xs:element name="SyndicationRight" minOccurs="0" maxOccurs="1" default="open">
+          <xs:simpleType>
+            <xs:restriction base="xs:string">
+              <xs:enumeration value="open"/>
+              <xs:enumeration value="limited"/>
+              <xs:enumeration value="private"/>
+              <xs:enumeration value="closed"/>
+            </xs:restriction>
+          </xs:simpleType>
+        </xs:element>
+        <xs:element name="AdultContent" minOccurs="0" maxOccurs="1" type="xs:boolean" default="false"/>
+        <xs:element name="Language" minOccurs="0" maxOccurs="unbounded" type="xs:string" default="*"/>
+        <xs:element name="InputEncoding" minOccurs="0" maxOccurs="unbounded" type="xs:string" default="UTF-8"/>
+        <xs:element name="OutputEncoding" minOccurs="0" maxOccurs="unbounded" type="xs:string" default="UTF-8"/>
+      </xs:all>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:complexType name="QueryType">
+    <xs:simpleContent>
+      <xs:extension base="xs:string">
+        <xs:attribute name="role" use="required">
+          <xs:simpleType>
+            <xs:restriction base="xs:string">
+              <xs:enumeration value="request"/>
+              <xs:enumeration value="example"/>
+              <xs:enumeration value="related"/>
+              <xs:enumeration value="correction"/>
+              <xs:enumeration value="subset"/>
+              <xs:enumeration value="superset"/>
+            </xs:restriction>
+          </xs:simpleType>
+        </xs:attribute>
+        <xs:attribute name="title" type="xs:string" use="optional"/>
+        <xs:attribute name="totalResults" type="xs:integer" use="optional"/>
+        <xs:attribute name="searchTerms" type="xs:string" use="optional"/>
+        <xs:attribute name="count" type="xs:integer" use="optional"/>
+        <xs:attribute name="startIndex" type="xs:integer" use="optional"/>
+        <xs:attribute name="startPage" type="xs:integer" use="optional"/>
+        <xs:attribute name="language" type="xs:string" use="optional"/>
+        <xs:attribute name="inputEncoding" type="xs:string" use="optional"/>
+        <xs:attribute name="outputEncoding" type="xs:string" use="optional"/>
+      </xs:extension>
+    </xs:simpleContent>
+  </xs:complexType>
+
+</xs:schema>

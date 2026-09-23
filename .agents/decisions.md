@@ -113,6 +113,14 @@ rather than editing it away.
   (W3-06); new W3-07 breaker on Parse/Transport streaks; exec/replay empty → NoResults
   normalization. SearXNG `format=json` compat shim and engine-param forwarding deferred to
   `later/`. Project renamed oxe → cauce; CLI stays `cauce`. — 2026-09-22
+- **Exec protocol v2 adds `safesearch`/`time_range`/`params` with optimistic
+  per-process negotiation** (issue #88). The parent sends v2 to a fresh child;
+  an `error` naming the protocol version (v1 SDK: `parse:unsupported protocol
+  version: 2`) downgrades that process to v1 — v2 fields omitted, version
+  cached on `ChildIo` — and the request is resent on the same stream. v2
+  children must accept `v:1` (a strict subset) and echo the request's `v`, so
+  old parents still work against new children. Static `params` come from a new
+  `[engines.params]` config table. — 2026-09-23
 - **`search_log` keeps the user's raw query text in `query_raw`; `query` stays
   normalized.** History displays need the original casing, but stats grouping
   (`zero_result_queries`) and the history `q` LIKE filter want the normalized

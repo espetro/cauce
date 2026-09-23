@@ -16,7 +16,7 @@ default = ["ui", "mcp", "ai"]
 # HTMX pages and embedded static assets (html.rs, askama templates).
 # `cauce serve --headless` can drop them at runtime; building without `ui`
 # drops them (and askama/rust-embed) at compile time.
-ui = ["dep:askama", "dep:rust-embed", "dep:urlencoding"]
+ui = ["dep:askama", "dep:rust-embed", "dep:urlencoding", "dep:reqwest"]
 # MCP surfaces: the `/mcp` streamable-HTTP endpoint and `cauce mcp`'s stdio
 # transport (mcp.rs). schemars backs the tool arg schemas.
 mcp = ["dep:rmcp", "dep:schemars"]
@@ -62,6 +62,10 @@ uuid = { version = "1", features = ["v7", "serde"] }
 askama = { version = "0.13", optional = true }
 rust-embed = { version = "8", optional = true }
 urlencoding = { version = "2", optional = true }
+# reqwest is used only for its header types in the /settings `/models`
+# listing (the client itself is cauce-core's `HttpClient`); features unify
+# with cauce-core's entry (rustls `default-tls`).
+reqwest = { version = "0.13.5", default-features = false, optional = true }
 
 # OTLP trace export (observability/otlp.rs), all gated behind the
 # non-default `otlp` feature. `default-features` off on the exporter: its
@@ -86,6 +90,9 @@ schemars = { version = "1", optional = true }
 
 [dev-dependencies]
 async-trait = "0.1"
+# Test-store seeding helpers (`conformance::request`/`response`), same as
+# cauce-store-sqlite's dev-dependency.
+cauce-core = { path = "../cauce-core", features = ["conformance"] }
 cauce-engines = { path = "../cauce-engines" }
 cauce-store-sqlite = { path = "../cauce-store-sqlite" }
 # W1-09 acceptance: parse `/metrics` output with a real text parser.
@@ -106,3 +113,7 @@ reqwest = { version = "0.13", default-features = false }
 # default-features = false: the defaults pull reqwest+rustls for remote
 # `$ref` resolution; the fixture is self-contained.
 jsonschema = { version = "0.57", default-features = false }
+# W2-11 acceptance: validate /opensearch.xml against the vendored
+# OpenSearch 1.1 XSD (tests/fixtures/opensearch-1-1.xsd) with a real XSD
+# engine. Pure Rust — no libxml2 C dependency in CI.
+oxixml-schema = "0.1"

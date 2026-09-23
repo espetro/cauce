@@ -25,6 +25,8 @@ use tokio::net::TcpListener;
 
 #[cfg(feature = "ui")]
 use crate::audit_page;
+#[cfg(feature = "ui")]
+use crate::cache_page;
 use crate::error::ApiError;
 use crate::handlers;
 #[cfg(feature = "ui")]
@@ -92,6 +94,8 @@ pub struct RouterOptions {
     /// The effective bind host (`--bind` or `server.host`); the Host/Origin
     /// guard (W1-13) accepts it on top of the loopback names.
     pub bind_host: String,
+    /// Effective listener port (`--port` or `server.port`) for safe URL fallback.
+    pub bind_port: u16,
 }
 
 impl Default for RouterOptions {
@@ -99,6 +103,7 @@ impl Default for RouterOptions {
         Self {
             ui: true,
             bind_host: "127.0.0.1".to_string(),
+            bind_port: 4479,
         }
     }
 }
@@ -205,6 +210,7 @@ pub fn build_router_opts(state: AppState, opts: RouterOptions) -> Router {
             host_origin_guard,
         ))
         .layer(middleware::from_fn(request_context))
+        .layer(Extension(opts))
         .with_state(state)
 }
 
@@ -227,6 +233,12 @@ fn handler_for(spec: &RouteSpec, state: &AppState) -> Option<MethodRouter<AppSta
         ("GET", "/audit", RouteKind::Html) => Some(get(audit_page::audit)),
         #[cfg(feature = "ui")]
         ("GET", "/trace/{id}", RouteKind::Html) => Some(get(audit_page::trace)),
+        #[cfg(feature = "ui")]
+        ("GET", "/settings", RouteKind::Html) => Some(get(html::settings)),
+        #[cfg(feature = "ui")]
+        ("GET", "/cache", RouteKind::Html) => Some(get(cache_page::cache)),
+        #[cfg(feature = "ui")]
+        ("GET", "/opensearch.xml", RouteKind::Html) => Some(get(html::opensearch)),
         #[cfg(feature = "ui")]
         ("GET", "/favicon.ico", RouteKind::Static) => Some(get(html::favicon)),
         ("GET", "/api/search", RouteKind::Json) => Some(get(handlers::search)),

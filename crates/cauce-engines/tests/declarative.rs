@@ -443,6 +443,7 @@ fn config_dir_spec_overrides_and_resolves() {
         page_size: None,
         egress: None,
         env: BTreeMap::new(),
+        params: BTreeMap::new(),
     };
     let src = resolve_spec_source(&entry, tmp.path()).unwrap();
     assert!(src.contains("id: custom"));
@@ -480,6 +481,7 @@ fn build_engine_constructs_declarative_from_entry() {
         page_size: Some(5),
         egress: None,
         env: BTreeMap::new(),
+        params: BTreeMap::new(),
     };
     let engine = build_engine(&entry, tmp.path()).unwrap();
     assert_eq!(engine.id().as_str(), "fixture");

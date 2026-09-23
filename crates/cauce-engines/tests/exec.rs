@@ -17,6 +17,7 @@ use std::time::Duration;
 
 use cauce_core::{
     ClientKind, Engine, EngineError, EngineId, SafeSearch, SearchRequest, SearchResult, Tier,
+    TimeRange,
 };
 use cauce_engines::exec::{ExecEngine, ExecSpec};
 
@@ -53,6 +54,7 @@ fn echo_spec(extra_args: &[&str]) -> ExecSpec {
         cwd: None,
         page_size: 10,
         tier: Tier::T2,
+        params: Default::default(),
     }
 }
 
@@ -66,6 +68,23 @@ fn req(q: &str) -> SearchRequest {
         engines: None,
         client: ClientKind::Api,
     }
+}
+
+/// A v1-only child: rejects `v != 1` with the reference SDK's
+/// `parse:unsupported protocol version` error (issue #88 downgrade path).
+/// `extra_args` are forwarded to the fixture (`--bare-rejection` sends an
+/// out-of-contract rejection line with no `v` field).
+fn v1_spec(extra_args: &[&str]) -> ExecSpec {
+    let mut spec = echo_spec(&[]);
+    spec.args = vec![
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/v1_engine.py")
+            .to_string_lossy()
+            .into_owned(),
+    ];
+    spec.args
+        .extend(extra_args.iter().map(|s| (*s).to_string()));
+    spec
 }
 
 /// The fixture tags every snippet with `pid=<n>`; used to prove respawns.
@@ -334,7 +353,8 @@ fn sdk_malformed_lines_get_error_responses() {
     let mut line = String::new();
     stdout.read_line(&mut line).unwrap();
     let v: serde_json::Value = serde_json::from_str(&line).expect("response parses");
-    assert_eq!(v["v"], 1);
+    // No request version to echo on a parse failure: PROTOCOL_VERSION (v2).
+    assert_eq!(v["v"], 2);
     assert!(v["error"].is_string(), "malformed input yields an error");
     assert!(v["results"].as_array().unwrap().is_empty());
     assert!(child.try_wait().unwrap().is_none(), "child still alive");
@@ -368,6 +388,111 @@ fn sdk_python_unit_tests_pass() {
         .status()
         .expect("run python sdk unit tests");
     assert!(status.success(), "python sdk unit tests failed");
+}
+
+/// Issue #88: a v2 child receives `safesearch`, `time_range` and the
+/// spec's static `params` on the request line. The echo fixture tags its
+/// snippet with what it parsed.
+#[tokio::test]
+async fn exec_v2_forwards_safesearch_time_range_and_params() {
+    if !have_python3() {
+        eprintln!(
+            "python3 not on PATH; skipping exec_v2_forwards_safesearch_time_range_and_params"
+        );
+        return;
+    }
+    let mut spec = echo_spec(&[]);
+    spec.params
+        .insert("region".to_string(), "wt-wt".to_string());
+    let engine = ExecEngine::new(spec);
+
+    let mut request = req("params check");
+    request.safesearch = SafeSearch::Strict;
+    request.time_range = Some(TimeRange::Week);
+    let res = engine
+        .search(&request, Duration::from_secs(10))
+        .await
+        .expect("round trip succeeds");
+    let snippet = &res[0].snippet;
+    assert!(snippet.contains("v=2"), "child saw v2 request: {snippet}");
+    assert!(
+        snippet.contains("safesearch=strict"),
+        "safesearch forwarded: {snippet}"
+    );
+    assert!(
+        snippet.contains("time_range=week"),
+        "time_range forwarded: {snippet}"
+    );
+    assert!(
+        snippet.contains("region"),
+        "spec params forwarded: {snippet}"
+    );
+}
+
+/// Issue #88, negotiation half: a v1-only child rejects the optimistic v2
+/// request, the parent downgrades that process to v1 and resends without the
+/// v2 fields. The fixture reports which v2-only fields leaked onto the wire.
+#[tokio::test]
+async fn exec_v1_child_downgrades_and_omits_v2_fields() {
+    if !have_python3() {
+        eprintln!("python3 not on PATH; skipping exec_v1_child_downgrades_and_omits_v2_fields");
+        return;
+    }
+    let engine = ExecEngine::new(v1_spec(&[]));
+
+    let mut request = req("downgrade");
+    request.safesearch = SafeSearch::Strict;
+    request.time_range = Some(TimeRange::Day);
+    let res = engine
+        .search(&request, Duration::from_secs(10))
+        .await
+        .expect("v1 child answers after downgrade");
+    assert!(
+        res[0].title.contains("downgrade"),
+        "expected results for the resent query: {res:?}"
+    );
+    assert!(
+        res[0].snippet.contains("leaked_fields=[]"),
+        "v2 fields must be omitted on the resent v1 request: {res:?}"
+    );
+
+    // The downgrade is cached on the process: the next call answers without
+    // another rejected probe.
+    let res = engine
+        .search(&req("second"), Duration::from_secs(10))
+        .await
+        .expect("subsequent v1 call answers");
+    assert!(res[0].title.contains("second"));
+}
+
+/// Issue #88 regression: a strict third-party v1 child whose rejection line
+/// lacks `v` entirely (`{"error":"unsupported protocol version: 2"}`) fails
+/// `ExecResponse` decode. The raw-substring fallback in
+/// `is_version_rejection` must still catch it — without it this child
+/// looped forever on Parse error, kill, respawn, re-probe v2.
+#[tokio::test]
+async fn exec_v1_child_bare_rejection_still_downgrades() {
+    if !have_python3() {
+        eprintln!("python3 not on PATH; skipping exec_v1_child_bare_rejection_still_downgrades");
+        return;
+    }
+    let engine = ExecEngine::new(v1_spec(&["--bare-rejection"]));
+
+    let mut request = req("bare downgrade");
+    request.safesearch = SafeSearch::Off;
+    request.time_range = Some(TimeRange::Month);
+    let res = engine
+        .search(&request, Duration::from_secs(10))
+        .await
+        .expect("v1 child answers after downgrade on a bare rejection");
+    assert!(
+        res[0].title.contains("bare downgrade"),
+        "expected results for the resent query: {res:?}"
+    );
+    assert!(
+        res[0].snippet.contains("leaked_fields=[]"),
+        "v2 fields must be omitted on the resent v1 request: {res:?}"
+    );
 }
 
 #[tokio::test]

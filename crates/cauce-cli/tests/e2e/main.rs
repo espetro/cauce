@@ -6,4 +6,5 @@ mod headless;
 mod health;
 mod help;
 mod mcp_stdio;
+mod search;
 mod smoke;

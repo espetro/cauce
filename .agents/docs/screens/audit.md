@@ -115,8 +115,8 @@ the line `that is not a request id`.
 
 ## Behavior: trace
 
-- Same code path as the CLI: the page calls the `cauce trace` timeline
-  renderer in `cauce-core` and displays its output; no second parser of the
+- Same code path as the CLI: the page renders the same `Trace` structure the `cauce trace` CLI
+  command renders (in `cauce-server::observability`),; no second parser of the
   JSONL log. The timeline block is preformatted text in the mono face so
   the bar chart columns align; the spans list under it is HTML (one
   `<details>` per span, summary `engine · elapsed · status · N results`,
