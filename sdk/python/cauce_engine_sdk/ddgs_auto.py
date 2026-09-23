@@ -16,6 +16,11 @@ from cauce_engine_sdk import Request, Response, Result, run
 
 MAX_RESULTS = 10
 
+# Protocol v2 params (issue #88) -> ddgs kwargs. ddgs safesearch is
+# on|moderate|off; timelimit is d|w|m|y.
+_SAFESEARCH = {"off": "off", "moderate": "moderate", "strict": "on"}
+_TIMELIMIT = {"day": "d", "week": "w", "month": "m", "year": "y"}
+
 
 def search(req: Request) -> Response:
     try:
@@ -26,8 +31,11 @@ def search(req: Request) -> Response:
         hits = DDGS().text(
             req.query,
             backend="auto",
+            safesearch=_SAFESEARCH.get(req.safesearch, "moderate"),
+            timelimit=_TIMELIMIT.get(req.time_range or ""),
             max_results=MAX_RESULTS,
             page=req.page,
+            **req.params,
         )
     except Exception as exc:
         msg = str(exc).lower()
