@@ -93,7 +93,7 @@
               hx-delete="/api/history/{{ row.id }}"
               hx-target="closest tbody"
               hx-swap="delete"
-              hx-confirm="{{ crate::strings::history::DELETE_CONFIRM }}"
+              hx-confirm="{{ row.delete_confirm }}"
               hx-headers='{"X-Cauce-Client":"ui"}'
             >{{ crate::strings::history::DELETE }}</button>
           </span>

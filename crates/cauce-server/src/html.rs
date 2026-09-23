@@ -797,6 +797,9 @@ struct HistRow {
     client: String,
     /// Nested click lines under this row.
     clicks: Vec<ClickLine>,
+    /// `hx-confirm` on the delete button; names the nested clicks so a
+    /// destructive action never hides its blast radius.
+    delete_confirm: String,
     rerun_url: String,
     json_url: String,
 }
@@ -1076,6 +1079,21 @@ fn history_rows(
                         false,
                     ),
                 };
+                let delete_confirm = if clicks.is_empty() {
+                    hs::DELETE_CONFIRM.to_string()
+                } else {
+                    let word = if clicks.len() == 1 {
+                        hs::CLICK_ONE
+                    } else {
+                        hs::CLICKS_WORD
+                    };
+                    format!(
+                        "{} {} {}?",
+                        hs::DELETE_CONFIRM_CLICKS_PRE,
+                        clicks.len(),
+                        word
+                    )
+                };
                 rows.push(HistRow {
                     is_search: true,
                     id: s_row.id.unwrap_or(0),
@@ -1099,6 +1117,7 @@ fn history_rows(
                     latency: s_row.latency_ms.to_string(),
                     client: s_row.client.label(),
                     clicks,
+                    delete_confirm,
                     rerun_url: format!("/search?q={encoded}"),
                     json_url: format!("/api/search?q={encoded}"),
                 });
@@ -1128,6 +1147,7 @@ fn history_rows(
                     latency: common::DASH.to_string(),
                     client: c.client.label(),
                     clicks: vec![click_line(&c)],
+                    delete_confirm: hs::DELETE_CONFIRM.to_string(),
                     rerun_url: String::new(),
                     json_url: String::new(),
                 });

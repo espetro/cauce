@@ -195,6 +195,8 @@ pub mod history {
     /// `#` in a click's `#position` marker.
     pub const POSITION_PREFIX: &str = "#";
     pub const CLICKS_WORD: &str = "clicks";
+    /// Singular of `CLICKS_WORD` for the delete confirm.
+    pub const CLICK_ONE: &str = "click";
     pub const CLICK_ONLY: &str = "(click only)";
     pub const RERUN: &str = "re-run";
     pub const COPY_JSON: &str = "copy json";
@@ -202,5 +204,8 @@ pub mod history {
     pub const PAYLOAD: &str = "payload";
     pub const DELETE: &str = "delete";
     pub const DELETE_CONFIRM: &str = "Delete this search?";
+    /// `hx-confirm` prefix when the row has nested clicks, composed as
+    /// `Delete this search and its {n} {click|clicks}?`.
+    pub const DELETE_CONFIRM_CLICKS_PRE: &str = "Delete this search and its";
     pub const REQUEST_LABEL: &str = "request";
 }
