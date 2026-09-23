@@ -857,6 +857,12 @@ pub async fn engine_reset(
     headers: HeaderMap,
     Path(id): Path<String>,
 ) -> Result<Response, ApiError> {
+    // Persisted health rows can carry ids the charset rejects (they
+    // predate validation); resetting one would re-persist and audit a
+    // phantom engine. Reject like the enable/disable pair's unknown-id 404.
+    if !EngineId::is_valid(&id) {
+        return Err(ctx.not_found(format!("no such engine {id}")));
+    }
     let id = EngineId::from(id);
     let Some((previous, row)) = state.pipeline().health().reset(&id) else {
         return Err(ctx.not_found(format!("no such engine {id}")));
