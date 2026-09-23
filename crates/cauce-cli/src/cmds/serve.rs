@@ -151,6 +151,7 @@ async fn serve_async(opts: ServeOpts, cfg: Config, host: String) -> i32 {
         RouterOptions {
             ui: !opts.headless,
             bind_host: host.clone(),
+            bind_port: port,
         },
     );
     let listener = match tokio::net::TcpListener::bind((host.as_str(), port)).await {
