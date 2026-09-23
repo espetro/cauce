@@ -656,10 +656,10 @@ async fn literal_secret_renders_and_redacted_restore_holds() {
     clear_env();
 }
 
-/// Under `CAUCE_ENGINES=replay` every `enabled` control renders disabled —
-/// the hidden `false` fallback included — so a browser submits no
-/// `engines.<id>.enabled` pair at all. A full-form save then creates the
-/// tier stanza without baking the pinned flag into the file.
+/// Under `CAUCE_ENGINES=replay` the `enabled` checkboxes render as plain
+/// text (`enabled` / `disabled`) — no `engines.<id>.enabled` input exists
+/// at all, so a browser submits no enabled pair and a full-form save
+/// creates the tier stanza without baking the pinned flag into the file.
 #[tokio::test]
 async fn pinned_engine_tier_edit_writes_no_enabled() {
     let _guard = env_lock().await;
@@ -669,24 +669,18 @@ async fn pinned_engine_tier_edit_writes_no_enabled() {
     let tmp = config_env("");
     let app = app(&tmp);
 
-    // A submittable `enabled=false` hidden input would write the pin's
-    // negation into `config.toml` on every save (disabled controls do not
-    // submit, so both the checkbox and its fallback must be disabled).
     let (status, body) = get_html(&app, "/settings").await;
     assert_eq!(status, StatusCode::OK, "{body}");
-    let enabled_inputs: Vec<&str> = body
-        .split('<')
-        .filter(|tag| tag.contains(".enabled\""))
-        .collect();
     assert!(
-        !enabled_inputs.is_empty(),
-        "engine rows should render enabled controls: {body}"
+        !body.contains(".enabled\""),
+        "pinned engine rows render no submittable enabled field: {body}"
     );
-    for tag in enabled_inputs {
-        assert!(
-            tag.contains("disabled"),
-            "pinned enabled control must not submit: <{tag}"
-        );
+    for needle in [
+        "<span class=\"engine-enabled\">enabled</span>",
+        "<span class=\"engine-enabled\">disabled</span>",
+        "enabled flags are pinned by CAUCE_ENGINES",
+    ] {
+        assert!(body.contains(needle), "pinned row text missing {needle:?}");
     }
 
     // The full shape the pinned form submits: every rendered field except

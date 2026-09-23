@@ -45,13 +45,17 @@
   {% if engines_pinned %}<p class="hint">{{ crate::strings::settings::ENGINES_PINNED }}</p>{% endif %}
   {% for e in engines %}
   <div class="engine-row">
-    <strong>{{ e.id }}</strong>
-    <span class="hint">{{ e.kind }}</span>
+    <strong class="engine-id">{{ e.id }}</strong>
+    <span class="hint mono">{{ e.kind }}</span>
+    {% if engines_pinned %}
+    <span class="engine-enabled">{% if e.enabled %}{{ crate::strings::settings::ENABLED }}{% else %}{{ crate::strings::settings::DISABLED }}{% endif %}</span>
+    {% else %}
     <label>
-      <input type="hidden" name="engines.{{ e.id }}.enabled" value="false" {% if engines_pinned %}disabled{% endif %}>
-      <input type="checkbox" name="engines.{{ e.id }}.enabled" value="true" {% if e.enabled %}checked{% endif %} {% if engines_pinned %}disabled{% endif %}>
+      <input type="hidden" name="engines.{{ e.id }}.enabled" value="false">
+      <input type="checkbox" name="engines.{{ e.id }}.enabled" value="true" {% if e.enabled %}checked{% endif %}>
       {{ crate::strings::settings::ENABLED }}
     </label>
+    {% endif %}
     <label>{{ crate::strings::settings::TIER }}
       <select name="engines.{{ e.id }}.tier">
         <option value="" {% if e.tier.is_empty() %}selected{% endif %}>{{ crate::strings::settings::TIER_DEFAULT }}</option>
