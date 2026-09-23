@@ -319,6 +319,16 @@ async fn trace_page_lists_replay_span() {
         ..Default::default()
     };
     let (dispatch, guard) = cauce_server::observability::build(&obs).expect("obs build");
+    // Callsite `Interest` is a process-global cache (tracing-core): a
+    // callsite first registered on a thread with no dispatcher caches
+    // `Interest::never`, silently disabling that span for every subscriber.
+    // Parallel tests run searches that can touch the `engine` callsite
+    // during this test's window, so a thread-local `set_default` alone is
+    // racy. A global default makes every thread's lazy registration
+    // evaluate against this dispatch instead; `set_default` still scopes
+    // the request itself. Only this test builds a dispatch, so the
+    // once-per-process global cannot conflict.
+    let _ = tracing::dispatcher::set_global_default(dispatch.clone());
     let request_id = {
         let _default = tracing::dispatcher::set_default(&dispatch);
         let request = Request::builder()
