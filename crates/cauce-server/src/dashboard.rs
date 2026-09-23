@@ -107,7 +107,6 @@ struct Dashboard {
     deadline_hits: u64,
     deadline_rate: String,
     stale_served: u64,
-    stale_rate: String,
     admission_rejected: u64,
     engines: Vec<EngineRow>,
     cache_rows: u64,
@@ -291,10 +290,16 @@ impl Dashboard {
             outcomes,
             top_queries,
             zero_queries: snap.zero_result_queries.clone(),
-            deadline_hits: snap.admission.deadline_hits,
-            deadline_rate: pct_str(snap.admission.deadline_hits, searches),
+            // Windowed numerator over the windowed `searches` denominator
+            // (`search_log.deadline_hit`), never the lifetime metrics
+            // counter — the two disagree whenever the process outlives the
+            // window.
+            deadline_hits: snap.deadline_hits,
+            deadline_rate: pct_str(snap.deadline_hits, searches),
+            // `stale_served` exists only as a lifetime counter (no
+            // `search_log` column), so it renders as a bare count like
+            // `admission_rejected`, not a windowed rate.
             stale_served: snap.admission.stale_served,
-            stale_rate: pct_str(snap.admission.stale_served, searches),
             admission_rejected: snap.admission.rejected,
             engines,
             cache_rows: snap.cache_entries + snap.cache_entries_expired,

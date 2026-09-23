@@ -26,7 +26,7 @@ use cauce_store_sqlite::SqliteStore;
 use serde_json::Value;
 use tower::ServiceExt;
 
-fn app_with(opts: ReplayOpts) -> (Router, tempfile::TempDir) {
+fn app_with(opts: ReplayOpts) -> (Router, Arc<SqliteStore>, tempfile::TempDir) {
     let tmp = tempfile::tempdir().expect("tempdir");
     let store = Arc::new(
         SqliteStore::open(tmp.path().join("cauce.db"), StoreTuning::default()).expect("store"),
@@ -36,7 +36,8 @@ fn app_with(opts: ReplayOpts) -> (Router, tempfile::TempDir) {
         vec![Arc::new(Replay::new(opts))],
     ));
     (
-        build_router(AppState::new(pipeline, store, Config::default())),
+        build_router(AppState::new(pipeline, store.clone(), Config::default())),
+        store,
         tmp,
     )
 }
@@ -68,7 +69,7 @@ async fn get_html(router: &Router, uri: &str) -> (StatusCode, String) {
 /// amendment's `outcome="error"` increment on a forced 502.
 #[tokio::test]
 async fn dashboard_empty_populated_and_error_outcome() {
-    let (app, _tmp) = app_with(ReplayOpts::default());
+    let (app, _store, _tmp) = app_with(ReplayOpts::default());
 
     // ---- empty DB: every panel renders its "no data yet" state -----------
     let (status, body) = get_html(&app, "/dashboard").await;
@@ -148,10 +149,47 @@ async fn dashboard_empty_populated_and_error_outcome() {
     assert!(snap["top_queries"].is_array(), "{snap}");
     assert!(snap["hits_by_tier"].is_array(), "{snap}");
     assert!(snap["cache_db_bytes"].is_number(), "{snap}");
+    assert_eq!(snap["deadline_hits"], 0, "{snap}");
     assert_eq!(snap["outcomes"]["ok"], 4, "{snap}");
 
+    // ---- reliability panel: windowed deadline-hit, bare stale count ------
+    // A `search_log` row written straight into the store lands in the
+    // windowed count but never in the lifetime `cauce_deadline_hit_total`
+    // counter — the panel must read the windowed source so its numerator
+    // and denominator share the window (mixing them was the review bug).
+    let (windowed, store3, _tmp3) = app_with(ReplayOpts::default());
+    let mut hit = cauce_core::conformance::log_row(
+        chrono::Utc::now(),
+        "forced deadline",
+        cauce_core::ClientKind::Api,
+        cauce_core::LogSource::Network,
+        42,
+        3,
+    );
+    hit.deadline_hit = true;
+    cauce_core::Store::log_search(store3.as_ref(), hit)
+        .await
+        .expect("log deadline-hit row");
+
+    let (status, body) = get_html(&windowed, "/dashboard").await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(
+        body.contains("<dd>1 · 100%</dd>"),
+        "deadline-hit shows the windowed count and rate (1 of 1 search):\n{body}"
+    );
+    let stale_cell = body
+        .split("stale-served</dt>")
+        .nth(1)
+        .and_then(|rest| rest.split("<dd>").nth(1))
+        .and_then(|rest| rest.split("</dd>").next())
+        .expect("stale-served value cell");
+    assert!(
+        !stale_cell.contains('%') && !stale_cell.contains('·'),
+        "stale-served renders a bare lifetime count, not a windowed rate: {stale_cell}"
+    );
+
     // ---- forced 502 -> cauce_search_requests_total{outcome="error"} -------
-    let (failing, _tmp2) = app_with(ReplayOpts {
+    let (failing, _store2, _tmp2) = app_with(ReplayOpts {
         blocked: true,
         ..ReplayOpts::default()
     });
