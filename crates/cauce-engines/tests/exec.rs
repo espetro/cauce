@@ -87,6 +87,29 @@ fn v1_spec(extra_args: &[&str]) -> ExecSpec {
     spec
 }
 
+/// A fast query that proves the fixture child is alive before a
+/// deadline-sensitive call, retrying transient `Transport` failures.
+/// Under a parallel gate (`mise run validate` runs clippy/check/nextest
+/// builds concurrently) `posix_spawn` or interpreter boot can fail
+/// transiently; without this warm-up the spawned-failure path would
+/// resolve inside the test's deadline window and masquerade as a
+/// deadline-behaviour failure. A persistent failure surfaces the real
+/// `EngineError` instead.
+async fn warm_child(engine: &ExecEngine, q: &str) -> Vec<SearchResult> {
+    let mut last = None;
+    for _ in 0..5 {
+        match engine.search(&req(q), Duration::from_secs(10)).await {
+            Ok(res) => return res,
+            Err(e @ EngineError::Transport(_)) => {
+                last = Some(e);
+                tokio::time::sleep(Duration::from_millis(200)).await;
+            }
+            Err(e) => panic!("fixture child failed on {q:?}: {e:?}"),
+        }
+    }
+    panic!("fixture child did not answer {q:?} after retries: {last:?}");
+}
+
 /// The fixture tags every snippet with `pid=<n>`; used to prove respawns.
 fn pid_of(results: &[SearchResult]) -> u32 {
     results[0]
@@ -153,6 +176,7 @@ async fn exec_kills_child_at_deadline() {
         return;
     }
     let engine = ExecEngine::new(echo_spec(&["--sleep", "3", "--sleep-on", "slow"]));
+    warm_child(&engine, "warm").await;
 
     let err = engine
         .search(&req("slow query"), Duration::from_millis(300))
@@ -188,6 +212,7 @@ async fn exec_cancelled_call_does_not_poison_next_search() {
     }
     // Sleeps 1 s before answering any query containing "slow".
     let engine = ExecEngine::new(echo_spec(&["--sleep", "1", "--sleep-on", "slow"]));
+    warm_child(&engine, "warm").await;
 
     // Outer deadline drops the in-flight future; the engine's own 30 s
     // budget never gets a chance to fire.
@@ -198,7 +223,7 @@ async fn exec_cancelled_call_does_not_poison_next_search() {
     .await;
     assert!(
         cancelled.is_err(),
-        "outer deadline drops the in-flight call"
+        "outer deadline drops the in-flight call, got {cancelled:?}"
     );
 
     // Let the abandoned child finish its sleep and write the stale line;
@@ -230,12 +255,29 @@ async fn exec_spawns_eagerly_inside_a_runtime() {
         eprintln!("python3 not on PATH; skipping exec_spawns_eagerly_inside_a_runtime");
         return;
     }
-    let engine = ExecEngine::new(echo_spec(&["--boot-delay", "1.5"]));
-    // Let the eagerly spawned child finish its boot delay.
-    tokio::time::sleep(Duration::from_millis(1800)).await;
-    let res = engine
-        .search(&req("warm"), Duration::from_millis(600))
-        .await
+    // A transient spawn failure at construction degrades to lazy and can
+    // never answer inside 600 ms; rebuilding re-tests the eager path
+    // rather than masking it behind a retry of the same engine.
+    let mut res = None;
+    for _ in 0..5 {
+        let engine = ExecEngine::new(echo_spec(&["--boot-delay", "1.5"]));
+        // Let the eagerly spawned child finish its boot delay.
+        tokio::time::sleep(Duration::from_millis(1800)).await;
+        match engine
+            .search(&req("warm"), Duration::from_millis(600))
+            .await
+        {
+            Err(e @ EngineError::Transport(_)) => {
+                res = Some(Err(e));
+            }
+            other => {
+                res = Some(other);
+                break;
+            }
+        }
+    }
+    let res = res
+        .expect("loop always assigns")
         .expect("pre-booted child answers inside a tight budget");
     assert_eq!(res.len(), 3);
 }
@@ -255,10 +297,23 @@ fn exec_lazy_spawn_burns_first_request_budget() {
         .enable_all()
         .build()
         .expect("tokio runtime");
-    let err = rt
-        .block_on(engine.search(&req("cold"), Duration::from_millis(500)))
-        .expect_err("cold boot overruns the budget");
-    assert_eq!(err, EngineError::Timeout);
+    // A transient spawn failure under parallel-gate load can beat the
+    // cold boot to the error channel; retry `Transport` failures, only
+    // `Timeout` proves the deadline behaviour.
+    let mut err = None;
+    for _ in 0..5 {
+        match rt.block_on(engine.search(&req("cold"), Duration::from_millis(500))) {
+            Err(e @ EngineError::Transport(_)) => {
+                err = Some(e);
+                std::thread::sleep(Duration::from_millis(200));
+            }
+            res => {
+                err = Some(res.expect_err("cold boot overruns the budget"));
+                break;
+            }
+        }
+    }
+    assert_eq!(err, Some(EngineError::Timeout));
 }
 
 /// Issue #83, second half: when a request's deadline kills the child
@@ -282,10 +337,7 @@ async fn exec_deadline_kill_rewarms_for_next_request() {
         "stall",
     ]));
     tokio::time::sleep(Duration::from_millis(1800)).await;
-    let r1 = engine
-        .search(&req("first"), Duration::from_secs(5))
-        .await
-        .expect("warm child answers");
+    let r1 = warm_child(&engine, "first").await;
     let pid1 = pid_of(&r1);
 
     // The outer deadline drops the in-flight future; kill_on_drop reaps
