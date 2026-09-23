@@ -446,7 +446,26 @@ pub async fn config_put(
     let result = config_put_inner(&state, &ctx, &headers, &body, form).await;
     #[cfg(feature = "ui")]
     if form && headers.get("hx-request").is_some() {
-        return Ok(crate::html::settings_status(result));
+        // On a failed save, re-run the fields one by one so the fragment can
+        // place an error line under each offending input.
+        let submitted: Vec<String> =
+            url::form_urlencoded::parse(std::str::from_utf8(&body).unwrap_or("").as_bytes())
+                .map(|(k, _)| k.into_owned())
+                .collect();
+        let field_errors = if result.is_err() {
+            let pairs: Vec<(String, String)> =
+                url::form_urlencoded::parse(std::str::from_utf8(&body).unwrap_or("").as_bytes())
+                    .map(|(k, v)| (k.into_owned(), v.into_owned()))
+                    .collect();
+            state.with_config(|cfg| crate::settings::field_errors(cfg, &pairs))
+        } else {
+            Vec::new()
+        };
+        return Ok(crate::html::settings_status(
+            result,
+            field_errors,
+            submitted,
+        ));
     }
     result.map(Json::into_response)
 }
@@ -460,6 +479,14 @@ async fn config_put_inner(
 ) -> Result<Json<Value>, ApiError> {
     let text = std::str::from_utf8(body)
         .map_err(|_| ctx.bad_request("PUT /api/config expects a UTF-8 TOML or form body"))?;
+    // Snapshot the file layer before the merge so the audit row can name the
+    // keys that actually changed (`{"changed": ["search.deadline_ms"]}`).
+    let old_tree = state.with_config(|cfg| {
+        cfg.raw_tree()
+            .cloned()
+            .or_else(|| cfg.display_tree().ok())
+            .unwrap_or_else(|| toml::Value::Table(toml::Table::new()))
+    });
     let mut tree = if form {
         let pairs: Vec<(String, String)> = url::form_urlencoded::parse(text.as_bytes())
             .map(|(k, v)| (k.into_owned(), v.into_owned()))
@@ -482,6 +509,7 @@ async fn config_put_inner(
             )
         })?
     };
+    let changed = changed_config_paths(&old_tree, &tree);
 
     // `<redacted>` leaves from a `GET /api/config` roundtrip get their real
     // values back from the current config; a literal `<redacted>` with no
@@ -529,7 +557,7 @@ async fn config_put_inner(
         headers,
         "config.put",
         loaded.config_path().display().to_string(),
-        json!({}),
+        json!({"changed": changed}),
     )
     .await?;
     let mut body = serde_json::to_value(&loaded)
@@ -670,4 +698,61 @@ impl QueryParams {
             "invalid {key} {v:?}: expected RFC 3339 or YYYY-MM-DD"
         )))
     }
+}
+
+/// Dotted paths whose values differ between two raw config trees, for the
+/// `config.put` audit detail. `[[engines]]` entries pair by `id` so a tier
+/// edit reports `engines.ddgs.tier`, not the whole array.
+fn changed_config_paths(old: &toml::Value, new: &toml::Value) -> Vec<String> {
+    fn walk(path: &str, a: &toml::Value, b: &toml::Value, out: &mut Vec<String>) {
+        if path == "engines"
+            && let (Some(ea), Some(eb)) = (a.as_array(), b.as_array())
+        {
+            let ids: std::collections::BTreeSet<String> = ea
+                .iter()
+                .chain(eb.iter())
+                .filter_map(|e| e.get("id").and_then(|v| v.as_str()).map(String::from))
+                .collect();
+            for id in ids {
+                fn find_engine<'v>(arr: &'v [toml::Value], id: &str) -> Option<&'v toml::Value> {
+                    arr.iter()
+                        .find(|e| e.get("id").and_then(|v| v.as_str()) == Some(id))
+                }
+                match (find_engine(ea, &id), find_engine(eb, &id)) {
+                    (Some(va), Some(vb)) => walk(&format!("engines.{id}"), va, vb, out),
+                    (entry_a, entry_b) => {
+                        if entry_a.is_some() != entry_b.is_some() {
+                            out.push(format!("engines.{id}"));
+                        }
+                    }
+                }
+            }
+            return;
+        }
+        match (a.as_table(), b.as_table()) {
+            (Some(ta), Some(tb)) => {
+                let keys: std::collections::BTreeSet<&String> =
+                    ta.keys().chain(tb.keys()).collect();
+                for k in keys {
+                    let p = if path.is_empty() {
+                        k.clone()
+                    } else {
+                        format!("{path}.{k}")
+                    };
+                    match (ta.get(k), tb.get(k)) {
+                        (Some(va), Some(vb)) => walk(&p, va, vb, out),
+                        _ => out.push(p),
+                    }
+                }
+            }
+            _ => {
+                if a != b {
+                    out.push(path.to_string());
+                }
+            }
+        }
+    }
+    let mut out = Vec::new();
+    walk("", old, new, &mut out);
+    out
 }

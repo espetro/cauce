@@ -218,3 +218,17 @@ fieldset.greyed {
     margin-left: 0.75rem;
     font-size: 0.9rem;
 }
+
+.field-error:empty {
+    display: none;
+}
+.field-error {
+    color: #b00;
+    font-size: 0.85em;
+    margin: 0.15em 0 0.5em;
+}
+.cache-actions {
+    display: flex;
+    gap: 0.75em;
+    align-items: baseline;
+}

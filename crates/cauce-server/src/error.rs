@@ -67,6 +67,11 @@ impl ApiError {
         &self.message
     }
 
+    /// The HTTP status (`error: could not save (<status>)` fragments).
+    pub fn status(&self) -> StatusCode {
+        self.status
+    }
+
     /// A `Store` failure. The store's message carries SQL/IO detail (never
     /// secrets), so it is passed through for the operator.
     pub fn store(e: &cauce_core::StoreError) -> Self {

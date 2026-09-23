@@ -364,7 +364,13 @@ async fn headless_drops_ui_routes_keeps_api() {
     assert!(headless.contains(&("GET".to_string(), "/api/search".to_string())));
 
     let router = build_router_opts(state, RouterOptions::headless());
-    for uri in ["/", "/search?q=x", "/opensearch.xml", "/favicon.ico", "/settings"] {
+    for uri in [
+        "/",
+        "/search?q=x",
+        "/opensearch.xml",
+        "/favicon.ico",
+        "/settings",
+    ] {
         let (status, _, body) = get(&router, uri).await;
         assert_eq!(status, StatusCode::NOT_FOUND, "{uri}: {body}");
         assert_envelope(&body, "not_found");

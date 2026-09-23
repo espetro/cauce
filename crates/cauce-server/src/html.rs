@@ -15,7 +15,7 @@ use std::time::Duration;
 use askama::Template;
 use axum::Extension;
 use axum::Json;
-use axum::extract::State;
+use axum::extract::{Query, State};
 use axum::http::{HeaderMap, Uri, header};
 use axum::response::{Html, IntoResponse, Response};
 use cauce_core::config::{AiConfig, EngineKind};
@@ -364,25 +364,43 @@ struct SettingsPage {
     ai_key_status: String,
     ai_model: Field,
     ai_enabled: bool,
+    /// `"CAUCE_AI_ENABLED"` when the env var pins `ai.enabled`, else `""`.
+    ai_enabled_env: String,
     ai_models: Vec<String>,
     ai_models_failed: bool,
+    /// Pre-rendered `settings_cache.html` fieldset (the `?fragment=cache`
+    /// target refreshes the same block out of band after a delete).
+    cache_block: String,
     request_id: String,
-    short_request_id: String,
     htmx_js: String,
     style_css: String,
 }
 
-/// The `PUT /api/config` status fragment swapped into `#settings-status`.
-/// Rendered at 200 even for validation errors — htmx only swaps 2xx, and
-/// the error text is the inline validation message.
+/// The `Cache` fieldset alone, for `GET /settings?fragment=cache` (the
+/// in-place refresh after `delete expired` / `delete all`).
+#[derive(Template)]
+#[template(path = "settings_cache.html")]
+struct CacheBlock {
+    /// `"N entries · N unexpired · <db size> · newest HH:MM"`.
+    line: String,
+}
+
+/// The `PUT /api/config` status fragment swapped into `#settings-status`,
+/// plus out-of-band `<p class="field-error">` lines — one under each
+/// offending input (`clear_ids` empties the rest). Rendered at 200 even for
+/// validation errors: htmx only swaps 2xx.
 #[derive(Template)]
 #[template(
-    source = "<span class=\"form-status {{ kind }}\">{{ text }}</span>",
+    source = "<span class=\"form-status {{ kind }}\">{{ text }}</span>{% for id in clear_ids %}<p class=\"field-error\" id=\"fe-{{ id }}\" hx-swap-oob=\"true\"></p>{% endfor %}{% for (id, msg) in field_errors %}<p class=\"field-error\" id=\"fe-{{ id }}\" hx-swap-oob=\"true\">{{ msg }}</p>{% endfor %}",
     ext = "html"
 )]
 struct SettingsStatus {
     kind: &'static str,
     text: String,
+    /// Field names whose error line should be emptied.
+    clear_ids: Vec<String>,
+    /// `(field name, message)` pairs rendered under their inputs.
+    field_errors: Vec<(String, String)>,
 }
 
 /// `GET /settings`: the config file as a form (W2-07). Reads the redacted
@@ -393,6 +411,7 @@ pub async fn settings(
     State(state): State<AppState>,
     Extension(ctx): Extension<RequestCtx>,
     headers: HeaderMap,
+    Query(query): Query<SettingsQuery>,
 ) -> Result<Response, ApiError> {
     let accept = headers
         .get("accept")
@@ -405,6 +424,11 @@ pub async fn settings(
     }
 
     let rid = ctx.request_id.as_uuid();
+    let cache_line = cache_line(&state).await;
+    if query.fragment.as_deref() == Some("cache") {
+        let block = CacheBlock { line: cache_line };
+        return Ok(Html(block.render().map_err(|e| render_err(e, rid))?).into_response());
+    }
     let (tree, ai, engines, config_path) = state.with_config(|c| {
         (
             c.display_tree(),
@@ -443,7 +467,9 @@ pub async fn settings(
     // The resolved key authenticates the listing; it is never rendered.
     let (ai_models, ai_models_failed) = list_models(&ai).await;
 
-    let rid_str = rid.to_string();
+    let cache_block = CacheBlock { line: cache_line }
+        .render()
+        .map_err(|e| render_err(e, rid))?;
     let page = SettingsPage {
         config_path,
         deadline: field("search.deadline_ms"),
@@ -458,26 +484,111 @@ pub async fn settings(
         ai_key_status,
         ai_model: field("ai.model"),
         ai_enabled: ai.enabled,
+        ai_enabled_env: env_override("ai.enabled").unwrap_or_default(),
         ai_models,
         ai_models_failed,
-        short_request_id: short_id(&rid_str),
-        request_id: rid_str,
+        cache_block,
+        request_id: rid.to_string(),
         htmx_js: HTMX_JS.clone(),
         style_css: STYLE_CSS.clone(),
     };
     Ok(Html(page.render().map_err(|e| render_err(e, rid))?).into_response())
 }
 
-/// The `PUT /api/config` response for an HTMX form submit (see
-/// `handlers::config_put`): a one-line status fragment.
-pub(crate) fn settings_status(result: Result<Json<Value>, ApiError>) -> Response {
-    let (kind, text) = match &result {
-        Ok(_) => ("ok", "Saved; applies after restart.".to_string()),
-        Err(e) => ("error", e.message().to_string()),
+/// `GET /settings` query params: only the HTMX fragment mode today.
+#[derive(serde::Deserialize)]
+pub struct SettingsQuery {
+    fragment: Option<String>,
+}
+
+/// `"{total} entries · {unexpired} unexpired · {db size} · newest {HH:MM}"`
+/// — the same stats the dashboard reads (`Store::stats` + the db file size
+/// + the newest `cache_entries` row).
+async fn cache_line(state: &AppState) -> String {
+    use crate::strings::settings as s;
+    let (total, unexpired) = match state.store().stats(7).await {
+        Ok(st) => (
+            st.cache_entries + st.cache_entries_expired,
+            st.cache_entries,
+        ),
+        Err(_) => (0, 0),
     };
+    let db_path = state.with_config(|c| c.db_path());
+    let size = std::fs::metadata(&db_path).map(|m| m.len()).unwrap_or(0);
+    let newest = state
+        .store()
+        .list_cache(1, 0)
+        .await
+        .ok()
+        .and_then(|rows| rows.into_iter().next())
+        .map(|e| {
+            e.created_at
+                .with_timezone(&chrono::Local)
+                .format("%H:%M")
+                .to_string()
+        })
+        .unwrap_or_else(|| crate::strings::common::DASH.to_string());
+    format!(
+        "{total} {entries} · {unexpired} {unexp} · {size} · {newest_label} {newest}",
+        entries = s::ENTRIES,
+        unexp = s::UNEXPIRED,
+        size = human_bytes(size),
+        newest_label = s::NEWEST,
+    )
+}
+
+/// `1234` -> `"1.2 KB"`-ish display for the db file size.
+fn human_bytes(n: u64) -> String {
+    const KIB: f64 = 1024.0;
+    const MIB: f64 = KIB * 1024.0;
+    if n as f64 >= MIB {
+        format!("{:.1} MB", n as f64 / MIB)
+    } else if n >= 1024 {
+        format!("{:.0} KB", n as f64 / KIB)
+    } else {
+        format!("{n} B")
+    }
+}
+
+/// The `PUT /api/config` response for an HTMX form submit (see
+/// `handlers::config_put`): the status line plus an out-of-band error line
+/// under each field `field_errors` names (`saved HH:MM`,
+/// `not saved: N errors`, `error: could not save (<status>)`).
+pub(crate) fn settings_status(
+    result: Result<Json<Value>, ApiError>,
+    field_errors: Vec<(String, String)>,
+    submitted: Vec<String>,
+) -> Response {
+    use crate::strings::settings as s;
+    let (kind, text) = match &result {
+        Ok(_) => (
+            "ok",
+            format!("{} {}", s::SAVED, chrono::Local::now().format("%H:%M")),
+        ),
+        Err(e) => {
+            let n = field_errors.len();
+            if n > 0 {
+                let word = if n == 1 { s::ERROR_ONE } else { s::ERROR_MANY };
+                ("error", format!("{} {n} {word}", s::NOT_SAVED))
+            } else {
+                (
+                    "error",
+                    format!("{} ({})", s::COULD_NOT_SAVE, e.status().as_u16()),
+                )
+            }
+        }
+    };
+    let errored: std::collections::BTreeSet<&String> =
+        field_errors.iter().map(|(id, _)| id).collect();
+    let clear_ids = submitted
+        .into_iter()
+        .filter(|id| !errored.contains(id))
+        .collect();
     let html = SettingsStatus {
         kind,
         text: text.clone(),
+        clear_ids,
+        field_errors,
     }
     .render()
     .unwrap_or(text);
@@ -523,14 +634,15 @@ fn env_override(path: &str) -> Option<String> {
         "ai.base_url" => "CAUCE_AI_BASE_URL",
         "ai.api_key" => "CAUCE_AI_API_KEY",
         "ai.model" => "CAUCE_AI_MODEL",
+        "ai.enabled" => "CAUCE_AI_ENABLED",
         _ => return None,
     };
     std::env::var_os(name).map(|_| name.to_string())
 }
 
 /// `${env:NAME}`/`${env:NAME:...}` in a raw (unresolved) value ->
-/// `"NAME: set"` / `"NAME: not set"`. The `:`-suffixed forms count an empty
-/// variable as missing (POSIX), the plain form counts it as set.
+/// `"NAME is set"` / `"NAME is not set"`. The `:`-suffixed forms count an
+/// empty variable as missing (POSIX), the plain form counts it as set.
 fn env_status(raw: &str) -> Option<String> {
     let inner = raw.strip_prefix("${env:")?.strip_suffix('}')?;
     let (name, colon_form) = match inner.find(':') {
@@ -544,7 +656,11 @@ fn env_status(raw: &str) -> Option<String> {
         Ok(v) => !colon_form || !v.is_empty(),
         Err(_) => false,
     };
-    Some(format!("{name}: {}", if set { "set" } else { "not set" }))
+    use crate::strings::settings as s;
+    Some(format!(
+        "{name} {}",
+        if set { s::IS_SET } else { s::IS_NOT_SET }
+    ))
 }
 
 fn kind_label(kind: EngineKind) -> &'static str {

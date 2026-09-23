@@ -147,9 +147,15 @@ async fn settings_page_renders_sections_and_request_id() {
         "engines.ddgs.enabled",
         "engines.replay.egress.proxy",
         "list=\"ai-models\"",
-        "class=\"request-id\"",
+        "<code class=\"request-id\">",
         // The hedge threshold is a disabled placeholder until W3.
         "lands in wave 3",
+        // Cross-links and the cache block.
+        "href=\"/engines\"",
+        "id=\"cache-block\"",
+        "hx-delete=\"/api/cache?expired=true\"",
+        "hx-delete=\"/api/cache?all=true\"",
+        "href=\"/cache\"",
     ] {
         assert!(body.contains(needle), "settings page missing {needle:?}");
     }
@@ -206,7 +212,7 @@ async fn api_key_template_survives_roundtrip() {
         "api_key input must show the template verbatim: {body}"
     );
     assert!(
-        body.contains("BIFROST_API_KEY: set"),
+        body.contains("BIFROST_API_KEY is set"),
         "env status should report the var as set: {body}"
     );
 
@@ -257,11 +263,21 @@ async fn invalid_field_reports_inline_error() {
             .contains("deadline_ms")
     );
 
-    // The htmx submit swaps the error fragment into the page (200 + inline).
+    // The htmx submit swaps the error fragment into the page (200 + inline):
+    // a status line plus an out-of-band error under the offending input.
     let (status, body) = put_form(&app, "search.deadline_ms=soon", true).await;
     assert_eq!(status, StatusCode::OK, "{body}");
     assert!(body.contains("form-status error"), "{body}");
-    assert!(body.contains("deadline_ms"), "{body}");
+    assert!(body.contains("not saved: 1 error"), "{body}");
+    assert!(
+        body.contains("id=\"fe-search.deadline_ms\""),
+        "error line targets the deadline field: {body}"
+    );
+    let pos = body.find("id=\"fe-search.deadline_ms\"").unwrap();
+    assert!(
+        body[pos..].contains("hx-swap-oob"),
+        "error element swaps out of band: {body}"
+    );
     clear_env();
 }
 
@@ -394,6 +410,157 @@ async fn env_overridden_field_is_disabled() {
     assert!(
         on_disk.contains("deadline_ms = 3000"),
         "env override must not be baked into the file: {on_disk}"
+    );
+    clear_env();
+}
+
+/// Multiple invalid fields each get their own error line and the status
+/// counts them.
+#[tokio::test]
+async fn multiple_invalid_fields_report_per_field_errors() {
+    let _guard = env_lock().await;
+    clear_env();
+    let tmp = config_env("");
+    let app = app(&tmp);
+
+    let (status, body) = put_form(
+        &app,
+        "search.deadline_ms=soon&admission.max_wait_ms=later",
+        true,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert!(body.contains("not saved: 2 errors"), "{body}");
+    for id in ["fe-search.deadline_ms", "fe-admission.max_wait_ms"] {
+        assert!(body.contains(&format!("id=\"{id}\"")), "{body}");
+    }
+    // The file is untouched: values stay in the submitted form only.
+    assert_eq!(saved_config(&tmp), "");
+    clear_env();
+}
+
+/// A successful htmx save reports `saved HH:MM` and clears field errors.
+#[tokio::test]
+async fn successful_save_reports_saved_time() {
+    let _guard = env_lock().await;
+    clear_env();
+    let tmp = config_env("");
+    let app = app(&tmp);
+    let (status, body) = put_form(&app, "search.deadline_ms=1234", true).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert!(body.contains("form-status ok"), "{body}");
+    let pos = body.find("saved ").expect("status text");
+    let hhmm = &body[pos + 6..pos + 11];
+    assert!(
+        hhmm.chars().nth(2) == Some(':')
+            && hhmm.replace(':', "").chars().all(|c| c.is_ascii_digit()),
+        "status should carry a HH:MM save time: {body}"
+    );
+    clear_env();
+}
+
+/// `config.put` audit rows name the changed keys and the `ui` actor.
+#[tokio::test]
+async fn save_writes_audit_with_changed_keys() {
+    let _guard = env_lock().await;
+    clear_env();
+    let tmp = config_env("[search]\ndeadline_ms = 3000\n");
+    let app = app(&tmp);
+
+    let (status, body) = put_form(&app, "search.deadline_ms=1234", true).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+
+    let (status, body) = call(
+        &app,
+        Request::builder()
+            .method(Method::GET)
+            .uri("/api/audit?action=config.put")
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let rows: Value = serde_json::from_str(&body).expect("audit rows");
+    let row = rows
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["action"].as_str() == Some("config.put"))
+        .expect("config.put audit row");
+    assert_eq!(row["actor"].as_str(), Some("ui"), "{row}");
+    assert_eq!(
+        row["details"]["changed"],
+        serde_json::json!(["search.deadline_ms"]),
+        "{row}"
+    );
+    clear_env();
+}
+
+/// Under `CAUCE_ENGINES=replay` a tier edit creates the stanza without
+/// baking the pinned `enabled` flag into the file.
+#[tokio::test]
+async fn pinned_engine_tier_edit_writes_no_enabled() {
+    let _guard = env_lock().await;
+    clear_env();
+    // SAFETY: serialized by ENV_LOCK.
+    unsafe { std::env::set_var("CAUCE_ENGINES", "replay") };
+    let tmp = config_env("");
+    let app = app(&tmp);
+
+    let (status, body) = put_form(&app, "engines.replay.tier=2", false).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+
+    let on_disk = saved_config(&tmp);
+    let tree = toml::from_str::<toml::Value>(&on_disk).expect("saved TOML parses");
+    let replay = tree["engines"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|e| e["id"].as_str() == Some("replay"))
+        .expect("replay stanza written");
+    assert_eq!(replay["tier"].as_integer(), Some(2));
+    assert!(
+        replay.get("enabled").is_none(),
+        "the CAUCE_ENGINES pin must not persist: {on_disk}"
+    );
+    assert!(
+        replay.get("env").is_none(),
+        "env must never serialise: {on_disk}"
+    );
+    clear_env();
+}
+
+/// `CAUCE_AI_ENABLED` pins the AI checkbox copy to `set by CAUCE_AI_ENABLED`.
+#[tokio::test]
+async fn ai_enabled_env_pin_shows_hint() {
+    let _guard = env_lock().await;
+    clear_env();
+    // SAFETY: serialized by ENV_LOCK.
+    unsafe { std::env::set_var("CAUCE_AI_ENABLED", "false") };
+    let tmp = config_env("");
+    let app = app(&tmp);
+    let (status, body) = get_html(&app, "/settings").await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert!(body.contains("set by CAUCE_AI_ENABLED"), "{body}");
+    clear_env();
+}
+
+/// `GET /settings?fragment=cache` returns the cache fieldset alone for the
+/// in-place refresh after `delete expired` / `delete all`.
+#[tokio::test]
+async fn cache_fragment_returns_block_only() {
+    let _guard = env_lock().await;
+    clear_env();
+    let tmp = config_env("");
+    let app = app(&tmp);
+    let (status, body) = get_html(&app, "/settings?fragment=cache").await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert!(body.contains("id=\"cache-block\""), "{body}");
+    assert!(body.contains("entries"), "{body}");
+    assert!(body.contains("unexpired"), "{body}");
+    assert!(
+        !body.contains("<legend>Search</legend>"),
+        "fragment must not carry the full page: {body}"
     );
     clear_env();
 }
