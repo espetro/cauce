@@ -58,7 +58,8 @@ Empty state (filters matched nothing):
 ## Behavior
 
 - Data path: `/history` and `GET /api/history` share one handler (content
-  negotiation on `Accept`), with the API's own params: `since` (`24h`, `7d`, `30d`; absent
+  negotiation on `Accept`), with the API's own params: `since` (`24h`, `7d`, `30d`, `all`, or
+  an absolute `YYYY-MM-DD` date via the shared window parser; absent
   means all; any other value is a 400), `q` (query substring), `cached=1` (only rows whose query has
   a live cache entry), `limit` (cap 200). A test asserts HTML rows equal the
   JSON rows for the same request. The `cached` param is new in W2-02 and
