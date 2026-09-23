@@ -16,9 +16,9 @@ use axum::extract::{Path, State};
 use axum::http::{HeaderMap, StatusCode, Uri};
 use axum::response::{IntoResponse, Json, Response};
 use cauce_core::{
-    AuditFilter, AuditRow, CacheKey, ClickRow, EngineHealthRow, EngineId, HistoryFilter,
-    HistoryItem, PipelineError, SafeSearch, SearchRequest, SearchResponse, StatsSnapshot, Store,
-    TimeRange,
+    AuditFilter, AuditRow, CacheKey, ClickRow, EngineError, EngineHealthRow, EngineId,
+    HistoryFilter, HistoryItem, PipelineError, SafeSearch, SearchRequest, SearchResponse,
+    StatsSnapshot, Store, TimeRange,
     config::{Config, system_env},
 };
 use chrono::{DateTime, NaiveDate, Utc};
@@ -41,14 +41,23 @@ const MAX_LIMIT: u32 = 1_000;
 /// strict contract, even if no engines are configured) — an empty pin or
 /// zero configured engines is 503 `no_engines`, and an all-failed fan-out
 /// is 502 `upstream_failed`.
+///
+/// `Accept: text/html` renders the inline result-list fragment the
+/// engines page's test query swaps in (W2-05) — same handler, negotiated.
+#[cfg_attr(not(feature = "ui"), allow(unused_variables))]
 pub async fn search(
     State(state): State<AppState>,
     Extension(ctx): Extension<RequestCtx>,
     uri: Uri,
-) -> Result<Json<SearchResponse>, ApiError> {
+    headers: HeaderMap,
+) -> Result<Response, ApiError> {
+    #[cfg(feature = "ui")]
+    if crate::html::accepts_html(&headers) {
+        return crate::html::search_fragment(&state, &ctx, &uri, &headers).await;
+    }
     search_inner(&state, &ctx, &uri)
         .await
-        .map(|(_req, resp)| Json(resp))
+        .map(|(_req, resp)| Json(resp).into_response())
 }
 
 /// Shared search execution used by `GET /api/search` and the HTML/HTMX page.
@@ -59,22 +68,50 @@ pub(crate) async fn search_inner(
     ctx: &RequestCtx,
     uri: &Uri,
 ) -> Result<(SearchRequest, SearchResponse), ApiError> {
-    let params = QueryParams::parse(uri.query(), ctx)?;
-    params.allow(
-        ctx,
-        &["q", "page", "lang", "time_range", "safesearch", "engines"],
-    )?;
+    search_inner_classed(state, ctx, uri)
+        .await
+        .map_err(|(e, _class)| e)
+}
+
+/// [`search_inner`] plus a display class on the error side (`blocked`,
+/// `timeout`, `no results`, `breaker open`, ...) — the engines page's
+/// inline test fragment renders it as the meta line on failure (screen
+/// spec `engines.md`: "the engine's error class"). JSON callers discard
+/// the class through [`search_inner`].
+pub(crate) async fn search_inner_classed(
+    state: &AppState,
+    ctx: &RequestCtx,
+    uri: &Uri,
+) -> Result<(SearchRequest, SearchResponse), (ApiError, &'static str)> {
+    use crate::strings::engines as copy;
+
+    let params = QueryParams::parse(uri.query(), ctx).map_err(|e| (e, copy::TEST_BAD_REQUEST))?;
+    params
+        .allow(
+            ctx,
+            &["q", "page", "lang", "time_range", "safesearch", "engines"],
+        )
+        .map_err(|e| (e, copy::TEST_BAD_REQUEST))?;
     let req = SearchRequest {
-        q: params.required(ctx, "q")?.to_string(),
-        page: params.page(ctx)?,
+        q: params
+            .required(ctx, "q")
+            .map_err(|e| (e, copy::TEST_BAD_REQUEST))?
+            .to_string(),
+        page: params.page(ctx).map_err(|e| (e, copy::TEST_BAD_REQUEST))?,
         lang: params.get("lang").map(str::to_string),
         time_range: params
             .get("time_range")
-            .map(|v| v.parse::<TimeRange>().map_err(|e| ctx.bad_request(e)))
+            .map(|v| {
+                v.parse::<TimeRange>()
+                    .map_err(|e| (ctx.bad_request(e), copy::TEST_BAD_REQUEST))
+            })
             .transpose()?,
         safesearch: params
             .get("safesearch")
-            .map(|v| v.parse::<SafeSearch>().map_err(|e| ctx.bad_request(e)))
+            .map(|v| {
+                v.parse::<SafeSearch>()
+                    .map_err(|e| (ctx.bad_request(e), copy::TEST_BAD_REQUEST))
+            })
             .transpose()?
             .unwrap_or_default(),
         engines: params
@@ -98,40 +135,79 @@ pub(crate) async fn search_inner(
         // A pin naming ids outside the configured set is the client's
         // error; the message names the offenders and the configured set
         // (issue #90).
-        Err(e @ PipelineError::UnknownEngines { .. }) => {
-            Err(ctx.err(StatusCode::BAD_REQUEST, "unknown_engines", e.to_string()))
-        }
+        Err(e @ PipelineError::UnknownEngines { .. }) => Err((
+            ctx.err(StatusCode::BAD_REQUEST, "unknown_engines", e.to_string()),
+            copy::TEST_UNKNOWN_ENGINES,
+        )),
         // A bare `Some([])` pin that selected nothing is the client's
         // error; an empty configured set is the operator's.
-        Err(PipelineError::NoEngines) if req.engines.is_some() => Err(ctx.err(
-            StatusCode::BAD_REQUEST,
-            "unknown_engines",
-            "engines pin matched no configured engine",
+        Err(PipelineError::NoEngines) if req.engines.is_some() => Err((
+            ctx.err(
+                StatusCode::BAD_REQUEST,
+                "unknown_engines",
+                "engines pin matched no configured engine",
+            ),
+            copy::TEST_UNKNOWN_ENGINES,
         )),
-        Err(PipelineError::NoEngines) => Err(ctx.err(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "no_engines",
-            "no search engines configured",
+        Err(PipelineError::NoEngines) => Err((
+            ctx.err(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "no_engines",
+                "no search engines configured",
+            ),
+            copy::TEST_NO_ENGINES,
         )),
-        Err(e @ PipelineError::AllEnginesFailed(_)) => {
-            Err(ctx.err(StatusCode::BAD_GATEWAY, "upstream_failed", e.to_string()))
+        Err(PipelineError::AllEnginesFailed(failures)) => {
+            let class = engine_error_class(&failures);
+            Err((
+                ctx.err(
+                    StatusCode::BAD_GATEWAY,
+                    "upstream_failed",
+                    PipelineError::AllEnginesFailed(failures).to_string(),
+                ),
+                class,
+            ))
         }
         // Admission overflow with no stale row to serve (W1-07): 429 +
         // `Retry-After`. W1-08 maps the same variant for MCP.
-        Err(PipelineError::RateLimited { retry_after_s }) => Err(ctx
-            .err(
+        Err(PipelineError::RateLimited { retry_after_s }) => Err((
+            ctx.err(
                 StatusCode::TOO_MANY_REQUESTS,
                 "rate_limited",
                 format!("admission queue saturated; retry after {retry_after_s}s"),
             )
-            .with_retry_after(retry_after_s)),
+            .with_retry_after(retry_after_s),
+            copy::TEST_RATE_LIMITED,
+        )),
         // Every matched engine was breaker-skipped (W1-06): temporary,
         // so 503 regardless of pinning — the pin *did* match.
-        Err(e @ PipelineError::BreakerOpen(_)) => Err(ctx.err(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "breaker_open",
-            e.to_string(),
+        Err(e @ PipelineError::BreakerOpen(_)) => Err((
+            ctx.err(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "breaker_open",
+                e.to_string(),
+            ),
+            copy::TEST_BREAKER_OPEN,
         )),
+    }
+}
+
+/// The error class an engines-page test query renders for an all-failed
+/// fan-out: the single engine's [`EngineError`] class when exactly one
+/// failed (a pinned test), `upstream failed` otherwise.
+fn engine_error_class(failures: &[(EngineId, EngineError)]) -> &'static str {
+    use crate::strings::engines as copy;
+
+    if failures.len() != 1 {
+        return copy::TEST_UPSTREAM;
+    }
+    match failures[0].1 {
+        EngineError::Blocked => copy::TEST_BLOCKED,
+        EngineError::Timeout => copy::TEST_TIMEOUT,
+        EngineError::NoResults => copy::TEST_NO_RESULTS,
+        EngineError::RateLimited => copy::TEST_RATE_LIMITED,
+        EngineError::Parse(_) => copy::TEST_PARSE,
+        EngineError::Transport(_) => copy::TEST_TRANSPORT,
     }
 }
 
@@ -318,11 +394,163 @@ pub async fn cache_bulk_delete(
     Ok(Json(json!({ "removed": removed })))
 }
 
-/// `GET /api/engines` (W1-06): every known engine with its live health —
-/// EWMA latency, consecutive failures, breaker state — straight from the
-/// pipeline's tracker (fresher than the debounced `engine_health` table).
-pub async fn engines_list(State(state): State<AppState>) -> Json<Vec<EngineHealthRow>> {
-    Json(state.pipeline().health().snapshot())
+/// `GET /api/engines` (W1-06) and `GET /engines` (W2-05) share this one
+/// handler — the settled input is that pages read the same data path as
+/// `/api/*`, and the screen spec (`engines.md`) requires the JSON body to
+/// carry the same per-engine fields the cards show. `Accept: text/html`
+/// renders the engines page; anything else gets the [`EngineView`] rows.
+///
+/// Each row flattens the W1-06 health wire shape (`engine`, `ewma_ms`,
+/// `failures`, `breaker`, `breaker_until`, `last_ok_at`, `last_error` —
+/// straight from the pipeline's tracker, fresher than the debounced
+/// `engine_health` table) with the card fields `kind`, `tier`, `enabled`,
+/// `configured`, `live`, `p95_ms`, `reliability_pct`, `requests_today`.
+#[cfg_attr(not(feature = "ui"), allow(unused_variables))]
+pub async fn engines_list(
+    State(state): State<AppState>,
+    Extension(ctx): Extension<RequestCtx>,
+    headers: HeaderMap,
+) -> Result<Response, ApiError> {
+    #[cfg(feature = "ui")]
+    if crate::html::accepts_html(&headers) {
+        return crate::engines_page::page(&state, &ctx)
+            .await
+            .map(IntoResponse::into_response);
+    }
+    Ok(Json(engine_views(&state).await?).into_response())
+}
+
+/// One row of the shared `/api/engines` + `/engines` data plane: the live
+/// health row plus every field an engines-page card renders.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct EngineView {
+    /// W1-06 health fields, flattened so the wire names are unchanged.
+    #[serde(flatten)]
+    pub health: EngineHealthRow,
+    /// `declarative` | `exec` | `replay`; `"-"` for health-only leftovers.
+    pub kind: String,
+    /// Effective tier: the live engine's own, else the `[[engines]]`
+    /// override. Absent for health-only leftovers.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tier: Option<u8>,
+    /// Resolved `enabled` flag; engines live but absent from the resolved
+    /// config count as enabled.
+    pub enabled: bool,
+    /// The resolved config names this engine (file entry or built-in).
+    pub configured: bool,
+    /// Live in the running pipeline's fan-out set.
+    pub live: bool,
+    /// Whole-call p95 from the in-process metrics registry (W1-09);
+    /// absent until the engine has served a request this process.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub p95_ms: Option<u32>,
+    /// `ok / requests * 100` from the same registry; same absent-until-seen
+    /// rule as `p95_ms`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reliability_pct: Option<f64>,
+    /// Searches that named this engine since UTC midnight (`search_log`).
+    pub requests_today: u64,
+}
+
+/// The shared `/api/engines` + `/engines` data plane: one row per engine
+/// in the union of configured entries, live pipeline engines and known
+/// health rows, sorted by id.
+pub(crate) async fn engine_views(state: &AppState) -> Result<Vec<EngineView>, ApiError> {
+    use std::collections::{BTreeMap, BTreeSet};
+
+    let entries = state.with_config(|cfg| cfg.engines.clone());
+    let live: Vec<(EngineId, cauce_core::Tier)> = state
+        .pipeline()
+        .engines()
+        .iter()
+        .map(|e| (e.id(), e.tier()))
+        .collect();
+    let health: BTreeMap<String, EngineHealthRow> = state
+        .pipeline()
+        .health()
+        .snapshot()
+        .into_iter()
+        .map(|r| (r.engine.to_string(), r))
+        .collect();
+    let metrics: BTreeMap<String, cauce_core::metrics::EngineMetricStats> =
+        cauce_core::metrics::engine_stats()
+            .into_iter()
+            .map(|m| (m.engine.to_string(), m))
+            .collect();
+
+    // "Requests today": today's `search_log` rows naming the engine — the
+    // same plane `/api/history` reads. The cap matches that handler's
+    // `limit` clamp; a heavier day just undercounts.
+    let midnight = Utc::now()
+        .date_naive()
+        .and_hms_opt(0, 0, 0)
+        .map(|t| t.and_utc());
+    let history = state
+        .store()
+        .list_history(&HistoryFilter {
+            since: midnight,
+            q: None,
+            limit: MAX_LIMIT,
+        })
+        .await
+        .map_err(|e| ApiError::store(&e))?;
+    let mut requests_today: BTreeMap<String, u64> = BTreeMap::new();
+    for item in history {
+        if let HistoryItem::Search(row) = item {
+            for engine in &row.engines {
+                *requests_today.entry(engine.to_string()).or_insert(0) += 1;
+            }
+        }
+    }
+
+    let mut ids: BTreeSet<String> = BTreeSet::new();
+    ids.extend(entries.iter().map(|e| e.id.to_string()));
+    ids.extend(live.iter().map(|(id, _)| id.to_string()));
+    ids.extend(health.keys().cloned());
+
+    Ok(ids
+        .into_iter()
+        .map(|id| {
+            let entry = entries.iter().find(|e| e.id.as_str() == id);
+            let live_tier = live.iter().find(|(e, _)| e.as_str() == id).map(|(_, t)| *t);
+            let kind = entry
+                .map(|e| match e.kind {
+                    cauce_core::config::EngineKind::Declarative => "declarative",
+                    cauce_core::config::EngineKind::Exec => "exec",
+                    cauce_core::config::EngineKind::Replay => "replay",
+                })
+                .unwrap_or(if live_tier.is_some() {
+                    // Live but unnamed by the resolved config: a spec
+                    // auto-registered engine, always declarative.
+                    "declarative"
+                } else {
+                    "-"
+                })
+                .to_string();
+            let metrics = metrics.get(&id).filter(|m| m.requests > 0);
+            EngineView {
+                health: health.get(&id).cloned().unwrap_or_else(|| EngineHealthRow {
+                    engine: EngineId::from(id.as_str()),
+                    ewma_ms: 0.0,
+                    failures: 0,
+                    breaker: cauce_core::BreakerState::Closed,
+                    breaker_until: None,
+                    last_ok_at: None,
+                    last_error: None,
+                }),
+                kind,
+                tier: live_tier
+                    .or_else(|| entry.and_then(|e| e.tier))
+                    .map(|t| t.as_u8()),
+                enabled: entry.map(|e| e.enabled).unwrap_or(live_tier.is_some()),
+                configured: entry.is_some(),
+                live: live_tier.is_some(),
+                p95_ms: metrics.map(|m| m.total.p95_ms),
+                reliability_pct: metrics.map(|m| m.reliability_pct),
+                requests_today: *requests_today.get(&id).unwrap_or(&0),
+            }
+        })
+        .collect())
 }
 
 /// `POST /api/engines/{id}/reset` (W1-06): clear EWMA/failures and put the
@@ -360,14 +588,37 @@ pub async fn engine_reset(
     )
     .await?;
     #[cfg(feature = "ui")]
-    if headers.get("hx-request").is_some() {
-        return crate::html::engine_card(&state, &id, ctx.request_id.as_uuid()).await;
+    if crate::html::is_htmx(&headers) {
+        return crate::engines_page::card(&state, &id, ctx.request_id.as_uuid(), None).await;
     }
     Ok(Json(row).into_response())
 }
 
-/// `POST /api/engines/{id}/enabled?enabled=true|false` (W2-05): flip an
-/// engine's `enabled` flag in `config.toml`, audited (`engine.set_enabled`).
+/// `POST /api/engines/{id}/enable` (W2-05): set `enabled = true` on the
+/// engine's config entry. See [`engine_set_enabled`].
+pub async fn engine_enable(
+    State(state): State<AppState>,
+    Extension(ctx): Extension<RequestCtx>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+) -> Result<Response, ApiError> {
+    engine_set_enabled(&state, &ctx, &headers, EngineId::from(id), true).await
+}
+
+/// `POST /api/engines/{id}/disable` (W2-05): set `enabled = false` on the
+/// engine's config entry. See [`engine_set_enabled`].
+pub async fn engine_disable(
+    State(state): State<AppState>,
+    Extension(ctx): Extension<RequestCtx>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+) -> Result<Response, ApiError> {
+    engine_set_enabled(&state, &ctx, &headers, EngineId::from(id), false).await
+}
+
+/// Shared enable/disable write (screen spec `engines.md`:
+/// `POST /api/engines/<id>/enable` or `/disable`, audited as
+/// `engine.enable` / `engine.disable`).
 ///
 /// The mutation patches the raw (pre-interpolation) file tree in place so
 /// `${env:...}`/`${file:...}` templates persist verbatim, validates the
@@ -377,28 +628,15 @@ pub async fn engine_reset(
 /// entry; auto-registered declarative specs get `{id, kind = "declarative"}`,
 /// which resolves the spec by id). Unknown ids 404. The running pipeline
 /// keeps its engine set until restart, so the response carries
-/// `effective_after_restart: true`.
-pub async fn engine_set_enabled(
-    State(state): State<AppState>,
-    Extension(ctx): Extension<RequestCtx>,
-    headers: HeaderMap,
-    Path(id): Path<String>,
-    uri: Uri,
+/// `effective_after_restart: true`, and the card fragment an HTMX caller
+/// swaps in carries the `saved; applies after restart` hint.
+async fn engine_set_enabled(
+    state: &AppState,
+    ctx: &RequestCtx,
+    headers: &HeaderMap,
+    id: EngineId,
+    enabled: bool,
 ) -> Result<Response, ApiError> {
-    let id = EngineId::from(id);
-    let params = QueryParams::parse(uri.query(), &ctx)?;
-    params.allow(&ctx, &["enabled"])?;
-    let enabled = match params.get("enabled").map(str::to_ascii_lowercase) {
-        None => {
-            return Err(ctx.bad_request("missing required parameter \"enabled\""));
-        }
-        Some(v) if matches!(v.as_str(), "" | "true" | "1" | "yes") => true,
-        Some(v) if matches!(v.as_str(), "false" | "0" | "no") => false,
-        Some(v) => {
-            return Err(ctx.bad_request(format!("invalid enabled {v:?}: expected a boolean")));
-        }
-    };
-
     // 404 before touching the file: a togglable engine is one the resolved
     // config names (file entry or built-in) or one live in the pipeline
     // (spec auto-registered). Persisted health rows for removed engines
@@ -443,17 +681,27 @@ pub async fn engine_set_enabled(
 
     write_audit(
         state.store(),
-        &ctx,
-        &headers,
-        "engine.set_enabled",
+        ctx,
+        headers,
+        if enabled {
+            "engine.enable"
+        } else {
+            "engine.disable"
+        },
         id.to_string(),
         json!({ "enabled": enabled }),
     )
     .await?;
 
     #[cfg(feature = "ui")]
-    if headers.get("hx-request").is_some() {
-        return crate::html::engine_card(&state, &id, ctx.request_id.as_uuid()).await;
+    if crate::html::is_htmx(headers) {
+        return crate::engines_page::card(
+            state,
+            &id,
+            ctx.request_id.as_uuid(),
+            Some(crate::strings::engines::TOGGLE_SAVED),
+        )
+        .await;
     }
     Ok(Json(json!({
         "id": id.to_string(),

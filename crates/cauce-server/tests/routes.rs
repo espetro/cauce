@@ -65,7 +65,10 @@ const EXPECTED_WAVE2_UI_MOUNTED: &[(&str, &str)] =
 
 /// Wave-2 JSON rows mounted so far (W2-05 enable/disable).
 /// `/engines` is `requires: "ui"` and is added conditionally below.
-const EXPECTED_WAVE2_MOUNTED: &[(&str, &str)] = &[("POST", "/api/engines/{id}/enabled")];
+const EXPECTED_WAVE2_MOUNTED: &[(&str, &str)] = &[
+    ("POST", "/api/engines/{id}/enable"),
+    ("POST", "/api/engines/{id}/disable"),
+];
 
 /// Serialises tests that mutate process env (`CAUCE_CONFIG_DIR` and friends).
 /// Under nextest each test is its own process anyway; this keeps plain

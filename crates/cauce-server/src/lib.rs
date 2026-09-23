@@ -5,6 +5,8 @@
 //! file, You can obtain one at <https://mozilla.org/MPL/2.0/>.
 
 mod app;
+#[cfg(feature = "ui")]
+mod engines_page;
 mod error;
 mod handlers;
 #[cfg(feature = "ui")]
@@ -15,6 +17,7 @@ mod metrics;
 mod middleware;
 pub mod observability;
 mod routes;
+pub mod strings;
 
 pub use app::{
     AppState, CURRENT_WAVE, RouterOptions, build_router, build_router_opts, feature_enabled,

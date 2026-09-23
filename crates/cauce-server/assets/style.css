@@ -113,7 +113,24 @@ article a:hover {
     color: var(--muted);
 }
 
-/* W2-05 /engines cards */
+/* W2-05 /engines page and cards. The page body carries `engines-page`
+   so the card grid gets the wider content column (same rule as the
+   dashboard panels); `auto-fit` stacks the cards to one column below
+   ~700px and at 390px without horizontal scroll. */
+body.engines-page {
+    max-width: 72rem;
+}
+
+.engine-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr));
+    gap: 1rem;
+}
+
+.engine-grid .engine-card {
+    margin: 0;
+}
+
 .engine-card .engine-head {
     display: flex;
     align-items: baseline;
@@ -121,9 +138,11 @@ article a:hover {
     flex-wrap: wrap;
 }
 
-.engine-card .engine-head .meta {
+.engine-card .engine-head .engine-kind {
     flex: 1;
     margin: 0;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.8rem;
 }
 
 .breaker {
@@ -148,8 +167,8 @@ article a:hover {
     border-color: #d97706;
 }
 
-.breaker-remaining {
-    margin: 0.25rem 0;
+.breaker-note {
+    margin: 0;
 }
 
 .engine-stats {
@@ -177,6 +196,11 @@ article a:hover {
     align-items: center;
 }
 
+.engine-actions button[disabled] {
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+
 .engine-actions form {
     display: flex;
     gap: 0.5rem;
@@ -189,17 +213,20 @@ article a:hover {
     max-width: 14rem;
 }
 
+.engine-card .engine-notice {
+    margin: 0.25rem 0 0;
+}
+
 .engine-card .test-results {
     margin-top: 0.5rem;
     font-size: 0.875rem;
-    color: var(--muted);
+}
+
+.engine-card .test-results .test-meta {
+    margin: 0;
 }
 
 .engine-card .test-results article {
     margin: 0.25rem 0;
     padding: 0.5rem;
-}
-
-.engine-card .test-results .snippet {
-    display: none;
 }

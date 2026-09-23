@@ -1,29 +1,29 @@
-<article class="engine-card" id="engine-{{ card.id }}">
+<article class="engine-card" id="engine-{{ card.id }}" data-request-id="{{ card.request_id }}">
   <!-- This Source Code Form is subject to the terms of the Mozilla Public
        License, v. 2.0. If a copy of the MPL was not distributed with this
        file, You can obtain one at https://mozilla.org/MPL/2.0/. -->
   <header class="engine-head">
     <strong>{{ card.id }}</strong>
-    <span class="meta">{{ card.kind }} · tier {{ card.tier }}{% if !card.configured %} · not in config{% endif %}{% if !card.live %} · not running{% endif %}</span>
+    <span class="meta engine-kind">{{ card.kind }} · tier {{ card.tier }}{% if !card.configured %} · {{ crate::strings::engines::NOT_IN_CONFIG }}{% endif %}{% if !card.live %} · {{ crate::strings::engines::NOT_RUNNING }}{% endif %}</span>
     <span class="breaker breaker-{{ card.breaker_class }}">{{ card.breaker }}</span>
+    {% if !card.breaker_note.is_empty() %}
+    <span class="breaker-note meta">{{ card.breaker_note }}</span>
+    {% endif %}
   </header>
-  {% if !card.breaker_remaining.is_empty() %}
-  <p class="meta breaker-remaining">{{ card.breaker_remaining }}</p>
-  {% endif %}
   <dl class="engine-stats">
-    <dt>enabled</dt>
-    <dd>{% if card.enabled %}yes{% else %}no{% endif %}</dd>
-    <dt>ewma</dt>
+    <dt>{{ crate::strings::engines::STAT_ENABLED }}</dt>
+    <dd>{{ card.enabled_label }}</dd>
+    <dt>{{ crate::strings::engines::STAT_EWMA }}</dt>
     <dd>{{ card.ewma }}</dd>
-    <dt>last ok</dt>
+    <dt>{{ crate::strings::engines::STAT_LAST_OK }}</dt>
     <dd>{{ card.last_ok }}</dd>
-    <dt>last error</dt>
+    <dt>{{ crate::strings::engines::STAT_LAST_ERROR }}</dt>
     <dd>{{ card.last_error }}</dd>
-    <dt>p95</dt>
+    <dt>{{ crate::strings::engines::STAT_P95 }}</dt>
     <dd>{{ card.p95 }}</dd>
-    <dt>reliability</dt>
+    <dt>{{ crate::strings::engines::STAT_RELIABILITY }}</dt>
     <dd>{{ card.reliability }}</dd>
-    <dt>requests today</dt>
+    <dt>{{ crate::strings::engines::STAT_REQUESTS }}</dt>
     <dd>{{ card.requests_today }}</dd>
   </dl>
   <div class="engine-actions">
@@ -32,25 +32,32 @@
       hx-target="#engine-{{ card.id }}"
       hx-swap="outerHTML"
       hx-headers='{"X-Cauce-Client":"ui"}'
-    >Reset breaker</button>
+    >{{ crate::strings::engines::ACTION_RESET }}</button>
     {% if card.configured || card.live %}
     <button
       hx-post="{{ card.toggle_url }}"
       hx-target="#engine-{{ card.id }}"
       hx-swap="outerHTML"
       hx-headers='{"X-Cauce-Client":"ui"}'
+      {% if card.pinned %}disabled title="{{ crate::strings::engines::TOGGLE_PINNED }}"{% endif %}
     >{{ card.toggle_label }}</button>
+    {% if card.pinned %}
+    <span class="meta">{{ crate::strings::engines::TOGGLE_PINNED }}</span>
+    {% endif %}
     {% endif %}
     <form
-      hx-get="/search"
+      hx-get="/api/search"
       hx-target="#test-{{ card.id }}"
       hx-swap="innerHTML"
-      hx-headers='{"X-Cauce-Client":"ui"}'
+      hx-headers='{"Accept":"text/html","X-Cauce-Client":"ui"}'
     >
-      <input type="search" name="q" value="test" aria-label="test query">
+      <input type="search" name="q" value="{{ crate::strings::engines::TEST_DEFAULT }}" aria-label="{{ crate::strings::engines::TEST_ARIA }}">
       <input type="hidden" name="engines" value="{{ card.id }}">
-      <button type="submit">Test query</button>
+      <button type="submit">{{ crate::strings::engines::ACTION_RUN }}</button>
     </form>
   </div>
+  {% if !card.notice.is_empty() %}
+  <p class="meta engine-notice">{{ card.notice }}</p>
+  {% endif %}
   <div id="test-{{ card.id }}" class="test-results"></div>
 </article>

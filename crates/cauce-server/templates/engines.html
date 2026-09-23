@@ -6,37 +6,40 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>engines · cauce</title>
+  <title>{{ crate::strings::engines::PAGE_TITLE|lower }} · cauce</title>
   <style>{{ style_css|safe }}</style>
 </head>
-<body>
-  <h1>Engines</h1>
+<body class="engines-page">
+  <p><a href="/">{{ crate::strings::common::NAV_SEARCH }}</a></p>
+  <h1>{{ crate::strings::engines::PAGE_TITLE }}</h1>
+  <p class="meta"><span>{{ summary }}</span></p>
   <p class="meta">
-    Enable/disable writes config.toml and takes effect on restart.
-    {% if engines_pinned %}
-    CAUCE_ENGINES currently pins the enabled set, so the resolved state will
-    not move while the variable is set.
-    {% endif %}
+    {{ crate::strings::engines::HINT_RESTART }}
+    {% if engines_pinned %}{{ crate::strings::engines::HINT_PINNED }}{% endif %}
   </p>
   {% if cards.is_empty() %}
-  <p>No engines configured.</p>
+  <p>{{ crate::strings::engines::EMPTY }}</p>
   {% endif %}
+  <div class="engine-grid">
   {% for card in cards %}
   {% include "engine_card.html" %}
   {% endfor %}
-  <div class="meta">
-    <span class="request-id" title="{{ request_id }}">{{ short_request_id }}</span>
   </div>
+  <footer class="meta">
+    <code class="request-id">{{ request_id }}</code>
+  </footer>
   <script>{{ htmx_js|safe }}</script>
   <script>{{ json_enc_js|safe }}</script>
   <script>
-    // A failed test query (502/503) produces no swap by default; show the
-    // status in the card's result slot instead of failing silently.
+    // Error statuses raised outside the handlers (host guard, transport)
+    // produce no swap; show the status in the card's result slot instead
+    // of failing silently.
     document.body.addEventListener('htmx:responseError', function (ev) {
       var card = ev.detail.elt.closest('.engine-card');
       var slot = card && card.querySelector('.test-results');
       if (slot) {
-        slot.textContent = 'test query failed: HTTP ' + ev.detail.xhr.status;
+        slot.textContent = '{{ crate::strings::engines::TEST_FETCH_FAILED }}'
+          .replace('{status}', ev.detail.xhr.status);
       }
     });
   </script>
