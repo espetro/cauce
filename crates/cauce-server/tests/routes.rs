@@ -61,13 +61,14 @@ const EXPECTED_WAVE1_MOUNTED: &[(&str, &str)] = &[
 ];
 
 /// Wave-2 rows mounted so far: the cache page (W2-04), `/opensearch.xml`
-/// (W2-11), the audit + trace pages (W2-06), and the favicon (#87). They are
-/// `requires: "ui"` rows, so they join the mounted set only in `ui` builds
-/// and drop under `--headless` like the pages.
+/// (W2-11), the audit + trace pages (W2-06), the favicon (#87), and the dashboard
+/// (W2-03). They are `requires: "ui"` rows, so they join the mounted set only
+/// in `ui` builds and drop under `--headless` like the pages.
 const EXPECTED_WAVE2_UI_MOUNTED: &[(&str, &str)] = &[
     ("GET", "/cache"),
     ("GET", "/opensearch.xml"),
     ("GET", "/favicon.ico"),
+    ("GET", "/dashboard"),
     ("GET", "/audit"),
     ("GET", "/trace/{id}"),
 ];
@@ -383,6 +384,7 @@ async fn headless_drops_ui_routes_keeps_api() {
         "/opensearch.xml",
         "/favicon.ico",
         "/settings",
+        "/dashboard",
         "/audit",
     ] {
         let (status, _, body) = get(&router, uri).await;

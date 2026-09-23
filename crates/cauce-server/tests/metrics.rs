@@ -112,6 +112,7 @@ async fn metrics_endpoint_and_stats_after_replay_search() {
     assert!(has("cauce_search_requests_total", "client"));
     assert!(has("cauce_search_requests_total", "source"));
     assert!(has("cauce_search_requests_total", "tier"));
+    assert!(has("cauce_search_requests_total", "outcome"));
     assert!(has("cauce_search_duration_ms", "source"));
     assert!(has("cauce_engine_requests_total", "engine"));
     assert!(has("cauce_engine_requests_total", "outcome"));

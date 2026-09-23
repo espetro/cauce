@@ -589,8 +589,13 @@ impl SearchPipeline {
                     started,
                 )
                 .await;
-                self.metrics
-                    .record_search(&req.client, "network", None, started.elapsed());
+                self.metrics.record_search(
+                    &req.client,
+                    "network",
+                    None,
+                    "error",
+                    started.elapsed(),
+                );
                 return Err(error);
             }
         }
@@ -641,8 +646,13 @@ impl SearchPipeline {
                 elapsed_ms = resp.meta.elapsed_ms,
                 "search complete"
             );
-            self.metrics
-                .record_search(&req.client, "cache", Some(Tier::T1), started.elapsed());
+            self.metrics.record_search(
+                &req.client,
+                "cache",
+                Some(Tier::T1),
+                "ok",
+                started.elapsed(),
+            );
             return;
         }
 
@@ -890,7 +900,7 @@ impl SearchPipeline {
                 Source::Network => None,
             };
             self.metrics
-                .record_search(&req.client, "cache", tier, started.elapsed());
+                .record_search(&req.client, "cache", tier, "ok", started.elapsed());
             return Ok(resp);
         }
 
@@ -1227,7 +1237,7 @@ impl SearchPipeline {
                 // serve is observed by each waiter; the deadline hit was
                 // already counted per flight in `fetch`.
                 self.metrics
-                    .record_search(&req.client, label, tier, started.elapsed());
+                    .record_search(&req.client, label, tier, "ok", started.elapsed());
                 if matches!(resp.meta.source, Source::Cache { stale: true, .. }) {
                     self.metrics.record_stale_served();
                 }
@@ -1251,8 +1261,21 @@ impl SearchPipeline {
                     started,
                 )
                 .await;
-                self.metrics
-                    .record_search(&req.client, "network", None, started.elapsed());
+                // W2-03 `outcome` label: the admission-rejected 429 is
+                // `rejected`; every other pipeline failure (`AllEnginesFailed`,
+                // `NoEngines`, `BreakerOpen`, ...) is `error`.
+                let outcome = if matches!(e, PipelineError::RateLimited { .. }) {
+                    "rejected"
+                } else {
+                    "error"
+                };
+                self.metrics.record_search(
+                    &req.client,
+                    "network",
+                    None,
+                    outcome,
+                    started.elapsed(),
+                );
                 // A 429 reached the client: one rejection per waiter.
                 // `queue_full` matches the reason label in `rate_limited`.
                 if matches!(e, PipelineError::RateLimited { .. }) {

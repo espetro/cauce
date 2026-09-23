@@ -49,5 +49,6 @@ pub use response::{
 pub use store::{
     AdmissionStats, AuditFacets, AuditFilter, AuditRow, BreakerState, ClickRow, ClientCount,
     DayCount, EngineHealthRow, EngineStatsRow, HistoryFilter, HistoryItem, LatencyPercentiles,
-    LogSource, PhaseStats, SearchLogRow, StatsSnapshot, Store, StoreError, StoreTuning,
+    LogSource, PhaseStats, QueryCount, SearchLogRow, StatsSnapshot, Store, StoreError, StoreTuning,
+    TierHit,
 };
