@@ -24,6 +24,7 @@
       data-label-system="{{ crate::strings::common::THEME_SYSTEM }}"
       data-label-light="{{ crate::strings::common::THEME_LIGHT }}"
       data-label-dark="{{ crate::strings::common::THEME_DARK }}"
+      data-aria-state="{{ crate::strings::common::THEME_ARIA_STATE }}"
       aria-label="{{ crate::strings::common::THEME_ARIA }}"
     >{{ crate::strings::common::THEME_SWITCH }}</button>
     <details class="nav-more">
@@ -56,7 +57,13 @@
       return s === "light" || s === "dark" ? s : "system";
     }
     function render() {
-      btn.textContent = btn.getAttribute("data-label-" + state()) || state();
+      var s = state();
+      var label = btn.getAttribute("data-label-" + s) || s;
+      btn.textContent = label;
+      // The accessible name tracks the active state (`theme: dark`);
+      // the static aria-label only covers the no-JS render.
+      var tpl = btn.getAttribute("data-aria-state");
+      if (tpl) btn.setAttribute("aria-label", tpl.replace("{state}", label));
     }
     btn.addEventListener("click", function () {
       var order = ["system", "light", "dark"];

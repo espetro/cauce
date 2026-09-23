@@ -49,8 +49,13 @@ pub mod common {
     pub const THEME_LIGHT: &str = "light";
     /// Theme state word while dark is forced.
     pub const THEME_DARK: &str = "dark";
-    /// `aria-label` for the toggle; names the cycle it steps through.
+    /// `aria-label` for the toggle before JS runs; names the cycle it
+    /// steps through. Once wired, `THEME_ARIA_STATE` takes over so the
+    /// accessible name announces the active state.
     pub const THEME_ARIA: &str = "theme: cycles system, light, dark";
+    /// `aria-label` template the toggle JS fills in on every state change
+    /// (`theme: dark`); `{state}` is replaced with the state's word.
+    pub const THEME_ARIA_STATE: &str = "theme: {state}";
 }
 
 /// `/` and `/search` page copy: the landing form, the server-rendered
