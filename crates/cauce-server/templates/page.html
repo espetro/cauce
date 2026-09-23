@@ -6,12 +6,16 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{% if !q.is_empty() %}{{ q }} · cauce{% else %}cauce{% endif %}</title>
+  <title>{% if !q.is_empty() %}{{ q }} · {{ crate::strings::common::BRAND }}{% else %}{{ crate::strings::common::BRAND }}{% endif %}</title>
   <link rel="search" type="application/opensearchdescription+xml" title="cauce" href="/opensearch.xml">
   <link rel="icon" href="/favicon.ico" type="image/svg+xml">
   <style>{{ style_css|safe }}</style>
+  {% include "theme_head.html" %}
 </head>
 <body>
+  {% include "header.html" %}
+  <main>
+  <h1 class="vh">{{ crate::strings::common::BRAND }}</h1>
   <form id="search-form" action="/search" method="get">
     <input type="search" name="q" value="{{ q }}" placeholder="{{ crate::strings::search::PLACEHOLDER }}" autofocus>
     <button type="submit">{{ crate::strings::search::SUBMIT }}</button>
@@ -32,6 +36,7 @@
   {% endif %}
   {% include "results.html" %}
   {% endif %}
+  </main>
   <script>{{ htmx_js|safe }}</script>
   <script>{{ json_enc_js|safe }}</script>
   <script>{{ sse_js|safe }}</script>

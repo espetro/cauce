@@ -68,6 +68,8 @@ struct Row {
 #[derive(Template)]
 #[template(path = "cache.html")]
 struct CachePage {
+    /// The shared header's active nav item.
+    nav_active: &'static str,
     /// Active `q` filter (empty when unfiltered).
     q: String,
     searching: bool,
@@ -145,6 +147,7 @@ pub async fn cache(
 
     let rid = ctx.request_id.as_uuid().to_string();
     let page = CachePage {
+        nav_active: "cache",
         q: q.clone(),
         searching,
         count_line: count_line(shown, searching),

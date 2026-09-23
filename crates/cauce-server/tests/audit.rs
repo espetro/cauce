@@ -189,10 +189,12 @@ async fn audit_page_filters_by_actor_and_action() {
     assert_eq!(status, StatusCode::OK);
     assert!(body.contains("<code>cache.delete</code>"), "{body}");
     // `cache.delete` writes `{}` details: an empty object must omit the
-    // toggle the same way `null` does. (`<summary>`, not `<details`: the
-    // embedded stylesheet mentions `<details>` in a comment.)
+    // toggle the same way `null` does. The assertion is the row's
+    // adjacent `<details><summary>` pair: a bare `<summary` also matches
+    // the header's `more` menu (W2-08), and `<details` the stylesheet's
+    // comment.
     assert!(
-        !body.contains("<summary>"),
+        !body.contains("<details><summary>"),
         "empty-object details must omit the toggle: {body}"
     );
 
@@ -242,8 +244,9 @@ async fn audit_page_shares_api_defaults_and_empty_filters() {
         "cap note missing: {body}"
     );
     // All 50 seeded rows have null details: no details toggle may render.
+    // (Adjacent pair — see the note above about the header's `more` menu.)
     assert!(
-        !body.contains("<summary>"),
+        !body.contains("<details><summary>"),
         "null details must omit the toggle: {body}"
     );
 }
@@ -319,6 +322,21 @@ async fn trace_page_lists_replay_span() {
         ..Default::default()
     };
     let (dispatch, guard) = cauce_server::observability::build(&obs).expect("obs build");
+    // Callsite `Interest` is a process-global cache (tracing-core): a
+    // callsite first registered on a thread with no dispatcher caches
+    // `Interest::never`, silently disabling that span for every subscriber.
+    // Parallel tests run searches that can touch the `engine` callsite
+    // during this test's window, so a thread-local `set_default` alone is
+    // racy. A global default makes every thread's lazy registration
+    // evaluate against this dispatch instead; `set_default` still scopes
+    // the request itself. Only this test builds a dispatch, so the
+    // once-per-process global cannot conflict; the `.expect` pins that
+    // single-dispatcher invariant. `rebuild_interest_cache` then drops
+    // any `Interest::never` a callsite cached before the global landed,
+    // closing the residual registration window.
+    tracing::dispatcher::set_global_default(dispatch.clone())
+        .expect("only this test installs a global dispatcher");
+    tracing::callsite::rebuild_interest_cache();
     let request_id = {
         let _default = tracing::dispatcher::set_default(&dispatch);
         let request = Request::builder()

@@ -9,13 +9,10 @@
   <title>{{ crate::strings::history::TITLE }} · {{ crate::strings::common::BRAND }}</title>
   <link rel="icon" href="/favicon.ico" type="image/svg+xml">
   <style>{{ style_css|safe }}</style>
+  {% include "theme_head.html" %}
 </head>
 <body>
-  <nav class="top">
-    <a class="brand" href="/">{{ crate::strings::common::BRAND }}</a>
-    <a href="/">{{ crate::strings::history::NAV_SEARCH }}</a>
-    <a href="/history" aria-current="page">{{ crate::strings::history::NAV_HISTORY }}</a>
-  </nav>
+  {% include "header.html" %}
   <main>
   <h1>{{ crate::strings::history::TITLE }}</h1>
   <p class="stats">{{ stats_line }}</p>

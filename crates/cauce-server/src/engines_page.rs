@@ -83,6 +83,8 @@ pub(crate) struct EngineCard {
 #[derive(Template)]
 #[template(path = "engines.html")]
 struct EnginesPage {
+    /// The shared header's active nav item.
+    nav_active: &'static str,
     cards: Vec<EngineCard>,
     /// `N configured · N enabled[ · N breaker open]` under the heading.
     summary: String,
@@ -129,6 +131,7 @@ pub(crate) async fn page(state: &AppState, ctx: &RequestCtx) -> Result<Html<Stri
     }
 
     EnginesPage {
+        nav_active: "engines",
         cards,
         summary,
         engines_pinned: pinned,

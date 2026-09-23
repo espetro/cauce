@@ -22,7 +22,7 @@ use cauce_core::{BreakerState, LatencyPercentiles, StatsSnapshot};
 use crate::app::AppState;
 use crate::error::ApiError;
 use crate::handlers;
-use crate::html::{STYLE_CSS, prefers_json, render_err, short_id};
+use crate::html::{STYLE_CSS, prefers_json, render_err};
 use crate::middleware::RequestCtx;
 
 /// SVG chart geometry (viewBox units; the bar chart is `0 0 W H`).
@@ -87,6 +87,8 @@ struct EngineRow {
 #[derive(Template)]
 #[template(path = "dashboard.html")]
 struct Dashboard {
+    /// The shared header's active nav item.
+    nav_active: &'static str,
     days: u32,
     has_data: bool,
     hit_rate_pct: String,
@@ -115,7 +117,6 @@ struct Dashboard {
     cache_db: String,
     cache_newest: String,
     request_id: String,
-    short_request_id: String,
     style_css: String,
 }
 
@@ -273,6 +274,7 @@ impl Dashboard {
             .collect();
 
         Self {
+            nav_active: "dashboard",
             days: snap.window_days,
             has_data: searches > 0,
             hit_rate_pct: format!("{:.0}%", snap.hit_rate * 100.0),
@@ -310,7 +312,6 @@ impl Dashboard {
                 .cache_newest_at
                 .map(|t| t.format("%Y-%m-%d %H:%M").to_string())
                 .unwrap_or_else(|| "-".to_string()),
-            short_request_id: short_id(&request_id),
             request_id,
             style_css: STYLE_CSS.clone(),
         }

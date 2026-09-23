@@ -6,11 +6,13 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{{ crate::strings::cache::PAGE_TITLE|lower }} · cauce</title>
+  <title>{{ crate::strings::cache::PAGE_TITLE|lower }} · {{ crate::strings::common::BRAND }}</title>
   <style>{{ style_css|safe }}</style>
+  {% include "theme_head.html" %}
 </head>
 <body class="cache-page">
-  <p><a href="/">{{ crate::strings::common::NAV_SEARCH }}</a></p>
+  {% include "header.html" %}
+  <main>
   <h1>{{ crate::strings::cache::PAGE_TITLE }}</h1>
 
   <form action="/cache" method="get">
@@ -97,7 +99,7 @@
     {% if !next_url.is_empty() %}<a href="{{ next_url }}">{{ crate::strings::cache::PAGE_NEXT }} &rarr;</a>{% endif %}
   </div>
   {% endif %}
-
+  </main>
   <footer class="meta">
     <code class="request-id">{{ request_id }}</code>
   </footer>

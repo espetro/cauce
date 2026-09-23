@@ -17,8 +17,14 @@
     --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
+/* Dark theme, two triggers (W2-08): the OS-level preference while the
+   user has not chosen (`system`, no data-theme or an explicit
+   `data-theme="system"` never set — the toggle removes the attribute),
+   and the header toggle's stored `light`/`dark` override. The
+   `:not([data-theme="light"])` guard keeps a stored `light` winning
+   over a dark OS. */
 @media (prefers-color-scheme: dark) {
-    :root {
+    :root:not([data-theme="light"]) {
         --bg: #0f0f0f;
         --fg: #e5e5e5;
         --muted: #a3a3a3;
@@ -26,6 +32,22 @@
         --accent: #60a5fa;
         --greyed-bg: #17171a;
     }
+}
+
+:root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg: #0f0f0f;
+    --fg: #e5e5e5;
+    --muted: #a3a3a3;
+    --border: #3f3f46;
+    --accent: #60a5fa;
+    --greyed-bg: #17171a;
+}
+
+/* Forced light keeps UA chrome (form controls, scrollbars) light too;
+   the variables are already the `:root` defaults. */
+:root[data-theme="light"] {
+    color-scheme: light;
 }
 
 * {
@@ -40,6 +62,147 @@ body {
     color: var(--fg);
     max-width: 720px;
     line-height: 1.5;
+    /* Theme transitions scope to color properties only (references/
+       patterns-motion.md): never a blanket `*` transition interpolating
+       layout. */
+    transition: background-color 160ms ease, color 160ms ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    body,
+    header.site {
+        transition: none;
+    }
+}
+
+/* --- W2-08 shared header -------------------------------------------------
+   Sticky top bar on every page (references/patterns-layout-grid.md page
+   frame). Left: brand + primary nav (`search · history · dashboard`).
+   Right: the quieter operator group (`engines · cache · audit`), then
+   `settings`, the version label and the theme toggle. Below 700 px the
+   operator group collapses into a `more` <details> menu; the version
+   label hides below 640 px (landing.md/history.md responsive notes). */
+header.site {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.35rem 1rem;
+    margin-bottom: 1rem;
+    padding: 0.5rem 0;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg);
+    font-size: 0.9375rem;
+    /* Same 160ms fade as body so the sticky bar does not snap. */
+    transition: background-color 160ms ease;
+}
+
+header.site a {
+    color: var(--fg);
+    text-decoration: none;
+}
+
+header.site a:hover {
+    text-decoration: underline;
+}
+
+header.site .brand {
+    font-weight: 700;
+}
+
+header.site nav.nav-primary,
+header.site nav.nav-operator,
+header.site .nav-right {
+    display: flex;
+    align-items: baseline;
+    gap: 0.9rem;
+}
+
+/* `.nav-right` is the auto-margin push: primary stays left, everything
+   else groups on the right. At phone width it wraps to a second line
+   (the mockup's `settings · v3.0.0 · more` row). */
+header.site .nav-right {
+    margin-left: auto;
+    color: var(--muted);
+}
+
+header.site .nav-right a {
+    color: var(--muted);
+}
+
+header.site a[aria-current="page"] {
+    color: var(--accent);
+}
+
+.nav-version {
+    color: var(--muted);
+    font-size: 0.8125rem;
+}
+
+#theme-toggle {
+    padding: 0.1rem 0.6rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--bg);
+    color: var(--muted);
+    font-size: 0.8125rem;
+    cursor: pointer;
+}
+
+/* The `more` menu is CSS-only: a <details> holding the operator links,
+   shown only below 700 px where `.nav-operator` hides. */
+details.nav-more {
+    display: none;
+    position: relative;
+}
+
+details.nav-more > summary {
+    cursor: pointer;
+    color: var(--muted);
+    list-style: none;
+}
+
+details.nav-more > summary::-webkit-details-marker {
+    display: none;
+}
+
+details.nav-more[open] > summary {
+    color: var(--accent);
+}
+
+.nav-more-links {
+    position: absolute;
+    right: 0;
+    top: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    min-width: 6.5rem;
+    padding: 0.5rem 0.75rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--bg);
+    box-shadow: 0 2px 8px rgb(0 0 0 / 15%);
+}
+
+/* Range syntax keeps the spec's "below 700 px" honest: an inclusive
+   `max-width: 700px` would collapse the operator group at exactly 700. */
+@media (width < 700px) {
+    header.site nav.nav-operator {
+        display: none;
+    }
+
+    details.nav-more {
+        display: block;
+    }
+}
+
+@media (width < 640px) {
+    .nav-version {
+        display: none;
+    }
 }
 
 form {
@@ -81,6 +244,20 @@ button {
 .request-id {
     font-family: var(--mono);
     cursor: pointer;
+}
+
+/* Visually hidden but still exposed to assistive tech: the search
+   page's h1 (the landing mockup's wordmark) lives behind it. */
+.vh {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
 }
 
 article {
@@ -189,16 +366,6 @@ details.span pre {
 }
 
 /* /settings (W2-07) */
-.topnav {
-    margin-bottom: 1rem;
-    color: var(--muted);
-}
-
-.topnav a {
-    color: var(--accent);
-    text-decoration: none;
-}
-
 /* The global `form { display: flex }` rule is the search box's; the settings
    form stacks its fieldsets vertically. */
 form.settings-form {
@@ -458,7 +625,7 @@ article.cache-entry + article.cache-entry {
 }
 
 /* --- W2-02 /history ------------------------------------------------------- */
-new-results-above {
+.new-results-above {
     display: inline-block;
     margin: 0.5rem 0;
     padding: 0.25rem 0.75rem;
@@ -466,26 +633,6 @@ new-results-above {
     border-radius: 9999px;
     color: var(--muted);
     font-size: 0.875rem;
-}
-
-nav.top {
-    display: flex;
-    gap: 1rem;
-    margin-bottom: 1rem;
-    font-size: 0.9375rem;
-}
-
-nav.top a {
-    color: var(--fg);
-    text-decoration: none;
-}
-
-nav.top a.brand {
-    font-weight: 700;
-}
-
-nav.top a[aria-current] {
-    color: var(--accent);
 }
 
 h1 {
@@ -751,7 +898,7 @@ table.history details[open] summary {
 p.empty {
     color: var(--muted);
 }
-new-results-above[hidden] {
+.new-results-above[hidden] {
     display: none;
 }
 
