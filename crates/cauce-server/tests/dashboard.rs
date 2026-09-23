@@ -122,7 +122,7 @@ async fn dashboard_empty_populated_and_error_outcome() {
         "engine table links to /engines#engine-<id>:\n{body}"
     );
     assert!(
-        body.contains("@media (max-width: 639px)")
+        body.contains("@media (width < 640px)")
             && body.contains("data-label=\"http ms (med/p80/p95)\""),
         "engine metrics use labeled mobile cells without horizontal overflow:\n{body}"
     );
