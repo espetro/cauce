@@ -130,3 +130,9 @@ rather than editing it away.
   dashboard already links to both operator pages. v3 screen specs written for history
   (rewritten), cache, engines, audit/trace, settings; checkpoints 21-36 and rubric
   section 9 added. (#34, #36, #39) — 2026-09-23
+- **One `strings.rs` shape for cauce-server pages.** `crates/cauce-server/src/strings.rs`
+  holds `pub mod common` plus one `pub mod <page>` per page (`history`, `cache`, `audit`,
+  `trace`, `settings`, `engines`), each with flat `pub const NAME: &str` items; no structs
+  or COPY bundles. Templates reference `crate::strings::<page>::NAME`. Set because four
+  parallel wave 2 branches each created the file with a different shape; W2-04 lands
+  first and defines it, the others rebase. — 2026-09-23
