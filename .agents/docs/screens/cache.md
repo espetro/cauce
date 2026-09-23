@@ -69,7 +69,7 @@ Empty state (filter matched nothing):
 
 - Data path: `/cache` and `GET /api/cache` share one handler (content negotiation on
   `Accept`); the page renders what the API returns for the same query
-  string (`q`, `limit`, `before`). There is no second data path; a test asserts HTML
+  string (`q`, `limit`, `offset`). There is no second data path; a test asserts HTML
   rows equal the JSON rows for the same request.
 - One row per cache entry, newest `created` first. Row line shows in this
   order: query text, created (local `YYYY-MM-DD HH:MM`), expiry as a relative
@@ -88,7 +88,7 @@ Empty state (filter matched nothing):
   when a filter is active). `clear` appears only while a filter is active
   and returns to `/cache`. History's `payload` link arrives as
   `/cache?q=<query>#<key>`; the matching row renders open.
-- Pagination: keyset on `created` (`before=<ts>`), 50 rows per page, `newer`
+- Pagination: `offset=<n>` window into the newest-first list, 50 rows per page, `newer`
   / `older` links shown only when a neighbour page exists. Filtered lists are
   capped at one page and say so under the count (`showing the newest 50
   matches`).
