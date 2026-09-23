@@ -23,11 +23,11 @@
   {% if !kind.is_empty() %}
   <p class="meta">{{ kind }}{% if has_query %} "{{ query }}"{% endif %}{% if !summary_ts.is_empty() %} · {{ summary_ts }}{% endif %} · {{ summary_ms }} · {{ outcome }}</p>
   {% endif %}
-  <pre class="trace">{{ timeline }}</pre>
+  <pre class="trace" tabindex="0" role="region" aria-label="{{ crate::strings::trace::TIMELINE_REGION }}">{{ timeline }}</pre>
   {% if !spans.is_empty() %}
   <h2>{{ crate::strings::trace::SPANS_HEADING }}</h2>
   {% for span in spans %}
-  <details class="span"><summary>{{ span.summary }}</summary><pre>{{ span.fields_json }}</pre></details>
+  <details class="span"><summary>{{ span.summary }}</summary><pre tabindex="0" role="group" aria-label="{{ crate::strings::trace::SPAN_REGION }}">{{ span.fields_json }}</pre></details>
   {% endfor %}
   {% endif %}
   {% endif %}
