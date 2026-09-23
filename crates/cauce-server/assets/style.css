@@ -35,12 +35,19 @@
 }
 
 :root[data-theme="dark"] {
+    color-scheme: dark;
     --bg: #0f0f0f;
     --fg: #e5e5e5;
     --muted: #a3a3a3;
     --border: #3f3f46;
     --accent: #60a5fa;
     --greyed-bg: #17171a;
+}
+
+/* Forced light keeps UA chrome (form controls, scrollbars) light too;
+   the variables are already the `:root` defaults. */
+:root[data-theme="light"] {
+    color-scheme: light;
 }
 
 * {
@@ -62,7 +69,8 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
-    body {
+    body,
+    header.site {
         transition: none;
     }
 }
@@ -87,6 +95,8 @@ header.site {
     border-bottom: 1px solid var(--border);
     background: var(--bg);
     font-size: 0.9375rem;
+    /* Same 160ms fade as body so the sticky bar does not snap. */
+    transition: background-color 160ms ease;
 }
 
 header.site a {
