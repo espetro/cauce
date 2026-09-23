@@ -11,6 +11,7 @@
 </head>
 <body>
   <p><a href="/">{{ crate::strings::common::NAV_SEARCH }}</a></p>
+  <main>
   <h1>{{ crate::strings::audit::PAGE_TITLE }}</h1>
   <form action="/audit" method="get">
     <select name="actor" aria-label="{{ crate::strings::audit::ACTOR_LABEL }}">
@@ -68,5 +69,6 @@
   <div class="meta">
     {{ crate::strings::common::REQUEST_LABEL }} <code class="request-id">{{ request_id }}</code>
   </div>
+  </main>
 </body>
 </html>

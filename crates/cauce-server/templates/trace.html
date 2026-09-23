@@ -11,6 +11,7 @@
 </head>
 <body>
   <p><a href="/">{{ crate::strings::common::NAV_SEARCH }}</a></p>
+  <main>
   <h1>{{ crate::strings::trace::PAGE_TITLE }}</h1>
   <div class="meta">
     <code class="request-id" id="traced-id">{{ traced_id }}</code>
@@ -34,6 +35,7 @@
   <div class="meta">
     {{ crate::strings::common::REQUEST_LABEL }} <code class="request-id">{{ request_id }}</code>
   </div>
+  </main>
   <script>
     (function () {
       var btn = document.getElementById("copy-traced");
