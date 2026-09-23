@@ -44,6 +44,11 @@ pub mod search {
     pub const COMPLETE: &str = "Search complete";
     /// Status line when an SSE frame fails to parse.
     pub const INVALID_STREAM: &str = "Search stream returned invalid data";
+    /// `<noscript>` on the streaming shell: the events need JavaScript,
+    /// while a plain form submit still runs a server-rendered search.
+    pub const NOSCRIPT_STREAM: &str =
+        "Streaming needs JavaScript; submit the form for a plain search.";
+
     /// Outranking pill (`{n}` is the late-result count).
     pub const NEW_ABOVE: &str = "{n} new results above";
     /// Live (network) badge (`{ms}` is the elapsed time in ms).

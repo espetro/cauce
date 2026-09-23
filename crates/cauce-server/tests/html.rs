@@ -235,6 +235,10 @@ async fn streaming_search_page_returns_sse_shell_before_search_finishes() {
     assert!(body.contains("new-results-above"));
     assert!(body.contains("Waiting for engines..."));
     assert!(
+        body.contains("<noscript>"),
+        "streamed page must degrade without JavaScript: {body}"
+    );
+    assert!(
         !body.contains("streaming-shell:"),
         "shell must not await engine results"
     );

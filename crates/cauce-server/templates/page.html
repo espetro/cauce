@@ -26,6 +26,7 @@
   <div id="search-stream" hx-ext="sse" sse-connect="{{ stream_url }}" sse-close="meta,error"
        data-query-hash="{{ query_hash }}" aria-live="polite" aria-busy="true">
     <span id="stream-status" role="status">{{ crate::strings::search::WAITING }}</span>
+    <noscript><p>{{ crate::strings::search::NOSCRIPT_STREAM }}</p></noscript>
   </div>
   <p id="new-results-above" class="new-results-above" role="status" hidden></p>
   {% endif %}
