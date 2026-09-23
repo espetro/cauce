@@ -16,7 +16,9 @@
 
 use std::collections::BTreeMap;
 
-use cauce_core::config::{Config, ConfigError, EngineEntry, system_env};
+#[cfg(feature = "ui")]
+use cauce_core::config::system_env;
+use cauce_core::config::{Config, ConfigError, EngineEntry};
 
 fn invalid(path: &str, msg: impl Into<String>) -> ConfigError {
     ConfigError::InvalidValue {
@@ -237,6 +239,7 @@ fn engine_entry_mut<'a>(
 /// `apply_field` rejects, so the page can place one error line under each
 /// offending input. Also surfaces schema errors `Config::from_raw` finds
 /// after a clean field merge (e.g. a cross-field rule).
+#[cfg(feature = "ui")]
 pub fn field_errors(current: &Config, pairs: &[(String, String)]) -> Vec<(String, String)> {
     let mut tree = current
         .raw_tree()
