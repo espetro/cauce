@@ -520,6 +520,12 @@ impl StatsSnapshot {
     /// `engine_health` are appended; `admission` is filled. Called by the
     /// `/api/stats` handler, so `Store::stats` results stay health-only.
     pub fn merge_metrics(&mut self) {
+        // Persisted `engine_health` rows predate the `EngineId` charset
+        // check; an invalid id would render a dashboard row whose
+        // `card_anchor` resolves to no card (`engine_views` filters the
+        // same way).
+        self.engines
+            .retain(|r| EngineId::is_valid(r.engine.as_str()));
         for m in crate::metrics::engine_stats() {
             match self.engines.iter_mut().find(|r| r.engine == m.engine) {
                 Some(row) => row.set_metrics(&m),
