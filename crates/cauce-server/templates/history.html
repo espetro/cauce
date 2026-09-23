@@ -7,94 +7,135 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{ s.heading }} · cauce</title>
+  <link rel="icon" href="/favicon.ico" type="image/svg+xml">
   <style>{{ style_css|safe }}</style>
 </head>
 <body>
-  <p><a href="/">cauce</a></p>
+  <nav class="top">
+    <a class="brand" href="/">cauce</a>
+    <a href="/">{{ s.nav_search }}</a>
+    <a href="/history" aria-current="page">{{ s.nav_history }}</a>
+  </nav>
   <h1>{{ s.heading }}</h1>
+  <p class="stats">{{ stats_line }}</p>
   <form action="/history" method="get" class="filters">
     <select name="since">
+      <option value="all"{% if since == "all" %} selected{% endif %}>{{ s.window_all }}</option>
       <option value="24h"{% if since == "24h" %} selected{% endif %}>{{ s.window_24h }}</option>
       <option value="7d"{% if since == "7d" %} selected{% endif %}>{{ s.window_7d }}</option>
       <option value="30d"{% if since == "30d" %} selected{% endif %}>{{ s.window_30d }}</option>
-      <option value="all"{% if since == "all" %} selected{% endif %}>{{ s.window_all }}</option>
     </select>
     <input type="search" name="q" value="{{ q }}" placeholder="{{ s.query_placeholder }}">
+    <label class="cached-only">
+      <input type="checkbox" name="cached" value="1"{% if cached %} checked{% endif %}>
+      {{ s.cached_only }}
+    </label>
     <button type="submit">{{ s.filter_submit }}</button>
+    {% if filters_active %}<a class="clear" href="/history">{{ s.clear }}</a>{% endif %}
   </form>
   {% if rows.is_empty() %}
-  <p class="empty">{{ s.empty }}</p>
+  <p class="empty">{{ empty_message }}</p>
   {% else %}
   <table class="history">
     <thead>
       <tr>
-        <th>{{ s.col_query }}</th>
-        <th>{{ s.col_when }}</th>
-        <th>{{ s.col_source }}</th>
-        <th>{{ s.col_engines }}</th>
-        <th>{{ s.col_results }}</th>
-        <th>{{ s.col_latency }}</th>
-        <th>{{ s.col_client }}</th>
-        <th>{{ s.col_clicks }}</th>
-        <th></th>
+        <th class="c-when">{{ s.col_when }}</th>
+        <th class="c-query">{{ s.col_query }}</th>
+        <th class="c-source">{{ s.col_source }}</th>
+        <th class="c-engines h-md">{{ s.col_engines }}</th>
+        <th class="c-n">{{ s.col_results }}</th>
+        <th class="c-ms h-md">{{ s.col_latency }}</th>
+        <th class="c-by">{{ s.col_client }}</th>
       </tr>
     </thead>
+    {% for row in rows %}
     <tbody>
-      {% for row in rows %}
-      {% if row.is_search %}
-      <tr class="search">
-        <td><a href="{{ row.rerun_url }}">{{ row.query }}</a></td>
-        <td>{{ row.when }}</td>
-        <td>{{ row.source }}</td>
-        <td>{{ row.engines }}</td>
-        <td>{{ row.result_count }}</td>
-        <td>{{ row.latency }}</td>
-        <td>{{ row.client }}</td>
-        <td>
-          {% if row.clicks.is_empty() %}
-          {{ s.no_clicks }}
-          {% else %}
-          <details>
-            <summary>{{ row.clicks.len() }}</summary>
+      {% if let Some(day) = row.day_header %}
+      <tr class="day"><td colspan="7">{{ day }}</td></tr>
+      {% endif %}
+      <tr class="{% if row.is_search %}search{% else %}click{% endif %}">
+        <td class="c-when">{{ row.when }}</td>
+        <td class="c-query">
+          {% if row.is_search %}<a href="{{ row.rerun_url }}">{{ row.query }}</a>
+          {% else %}{{ s.click_only }}{% endif %}
+        </td>
+        <td class="c-source">
+          {% if !row.source_url.is_empty() %}<a href="{{ row.source_url }}">{{ row.source }}</a>
+          {% else %}{{ row.source }}{% endif %}
+        </td>
+        <td class="c-engines h-md">{{ row.engines }}</td>
+        <td class="c-n">{{ row.result_count }}</td>
+        <td class="c-ms h-md">{{ row.latency }}</td>
+        <td class="c-by">{{ row.client }}</td>
+      </tr>
+      <tr class="detail">
+        <td colspan="7">
+          {% if row.is_search %}
+          <details{% if !row.clicks.is_empty() %} open{% endif %}>
+            <summary>{{ row.clicks.len() }} {{ s.clicks_word }}</summary>
             {% for c in row.clicks %}
-            <a href="{{ c.url }}" target="_blank">{{ c.title }}</a><br>
+            <div class="click-line">
+              <span class="cdom">{{ c.domain }}</span>
+              <a href="{{ c.url }}" target="_blank" rel="noopener">{{ c.title }}</a>
+              <span class="cpos">#{{ c.position }}</span>
+            </div>
             {% endfor %}
           </details>
+          <span class="row-actions">
+            <a href="{{ row.rerun_url }}">{{ s.rerun }}</a>
+            <a href="{{ row.json_url }}" class="copy-json">{{ s.copy_json }}</a>
+            {% if row.cached_live %}<a href="{{ row.source_url }}">{{ s.payload }}</a>{% endif %}
+            <button
+              hx-delete="/api/history/{{ row.id }}"
+              hx-target="closest tbody"
+              hx-swap="delete"
+              hx-confirm="{{ s.delete_confirm }}"
+              hx-headers='{"X-Cauce-Client":"ui"}'
+            >{{ s.delete }}</button>
+          </span>
+          <code class="copy-fallback" hidden></code>
+          {% else %}
+          {% for c in row.clicks %}
+          <div class="click-line">
+            <span class="cdom">{{ c.domain }}</span>
+            <a href="{{ c.url }}" target="_blank" rel="noopener">{{ c.title }}</a>
+            <span class="cpos">#{{ c.position }}</span>
+          </div>
+          {% endfor %}
           {% endif %}
-        </td>
-        <td class="actions">
-          <a href="{{ row.rerun_url }}">{{ s.rerun }}</a>
-          <a href="{{ row.json_url }}">{{ s.copy_json }}</a>
-          <button
-            hx-delete="/api/history/{{ row.id }}"
-            hx-target="closest tr"
-            hx-swap="delete"
-            hx-confirm="{{ s.delete_confirm }}"
-            hx-headers='{"X-Cauce-Client":"ui"}'
-          >{{ s.delete }}</button>
+          <span class="meta2">{{ row.result_count }} · {{ row.client }} · {{ row.when }}</span>
         </td>
       </tr>
-      {% else %}
-      <tr class="click">
-        <td><a href="{{ row.url }}" target="_blank">{{ row.query }}</a></td>
-        <td>{{ row.when }}</td>
-        <td>{{ s.click_row }}</td>
-        <td>{{ row.engines }}</td>
-        <td>{{ row.result_count }}</td>
-        <td>{{ row.latency }}</td>
-        <td>{{ row.client }}</td>
-        <td>{{ s.no_clicks }}</td>
-        <td></td>
-      </tr>
-      {% endif %}
-      {% endfor %}
     </tbody>
+    {% endfor %}
   </table>
   {% endif %}
   <div class="meta">
-    {% if capped %}<span>{{ s.capped }}</span>{% endif %}
-    <span class="request-id" title="{{ request_id }}">{{ short_request_id }}</span>
+    {% if !capped_line.is_empty() %}<span>{{ capped_line }}</span>{% endif %}
+    <span>{{ s.request_label }} <span class="request-id">{{ request_id }}</span></span>
   </div>
   <script>{{ htmx_js|safe }}</script>
+  <script>
+    // `copy json`: fetch the cached /api/search payload into the clipboard;
+    // fall back to a selectable <code> with the URL when the clipboard API
+    // is unavailable or the fetch fails.
+    document.addEventListener('click', async (e) => {
+      const a = e.target.closest('a.copy-json');
+      if (!a) return;
+      e.preventDefault();
+      const code = a.closest('td').querySelector('.copy-fallback');
+      try {
+        const resp = await fetch(a.getAttribute('href'));
+        if (!resp.ok) throw new Error('status ' + resp.status);
+        await navigator.clipboard.writeText(await resp.text());
+        const label = a.dataset.label || a.textContent;
+        a.dataset.label = label;
+        a.textContent = '{{ s.copied }}';
+        setTimeout(() => { a.textContent = label; }, 1500);
+      } catch (err) {
+        if (code) { code.hidden = false; code.textContent = a.href; }
+      }
+    });
+  </script>
 </body>
 </html>

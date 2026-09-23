@@ -140,15 +140,23 @@ pub(crate) async fn search_inner(
 pub(crate) const HISTORY_LIMIT: u32 = 200;
 
 /// `GET /api/history?since&q&cached&limit`: searches and clicks, newest
-/// first.
+/// first. `Accept: text/html` renders the history page through the same
+/// handler (W2-02 settled input: one data path).
 pub async fn history(
     State(state): State<AppState>,
     Extension(ctx): Extension<RequestCtx>,
     uri: Uri,
-) -> Result<Json<Vec<HistoryItem>>, ApiError> {
+    headers: HeaderMap,
+) -> Result<Response, ApiError> {
+    #[cfg(feature = "ui")]
+    if crate::html::prefers_html(&headers) {
+        return crate::html::history_page(State(state), Extension(ctx), uri).await;
+    }
+    #[cfg(not(feature = "ui"))]
+    let _ = &headers;
     history_inner(&state, &ctx, &uri, HISTORY_LIMIT)
         .await
-        .map(|(_params, items)| Json(items))
+        .map(|(_params, _filter, items)| Json(items).into_response())
 }
 
 /// Shared `GET /api/history` / `/history` query handling (W2-02): one
@@ -160,7 +168,7 @@ pub(crate) async fn history_inner(
     ctx: &RequestCtx,
     uri: &Uri,
     default_limit: u32,
-) -> Result<(QueryParams, Vec<HistoryItem>), ApiError> {
+) -> Result<(QueryParams, HistoryFilter, Vec<HistoryItem>), ApiError> {
     let params = QueryParams::parse(uri.query(), ctx)?;
     params.allow(ctx, &["since", "q", "cached", "limit"])?;
     let filter = HistoryFilter {
@@ -174,7 +182,7 @@ pub(crate) async fn history_inner(
         .list_history(&filter)
         .await
         .map_err(|e| ctx.store(&e))?;
-    Ok((params, items))
+    Ok((params, filter, items))
 }
 
 /// `DELETE /api/history/{id}` (W2-02): audited history-row delete. The

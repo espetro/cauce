@@ -130,7 +130,9 @@ fn log_row(ts: chrono::DateTime<chrono::Utc>, q: &str, source: LogSource) -> Sea
 }
 
 /// Acceptance: after 3 replay searches the page shows 3 rows with the
-/// right sources (network first, cache on the repeat).
+/// right sources. The `source` column is computed at render time from
+/// `cache_entries` (amended W2-02): a fresh search wrote an unexpired
+/// entry, so every row reads `cached · <age>` linking to `/cache`.
 #[tokio::test]
 async fn history_page_shows_replay_searches_with_sources() {
     let (app, _state, _tmp) = app();
@@ -146,11 +148,15 @@ async fn history_page_shows_replay_searches_with_sources() {
         assert!(body.contains(q), "row for {q} missing: {body}");
     }
     assert!(
-        body.contains("<td>network</td>"),
-        "fresh searches log source=network: {body}"
+        body.contains("cached ·"),
+        "live cache entries render `cached · <age>`: {body}"
     );
     assert!(
-        body.contains("<td>replay</td>"),
+        body.contains(r#"href="/cache?q=w2-history-alpha#"#),
+        "cached source links to the entry on /cache: {body}"
+    );
+    assert!(
+        body.contains("replay"),
         "engines column names replay: {body}"
     );
     // The newest row is first (gamma was searched last).
@@ -158,14 +164,113 @@ async fn history_page_shows_replay_searches_with_sources() {
     let alpha = body.find("w2-history-alpha").expect("alpha row");
     assert!(gamma < alpha, "rows must be newest-first");
 
-    // A repeat is a cache hit: the newest row shows the cache source/tier.
+    // A repeat identical search refreshes the entry; both rows stay
+    // `cached ·` (the column is the query's live cache state, not the
+    // fetch that produced the row).
     search(&app, "w2-history-alpha").await;
     let (status, body) = get_html(&app, "/history").await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(search_rows(&body), 4);
+    assert!(body.contains("cached ·"), "{body}");
+}
+
+/// The source column follows `cache_entries`, not the logged fetch: once
+/// the entry is gone the same row reads `network · t<tier>`; a fresh
+/// identical search flips it back to `cached ·`.
+#[tokio::test]
+async fn history_source_tracks_live_cache_state() {
+    let (app, _state, _tmp) = app();
+    search(&app, "w2-src-flip").await;
+
+    let (status, body) = get_html(&app, "/history").await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(body.contains("cached ·"), "entry live: {body}");
+
+    let (status, body) = call(
+        &app,
+        Request::builder()
+            .method(Method::DELETE)
+            .uri(format!("/api/cache/{}", query_hash("w2-src-flip")))
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+
+    let (status, body) = get_html(&app, "/history").await;
+    assert_eq!(status, StatusCode::OK);
     assert!(
-        body.contains("cache · t1"),
-        "repeat search logs source=cache tier=1: {body}"
+        body.contains("network · t1"),
+        "entry gone → network source: {body}"
+    );
+    assert!(!body.contains("cached ·"), "{body}");
+
+    search(&app, "w2-src-flip").await;
+    let (status, body) = get_html(&app, "/history").await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(body.contains("cached ·"), "entry refilled: {body}");
+}
+
+/// `cached=1` (amended W2-02) keeps only rows whose query has a live cache
+/// entry — same param on the JSON route. After the entry is deleted the
+/// page renders the filtered-empty state.
+#[tokio::test]
+async fn history_cached_filter() {
+    let (app, _state, _tmp) = app();
+    search(&app, "w2-cached-yes").await;
+    search(&app, "w2-cached-no").await;
+    // Drop the entry for the second query: its row leaves the cached set.
+    let (status, _) = call(
+        &app,
+        Request::builder()
+            .method(Method::DELETE)
+            .uri(format!("/api/cache/{}", query_hash("w2-cached-no")))
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let (status, body) = get_html(&app, "/history?cached=1").await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(body.contains("w2-cached-yes"), "{body}");
+    assert!(
+        !body.contains("w2-cached-no"),
+        "uncached row filtered out: {body}"
+    );
+    // The checkbox re-renders checked and `clear` is offered.
+    assert!(body.contains(r#"name="cached" value="1" checked"#), "{body}");
+    assert!(body.contains(">clear<"), "{body}");
+
+    // Same filter on the JSON route.
+    let (status, feed) = get_json(&app, "/api/history?cached=1").await;
+    assert_eq!(status, StatusCode::OK);
+    let rows = feed.as_array().unwrap();
+    assert!(
+        rows.iter()
+            .all(|r| r["query"] != "w2-cached-no" || r["kind"] == "click"),
+        "{feed}"
+    );
+    assert!(rows.iter().any(|r| r["query"] == "w2-cached-yes"));
+
+    // Delete the surviving entry too: the filter now matches nothing and
+    // the page names the active filter in the empty state.
+    let (status, _) = call(
+        &app,
+        Request::builder()
+            .method(Method::DELETE)
+            .uri(format!("/api/cache/{}", query_hash("w2-cached-yes")))
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, body) = get_html(&app, "/history?cached=1").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(search_rows(&body), 0, "{body}");
+    assert!(
+        body.contains("that are still cached"),
+        "filtered-empty copy names the cached filter: {body}"
     );
 }
 
@@ -280,9 +385,51 @@ async fn history_row_joins_clicks() {
         1,
         "click joins the search row, not a new row: {body}"
     );
-    assert!(body.contains("<summary>1</summary>"), "{body}");
+    assert!(body.contains(">1 clicks<"), "summary reads `N clicks`: {body}");
+    // Nested line: domain, title link (new tab), 1-based #position.
+    assert!(body.contains("example.com"), "{body}");
     assert!(body.contains("W2 clicked title"), "{body}");
     assert!(body.contains("https://example.com/w2-click"), "{body}");
+    assert!(body.contains(r#"target="_blank""#), "{body}");
+    assert!(body.contains("#1"), "{body}");
+    // A click nests as an open <details>, not a row of its own.
+    assert!(!body.contains("click only"), "{body}");
+}
+
+/// A click whose `query_hash` matches no search row renders as its own
+/// `(click only)` row with dashes in the search columns.
+#[tokio::test]
+async fn history_unmatched_click_renders_click_only_row() {
+    let (app, _state, _tmp) = app();
+    search(&app, "w2-real-search").await;
+
+    let beacon = json!({
+        "url": "https://tokio.rs/tutorial",
+        "title": "Tokio tutorial",
+        "position": 1,
+        "query_hash": query_hash("w2-never-searched"),
+    });
+    let (status, _) = call(
+        &app,
+        Request::builder()
+            .method(Method::POST)
+            .uri("/api/click")
+            .header("content-type", "application/json")
+            .body(Body::from(serde_json::to_vec(&beacon).unwrap()))
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+
+    let (status, body) = get_html(&app, "/history").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(search_rows(&body), 1, "one search row: {body}");
+    assert!(body.contains("(click only)"), "{body}");
+    assert!(body.contains("tokio.rs"), "{body}");
+    assert!(body.contains("Tokio tutorial"), "{body}");
+    assert!(body.contains("#2"), "position is 1-based: {body}");
+    // The click row does not turn into a search row.
+    assert_eq!(body.matches("(click only)").count(), 1, "{body}");
 }
 
 /// Delete is audited (`history.delete`, actor `ui` via `X-Cauce-Client`)
@@ -348,6 +495,18 @@ async fn history_delete_removes_row_clicks_and_audits() {
         "{feed}"
     );
 
+    // The delete must not touch the cache entry for the query.
+    let key: CacheKey = query_hash("w2-delete-me").parse().unwrap();
+    assert!(
+        state
+            .store()
+            .get_cache(&key)
+            .await
+            .expect("get_cache")
+            .is_some(),
+        "history delete leaves cache_entries untouched"
+    );
+
     // The audit row carries actor ui and the deleted row's context.
     let audits = state
         .store()
@@ -389,7 +548,8 @@ async fn history_delete_removes_row_clicks_and_audits() {
     assert_eq!(status, StatusCode::BAD_REQUEST);
 }
 
-/// Row affordances: re-run link, copy-json link, htmx delete, request id.
+/// Row affordances: re-run link, copy-json link, payload link on a cached
+/// row, htmx delete, full request id in the footer.
 #[tokio::test]
 async fn history_row_actions_and_request_id() {
     let (app, _state, _tmp) = app();
@@ -402,8 +562,12 @@ async fn history_row_actions_and_request_id() {
         "re-run link: {body}"
     );
     assert!(
-        body.contains(r#"href="/api/search?q=w2-actions""#),
+        body.contains(r#"href="/api/search?q=w2-actions" class="copy-json""#),
         "copy-json link: {body}"
+    );
+    assert!(
+        body.contains(r#"href="/cache?q=w2-actions#"#),
+        "payload link on a cached row: {body}"
     );
     assert!(
         body.contains(r#"hx-delete="/api/history/"#),
@@ -413,29 +577,55 @@ async fn history_row_actions_and_request_id() {
         body.contains(r#"hx-headers='{"X-Cauce-Client":"ui"}'"#),
         "delete sends the ui client header: {body}"
     );
+    // The footer carries the full request id as selectable text, never
+    // abbreviated.
+    let marker = r#"class="request-id">"#;
+    let pos = body
+        .find(marker)
+        .unwrap_or_else(|| panic!("request id element missing: {body}"))
+        + marker.len();
+    let id = &body[pos..pos + 36];
     assert!(
-        body.contains(r#"class="request-id""#),
-        "footer request id: {body}"
+        id.chars().all(|c| c.is_ascii_hexdigit() || c == '-')
+            && id.matches('-').count() == 4,
+        "full request id in the footer, got {id:?}: {body}"
+    );
+    assert!(
+        !body.contains(r#"title=""#),
+        "no abbreviated id with a title tooltip: {body}"
     );
 }
 
-/// Empty state: a fresh store renders the no-history line, and so does a
-/// filter that matches nothing.
+/// Empty state: a fresh store renders the one-sentence empty line; a
+/// filter that matches nothing renders the filtered-empty sentence naming
+/// the active filter.
 #[tokio::test]
 async fn history_page_empty_state() {
     let (app, _state, _tmp) = app();
     let (status, body) = get_html(&app, "/history").await;
     assert_eq!(status, StatusCode::OK);
-    assert!(body.contains("No history yet"), "{body}");
+    assert!(
+        body.contains("nothing searched yet. run a search and it lands here."),
+        "{body}"
+    );
 
     search(&app, "w2-empty-check").await;
     let (status, body) = get_html(&app, "/history?q=no-such-query").await;
     assert_eq!(status, StatusCode::OK);
-    assert!(body.contains("No history yet"), "{body}");
+    // Askama escapes the quotes around the query text.
+    assert!(
+        body.contains("no searches match") && body.contains("no-such-query"),
+        "filtered-empty names the active q filter: {body}"
+    );
+    // `clear` is offered while a filter is active, hidden otherwise.
+    assert!(body.contains(">clear<"), "{body}");
+    let (_, body) = get_html(&app, "/history").await;
+    assert!(!body.contains(">clear<"), "{body}");
 }
 
 /// `Accept: application/json` on `/history` is the same data path as
-/// `/api/history`.
+/// `/api/history` — and `Accept: text/html` on `/api/history` renders the
+/// page: one handler, negotiated (W2-02 settled input).
 #[tokio::test]
 async fn history_page_json_negotiation() {
     let (app, _state, _tmp) = app();
@@ -447,6 +637,98 @@ async fn history_page_json_negotiation() {
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0]["kind"], "search");
     assert_eq!(rows[0]["query"], "w2-json-neg");
+
+    let (status, body) = get_html(&app, "/api/history").await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(
+        body.contains(r#"<table class="history">"#),
+        "/api/history under text/html renders the page: {body}"
+    );
+    assert_eq!(search_rows(&body), 1);
+}
+
+/// HTML rows equal the JSON rows for the same params (rubric 9.2: same
+/// params, same defaults, same row set).
+#[tokio::test]
+async fn history_page_html_rows_match_json_rows() {
+    let (app, _state, _tmp) = app();
+    search(&app, "w2-parity-a").await;
+    search(&app, "w2-parity-b").await;
+    let beacon = json!({
+        "url": "https://parity.example.com/x",
+        "title": "parity click",
+        "position": 0,
+        "query_hash": query_hash("w2-parity-a"),
+    });
+    let (status, _) = call(
+        &app,
+        Request::builder()
+            .method(Method::POST)
+            .uri("/api/click")
+            .header("content-type", "application/json")
+            .body(Body::from(serde_json::to_vec(&beacon).unwrap()))
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+
+    for (uri, api_uri) in [
+        ("/history", "/api/history"),
+        ("/api/history?since=24h", "/api/history?since=24h"),
+    ] {
+        let (status, feed) = get_json(&app, api_uri).await;
+        assert_eq!(status, StatusCode::OK);
+        let feed = feed.as_array().unwrap();
+        let searches = feed
+            .iter()
+            .filter(|i| i["kind"] == "search")
+            .count();
+
+        let (status, body) = get_html(&app, uri).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(
+            search_rows(&body),
+            searches,
+            "HTML row count == JSON search count for {uri}"
+        );
+        for item in feed {
+            if item["kind"] == "search" {
+                let q = item["query"].as_str().unwrap();
+                assert!(body.contains(q), "{uri}: row for {q} missing");
+            }
+        }
+    }
+}
+
+/// Header stats line: `N searches in last 24h · N total · N clicks today`.
+#[tokio::test]
+async fn history_stats_line_counts_searches_and_clicks() {
+    let (app, _state, _tmp) = app();
+    search(&app, "w2-stats-a").await;
+    search(&app, "w2-stats-b").await;
+    let beacon = json!({
+        "url": "https://stats.example.com/x",
+        "position": 0,
+        "query_hash": query_hash("w2-stats-a"),
+    });
+    let (status, _) = call(
+        &app,
+        Request::builder()
+            .method(Method::POST)
+            .uri("/api/click")
+            .header("content-type", "application/json")
+            .body(Body::from(serde_json::to_vec(&beacon).unwrap()))
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+
+    let (status, body) = get_html(&app, "/history").await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(
+        body.contains("2 searches in last 24h · 2 total · 1 clicks today"),
+        "stats line: {body}"
+    );
 }
 
 /// Exactly 200 available rows are not reported as truncated.
@@ -470,7 +752,7 @@ async fn history_page_exactly_200_rows_is_not_marked_capped() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(search_rows(&body), 200);
     assert!(
-        !body.contains("capped"),
+        !body.contains("use the filters to reach older searches"),
         "exactly 200 rows are not truncated: {body}"
     );
 }
@@ -496,7 +778,7 @@ async fn history_page_caps_at_200_rows() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(search_rows(&body), 200, "page caps at 200 rows: {body}");
     assert!(
-        body.contains("capped"),
+        body.contains("showing 200 of 205 · use the filters to reach older searches"),
         "the cap note renders when the feed is truncated: {body}"
     );
 }
