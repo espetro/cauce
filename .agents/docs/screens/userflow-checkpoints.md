@@ -149,8 +149,8 @@ Non-param checkpoints (no URL state needed, or not URL-addressable today):
 
 ### 16. History, time-filtered
 - Reach: select "last 24h" in the filter select, or deep-link.
-- URL: **`/history?since=24`** (also `168`=week, `720`=month; absent =
-  all). Server-side filter on `GET /api/history`; plain GET form.
+- URL: **`/history?since=24h`** (also `7d`, `30d`; absent = all; other
+  values are a 400). Server-side filter on `GET /api/history`; plain GET form.
 
 ### 17. History, query-text filtered
 - Reach: type in the query-filter input, or deep-link.
