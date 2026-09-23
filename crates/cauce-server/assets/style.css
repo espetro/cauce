@@ -113,6 +113,43 @@ article a:hover {
     color: var(--muted);
 }
 
+.audit-table-wrap {
+    overflow-x: auto;
+}
+
+.audit-table td,
+.audit-table th {
+    padding: 0.25rem 0.5rem;
+    text-align: left;
+    font-size: 0.875rem;
+    white-space: nowrap;
+}
+
+.audit-table td.target {
+    max-width: 18ch;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.audit-table td.details-cell {
+    white-space: normal;
+}
+
+.audit-table td.details-cell pre {
+    overflow-x: auto;
+    max-width: 40rem;
+}
+
+pre.trace {
+    overflow-x: auto;
+}
+
+@media (max-width: 768px) {
+    .audit-table .col-target {
+        display: none;
+    }
+}
+
 /* /settings (W2-07) */
 .topnav {
     margin-bottom: 1rem;
@@ -366,4 +403,5 @@ article.cache-entry + article.cache-entry {
         align-items: stretch;
     }
 }
+
 
