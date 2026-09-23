@@ -57,10 +57,15 @@ const EXPECTED_WAVE1_MOUNTED: &[(&str, &str)] = &[
     ("GET", "/metrics"),
 ];
 
-/// Wave-2 rows mounted so far: the cache page (W2-04) and the favicon (#87).
-/// They are `requires: "ui"` rows, so they join the mounted set only in `ui`
-/// builds and drop under `--headless` like the pages.
-const EXPECTED_WAVE2_UI_MOUNTED: &[(&str, &str)] = &[("GET", "/cache"), ("GET", "/favicon.ico")];
+/// Wave-2 rows mounted so far: the cache page (W2-04), `/opensearch.xml`
+/// (W2-11), and the favicon (#87). They are `requires: "ui"` rows, so they
+/// join the mounted set only in `ui` builds and drop under `--headless` like
+/// the pages.
+const EXPECTED_WAVE2_UI_MOUNTED: &[(&str, &str)] = &[
+    ("GET", "/cache"),
+    ("GET", "/opensearch.xml"),
+    ("GET", "/favicon.ico"),
+];
 /// Serialises tests that mutate process env (`CAUCE_CONFIG_DIR` and friends).
 /// Under nextest each test is its own process anyway; this keeps plain
 /// `cargo test` (one process per test binary) safe too.
@@ -355,7 +360,13 @@ async fn headless_drops_ui_routes_keeps_api() {
     assert!(headless.contains(&("GET".to_string(), "/api/search".to_string())));
 
     let router = build_router_opts(state, RouterOptions::headless());
-    for uri in ["/", "/search?q=x", "/cache", "/favicon.ico"] {
+    for uri in [
+        "/",
+        "/search?q=x",
+        "/cache",
+        "/opensearch.xml",
+        "/favicon.ico",
+    ] {
         let (status, _, body) = get(&router, uri).await;
         assert_eq!(status, StatusCode::NOT_FOUND, "{uri}: {body}");
         assert_envelope(&body, "not_found");

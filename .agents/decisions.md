@@ -113,9 +113,34 @@ rather than editing it away.
   (W3-06); new W3-07 breaker on Parse/Transport streaks; exec/replay empty → NoResults
   normalization. SearXNG `format=json` compat shim and engine-param forwarding deferred to
   `later/`. Project renamed oxe → cauce; CLI stays `cauce`. — 2026-09-22
+- **Exec protocol v2 adds `safesearch`/`time_range`/`params` with optimistic
+  per-process negotiation** (issue #88). The parent sends v2 to a fresh child;
+  an `error` naming the protocol version (v1 SDK: `parse:unsupported protocol
+  version: 2`) downgrades that process to v1 — v2 fields omitted, version
+  cached on `ChildIo` — and the request is resent on the same stream. v2
+  children must accept `v:1` (a strict subset) and echo the request's `v`, so
+  old parents still work against new children. Static `params` come from a new
+  `[engines.params]` config table. — 2026-09-23
 - **`search_log` keeps the user's raw query text in `query_raw`; `query` stays
   normalized.** History displays need the original casing, but stats grouping
   (`zero_result_queries`) and the history `q` LIKE filter want the normalized
   form — so schema v2 adds a nullable `query_raw` column instead of changing
   `query`'s semantics. NULL on pre-v2 rows; `SearchLogRow.query_raw` is
   `Option<String>` on the wire. (#89) — 2026-09-23
+- **Cache is a cross-screen feature; `/cache` stays as its inspection surface.** The
+  owner's model: history tracks searches (with clicked results nested, like a browser),
+  so history's `source` column carries the live cache state and a `cached only` filter;
+  the dashboard owns hit-rate and cache stats; settings gets a cache block with bulk
+  deletes. `/cache` keeps what none of those can hold (full list of agent-written
+  entries, FTS over payloads, payload inspection, deletes next to the list they act on)
+  and leaves the primary nav for an operator group `engines · cache · audit`. No
+  `/advanced` merge: dashboard is a daily page, `/cache` a maintenance one, and the
+  dashboard already links to both operator pages. v3 screen specs written for history
+  (rewritten), cache, engines, audit/trace, settings; checkpoints 21-36 and rubric
+  section 9 added. (#34, #36, #39) — 2026-09-23
+- **One `strings.rs` shape for cauce-server pages.** `crates/cauce-server/src/strings.rs`
+  holds `pub mod common` plus one `pub mod <page>` per page (`history`, `cache`, `audit`,
+  `trace`, `settings`, `engines`), each with flat `pub const NAME: &str` items; no structs
+  or COPY bundles. Templates reference `crate::strings::<page>::NAME`. Set because four
+  parallel wave 2 branches each created the file with a different shape; W2-04 lands
+  first and defines it, the others rebase. — 2026-09-23

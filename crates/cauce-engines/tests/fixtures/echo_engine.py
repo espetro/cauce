@@ -46,7 +46,11 @@ def main() -> None:
             Result(
                 title=f"{req.query} result {i}",
                 url=f"https://example.com/p{pid}/{i}",
-                snippet=f"pid={pid} page={req.page} lang={req.lang}",
+                snippet=(
+                    f"pid={pid} page={req.page} lang={req.lang} v={req.v}"
+                    f" safesearch={req.safesearch} time_range={req.time_range}"
+                    f" params={sorted(req.params.items())}"
+                ),
             )
             for i in range(3)
         ]
