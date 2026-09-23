@@ -135,21 +135,26 @@ pub(crate) async fn search_inner(
     }
 }
 
-/// `GET /api/history?since&q&limit`: searches and clicks, newest first.
+/// `GET /api/history` row cap (W2-02: `limit` is clamped to the page's
+/// 200-row budget).
+pub(crate) const HISTORY_LIMIT: u32 = 200;
+
+/// `GET /api/history?since&q&cached&limit`: searches and clicks, newest
+/// first.
 pub async fn history(
     State(state): State<AppState>,
     Extension(ctx): Extension<RequestCtx>,
     uri: Uri,
 ) -> Result<Json<Vec<HistoryItem>>, ApiError> {
-    history_inner(&state, &ctx, &uri, 50)
+    history_inner(&state, &ctx, &uri, HISTORY_LIMIT)
         .await
         .map(|(_params, items)| Json(items))
 }
 
 /// Shared `GET /api/history` / `/history` query handling (W2-02): one
 /// filter grammar and one data path (`Store::list_history`) for the JSON
-/// route and the HTMX page. Returns the parsed params so the page can
-/// re-render the current filter state.
+/// route and the HTMX page. Returns the parsed params and the resolved
+/// filter so the page can re-render the filter state and the cap note.
 pub(crate) async fn history_inner(
     state: &AppState,
     ctx: &RequestCtx,
@@ -157,11 +162,12 @@ pub(crate) async fn history_inner(
     default_limit: u32,
 ) -> Result<(QueryParams, Vec<HistoryItem>), ApiError> {
     let params = QueryParams::parse(uri.query(), ctx)?;
-    params.allow(ctx, &["since", "q", "limit"])?;
+    params.allow(ctx, &["since", "q", "cached", "limit"])?;
     let filter = HistoryFilter {
         since: params.since(ctx, "since")?,
         q: params.get("q").map(str::to_string),
-        limit: params.u32(ctx, "limit", default_limit)?.clamp(1, MAX_LIMIT),
+        cached: params.flag(ctx, "cached")?,
+        limit: params.u32(ctx, "limit", default_limit)?.clamp(1, HISTORY_LIMIT),
     };
     let items = state
         .store()

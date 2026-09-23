@@ -199,7 +199,7 @@ pub struct AuditRow {
     pub request_id: Option<Uuid>,
 }
 
-/// Filters for `Store::list_history` (`GET /api/history?since&q&limit`).
+/// Filters for `Store::list_history` (`GET /api/history?since&q&cached&limit`).
 #[derive(Debug, Clone)]
 pub struct HistoryFilter {
     /// Only rows at or after this instant.
@@ -207,6 +207,9 @@ pub struct HistoryFilter {
     /// Substring match on the stored query (searches only; clicks are not
     /// filtered by it).
     pub q: Option<String>,
+    /// `cached=1` (W2-02 amendment): only rows whose `query_hash` has a
+    /// live (unexpired) `cache_entries` row.
+    pub cached: bool,
     /// Max items, newest first.
     pub limit: u32,
 }
@@ -217,6 +220,7 @@ impl Default for HistoryFilter {
         Self {
             since: None,
             q: None,
+            cached: false,
             limit: 50,
         }
     }
@@ -229,6 +233,32 @@ impl Default for HistoryFilter {
 pub enum HistoryItem {
     Search(SearchLogRow),
     Click(ClickRow),
+}
+
+/// Live cache state for one `query_hash` (the history page's `source`
+/// column, W2-02 amendment): enough to render `cached · <age>` /
+/// `cached · expired` and link to `/cache` without decoding payloads.
+#[derive(Debug, Clone)]
+pub struct CacheState {
+    pub key: CacheKey,
+    /// The stored query text — the `/cache?q=` link target.
+    pub query: String,
+    pub created_at: DateTime<Utc>,
+    pub expires_at: DateTime<Utc>,
+}
+
+/// Aggregates for the `/history` header line and cap note (W2-02).
+#[derive(Debug, Clone, Copy, Default)]
+pub struct HistoryStats {
+    /// `search_log` rows in the trailing 24 hours.
+    pub searches_24h: u64,
+    /// `search_log` rows, all time.
+    pub searches_total: u64,
+    /// `clicks` rows since UTC midnight.
+    pub clicks_today: u64,
+    /// `search_log` rows matching the page's filters (ignoring `limit`):
+    /// the `N` in "showing 200 of N".
+    pub matching: u64,
 }
 
 /// Outcome of [`Store::delete_search_log`] (`DELETE /api/history/{id}`,
@@ -508,6 +538,16 @@ pub trait Store: Send + Sync {
     /// Combined history feed (`GET /api/history`): searches and clicks merged
     /// newest-first.
     async fn list_history(&self, filter: &HistoryFilter) -> Result<Vec<HistoryItem>, StoreError>;
+
+    /// Cache state for a batch of `query_hash`es (W2-02 amendment): one row
+    /// per present `cache_entries` row, expired rows included so the page can
+    /// render `cached · expired`. The history page calls this once per
+    /// request — batched, not per row.
+    async fn cache_states(&self, keys: &[CacheKey]) -> Result<Vec<CacheState>, StoreError>;
+
+    /// The `/history` header aggregates and the filtered total behind the
+    /// "showing N of M" cap note (W2-02).
+    async fn history_stats(&self, filter: &HistoryFilter) -> Result<HistoryStats, StoreError>;
 
     /// `DELETE /api/history/{id}` (W2-02): remove one `search_log` row plus
     /// the `clicks` rows that share its `query_hash`. Returns `None` when no

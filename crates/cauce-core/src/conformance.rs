@@ -452,6 +452,7 @@ pub async fn log_clicks_history(store: &impl Store) {
         .list_history(&HistoryFilter {
             since: None,
             q: None,
+            cached: false,
             limit: 50,
         })
         .await
@@ -487,6 +488,7 @@ pub async fn log_clicks_history(store: &impl Store) {
         .list_history(&HistoryFilter {
             since: None,
             q: Some(alpha.to_string()),
+            cached: false,
             limit: 50,
         })
         .await
@@ -513,6 +515,7 @@ pub async fn log_clicks_history(store: &impl Store) {
         .list_history(&HistoryFilter {
             since: Some(base - chrono::Duration::milliseconds(1500)),
             q: None,
+            cached: false,
             limit: 50,
         })
         .await
@@ -533,6 +536,7 @@ pub async fn log_clicks_history(store: &impl Store) {
         .list_history(&HistoryFilter {
             since: None,
             q: None,
+            cached: false,
             limit: 1,
         })
         .await
@@ -560,6 +564,7 @@ pub async fn log_clicks_history(store: &impl Store) {
         .list_history(&HistoryFilter {
             since: None,
             q: None,
+            cached: false,
             limit: 50,
         })
         .await
