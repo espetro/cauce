@@ -303,7 +303,7 @@ async fn persistence_is_debounced_and_transitions_urgent() {
 }
 
 /// `load` restores persisted rows: a still-open breaker stays skipped, an
-/// elapsed window admits a probe, and `reset` returns a fresh Closed row.
+/// elapsed window admits a probe, and `reset` returns a fresh HalfOpen row.
 #[tokio::test]
 async fn load_restores_persisted_state() {
     let store = Arc::new(StubStore::default());
@@ -352,12 +352,13 @@ async fn load_restores_persisted_state() {
         "half-open admits exactly one probe"
     );
 
-    // Reset restores a fresh Closed row (the route persists + audits it).
+    // Reset restores a fresh HalfOpen row (the route persists + audits
+    // it): the next call is admitted as the single probe (W2-05).
     let (previous, row) = tracker.reset(&open_id).expect("known engine");
     assert_eq!(previous, BreakerState::Open);
-    assert_eq!(row.breaker, BreakerState::Closed);
+    assert_eq!(row.breaker, BreakerState::HalfOpen);
     assert_eq!(row.failures, 0);
     assert_eq!(row.ewma_ms, 0.0);
-    assert_eq!(tracker.admission(&open_id, Uuid::now_v7()), Gate::Call);
+    assert_eq!(tracker.admission(&open_id, Uuid::now_v7()), Gate::Probe);
     assert!(tracker.reset(&EngineId::from("unknown")).is_none());
 }

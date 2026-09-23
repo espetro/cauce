@@ -430,6 +430,13 @@ impl SearchPipeline {
         &self.health
     }
 
+    /// The configured engine set as built (`id()`, `tier()`, `page_size()`).
+    /// Read-only — the set is immutable for the process lifetime; display
+    /// surfaces like the engines page read effective tiers from here.
+    pub fn engines(&self) -> &[Arc<dyn Engine>] {
+        &self.engines
+    }
+
     /// Load persisted `engine_health` rows into the tracker (startup, plan
     /// 4.4.6: a restart must not hammer a blocked engine). Returns the
     /// number of rows applied.

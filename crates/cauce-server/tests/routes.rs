@@ -60,17 +60,21 @@ const EXPECTED_WAVE1_MOUNTED: &[(&str, &str)] = &[
     ("GET", "/metrics"),
 ];
 
-/// Wave-2 API rows mounted so far: W2-02's audited history-row delete and
-/// the SSE stream endpoint (W2-01), which mounts in every build including
-/// headless.
+/// Wave-2 API rows mounted so far: the SSE stream endpoint (W2-01),
+/// W2-02's audited history-row delete, and W2-05's enable/disable posts.
+/// They mount in every build including headless.
 const EXPECTED_WAVE2_MOUNTED: &[(&str, &str)] = &[
     ("DELETE", "/api/history/{id}"),
     ("GET", "/api/search/stream"),
+    ("POST", "/api/engines/{id}/enable"),
+    ("POST", "/api/engines/{id}/disable"),
 ];
-/// Wave-2 rows mounted so far: the cache page (W2-04), `/opensearch.xml`
-/// (W2-11), the audit + trace pages (W2-06), the favicon (#87), and the dashboard
-/// (W2-03). They are `requires: "ui"` rows, so they join the mounted set only
-/// in `ui` builds and drop under `--headless` like the pages.
+
+/// Wave-2 `requires: "ui"` rows mounted so far: the cache page (W2-04),
+/// `/opensearch.xml` (W2-11), the audit + trace pages (W2-06), the favicon
+/// (#87), the dashboard (W2-03) and the engines page (W2-05). They join the
+/// mounted set only in `ui` builds and drop under `--headless` like the
+/// pages.
 const EXPECTED_WAVE2_UI_MOUNTED: &[(&str, &str)] = &[
     ("GET", "/cache"),
     ("GET", "/opensearch.xml"),
@@ -78,6 +82,7 @@ const EXPECTED_WAVE2_UI_MOUNTED: &[(&str, &str)] = &[
     ("GET", "/dashboard"),
     ("GET", "/audit"),
     ("GET", "/trace/{id}"),
+    ("GET", "/engines"),
 ];
 
 /// Serialises tests that mutate process env (`CAUCE_CONFIG_DIR` and friends).
@@ -311,7 +316,8 @@ fn wave0_routes_match_plan_filter() {
 /// `mounted_routes` (the builder's own view) equals the wave-0 set plus
 /// every wave-1 row implemented so far (`* /mcp` from W1-08, the engine
 /// health pair from W1-06, `/metrics` from W1-09), W2-02's history
-/// routes, and the wave-2 favicon (#87), filtered to compiled cargo features.
+/// routes, W2-05's enable/disable route plus `/engines` page, and the
+/// wave-2 favicon (#87), filtered to the compiled cargo features.
 #[test]
 fn mounted_routes_match_declaration() {
     let (state, _tmp) = test_state();
@@ -404,8 +410,20 @@ async fn headless_drops_ui_routes_keeps_api() {
 /// Probe the live router: every mounted row answers (never 404/405), every
 /// declared-but-unmounted row is absent, and undeclared paths 404 — the
 /// mechanical fix for "written but never mounted".
+///
+/// The `POST /api/engines/{id}/enable|disable` probes run the real
+/// config-write path: `Config::save()` resolves `config.toml` through
+/// `CAUCE_CONFIG_DIR`, so the env is pinned to a tempdir for the whole
+/// test (under `ENV_LOCK`, same discipline as `tests/engines.rs`) or the
+/// probe would overwrite the developer's real config.
 #[tokio::test]
 async fn live_router_matches_routes_table() {
+    let _guard = env_lock().await;
+    let cfg_dir = tempfile::tempdir().expect("tempdir");
+    // SAFETY: serialized by ENV_LOCK; nextest also isolates per process.
+    unsafe {
+        std::env::set_var("CAUCE_CONFIG_DIR", cfg_dir.path());
+    }
     let (router, state, _tmp) = app();
     let mounted: BTreeSet<(String, String)> = mounted_routes(&state, &Default::default())
         .map(|r| (r.method.to_string(), r.path.to_string()))
@@ -480,6 +498,10 @@ async fn live_router_matches_routes_table() {
         let (status, _, body) = get(&router, uri).await;
         assert_eq!(status, StatusCode::NOT_FOUND, "{uri}");
         assert_envelope(&body, "not_found");
+    }
+
+    unsafe {
+        std::env::remove_var("CAUCE_CONFIG_DIR");
     }
 }
 
