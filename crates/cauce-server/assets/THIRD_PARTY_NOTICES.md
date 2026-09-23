@@ -5,6 +5,9 @@ This directory vendors third-party JavaScript that is embedded into the
 HTMX pages. The vendored files are upstream releases, unmodified; their
 licenses follow.
 
+`favicon.svg` is a first-party icon (MPL-2.0, like the rest of the crate),
+not vendored.
+
 ## htmx.min.js
 
 - Name: htmx
@@ -14,6 +17,7 @@ licenses follow.
 
 ## json-enc.js
 
-- Name: htmx `json-enc` extension
-- License: BSD-2-Clause
-- Source: https://github.com/bigskysoftware/htmx-extensions (`json-enc`)
+- Name: htmx `json-enc` extension (`htmx-ext-json-enc`)
+- Version: 2.0.2
+- License: 0BSD (BSD Zero Clause)
+- Source: https://github.com/bigskysoftware/htmx-extensions (`src/json-enc/json-enc.js`)

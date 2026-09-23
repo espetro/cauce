@@ -201,6 +201,35 @@ async fn mcp_http_tools_and_search() {
     server.abort();
 }
 
+/// Issue #90 strict contract on the MCP surface: a pin naming any unknown
+/// id — even alongside a valid one — fails `search_web` with
+/// `invalid_params` naming the rejected ids and the configured set.
+#[tokio::test]
+async fn mcp_http_search_web_rejects_unknown_engine_ids() {
+    let (state, _tmp) = test_state();
+    let (addr, server) = spawn_server(state).await;
+    let client = mcp_client(addr).await;
+
+    for engines in [json!(["nope"]), json!(["replay", "nope"])] {
+        let err = client
+            .call_tool(
+                CallToolRequestParams::new("search_web")
+                    .with_arguments(args(json!({"query": "pin probe", "engines": engines}))),
+            )
+            .await
+            .expect_err("unknown pin must be a tool error");
+        let text = err.to_string();
+        assert!(text.contains("nope"), "error names the rejected id: {text}");
+        assert!(
+            text.contains("replay"),
+            "error lists the configured set: {text}"
+        );
+    }
+
+    client.cancel().await.expect("cancel");
+    server.abort();
+}
+
 /// `cache_status` and `cache_invalidate` carry `request_id`; the destructive
 /// call is audited as `mcp.cache_invalidate`.
 #[tokio::test]

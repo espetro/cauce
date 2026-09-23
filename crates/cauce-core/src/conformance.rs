@@ -94,6 +94,7 @@ pub fn log_row(
         ts,
         query_hash: CacheKey::from(&request(query)),
         query: query.to_string(),
+        query_raw: Some(query.to_string()),
         client,
         source,
         tier: match source {
@@ -428,6 +429,12 @@ pub async fn log_clicks_history(store: &impl Store) {
         ))
         .await
         .expect("log_search beta");
+    // A row as written before schema v2: `query_raw` stays NULL and must
+    // decode back as `None`.
+    let gamma = "conformance history gamma";
+    let mut pre_v2 = log_row(base, gamma, ClientKind::Api, LogSource::Network, 1, 0);
+    pre_v2.query_raw = None;
+    store.log_search(pre_v2).await.expect("log_search gamma");
     store
         .record_click(ClickRow {
             id: None,
@@ -460,6 +467,20 @@ pub async fn log_clicks_history(store: &impl Store) {
         click_pos < beta_pos && beta_pos < alpha_pos,
         "history must merge searches and clicks newest-first"
     );
+
+    // `query_raw` round-trips (schema v2); rows predating the column
+    // decode it as None.
+    let alpha_row = match &history[alpha_pos] {
+        HistoryItem::Search(s) => s,
+        _ => unreachable!(),
+    };
+    assert_eq!(alpha_row.query_raw.as_deref(), Some(alpha));
+    let gamma_pos = pos(&|i| matches!(i, HistoryItem::Search(s) if s.query == gamma));
+    let gamma_row = match &history[gamma_pos] {
+        HistoryItem::Search(s) => s,
+        _ => unreachable!(),
+    };
+    assert_eq!(gamma_row.query_raw, None);
 
     // `q` filters searches only; clicks pass through.
     let filtered = store

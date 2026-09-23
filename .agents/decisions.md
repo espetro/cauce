@@ -61,6 +61,11 @@ rather than editing it away.
   engine answered (`Ok` or `NoResults`) yields a 200-shaped `SearchResponse`, possibly empty;
   `AllEnginesFailed` requires every engine to error/timeout/panic. Kills the v2 "page 2 always
   502" defect; `engines_used` still reports `Failed(NoResults)` for honesty. — 2026-09-22
+  Amended 2026-09-23 (issue #120): an `Ok` engine response with zero results normalizes to
+  `NoResults` in the pipeline's fan-out, uniform across runtimes (exec `{"results":[],
+  "error":null}` included), so a wedged engine no longer reports `EngineStatus::Ok`. The
+  response is still an answer — health stays `record_ok`, the fan-out still yields a
+  200-shaped empty response — but the engine report and the `no_results` metric are honest.
 - **Store errors degrade, never fail a search.** `get_exact` failure → warn + treat as miss;
   `put` failure → warn + serve; `log_search` failure → warn only. `/health` (W0-09) owns
   store-failure surfacing. — 2026-09-22
@@ -108,3 +113,26 @@ rather than editing it away.
   (W3-06); new W3-07 breaker on Parse/Transport streaks; exec/replay empty → NoResults
   normalization. SearXNG `format=json` compat shim and engine-param forwarding deferred to
   `later/`. Project renamed oxe → cauce; CLI stays `cauce`. — 2026-09-22
+- **`search_log` keeps the user's raw query text in `query_raw`; `query` stays
+  normalized.** History displays need the original casing, but stats grouping
+  (`zero_result_queries`) and the history `q` LIKE filter want the normalized
+  form — so schema v2 adds a nullable `query_raw` column instead of changing
+  `query`'s semantics. NULL on pre-v2 rows; `SearchLogRow.query_raw` is
+  `Option<String>` on the wire. (#89) — 2026-09-23
+- **Cache is a cross-screen feature; `/cache` stays as its inspection surface.** The
+  owner's model: history tracks searches (with clicked results nested, like a browser),
+  so history's `source` column carries the live cache state and a `cached only` filter;
+  the dashboard owns hit-rate and cache stats; settings gets a cache block with bulk
+  deletes. `/cache` keeps what none of those can hold (full list of agent-written
+  entries, FTS over payloads, payload inspection, deletes next to the list they act on)
+  and leaves the primary nav for an operator group `engines · cache · audit`. No
+  `/advanced` merge: dashboard is a daily page, `/cache` a maintenance one, and the
+  dashboard already links to both operator pages. v3 screen specs written for history
+  (rewritten), cache, engines, audit/trace, settings; checkpoints 21-36 and rubric
+  section 9 added. (#34, #36, #39) — 2026-09-23
+- **One `strings.rs` shape for cauce-server pages.** `crates/cauce-server/src/strings.rs`
+  holds `pub mod common` plus one `pub mod <page>` per page (`history`, `cache`, `audit`,
+  `trace`, `settings`, `engines`), each with flat `pub const NAME: &str` items; no structs
+  or COPY bundles. Templates reference `crate::strings::<page>::NAME`. Set because four
+  parallel wave 2 branches each created the file with a different shape; W2-04 lands
+  first and defines it, the others rebase. — 2026-09-23
