@@ -598,9 +598,20 @@ table.history details[open] summary {
         margin-top: 0.15rem;
     }
 
-    /* click lines keep domain and title only */
+    /* click lines keep domain and title only, on one line; long titles
+       truncate with an ellipsis (the nowrap + hidden container clips the
+       inline link) */
     .click-line {
         padding-left: 0.75rem;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .click-line a {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
     }
 
     .click-line .cdom {
