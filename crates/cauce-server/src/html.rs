@@ -1074,7 +1074,12 @@ fn history_rows(
                     ),
                     None => (
                         match s_row.tier {
-                            Some(t) => format!("{} · t{}", s.src_network, t.as_u8()),
+                            Some(t) => format!(
+                                "{} · {}{}",
+                                s.src_network,
+                                s.tier_prefix,
+                                t.as_u8()
+                            ),
                             None => s.src_network.to_string(),
                         },
                         String::new(),
@@ -1125,12 +1130,12 @@ fn history_rows(
                         .format("%H:%M")
                         .to_string(),
                     query: String::new(),
-                    source: "-".to_string(),
+                    source: s.dash.to_string(),
                     source_url: String::new(),
                     cached_live: false,
-                    engines: "-".to_string(),
-                    result_count: "-".to_string(),
-                    latency: "-".to_string(),
+                    engines: s.dash.to_string(),
+                    result_count: s.dash.to_string(),
+                    latency: s.dash.to_string(),
                     client: c.client.label(),
                     clicks: vec![click_line(&c)],
                     rerun_url: String::new(),

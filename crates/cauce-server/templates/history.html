@@ -6,13 +6,13 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{{ s.heading }} · cauce</title>
+  <title>{{ s.heading }} · {{ s.brand }}</title>
   <link rel="icon" href="/favicon.ico" type="image/svg+xml">
   <style>{{ style_css|safe }}</style>
 </head>
 <body>
   <nav class="top">
-    <a class="brand" href="/">cauce</a>
+    <a class="brand" href="/">{{ s.brand }}</a>
     <a href="/">{{ s.nav_search }}</a>
     <a href="/history" aria-current="page">{{ s.nav_history }}</a>
   </nav>
@@ -79,7 +79,7 @@
             <div class="click-line">
               <span class="cdom">{{ c.domain }}</span>
               <a href="{{ c.url }}" target="_blank" rel="noopener">{{ c.title }}</a>
-              <span class="cpos">#{{ c.position }}</span>
+              <span class="cpos">{{ s.position_prefix }}{{ c.position }}</span>
             </div>
             {% endfor %}
           </details>
@@ -101,7 +101,7 @@
           <div class="click-line">
             <span class="cdom">{{ c.domain }}</span>
             <a href="{{ c.url }}" target="_blank" rel="noopener">{{ c.title }}</a>
-            <span class="cpos">#{{ c.position }}</span>
+            <span class="cpos">{{ s.position_prefix }}{{ c.position }}</span>
           </div>
           {% endfor %}
           {% endif %}

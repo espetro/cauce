@@ -187,6 +187,14 @@ pub mod history {
         pub src_cached: &'static str,
         pub src_expired: &'static str,
         pub src_network: &'static str,
+        /// `t` in `network · t1`.
+        pub tier_prefix: &'static str,
+        /// Empty search-column cell on `(click only)` rows.
+        pub dash: &'static str,
+        /// `#` in a click's `#position` marker.
+        pub position_prefix: &'static str,
+        /// The product name in the title suffix and brand link.
+        pub brand: &'static str,
         pub clicks_word: &'static str,
         pub click_only: &'static str,
         pub rerun: &'static str,
@@ -235,6 +243,10 @@ pub mod history {
         src_cached: "cached",
         src_expired: "expired",
         src_network: "network",
+        tier_prefix: "t",
+        dash: "-",
+        position_prefix: "#",
+        brand: "cauce",
         clicks_word: "clicks",
         click_only: "(click only)",
         rerun: "re-run",
