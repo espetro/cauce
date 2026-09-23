@@ -257,29 +257,101 @@ pub(crate) fn search_error(
     }
 }
 
-fn search_error_payload(ctx: &RequestCtx, req: &SearchRequest, error: PipelineError) -> Value {
+pub fn search_error_payload(ctx: &RequestCtx, req: &SearchRequest, error: PipelineError) -> Value {
     search_error(ctx, req, error).envelope()
 }
 
-/// `GET /api/history?since&q&limit`: searches and clicks, newest first.
+/// `GET /api/history` row cap (W2-02: `limit` is clamped to the page's
+/// 200-row budget).
+pub(crate) const HISTORY_LIMIT: u32 = 200;
+
+/// `GET /api/history?since&q&cached&limit`: searches and clicks, newest
+/// first. `Accept: text/html` renders the history page through the same
+/// handler (W2-02 settled input: one data path).
 pub async fn history(
     State(state): State<AppState>,
     Extension(ctx): Extension<RequestCtx>,
     uri: Uri,
-) -> Result<Json<Vec<HistoryItem>>, ApiError> {
-    let params = QueryParams::parse(uri.query(), &ctx)?;
-    params.allow(&ctx, &["since", "q", "limit"])?;
+    headers: HeaderMap,
+) -> Result<Response, ApiError> {
+    #[cfg(feature = "ui")]
+    if crate::html::prefers_html(&headers) {
+        return crate::html::history_page(State(state), Extension(ctx), uri).await;
+    }
+    #[cfg(not(feature = "ui"))]
+    let _ = &headers;
+    history_inner(&state, &ctx, &uri, HISTORY_LIMIT)
+        .await
+        .map(|(_params, _filter, items)| Json(items).into_response())
+}
+
+/// Shared `GET /api/history` / `/history` query handling (W2-02): one
+/// filter grammar and one data path (`Store::list_history`) for the JSON
+/// route and the HTMX page. Returns the parsed params and the resolved
+/// filter so the page can re-render the filter state and the cap note.
+pub(crate) async fn history_inner(
+    state: &AppState,
+    ctx: &RequestCtx,
+    uri: &Uri,
+    default_limit: u32,
+) -> Result<(QueryParams, HistoryFilter, Vec<HistoryItem>), ApiError> {
+    let params = QueryParams::parse(uri.query(), ctx)?;
+    params.allow(ctx, &["since", "q", "cached", "limit"])?;
     let filter = HistoryFilter {
-        since: params.since(&ctx, "since")?,
-        q: params.get("q").map(str::to_string),
-        limit: params.u32(&ctx, "limit", 50)?.clamp(1, MAX_LIMIT),
+        since: params.since(ctx, "since")?,
+        // Blank `q=` is no filter at all — JSON and the page must agree,
+        // and a blank substring would match every row anyway.
+        q: params
+            .get("q")
+            .filter(|v| !v.trim().is_empty())
+            .map(str::to_string),
+        cached: params.flag(ctx, "cached")?,
+        limit: params
+            .u32(ctx, "limit", default_limit)?
+            .clamp(1, HISTORY_LIMIT),
     };
-    state
+    let items = state
         .store()
         .list_history(&filter)
         .await
-        .map(Json)
-        .map_err(|e| ctx.store(&e))
+        .map_err(|e| ctx.store(&e))?;
+    Ok((params, filter, items))
+}
+
+/// `DELETE /api/history/{id}` (W2-02): audited history-row delete. The
+/// `clicks` rows sharing its `query_hash` go with it only when it was the
+/// last `search_log` row for that hash (the join the page renders).
+pub async fn history_delete(
+    State(state): State<AppState>,
+    Extension(ctx): Extension<RequestCtx>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+) -> Result<Json<Value>, ApiError> {
+    let id = id
+        .parse::<i64>()
+        .map_err(|_| ctx.bad_request(format!("invalid history id {id:?}")))?;
+    let Some(outcome) = state
+        .store()
+        .delete_search_log(id)
+        .await
+        .map_err(|e| ctx.store(&e))?
+    else {
+        return Err(ctx.not_found(format!("no history row {id}")));
+    };
+    write_audit(
+        state.store(),
+        &ctx,
+        &headers,
+        "history.delete",
+        id.to_string(),
+        json!({ "query": outcome.query, "clicks_removed": outcome.clicks_removed }),
+    )
+    .await?;
+    Ok(Json(json!({
+        "deleted": true,
+        "id": id,
+        "clicks_removed": outcome.clicks_removed,
+    })))
 }
 
 /// `POST /api/click`: the result-click beacon. `id`, `ts` and `client` are
@@ -905,8 +977,10 @@ impl QueryParams {
         }
     }
 
-    /// `since` accepts RFC 3339 (`2026-10-01T12:00:00Z`) or a bare
-    /// `YYYY-MM-DD` date (interpreted as that UTC midnight).
+    /// `since` accepts RFC 3339 (`2026-10-01T12:00:00Z`), a bare
+    /// `YYYY-MM-DD` date (interpreted as that UTC midnight) or a relative
+    /// window token — `24h`, `7d`, `30d` (W2-02's history filter set) or
+    /// `all` (no lower bound).
     pub(crate) fn since(
         &self,
         ctx: &RequestCtx,
@@ -915,6 +989,13 @@ impl QueryParams {
         let Some(v) = self.get(key) else {
             return Ok(None);
         };
+        match v {
+            "24h" => return Ok(Some(Utc::now() - chrono::Duration::hours(24))),
+            "7d" => return Ok(Some(Utc::now() - chrono::Duration::days(7))),
+            "30d" => return Ok(Some(Utc::now() - chrono::Duration::days(30))),
+            "all" => return Ok(None),
+            _ => {}
+        }
         if let Ok(dt) = DateTime::parse_from_rfc3339(v) {
             return Ok(Some(dt.with_timezone(&Utc)));
         }
@@ -924,7 +1005,7 @@ impl QueryParams {
             return Ok(Some(dt.and_utc()));
         }
         Err(ctx.bad_request(format!(
-            "invalid {key} {v:?}: expected RFC 3339 or YYYY-MM-DD"
+            "invalid {key} {v:?}: expected RFC 3339, YYYY-MM-DD, or one of 24h|7d|30d|all"
         )))
     }
 }
