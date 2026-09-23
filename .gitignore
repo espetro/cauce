@@ -32,3 +32,6 @@ node_modules/
 # plans are intentionally tracked here even though a global gitignore
 # silences .agents/plans/ everywhere else
 !.agents/plans/
+
+# per-worktree cargo dirs
+target-local/
