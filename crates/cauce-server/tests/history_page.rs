@@ -874,3 +874,108 @@ async fn history_off_window_click_is_not_click_only() {
         "only the true orphan renders click-only: {body}"
     );
 }
+
+/// `cached · expired`: an entry past its `expires_at` still present in the
+/// store renders the expired state — no link, no `payload` action.
+#[tokio::test]
+async fn history_source_renders_expired_cache() {
+    let (app, state, _tmp) = app();
+
+    // Seed a real entry through the pipeline, then overwrite it with a
+    // zero-TTL write so `expires_at` is already past at render time.
+    search(&app, "w2-expired").await;
+    let (status, resp) = get_json(&app, "/api/search?q=w2-expired").await;
+    assert_eq!(status, StatusCode::OK);
+    let resp: cauce_core::SearchResponse = serde_json::from_value(resp).unwrap();
+    state
+        .store()
+        .put(
+            &CacheKey::from(&SearchRequest {
+                q: "w2-expired".to_string(),
+                page: 1,
+                lang: None,
+                time_range: None,
+                safesearch: SafeSearch::default(),
+                engines: None,
+                client: ClientKind::Api,
+            }),
+            &resp,
+            std::time::Duration::ZERO,
+        )
+        .await
+        .expect("put expired entry");
+
+    let (status, body) = get_html(&app, "/history").await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(
+        body.contains("cached · expired"),
+        "expired entry renders `cached · expired`: {body}"
+    );
+    assert!(
+        !body.contains(">payload<"),
+        "no payload action for an expired source: {body}"
+    );
+}
+
+/// Day-group headers: rows on different local days get a `<tr class="day">`
+/// header each, newest day first.
+#[tokio::test]
+async fn history_day_headers_group_rows() {
+    let (app, state, _tmp) = app();
+    let now = chrono::Utc::now();
+    let old_day = now - chrono::Duration::days(3);
+    state
+        .store()
+        .log_search(log_row(now, "w2-day-new", LogSource::Network))
+        .await
+        .expect("log today");
+    state
+        .store()
+        .log_search(log_row(old_day, "w2-day-old", LogSource::Network))
+        .await
+        .expect("log old");
+
+    let (status, body) = get_html(&app, "/history?since=all").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        body.matches(r#"<tr class="day">"#).count(),
+        2,
+        "one day header per local day: {body}"
+    );
+    let old_label = old_day
+        .with_timezone(&chrono::Local)
+        .format("%Y-%m-%d")
+        .to_string();
+    assert!(body.contains(&old_label), "old day header: {body}");
+}
+
+/// `since` accepts only `24h|7d|30d|all` (plus absolute forms); an unknown
+/// token is a 400 with the API error envelope, and the select re-renders
+/// the three window options selected correctly.
+#[tokio::test]
+async fn history_since_validation_and_select_state() {
+    let (app, _state, _tmp) = app();
+
+    let (status, body) = get_json(&app, "/api/history?since=bogus").await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    assert_eq!(body["error"]["code"], "bad_request", "{body}");
+    assert!(
+        body["error"]["request_id"].as_str().is_some(),
+        "envelope request_id: {body}"
+    );
+
+    for window in ["24h", "7d", "30d"] {
+        let (status, body) = get_html(&app, &format!("/history?since={window}")).await;
+        assert_eq!(status, StatusCode::OK, "since={window}");
+        assert!(
+            body.contains(&format!(r#"value="{window}" selected"#)),
+            "since={window} re-renders selected: {body}"
+        );
+        for other in ["24h", "7d", "30d"].iter().filter(|w| **w != window) {
+            assert!(
+                !body.contains(&format!(r#"value="{other}" selected"#)),
+                "since={window} must not mark {other}: {body}"
+            );
+        }
+    }
+}
