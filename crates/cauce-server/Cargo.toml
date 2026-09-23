@@ -86,6 +86,9 @@ schemars = { version = "1", optional = true }
 
 [dev-dependencies]
 async-trait = "0.1"
+# Test-store seeding helpers (`conformance::request`/`response`), same as
+# cauce-store-sqlite's dev-dependency.
+cauce-core = { path = "../cauce-core", features = ["conformance"] }
 cauce-engines = { path = "../cauce-engines" }
 cauce-store-sqlite = { path = "../cauce-store-sqlite" }
 # W1-09 acceptance: parse `/metrics` output with a real text parser.

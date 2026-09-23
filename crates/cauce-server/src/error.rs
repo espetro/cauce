@@ -71,6 +71,12 @@ impl ApiError {
         )
     }
 
+    /// The HTTP status the envelope (or a content-negotiated error
+    /// fragment) answers with.
+    pub fn status(&self) -> StatusCode {
+        self.status
+    }
+
     /// Stamp the request id into the envelope.
     pub fn with_request_id(mut self, request_id: Option<Uuid>) -> Self {
         self.request_id = request_id;
