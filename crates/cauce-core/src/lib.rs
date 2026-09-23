@@ -32,7 +32,7 @@ pub use config::{
     EngineEntry, EngineKind, LexicalConfig, LogsConfig, MetaConfig, Resources, SearchConfig,
     ServerConfig, is_loopback_host,
 };
-pub use engine::{Engine, EngineError, EngineId, Tier};
+pub use engine::{ENGINE_ID_PATTERN, Engine, EngineError, EngineId, Tier};
 pub use health::{
     EWMA_ALPHA, EngineHealth, Gate, HealthPolicy, HealthTracker, PERSIST_DEBOUNCE, ProbeGuard,
 };

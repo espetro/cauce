@@ -22,7 +22,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use crate::engine::{EngineId, Tier};
+use crate::engine::{ENGINE_ID_PATTERN, EngineId, Tier};
 use crate::store::StoreTuning;
 
 /// An environment map: the real process-env snapshot in production, an
@@ -905,6 +905,15 @@ impl Config {
             }
         }
         for entry in &cfg.engines {
+            // Ids surface in URL path segments, `fe-*` element ids, log
+            // keys and fixture paths; outside `ENGINE_ID_PATTERN` they
+            // collide or produce invalid markup downstream.
+            if !EngineId::is_valid(entry.id.as_str()) {
+                return Err(ConfigError::InvalidEngine {
+                    id: entry.id.to_string(),
+                    msg: format!("id must match {ENGINE_ID_PATTERN} (non-empty)"),
+                });
+            }
             if entry.kind == EngineKind::Exec && entry.command.is_none() {
                 return Err(ConfigError::InvalidEngine {
                     id: entry.id.to_string(),
@@ -2260,6 +2269,37 @@ mod tests {
             Config::load_with(&env),
             Err(ConfigError::InvalidEngine { .. })
         ));
+    }
+
+    /// Engine ids are `[A-Za-z0-9._-]+`: they surface in URL path
+    /// segments, `fe-*` element ids, log keys and fixture paths, so
+    /// `from_raw` rejects anything outside the charset and names the
+    /// offending id. The `a.b`/`a-b` pair stays legal — `fe_id` encodes
+    /// them injectively.
+    #[test]
+    fn engine_id_charset_is_enforced() {
+        let (tmp, env) = sandbox(&[]);
+        for bad in ["a b", "a:b", "a/b", "ünïcode", ""] {
+            write_config(
+                &tmp.path().join("cfg"),
+                &format!("[[engines]]\nid = {bad:?}\nkind = \"replay\"\n"),
+            );
+            match Config::load_with(&env) {
+                Err(ConfigError::InvalidEngine { id, msg }) => {
+                    assert_eq!(id, bad);
+                    assert!(msg.contains(ENGINE_ID_PATTERN), "{msg}");
+                }
+                other => panic!("id {bad:?} must be rejected: {other:?}"),
+            }
+        }
+
+        write_config(
+            &tmp.path().join("cfg"),
+            "[[engines]]\nid = \"a.b\"\nkind = \"replay\"\n\n[[engines]]\nid = \"a-b\"\nkind = \"replay\"\n",
+        );
+        let cfg = Config::load_with(&env).unwrap();
+        assert!(cfg.engine("a.b").is_some());
+        assert!(cfg.engine("a-b").is_some());
     }
 
     #[test]

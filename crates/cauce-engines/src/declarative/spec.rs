@@ -48,7 +48,7 @@ use serde_json_path::JsonPath;
 use url::Url;
 
 use cauce_core::config::{ConfigError, EnvMap, interpolate_str};
-use cauce_core::{EngineError, EngineId, SearchRequest, Tier};
+use cauce_core::{ENGINE_ID_PATTERN, EngineError, EngineId, SearchRequest, Tier};
 
 use super::redirect::RedirectRule;
 
@@ -306,8 +306,13 @@ impl CompiledSpec {
             msg,
         };
 
-        if spec.id.as_str().is_empty() {
-            return Err(invalid("id must not be empty".to_string()));
+        // Same charset `Config::from_raw` enforces on `[[engines]]`
+        // entries: spec ids auto-register engines and name fixture dirs,
+        // so they face the same URL/element-id/file-path constraints.
+        if !EngineId::is_valid(spec.id.as_str()) {
+            return Err(invalid(format!(
+                "id must match {ENGINE_ID_PATTERN} (non-empty)"
+            )));
         }
         if spec.page_size == 0 {
             return Err(invalid("page_size must be >= 1".to_string()));

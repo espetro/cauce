@@ -13,6 +13,14 @@ use serde::{Deserialize, Serialize};
 use crate::request::SearchRequest;
 use crate::response::SearchResult;
 
+/// Charset an engine id must satisfy when it enters through user-facing
+/// configuration (`[[engines]]` TOML entries, declarative YAML specs):
+/// non-empty `[A-Za-z0-9._-]+`. Ids ride in URL path segments, HTML
+/// element ids, log keys and spec/fixture file paths, so anything
+/// outside that set — spaces, colons, slashes, non-ASCII — is rejected
+/// at load time (`Config::from_raw`, `CompiledSpec::compile`).
+pub const ENGINE_ID_PATTERN: &str = "[A-Za-z0-9._-]+";
+
 /// Stable identifier of a search engine (`bing`, `brave`, `ddgs`, `replay`, ...).
 ///
 /// Serializes as a plain string on the wire and in `engines_json` columns.
@@ -21,8 +29,22 @@ use crate::response::SearchResult;
 pub struct EngineId(String);
 
 impl EngineId {
+    /// Infallible by convention: runtime-only ids (health probes,
+    /// conformance stubs, lookup keys) never pass through a config file.
+    /// The [`ENGINE_ID_PATTERN`] invariant is enforced at the parse
+    /// boundaries where external ids enter — `Config::from_raw` for
+    /// `[[engines]]` entries and `CompiledSpec::compile` for YAML specs —
+    /// not here.
     pub fn new(id: impl Into<String>) -> Self {
         Self(id.into())
+    }
+
+    /// Whether `id` satisfies [`ENGINE_ID_PATTERN`].
+    pub fn is_valid(id: &str) -> bool {
+        !id.is_empty()
+            && id
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-'))
     }
 
     pub fn as_str(&self) -> &str {

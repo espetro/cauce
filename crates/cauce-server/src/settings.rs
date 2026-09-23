@@ -298,18 +298,46 @@ pub fn error_target(name: &str, engine_ids: &[String]) -> String {
     }
 }
 
-/// The `fe-*` element id for a field path: `fe-` plus the path with every
-/// `.` turned into `-` (`search.deadline_ms` -> `fe-search-deadline_ms`,
-/// `engines.dotted.id` -> `fe-engines-dotted-id`).
+/// The `fe-*` element id for a field path: `fe-` plus the path encoded as
+/// `-` -> `--`, `.` -> `-d`, and any other byte outside `[A-Za-z0-9_]`
+/// hex-escaped as `-xHH` (`search.deadline_ms` -> `fe-search-ddeadline_ms`,
+/// `engines.a.b` -> `fe-engines-da-db`, `engines.a-b` -> `fe-engines-da--b`).
 ///
 /// htmx resolves `hx-swap-oob` targets with `querySelector("#<id>")`,
 /// where a dot parses as a class selector and the swap silently misses, so
-/// every `fe-*` id must be dot-free. The encoding is not injective (`a.b`
-/// and `a-b` share an id), but the page's row ids and the oob fragment use
-/// the same mapping, so each error still lands on an element that exists.
+/// every `fe-*` id must be dot-free — and it must be *unique*: two engine
+/// ids like `a.b` and `a-b` (both legal under `[A-Za-z0-9._-]+`) used
+/// to share `fe-engines-a-b`, producing duplicate element ids and merged
+/// error lines. Escaping `-` before encoding `.` keeps every output `-`
+/// inside a `--`/`-d`/`-xHH` token, so the mapping is injective and no
+/// two paths can collide on an element id.
 #[cfg(feature = "ui")]
 pub fn fe_id(path: &str) -> String {
-    format!("fe-{}", path.replace('.', "-"))
+    format!("fe-{}", encode_id(path))
+}
+
+/// The injective dot-free encoding [`fe_id`] applies, without the `fe-`
+/// prefix: `-` -> `--`, `.` -> `-d`, and any other byte outside
+/// `[A-Za-z0-9_]` hex-escaped as `-xHH`. Every `-` in the output sits
+/// inside a `--`/`-d`/`-xHH` token, so no two paths share an encoding.
+/// The `/engines` cards reuse it under their own `engine-`/`test-`
+/// prefixes (`a.b` -> `engine-da-db`), which keeps `hx-target`
+/// selectors valid for every id the engine-id charset permits.
+#[cfg(feature = "ui")]
+pub(crate) fn encode_id(path: &str) -> String {
+    use std::fmt::Write as _;
+    let mut out = String::with_capacity(path.len() + 3);
+    for &b in path.as_bytes() {
+        match b {
+            b'-' => out.push_str("--"),
+            b'.' => out.push_str("-d"),
+            b'0'..=b'9' | b'A'..=b'Z' | b'a'..=b'z' | b'_' => out.push(b as char),
+            _ => {
+                let _ = write!(out, "-x{b:02x}");
+            }
+        }
+    }
+    out
 }
 
 /// Write `value` at the dotted `path`, creating intermediate tables.
@@ -466,28 +494,56 @@ mod tests {
 
     /// The oob id encoding must be dot-free so htmx's `querySelector("#id")`
     /// lookup finds the row: `engines.dotted.id.enabled` targets
-    /// `fe-engines-dotted-id`.
+    /// `fe-engines-ddotted-did`.
     #[cfg(feature = "ui")]
     #[test]
     fn fe_ids_are_dot_free_and_resolve_dotted_engine_rows() {
         let ids = vec!["dotted.id".to_string(), "replay".to_string()];
         assert_eq!(
             fe_id(&error_target("engines.dotted.id.enabled", &ids)),
-            "fe-engines-dotted-id"
+            "fe-engines-ddotted-did"
         );
         assert_eq!(
             fe_id(&error_target("engines.replay.tier", &ids)),
-            "fe-engines-replay"
+            "fe-engines-dreplay"
         );
         assert_eq!(
             fe_id(&error_target("search.deadline_ms", &ids)),
-            "fe-search-deadline_ms"
+            "fe-search-ddeadline_ms"
         );
         // An unknown dotted id still collapses to a dot-free row id.
         assert_eq!(
             fe_id(&error_target("engines.unknown.id.enabled", &ids)),
-            "fe-engines-unknown"
+            "fe-engines-dunknown"
         );
+    }
+
+    /// `a.b` and `a-b` are both legal engine ids (`[A-Za-z0-9._-]+`), so
+    /// the encoding must be injective: distinct paths can never share an
+    /// element id, duplicate an HTML id, or merge two rows' error lines.
+    #[cfg(feature = "ui")]
+    #[test]
+    fn fe_id_encoding_is_injective() {
+        let paths = [
+            "engines.a.b",
+            "engines.a-b",
+            "engines.a..b",
+            "engines.a.-b",
+            "engines.a-.b",
+            "engines.a b",
+            "engines.a:b",
+            "engines.replay",
+            "search.deadline_ms",
+            "",
+        ];
+        let mut seen = std::collections::BTreeSet::new();
+        for path in paths {
+            let id = fe_id(path);
+            assert!(!id.contains('.'), "fe id holds a dot: {id:?}");
+            assert!(seen.insert(id.clone()), "{path:?} collides on {id:?}");
+        }
+        assert_eq!(fe_id("engines.a.b"), "fe-engines-da-db");
+        assert_eq!(fe_id("engines.a-b"), "fe-engines-da--b");
     }
 
     #[test]
