@@ -124,6 +124,11 @@ async fn cache_hit_is_fast_and_still_logged() {
     assert_eq!(logs[1].result_count, 10);
     assert_eq!(logs[1].engines, vec![EngineId::from("replay")]);
     assert_eq!(logs[1].query_hash, CacheKey::from(&request));
+    // #89: `query` is normalized; `query_raw` keeps the submitted casing.
+    for row in logs.iter() {
+        assert_eq!(row.query, "cached query");
+        assert_eq!(row.query_raw.as_deref(), Some("Cached   QUERY"));
+    }
 }
 
 /// Acceptance: RRF sums contributions, so a URL returned by both engines
@@ -222,7 +227,9 @@ async fn all_engines_failed_returns_errors_logs_and_skips_cache() {
     assert_eq!(logs[0].engines.len(), 2);
 }
 
-/// Zero results with a healthy engine is a valid, cacheable response.
+/// Zero results with a healthy engine is a valid, cacheable response, but
+/// the engine report is honest: an `Ok` empty page normalizes to
+/// `Failed(NoResults)` so a wedged engine does not read as `Ok` (#120).
 #[tokio::test]
 async fn empty_results_are_valid_and_cached() {
     let dir = tempfile::tempdir().unwrap();
@@ -233,6 +240,11 @@ async fn empty_results_are_valid_and_cached() {
     let resp = pipe.search(&req("nothing here")).await.unwrap();
     assert!(resp.results.is_empty());
     assert!(!resp.meta.deadline_hit);
+    assert_eq!(
+        resp.meta.engines_used[0].status,
+        EngineStatus::Failed(EngineError::NoResults),
+        "Ok(vec![]) normalizes to Failed(NoResults)"
+    );
     assert_eq!(store.puts.lock().unwrap().len(), 1, "cached normally");
     assert_eq!(store.logs.lock().unwrap()[0].result_count, 0);
 }
@@ -285,14 +297,47 @@ async fn request_id_ttl_override_and_engine_pin() {
     assert!(matches!(under.meta.source, Source::Network));
     assert_eq!(store.puts.lock().unwrap()[2].1, Duration::from_secs(60));
 
-    // Pin to a configured engine runs it; pin to an unknown id is
-    // `NoEngines` (still logged).
+    // Pin to a configured engine runs it; a pin naming unknown ids —
+    // fully or partially — is `UnknownEngines` naming the offenders and
+    // the configured set (issue #90 strict contract, still logged).
     let mut pinned = req("pinned");
     pinned.engines = Some(vec![EngineId::from("replay")]);
     pipe.search(&pinned).await.unwrap();
+
     pinned.engines = Some(vec![EngineId::from("nope")]);
     let err = pipe.search(&pinned).await.unwrap_err();
-    assert!(matches!(err, PipelineError::NoEngines));
+    let PipelineError::UnknownEngines {
+        unknown,
+        configured,
+    } = &err
+    else {
+        panic!("expected UnknownEngines, got {err}");
+    };
+    assert_eq!(unknown, &[EngineId::from("nope")]);
+    assert_eq!(configured, &[EngineId::from("replay")]);
+    let msg = err.to_string();
+    assert!(msg.contains("nope"), "message names the rejected id: {msg}");
+    assert!(
+        msg.contains("replay"),
+        "message lists the configured set: {msg}"
+    );
+
+    // A partial pin rejects the whole request too — no silent truncation.
+    pinned.engines = Some(vec![EngineId::from("replay"), EngineId::from("nope")]);
+    let err = pipe.search(&pinned).await.unwrap_err();
+    assert!(
+        matches!(err, PipelineError::UnknownEngines { .. }),
+        "partial pin must be UnknownEngines: {err}"
+    );
+
+    // The did-you-mean hint fires on an edit-distance-1 id.
+    pinned.engines = Some(vec![EngineId::from("repla")]);
+    let err = pipe.search(&pinned).await.unwrap_err();
+    assert!(
+        err.to_string().contains("did you mean repla -> replay?"),
+        "edit-distance-1 hint: {err}"
+    );
+
     let last = store.logs.lock().unwrap().last().unwrap().clone();
     assert_eq!(last.source, LogSource::Network);
     assert!(last.engines.is_empty());

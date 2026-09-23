@@ -35,10 +35,12 @@ const MAX_LIMIT: u32 = 1_000;
 
 /// `GET /api/search?q&page&lang&time_range&safesearch&engines`.
 ///
-/// `engines` is a comma-separated pin (`engines=replay,ddgs`); a non-empty
-/// pin that matches no configured engine is 400 `unknown_engines` (even if
-/// no engines are configured), an empty pin or zero configured engines is
-/// 503 `no_engines`, and an all-failed fan-out is 502 `upstream_failed`.
+/// `engines` is a comma-separated pin (`engines=replay,ddgs`); a pin
+/// naming any id outside the configured set is 400 `unknown_engines` —
+/// the message lists the rejected ids and the configured set (issue #90
+/// strict contract, even if no engines are configured) — an empty pin or
+/// zero configured engines is 503 `no_engines`, and an all-failed fan-out
+/// is 502 `upstream_failed`.
 pub async fn search(
     State(state): State<AppState>,
     Extension(ctx): Extension<RequestCtx>,
@@ -93,8 +95,14 @@ pub(crate) async fn search_inner(
         .await
     {
         Ok(resp) => Ok((req, resp)),
-        // A pin that selected nothing is the client's error; an empty
-        // configured set is the operator's.
+        // A pin naming ids outside the configured set is the client's
+        // error; the message names the offenders and the configured set
+        // (issue #90).
+        Err(e @ PipelineError::UnknownEngines { .. }) => {
+            Err(ctx.err(StatusCode::BAD_REQUEST, "unknown_engines", e.to_string()))
+        }
+        // A bare `Some([])` pin that selected nothing is the client's
+        // error; an empty configured set is the operator's.
         Err(PipelineError::NoEngines) if req.engines.is_some() => Err(ctx.err(
             StatusCode::BAD_REQUEST,
             "unknown_engines",
@@ -572,10 +580,12 @@ impl QueryParams {
             .map(|(_, v)| v.as_str())
     }
 
-    /// Present and non-empty.
+    /// Present and non-blank: `q=` and whitespace-only values are 400s
+    /// just like an absent parameter — a blank `q` would otherwise run a
+    /// fan-out on the empty normalized query (#89).
     pub(crate) fn required<'a>(&'a self, ctx: &RequestCtx, key: &str) -> Result<&'a str, ApiError> {
         self.get(key)
-            .filter(|v| !v.is_empty())
+            .filter(|v| !v.trim().is_empty())
             .ok_or_else(|| ctx.bad_request(format!("missing required parameter {key:?}")))
     }
 

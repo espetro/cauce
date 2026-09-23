@@ -141,21 +141,21 @@ Non-param checkpoints (no URL state needed, or not URL-addressable today):
 
 ### 15. History, unfiltered
 - Reach: nav to `/history`.
-- URL: **`/history`** — addressable today. Assert stats line + newest-first
-  rows + empty state when 0 clicks.
+- URL: **`/history`**. Assert stats line (`N searches in last 24h · N
+  total · N clicks today`), one row per search newest first with a
+  `source` value (`cached · <age>`, `cached · expired`, `network · t<n>`),
+  empty state when 0 searches. v3 rows are searches, not clicks
+  (`history.md`).
 
 ### 16. History, time-filtered
 - Reach: select "last 24h" in the filter select, or deep-link.
-- URL: **`/history?since=24`** — **works today** (also `168`=week,
-  `720`=month; `all`=default, stripped from the url). Server-side filter
-  against `GET /api/history`; the select writes back via router
-  navigation (same pattern as `mode`).
+- URL: **`/history?since=24h`** (also `7d`, `30d`; absent = all; other
+  values are a 400). Server-side filter on `GET /api/history`; plain GET form.
 
 ### 17. History, query-text filtered
 - Reach: type in the query-filter input, or deep-link.
-- URL: **`/history?qf=<substring>`** — **works today** (`q` is taken by
-  the backend's history endpoint semantics; `qf` keeps the UI filter
-  distinct and maps to the server-side `q` substring param).
+- URL: **`/history?q=<substring>`**. v3 uses the API's own `q` param (the
+  v2 `qf` indirection is gone: the HTML page is the API handler).
 
 ### 18. Settings dialog open
 - Reach: click `settings` in the header (any route).
@@ -180,6 +180,101 @@ Non-param checkpoints (no URL state needed, or not URL-addressable today):
 - URL: **`/dashboard`** — addressable today. Live stats panel
   (`GET /api/stats`) plus placeholder panels for log-derived data; no
   params planned (spec: window is build-time constant).
+
+## Wave 2 checkpoints (v3 pages)
+
+Added 2026-09-23 with the v3 screen specs `history.md` (rewritten),
+`cache.md`, `engines.md`, `audit.md`, `settings.md`. Every state below is
+reachable with the `replay` engine; none needs a fixture-only flag.
+
+### 21. History, cached only
+- Reach: tick `cached only`, or deep-link.
+- URL: **`/history?cached=1`**. Assert every row's `source` starts with
+  `cached ·` and the filtered-empty copy appears when the cache is empty.
+
+### 22. History, row with nested clicks
+- Reach: search, then `POST /api/click` for one of its results.
+- URL: `/history`. Assert the search row's `N clicks` details is open and
+  lists domain, title, `#position`; a click for an unseen query renders a
+  `(click only)` row.
+
+### 23. History, row deleted
+- Reach: click `delete` on a row, confirm.
+- URL: `/history` after the action. Assert the row and its clicks are
+  gone, `/audit` shows `history.delete` with actor `ui`, the cache entry
+  for that query still exists.
+
+### 24. Cache, unfiltered
+- Reach: `/cache` from history's `payload` link, dashboard cache panel or
+  settings.
+- URL: **`/cache`**. Assert count line, newest-first rows with created,
+  expiry phrase, hits, engines, size; expired rows muted; footer shows the
+  full request id.
+
+### 25. Cache, filtered, row open
+- Reach: history `payload` link, or type in the filter.
+- URL: **`/cache?q=<text>#<key>`**. Assert matching rows only, `clear`
+  visible, the addressed row's payload block open with pretty JSON.
+
+### 26. Cache, row deleted
+- Reach: `delete` on a row, confirm.
+- URL: `/cache` after the action. Assert row removed in place, count
+  decremented, `/audit` shows `cache.delete` actor `ui`, next search of
+  that query reports `Network`.
+
+### 27. Engines, breaker open
+- Reach: drive a replay engine to `blocked` via fault injection.
+- URL: **`/engines`**. Assert the card's chip reads `Open` with `retries in
+  Ns`, summary line counts `1 breaker open`.
+
+### 28. Engines, after reset
+- Reach: click `reset breaker` on the `Open` card.
+- URL: `/engines` (card swapped in place). Assert chip reads `HalfOpen`,
+  `/audit` shows `engine.reset` actor `ui`.
+
+### 29. Engines, inline test query
+- Reach: type a query in a card's test form, `run`.
+- URL: `/engines` (fragment from `/api/search?q=<q>&engines=<id>`). Assert
+  a meta line `N results · <ms> ms` or the error class, and the result list
+  fragment under the card's actions.
+
+### 30. Audit, unfiltered
+- Reach: nav to `/audit`.
+- URL: **`/audit`**. Assert newest-first rows with when, actor, action,
+  target, request link; details toggles; empty copy on a fresh DB.
+
+### 31. Audit, filtered
+- Reach: pick actor and/or action, `filter`, or deep-link.
+- URL: **`/audit?actor=ui&action=cache.delete`**. Assert only matching
+  rows, `clear` visible, filtered-empty copy when none match.
+
+### 32. Trace, found
+- Reach: click a request link on `/audit`, or open a replay search's id.
+- URL: **`/trace/<request_id>`**. Assert full id with copy control, summary
+  line, preformatted timeline, spans list containing the `replay` engine.
+
+### 33. Trace, not found / malformed
+- Reach: open an unissued ULID, or `/trace/x`.
+- URL: `/trace/<ulid>` (404), `/trace/x` (400). Assert the page frame
+  renders with the retention hint or `that is not a request id`; no raw
+  error text.
+
+### 34. Settings, default
+- Reach: nav to `/settings`.
+- URL: **`/settings`**. Assert five form sections plus the cache block,
+  `${env:...}` values rendered verbatim, env-pinned fields disabled with
+  `set by CAUCE_*`, AI section greyed.
+
+### 35. Settings, saved
+- Reach: change `search.deadline_ms`, `Save`.
+- URL: `/settings` (HTMX status swap). Assert status reads `saved HH:MM`,
+  reload shows the new value, the API key template is byte-identical,
+  `/audit` shows `config.save` actor `ui`.
+
+### 36. Settings, validation error
+- Reach: enter `-5` in Deadline, `Save`.
+- URL: `/settings`. Assert inline error under the field, status `not saved:
+  1 error`, form values preserved.
 
 ## QA agent convention
 

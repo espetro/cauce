@@ -63,6 +63,13 @@ results over SSE. The owner uses the UI daily for a week and files findings.
   (`/api/search?q=` cached), delete-row (audited). Empty state on replay `empty`.
 - Acceptance: page test after 3 replay searches shows 3 rows with the right sources; filter
   `since=24h` hides a row backdated in the temp DB.
+- Amended 2026-09-23: the row's `source` column carries the live cache state of the query
+  (`cached · <age>` linking to `/cache?q=<query>#<key>`, `cached · expired`, or
+  `network · t<n>`), computed at render time; clicks nest under their search row and a click
+  with no matching search renders as a `(click only)` row; new `cached=1` param on
+  `GET /api/history` (same handler) backs a `cached only` checkbox. Spec:
+  `.agents/docs/screens/history.md`. Acceptance adds: `?cached=1` after a delete of the
+  cache shows the filtered-empty state.
 - Follow-up: W2-10.
 
 ### W2-03 Dashboard page
@@ -89,6 +96,10 @@ results over SSE. The owner uses the UI daily for a week and files findings.
   "delete expired", "delete all" with confirm (all audited with actor `ui`).
 - Acceptance: delete via the page removes the row and writes an `audit` row; next search is
   `Network`.
+- Amended 2026-09-23: `/cache` is the cache feature's inspection surface, not a primary nav
+  item; it sits in the header's operator group (W2-08) and is reached from history's
+  `payload` links, the dashboard cache panel and the settings cache block. `?q=<query>#<key>`
+  opens the addressed row. Spec: `.agents/docs/screens/cache.md`.
 - Follow-up: W2-10.
 
 ### W2-05 Engines page
@@ -124,6 +135,10 @@ results over SSE. The owner uses the UI daily for a week and files findings.
   preserves them. Validation errors inline.
 - Acceptance: page test edits `search.deadline_ms`, saves, reloads and sees the value; the
   `${env:BIFROST_API_KEY}` template survives a save round-trip byte-for-byte.
+- Amended 2026-09-23: a Cache block after Logging (status line from `/api/stats`: entries,
+  unexpired, db size, newest; `delete expired` / `delete all` reusing W2-04's endpoints,
+  confirms and audit; `browse entries` link to `/cache`). Spec:
+  `.agents/docs/screens/settings.md`.
 - Follow-up: W4-01.
 
 ### W2-08 Theme and mobile layout

@@ -32,7 +32,15 @@ pub fn run(args: &[String]) -> i32 {
         .with_writer(std::io::stderr)
         .try_init();
 
-    match parse(args).and_then(run_inner) {
+    let result = match parse(args) {
+        Ok(Some(opts)) => run_inner(opts),
+        Ok(None) => {
+            println!("{USAGE}");
+            return 0;
+        }
+        Err(msg) => Err(msg),
+    };
+    match result {
         Ok(path) => {
             println!("{}", path.display());
             0
@@ -80,7 +88,9 @@ struct RecordArgs {
     out_dir: PathBuf,
 }
 
-fn parse(args: &[String]) -> Result<RecordArgs, String> {
+/// `Ok(None)` is `-h`/`--help`: usage goes to stdout with exit 0, not
+/// through the error path.
+fn parse(args: &[String]) -> Result<Option<RecordArgs>, String> {
     let mut engine = None;
     let mut query = None;
     let mut out_dir = PathBuf::from("engines/fixtures");
@@ -101,14 +111,14 @@ fn parse(args: &[String]) -> Result<RecordArgs, String> {
             "--engine" | "-e" => engine = Some(value("--engine")?),
             "--query" | "-q" => query = Some(value("--query")?),
             "--out-dir" | "-o" => out_dir = PathBuf::from(value("--out-dir")?),
-            "-h" | "--help" => return Err("help requested".into()),
+            "-h" | "--help" => return Ok(None),
             other => return Err(format!("unknown flag {other:?}")),
         }
     }
 
-    Ok(RecordArgs {
+    Ok(Some(RecordArgs {
         engine: engine.ok_or("missing --engine <id>")?,
         query: query.ok_or("missing --query <q>")?,
         out_dir,
-    })
+    }))
 }

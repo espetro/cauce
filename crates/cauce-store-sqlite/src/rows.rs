@@ -157,13 +157,14 @@ pub fn cached(row: &Row) -> Result<CachedSearch, StoreError> {
 }
 
 /// Decode one `search_log` row selected as
-/// `id, ts, query_hash, query, client, source, tier, latency_ms, result_count, engines_json, deadline_hit`.
+/// `id, ts, query_hash, query, client, source, tier, latency_ms, result_count, engines_json, deadline_hit, query_raw`.
 pub fn search_log(row: &Row) -> Result<SearchLogRow, StoreError> {
     Ok(SearchLogRow {
         id: Some(int(row, 0, "id")?),
         ts: from_ms(int(row, 1, "ts")?)?,
         query_hash: cache_key(&text(row, 2, "query_hash")?)?,
         query: text(row, 3, "query")?,
+        query_raw: opt_text(row, 11, "query_raw")?,
         client: parse_client(&text(row, 4, "client")?)?,
         source: parse_source(&text(row, 5, "source")?)?,
         tier: opt_int(row, 6, "tier")?.map(parse_tier).transpose()?,

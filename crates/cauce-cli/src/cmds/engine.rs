@@ -26,7 +26,15 @@ const LIVE_BUDGET: Duration = Duration::from_secs(30);
 
 /// Entry point for the `engine` subcommand. Returns the process exit code.
 pub fn run(args: &[String]) -> i32 {
-    match parse(args).and_then(dispatch) {
+    let result = match parse(args) {
+        Ok(Some(opts)) => dispatch(opts),
+        Ok(None) => {
+            println!("{USAGE}");
+            return 0;
+        }
+        Err(msg) => Err(msg),
+    };
+    match result {
         Ok(code) => code,
         Err(msg) => {
             eprintln!("cauce engine: {msg}\n{USAGE}");
@@ -149,7 +157,17 @@ struct EngineArgs {
     fixtures_dir: PathBuf,
 }
 
-fn parse(args: &[String]) -> Result<EngineArgs, String> {
+/// `Ok(None)` is `-h`/`--help`: usage goes to stdout with exit 0, not
+/// through the error path.
+fn parse(args: &[String]) -> Result<Option<EngineArgs>, String> {
+    // `cauce engine -h` asks for help before the `test` gate, same as
+    // `cauce engine test -h` inside the flag loop below.
+    if matches!(
+        args.first().map(String::as_str),
+        Some("-h") | Some("--help")
+    ) {
+        return Ok(None);
+    }
     let mut it = args.iter();
     if it.next().map(String::as_str) != Some("test") {
         return Err("expected `cauce engine test <spec.yaml>`".to_string());
@@ -173,7 +191,7 @@ fn parse(args: &[String]) -> Result<EngineArgs, String> {
             "--live" => live = Some(value("--live")?),
             "--record" => record = true,
             "--fixtures-dir" => fixtures_dir = PathBuf::from(value("--fixtures-dir")?),
-            "-h" | "--help" => return Err("help requested".into()),
+            "-h" | "--help" => return Ok(None),
             other if other.starts_with('-') => {
                 return Err(format!("unknown flag {other:?}"));
             }
@@ -188,10 +206,10 @@ fn parse(args: &[String]) -> Result<EngineArgs, String> {
     if record && live.is_none() {
         return Err("--record needs --live \"<query>\" (the fetch it records)".to_string());
     }
-    Ok(EngineArgs {
+    Ok(Some(EngineArgs {
         spec,
         live,
         record,
         fixtures_dir,
-    })
+    }))
 }

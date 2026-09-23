@@ -8,12 +8,13 @@
 //! License, v. 2.0. If a copy of the MPL was not distributed with this
 //! file, You can obtain one at <https://mozilla.org/MPL/2.0/>.
 
+use std::borrow::Cow;
 use std::sync::LazyLock;
 
 use askama::Template;
 use axum::Extension;
 use axum::extract::State;
-use axum::http::{HeaderMap, Uri};
+use axum::http::{HeaderMap, Uri, header};
 use axum::response::{Html, IntoResponse, Response};
 use cauce_core::{CacheKey, EngineStatus, SearchRequest, SearchResponse, Source};
 use rust_embed::Embed;
@@ -38,6 +39,11 @@ fn asset_string(name: &str) -> String {
 static HTMX_JS: LazyLock<String> = LazyLock::new(|| asset_string("htmx.min.js"));
 static JSON_ENC_JS: LazyLock<String> = LazyLock::new(|| asset_string("json-enc.js"));
 pub(crate) static STYLE_CSS: LazyLock<String> = LazyLock::new(|| asset_string("style.css"));
+static FAVICON_SVG: LazyLock<Cow<'static, [u8]>> = LazyLock::new(|| {
+    Assets::get("favicon.svg")
+        .map(|f| f.data)
+        .unwrap_or_default()
+});
 
 /// One rendered result row (plain strings so Askama only needs `Display`).
 #[derive(Debug)]
@@ -155,6 +161,19 @@ pub async fn search(
         )
         .into_response())
     }
+}
+
+/// `GET /favicon.ico`: the embedded SVG site icon. Browsers request this
+/// path on every page load; wave-0 verification saw it 404 each time (#87).
+pub async fn favicon() -> Response {
+    (
+        [
+            (header::CONTENT_TYPE, "image/svg+xml"),
+            (header::CACHE_CONTROL, "public, max-age=86400"),
+        ],
+        FAVICON_SVG.clone(),
+    )
+        .into_response()
 }
 
 pub(crate) fn prefers_json(accept: &str) -> bool {
