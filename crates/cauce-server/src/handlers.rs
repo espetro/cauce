@@ -175,7 +175,9 @@ pub(crate) async fn history_inner(
         since: params.since(ctx, "since")?,
         q: params.get("q").map(str::to_string),
         cached: params.flag(ctx, "cached")?,
-        limit: params.u32(ctx, "limit", default_limit)?.clamp(1, HISTORY_LIMIT),
+        limit: params
+            .u32(ctx, "limit", default_limit)?
+            .clamp(1, HISTORY_LIMIT),
     };
     let items = state
         .store()

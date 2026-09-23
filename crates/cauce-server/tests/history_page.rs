@@ -239,7 +239,10 @@ async fn history_cached_filter() {
         "uncached row filtered out: {body}"
     );
     // The checkbox re-renders checked and `clear` is offered.
-    assert!(body.contains(r#"name="cached" value="1" checked"#), "{body}");
+    assert!(
+        body.contains(r#"name="cached" value="1" checked"#),
+        "{body}"
+    );
     assert!(body.contains(">clear<"), "{body}");
 
     // Same filter on the JSON route.
@@ -385,7 +388,10 @@ async fn history_row_joins_clicks() {
         1,
         "click joins the search row, not a new row: {body}"
     );
-    assert!(body.contains(">1 clicks<"), "summary reads `N clicks`: {body}");
+    assert!(
+        body.contains(">1 clicks<"),
+        "summary reads `N clicks`: {body}"
+    );
     // Nested line: domain, title link (new tab), 1-based #position.
     assert!(body.contains("example.com"), "{body}");
     assert!(body.contains("W2 clicked title"), "{body}");
@@ -586,8 +592,7 @@ async fn history_row_actions_and_request_id() {
         + marker.len();
     let id = &body[pos..pos + 36];
     assert!(
-        id.chars().all(|c| c.is_ascii_hexdigit() || c == '-')
-            && id.matches('-').count() == 4,
+        id.chars().all(|c| c.is_ascii_hexdigit() || c == '-') && id.matches('-').count() == 4,
         "full request id in the footer, got {id:?}: {body}"
     );
     assert!(
@@ -679,10 +684,7 @@ async fn history_page_html_rows_match_json_rows() {
         let (status, feed) = get_json(&app, api_uri).await;
         assert_eq!(status, StatusCode::OK);
         let feed = feed.as_array().unwrap();
-        let searches = feed
-            .iter()
-            .filter(|i| i["kind"] == "search")
-            .count();
+        let searches = feed.iter().filter(|i| i["kind"] == "search").count();
 
         let (status, body) = get_html(&app, uri).await;
         assert_eq!(status, StatusCode::OK);

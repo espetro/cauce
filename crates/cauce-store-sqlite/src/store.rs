@@ -508,13 +508,13 @@ impl Store for SqliteStore {
             let mut stmt = conn.prepare(&sql).map_err(sql_err)?;
             let rows_out = stmt
                 .query_map(rusqlite::params_from_iter(keys.iter()), |r| {
-                    let key: String = r.get(0).map_err(|e| {
-                        rows::as_sql(StoreError::Corrupt(format!("key: {e}")))
-                    })?;
+                    let key: String = r
+                        .get(0)
+                        .map_err(|e| rows::as_sql(StoreError::Corrupt(format!("key: {e}"))))?;
                     Ok(CacheState {
-                        key: key.parse().map_err(|e: String| {
-                            rows::as_sql(StoreError::Corrupt(e))
-                        })?,
+                        key: key
+                            .parse()
+                            .map_err(|e: String| rows::as_sql(StoreError::Corrupt(e)))?,
                         query: r.get(1).map_err(|e| {
                             rows::as_sql(StoreError::Corrupt(format!("query: {e}")))
                         })?,

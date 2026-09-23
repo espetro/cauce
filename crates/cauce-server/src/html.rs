@@ -898,9 +898,12 @@ pub(crate) async fn history_page(
     };
     let stats_line = format!(
         "{} {} · {} {} · {} {}",
-        stats.searches_24h, s.stat_searches_24h,
-        stats.searches_total, s.stat_total,
-        stats.clicks_today, s.stat_clicks_today,
+        stats.searches_24h,
+        s.stat_searches_24h,
+        stats.searches_total,
+        s.stat_total,
+        stats.clicks_today,
+        s.stat_clicks_today,
     );
 
     let page = History {
@@ -1016,8 +1019,7 @@ fn history_rows(
                 } else {
                     Vec::new()
                 };
-                let (source, source_url, cached_live) = match cache.get(s_row.query_hash.as_str())
-                {
+                let (source, source_url, cached_live) = match cache.get(s_row.query_hash.as_str()) {
                     Some(st) if st.expires_at > now => {
                         let url = format!(
                             "/cache?q={}#{}",
