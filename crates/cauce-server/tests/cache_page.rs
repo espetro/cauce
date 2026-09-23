@@ -162,6 +162,21 @@ async fn cache_page_lists_entries_with_admin_controls() {
         body.contains("hx-confirm"),
         "destructs actions confirm: {body}"
     );
+    // The count line is addressable and the row delete decrements it in
+    // place (spec: "row removed in place, count line decrements"), with
+    // the singular/plural swap embedded from strings::cache.
+    assert!(
+        body.contains(r#"<span id="cache-count">1 entry</span>"#),
+        "count line carries the decrement target id: {body}"
+    );
+    assert!(
+        body.contains("hx-on::after-request") && body.contains("getElementById('cache-count')"),
+        "row delete decrements the count line after the request: {body}"
+    );
+    assert!(
+        body.contains("'entry'") && body.contains("'entries'"),
+        "decrement keeps the entry/entries singular-plural copy: {body}"
+    );
     // Bulk actions.
     assert!(
         body.contains(r#"hx-delete="/api/cache?expired=true""#),

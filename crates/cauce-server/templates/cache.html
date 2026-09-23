@@ -22,7 +22,7 @@
   </form>
 
   <div class="meta">
-    <span>{{ count_line }}</span>
+    <span id="cache-count">{{ count_line }}</span>
     {% if searching %}
     <span>{{ filtered_cap }}</span>
     {% endif %}
@@ -85,6 +85,7 @@
         hx-swap="delete"
         hx-confirm="{{ crate::strings::cache::CONFIRM_ROW }}"
         hx-headers='{"X-Cauce-Client":"ui"}'
+        hx-on::after-request="if (event.detail.successful) { var c = document.getElementById('cache-count'); if (c) { var p = c.textContent.split(' '); var n = Math.max(0, (parseInt(p[0], 10) || 0) - 1); p[0] = n; p[p.length - 1] = n === 1 ? '{{ crate::strings::cache::ENTRY_ONE }}' : '{{ crate::strings::cache::ENTRY_MANY }}'; c.textContent = p.join(' '); } }"
       >{{ crate::strings::cache::DELETE_ROW }}</button>
     </div>
   </article>
