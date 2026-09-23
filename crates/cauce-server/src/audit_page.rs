@@ -20,6 +20,7 @@ use axum::extract::{Path, State};
 use axum::http::{HeaderMap, StatusCode, Uri};
 use axum::response::{Html, IntoResponse, Response};
 use cauce_core::AuditRow;
+use serde_json::Value;
 
 use crate::app::AppState;
 use crate::error::ApiError;
@@ -295,11 +296,22 @@ fn row_view(row: &AuditRow) -> AuditRowView {
         target: row.target.clone(),
         short_request_id: short_id(&request_id),
         request_id,
-        details: if row.details.is_null() {
+        details: if details_empty(&row.details) {
             String::new()
         } else {
             serde_json::to_string_pretty(&row.details).unwrap_or_default()
         },
+    }
+}
+
+/// `null`, `{}` and `[]` carry no expandable payload: the row omits the
+/// details toggle for all three.
+fn details_empty(v: &Value) -> bool {
+    match v {
+        Value::Null => true,
+        Value::Object(m) => m.is_empty(),
+        Value::Array(a) => a.is_empty(),
+        _ => false,
     }
 }
 

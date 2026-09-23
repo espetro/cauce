@@ -185,6 +185,12 @@ async fn audit_page_filters_by_actor_and_action() {
     let (status, body) = get_html(&app, "/audit?action=cache.delete").await;
     assert_eq!(status, StatusCode::OK);
     assert!(body.contains("<code>cache.delete</code>"), "{body}");
+    // `cache.delete` writes `{}` details: an empty object must omit the
+    // toggle the same way `null` does.
+    assert!(
+        !body.contains("<details"),
+        "empty-object details must omit the toggle: {body}"
+    );
 
     let (status, body) = get_html(&app, "/audit?action=config.put").await;
     assert_eq!(status, StatusCode::OK);
