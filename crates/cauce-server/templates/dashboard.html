@@ -24,6 +24,14 @@
     table.stats { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
     table.stats th, table.stats td { text-align: left; padding: 0.25rem 0.4rem; border-bottom: 1px solid var(--border); }
     table.stats th { color: var(--muted); font-weight: 600; }
+    @media (max-width: 639px) {
+      table.stats, table.stats tbody { display: block; width: 100%; }
+      table.stats thead { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+      table.stats tr { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.25rem 0.75rem; padding: 0.5rem 0; border-bottom: 1px solid var(--border); }
+      table.stats td { min-width: 0; padding: 0.2rem 0; overflow-wrap: anywhere; }
+      table.stats td::before { content: attr(data-label); display: block; color: var(--muted); font-size: 0.65rem; font-weight: 600; }
+      table.stats td:first-child { grid-column: 1 / -1; }
+    }
     svg.bars { width: 100%; height: auto; display: block; }
     svg.bars rect.cache { fill: var(--accent); }
     svg.bars rect.network { fill: var(--muted); opacity: 0.45; }
@@ -190,13 +198,13 @@
       <tbody>
         {% for e in engines %}
         <tr>
-          <td><a href="/engines">{{ e.id }}</a></td>
-          <td>{{ e.breaker }}</td>
-          <td>{{ e.reliability }}</td>
-          <td>{{ e.requests }}</td>
-          <td>{{ e.total }}</td>
-          <td>{{ e.http }}</td>
-          <td>{{ e.parse }}</td>
+          <td data-label="{{ crate::strings::dashboard::COL_ENGINE }}"><a href="/engines">{{ e.id }}</a></td>
+          <td data-label="{{ crate::strings::dashboard::COL_BREAKER }}">{{ e.breaker }}</td>
+          <td data-label="{{ crate::strings::dashboard::COL_RELIABILITY }}">{{ e.reliability }}</td>
+          <td data-label="{{ crate::strings::dashboard::COL_CALLS }}">{{ e.requests }}</td>
+          <td data-label="{{ crate::strings::dashboard::COL_TOTAL }}">{{ e.total }}</td>
+          <td data-label="{{ crate::strings::dashboard::COL_HTTP }}">{{ e.http }}</td>
+          <td data-label="{{ crate::strings::dashboard::COL_PARSE }}">{{ e.parse }}</td>
         </tr>
         {% endfor %}
       </tbody>
