@@ -24,7 +24,7 @@
     table.stats { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
     table.stats th, table.stats td { text-align: left; padding: 0.25rem 0.4rem; border-bottom: 1px solid var(--border); }
     table.stats th { color: var(--muted); font-weight: 600; }
-    @media (max-width: 639px) {
+    @media (width < 640px) {
       table.stats, table.stats tbody { display: block; width: 100%; }
       table.stats thead { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
       table.stats tr { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.25rem 0.75rem; padding: 0.5rem 0; border-bottom: 1px solid var(--border); }

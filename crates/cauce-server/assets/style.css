@@ -341,7 +341,7 @@ details.span pre {
     color: #b91c1c;
 }
 
-@media (max-width: 768px) {
+@media (width < 768px) {
     .audit-table .col-target {
         display: none;
     }
@@ -355,7 +355,7 @@ details.span pre {
     display: none;
 }
 
-@media (max-width: 640px) {
+@media (width < 640px) {
     .audit-table .c-actor {
         display: none;
     }
@@ -598,7 +598,7 @@ article.cache-entry + article.cache-entry {
     color: var(--accent);
 }
 
-@media (max-width: 640px) {
+@media (width < 640px) {
     /* The row delete drops under the meta line; bulk actions stack. */
     .cache-row {
         flex-direction: column;
@@ -818,14 +818,14 @@ table.history details[open] summary {
     display: none;
 }
 
-@media (max-width: 768px) {
+@media (width < 768px) {
     /* engines and ms hide below 768 px */
     table.history .h-md {
         display: none;
     }
 }
 
-@media (max-width: 640px) {
+@media (width < 640px) {
     table.history thead {
         display: none;
     }
