@@ -105,8 +105,10 @@ Empty state (filter matched nothing):
   actor `ui` exists, and the next identical search reports `Network`.
 - Footer shows the full `request_id` of the render as a `<code>` element
   the user can select and copy; never abbreviated in visible text.
-- No JavaScript beyond vendored HTMX; the filter form and the pager work
-  with JS disabled. Deletes need HTMX and say so in a `<noscript>` hint.
+- No JavaScript beyond vendored HTMX, except a small inline shim that opens
+  the `details` matching `location.hash` (needed for the `#<key>` deep link).
+  The filter form and the pager work with JS disabled; deletes need HTMX and
+  say so in a `<noscript>` hint.
 - All copy comes from `strings.rs` (`CACHE_*`).
 
 ## Reachable states (replay engine)
