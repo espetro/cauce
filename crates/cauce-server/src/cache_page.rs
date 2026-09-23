@@ -17,7 +17,7 @@ use std::sync::LazyLock;
 use askama::Template;
 use axum::Extension;
 use axum::extract::State;
-use axum::http::{HeaderMap, Uri};
+use axum::http::{HeaderMap, StatusCode, Uri};
 use axum::response::{Html, IntoResponse, Response};
 use cauce_core::CachedSearch;
 use chrono::Utc;
@@ -26,6 +26,7 @@ use rust_embed::Embed;
 use crate::app::AppState;
 use crate::error::ApiError;
 use crate::middleware::RequestCtx;
+use crate::strings::cache as copy;
 
 /// Static assets vendored under `crates/cauce-server/assets` (embedded
 /// per consumer module so pages stay independent of `html.rs`).
@@ -86,6 +87,15 @@ struct CachePage {
 #[template(path = "cache_payload.html")]
 struct Payload {
     payload: String,
+}
+
+/// The payload-fetch error fragment: a single inline line rendered by the
+/// `Accept: text/html` arm of `GET /api/cache/{key}` when the request
+/// fails (missing key, malformed key, store error).
+#[derive(Template)]
+#[template(path = "cache_payload_error.html")]
+struct PayloadError {
+    line: String,
 }
 
 /// `GET /cache`: paginated cache admin page. `Accept: application/json`
@@ -158,6 +168,31 @@ pub(crate) fn payload(
         .map_err(|e| render_err(e, request_id))
 }
 
+/// `Accept: text/html` error arm of `GET /api/cache/{key}`: answers a
+/// one-line fragment the row expander can drop into the payload block,
+/// so a failed lazy load renders inline instead of sticking at
+/// `loading...` on the JSON envelope.
+///
+/// The fragment always names the failing status in its text. For the
+/// page's own htmx fetch (`HX-Request: true`) it answers `200`: htmx
+/// swaps 2xx fragments in place, while a real 4xx/5xx would skip the
+/// swap and log a console error the page cannot suppress (Chromium logs
+/// "Failed to load resource" and htmx `console.error`s any
+/// `htmx:responseError`). Non-htmx callers get the real status back.
+/// The `hx-on::response-error` handler on the details stays as the
+/// fallback for error statuses raised outside the handler (host guard,
+/// proxy, transport).
+pub(crate) fn payload_error(status: StatusCode, htmx_request: bool) -> Response {
+    let line = copy::PAYLOAD_ERROR.replace("{status}", &status.as_u16().to_string());
+    let out_status = if htmx_request { StatusCode::OK } else { status };
+    match (PayloadError { line }).render() {
+        Ok(html) => (out_status, Html(html)).into_response(),
+        // The fragment is a static one-liner; a render failure still gets
+        // an empty body rather than a swapped-in envelope.
+        Err(_) => (out_status, Html(String::new())).into_response(),
+    }
+}
+
 /// True when `Accept` asks for HTML — the `GET /api/cache/{key}`
 /// fragment arm keys on this (`handlers::cache_get` stays the JSON arm).
 pub(crate) fn accepts_html(headers: &HeaderMap) -> bool {
@@ -165,6 +200,15 @@ pub(crate) fn accepts_html(headers: &HeaderMap) -> bool {
         .get("accept")
         .and_then(|v| v.to_str().ok())
         .is_some_and(|a| a.contains("text/html"))
+}
+
+/// True for htmx-issued requests (`HX-Request: true`, sent on every
+/// `hx-*` call). Used by the error arm to pick a swap-friendly status.
+pub(crate) fn is_htmx(headers: &HeaderMap) -> bool {
+    headers
+        .get("hx-request")
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|v| v == "true")
 }
 
 /// Same negotiation rule as `/search`: JSON wins only when HTML is not

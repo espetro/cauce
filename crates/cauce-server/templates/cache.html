@@ -61,6 +61,7 @@
         hx-target="find .cache-payload"
         hx-swap="innerHTML"
         hx-headers='{"Accept":"text/html","X-Cauce-Client":"ui"}'
+        hx-on::response-error="var p=this.querySelector('.cache-payload');if(p)p.textContent='{{ crate::strings::cache::PAYLOAD_ERROR }}'.replace('{status}',event.detail.xhr.status)"
       >
         <summary>
           <span class="cache-query">{{ row.query }}</span>

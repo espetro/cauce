@@ -254,6 +254,108 @@ async fn cache_row_expand_renders_pretty_payload() {
     assert_eq!(entry["key"], key);
 }
 
+/// `GET /api/cache/{key}` under `Accept: text/html` answers error
+/// statuses as a fragment, so the row expander can render the failure
+/// inline instead of a JSON envelope the page cannot swap. The page's
+/// own htmx fetch (`HX-Request: true`) gets the fragment with `200` so
+/// htmx swaps it in place without a console-logged network error;
+/// non-htmx callers get the real status.
+#[tokio::test]
+async fn cache_row_expand_error_is_an_html_fragment() {
+    let (app, _state, _tmp) = app();
+
+    // Absent key, non-htmx HTML caller: 404 fragment naming the status.
+    let missing = "f".repeat(64);
+    let resp = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!("/api/cache/{missing}"))
+                .header("Accept", "text/html")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .expect("response");
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    let ct = resp
+        .headers()
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("")
+        .to_string();
+    let bytes = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+    let body = String::from_utf8(bytes.to_vec()).unwrap();
+    assert!(
+        ct.starts_with("text/html"),
+        "error arm is text/html, got {ct}: {body}"
+    );
+    assert!(
+        body.contains("error: could not load payload (404)"),
+        "inline error line: {body}"
+    );
+
+    // The same request as the page's expander sends it (`HX-Request`
+    // plus `Accept: text/html`, per the details' hx-headers): a 200
+    // fragment that htmx swaps into .cache-payload directly.
+    let resp = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!("/api/cache/{missing}"))
+                .header("Accept", "text/html")
+                .header("HX-Request", "true")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .expect("response");
+    assert_eq!(
+        resp.status(),
+        StatusCode::OK,
+        "htmx error fetches stay swap-friendly"
+    );
+    let bytes = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+    let body = String::from_utf8(bytes.to_vec()).unwrap();
+    assert!(
+        body.contains("error: could not load payload (404)"),
+        "inline error line keeps the failing status: {body}"
+    );
+
+    // Malformed key: same fragment with the 400 status.
+    let (status, body) = get_html(&app, "/api/cache/not-hex-at-all").await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(
+        body.contains("error: could not load payload (400)"),
+        "inline error line: {body}"
+    );
+
+    // The JSON arm still answers the envelope.
+    let (status, body) = get_json(&app, &format!("/api/cache/{missing}")).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(body["error"]["code"], "not_found", "{body}");
+}
+
+/// The page renders the error line inside the payload block when the
+/// lazy fetch fails (hx-on::response-error wiring on the details).
+#[tokio::test]
+async fn cache_page_expand_error_wiring() {
+    let (app, _state, _tmp) = app();
+    seed_entry(&app, "errorwiring").await;
+    let (status, body) = get_html(&app, "/cache").await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(
+        body.contains("hx-on::response-error"),
+        "details handles htmx response errors: {body}"
+    );
+    assert!(
+        body.contains("error: could not load payload ({status})"),
+        "error copy is embedded for the handler: {body}"
+    );
+}
+
 /// W2-04 acceptance: delete via the page removes the row and writes an
 /// `audit` row; next search is `Network`.
 #[tokio::test]

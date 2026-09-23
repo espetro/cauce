@@ -53,4 +53,7 @@ pub mod cache {
     pub const FILTERED_CAP_NOTE: &str = "top matches by rank";
     /// Placeholder inside the payload slot before the lazy fragment loads.
     pub const PAYLOAD_LOADING: &str = "loading...";
+    /// Inline error inside the payload slot when the lazy fetch fails;
+    /// `{status}` is the HTTP status code.
+    pub const PAYLOAD_ERROR: &str = "error: could not load payload ({status})";
 }

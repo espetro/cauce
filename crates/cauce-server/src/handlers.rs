@@ -270,7 +270,9 @@ pub(crate) async fn cache_list_data(
 /// `GET /api/cache/{key}`: one entry by hex `CacheKey` (400 malformed,
 /// 404 absent). `Accept: text/html` renders the stored payload as a
 /// pretty-JSON fragment for the `/cache` row expander (W2-04); that arm
-/// exists only in `ui` builds.
+/// exists only in `ui` builds, and under it error statuses answer a
+/// one-line fragment instead of the JSON envelope so the expander can
+/// swap the failure in place.
 #[cfg_attr(not(feature = "ui"), allow(unused_variables))]
 pub async fn cache_get(
     State(state): State<AppState>,
@@ -278,7 +280,29 @@ pub async fn cache_get(
     headers: HeaderMap,
     Path(key): Path<String>,
 ) -> Result<Response, ApiError> {
-    let key = cache_key(&ctx, &key)?;
+    match cache_get_entry(&state, &ctx, &headers, &key).await {
+        Ok(resp) => Ok(resp),
+        Err(e) => {
+            #[cfg(feature = "ui")]
+            if crate::cache_page::accepts_html(&headers) {
+                return Ok(crate::cache_page::payload_error(
+                    e.status(),
+                    crate::cache_page::is_htmx(&headers),
+                ));
+            }
+            Err(e)
+        }
+    }
+}
+
+#[cfg_attr(not(feature = "ui"), allow(unused_variables))]
+async fn cache_get_entry(
+    state: &AppState,
+    ctx: &RequestCtx,
+    headers: &HeaderMap,
+    key: &str,
+) -> Result<Response, ApiError> {
+    let key = cache_key(ctx, key)?;
     match state
         .store()
         .get_cache(&key)
@@ -287,7 +311,7 @@ pub async fn cache_get(
     {
         Some(entry) => {
             #[cfg(feature = "ui")]
-            if crate::cache_page::accepts_html(&headers) {
+            if crate::cache_page::accepts_html(headers) {
                 return crate::cache_page::payload(&entry, ctx.request_id.as_uuid())
                     .map(IntoResponse::into_response);
             }
