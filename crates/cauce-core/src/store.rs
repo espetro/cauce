@@ -253,6 +253,14 @@ impl Default for AuditFilter {
     }
 }
 
+/// Distinct `actor`/`action` values the audit table has seen; feeds the
+/// `/audit` page's filter `<select>`s.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct AuditFacets {
+    pub actors: Vec<String>,
+    pub actions: Vec<String>,
+}
+
 /// Searches per UTC day, for the dashboard chart.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DayCount {
@@ -562,4 +570,11 @@ pub trait Store: Send + Sync {
 
     /// Audit rows newest-first (`GET /api/audit`).
     async fn list_audit(&self, filter: &AuditFilter) -> Result<Vec<AuditRow>, StoreError>;
+
+    /// Distinct actors and actions present in the audit table (`/audit`
+    /// filter dropdowns). Default: empty, for stores that do not persist
+    /// audit rows.
+    async fn audit_facets(&self) -> Result<AuditFacets, StoreError> {
+        Ok(AuditFacets::default())
+    }
 }

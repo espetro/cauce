@@ -857,6 +857,12 @@ pub async fn audit_trail(store: &impl Store) {
         .await
         .expect("limited audit");
     assert_eq!(one.len(), 1);
+
+    let facets = store.audit_facets().await.expect("audit_facets");
+    assert!(facets.actors.contains(&"api".to_string()));
+    assert!(facets.actors.contains(&"cli".to_string()));
+    assert!(facets.actions.contains(&"cache.delete".to_string()));
+    assert!(facets.actions.contains(&"config.put".to_string()));
 }
 
 /// Run the whole suite against one store. Safe on a non-empty store: every

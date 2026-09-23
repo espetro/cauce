@@ -44,7 +44,8 @@ pub use pipeline::{
 pub use request::{ClientKind, SafeSearch, SearchRequest, TimeRange};
 pub use response::{EngineReport, EngineStatus, SearchMeta, SearchResponse, SearchResult, Source};
 pub use store::{
-    AdmissionStats, AuditFilter, AuditRow, BreakerState, ClickRow, ClientCount, DayCount,
-    EngineHealthRow, EngineStatsRow, HistoryFilter, HistoryItem, LatencyPercentiles, LogSource,
-    PhaseStats, QueryCount, SearchLogRow, StatsSnapshot, Store, StoreError, StoreTuning, TierHit,
+    AdmissionStats, AuditFacets, AuditFilter, AuditRow, BreakerState, ClickRow, ClientCount,
+    DayCount, EngineHealthRow, EngineStatsRow, HistoryFilter, HistoryItem, LatencyPercentiles,
+    LogSource, PhaseStats, QueryCount, SearchLogRow, StatsSnapshot, Store, StoreError, StoreTuning,
+    TierHit,
 };

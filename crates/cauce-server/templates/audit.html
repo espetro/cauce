@@ -1,0 +1,72 @@
+<!doctype html>
+<!-- This Source Code Form is subject to the terms of the Mozilla Public
+     License, v. 2.0. If a copy of the MPL was not distributed with this
+     file, You can obtain one at https://mozilla.org/MPL/2.0/. -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ crate::strings::audit::PAGE_TITLE|lower }} · {{ crate::strings::common::BRAND }}</title>
+  <style>{{ style_css|safe }}</style>
+</head>
+<body>
+  <p><a href="/">{{ crate::strings::common::NAV_SEARCH }}</a></p>
+  <h1>{{ crate::strings::audit::PAGE_TITLE }}</h1>
+  <form action="/audit" method="get">
+    <select name="actor" aria-label="{{ crate::strings::audit::ACTOR_LABEL }}">
+      <option value="">{{ crate::strings::audit::ANY }}</option>
+      {% for o in actor_options %}
+      <option value="{{ o.value }}"{% if o.selected %} selected{% endif %}>{{ o.value }}</option>
+      {% endfor %}
+    </select>
+    <select name="action" aria-label="{{ crate::strings::audit::ACTION_LABEL }}">
+      <option value="">{{ crate::strings::audit::ANY }}</option>
+      {% for o in action_options %}
+      <option value="{{ o.value }}"{% if o.selected %} selected{% endif %}>{{ o.value }}</option>
+      {% endfor %}
+    </select>
+    <button type="submit">{{ crate::strings::audit::FILTER }}</button>
+    {% if filtered %}<a href="/audit">{{ crate::strings::audit::CLEAR }}</a>{% endif %}
+  </form>
+  <p class="meta">
+    {{ rows.len() }} {% if rows.len() == 1 %}{{ crate::strings::audit::ROW }}{% else %}{{ crate::strings::audit::ROWS }}{% endif %}{% if filtered %} {{ crate::strings::audit::MATCHING }}{% endif %}
+    {% if capped %} · {{ crate::strings::audit::CAP_NOTE_PREFIX }} {{ limit }} · {{ crate::strings::audit::CAP_NOTE_SUFFIX }}{% endif %}
+  </p>
+  {% if rows.is_empty() %}
+  <p class="empty">{% if filtered %}{{ filtered_empty }}{% else %}{{ crate::strings::audit::EMPTY }}{% endif %}</p>
+  {% else %}
+  <div class="audit-table-wrap">
+  <table class="audit-table">
+    <thead>
+      <tr><th>{{ crate::strings::audit::WHEN_COLUMN }}</th><th>{{ crate::strings::audit::ACTOR_COLUMN }}</th><th>{{ crate::strings::audit::ACTION_COLUMN }}</th><th class="col-target">{{ crate::strings::audit::TARGET_COLUMN }}</th><th>{{ crate::strings::audit::REQUEST_COLUMN }}</th><th>{{ crate::strings::audit::DETAILS_SUMMARY }}</th></tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+      <tr>
+        <td>{{ row.ts }}</td>
+        <td>{{ row.actor }}</td>
+        <td><code>{{ row.action }}</code></td>
+        <td class="target col-target" title="{{ row.target }}">{{ row.target }}</td>
+        <td>
+          {% if !row.request_id.is_empty() %}
+          <a class="request-id" href="/trace/{{ row.request_id }}" title="{{ row.request_id }}">{{ row.short_request_id }}</a>
+          {% else %}
+          {{ crate::strings::common::DASH }}
+          {% endif %}
+        </td>
+        <td class="details-cell">
+          {% if !row.details.is_empty() %}
+          <details><summary>{{ crate::strings::audit::DETAILS_SUMMARY }}</summary><pre>{{ row.details }}</pre></details>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% endif %}
+  <div class="meta">
+    {{ crate::strings::common::REQUEST_LABEL }} <code class="request-id">{{ request_id }}</code>
+  </div>
+</body>
+</html>

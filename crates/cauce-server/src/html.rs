@@ -170,6 +170,19 @@ pub async fn search(
     }
 }
 
+/// `GET /favicon.ico`: the embedded SVG site icon. Browsers request this
+/// path on every page load; wave-0 verification saw it 404 each time (#87).
+pub async fn favicon() -> Response {
+    (
+        [
+            (header::CONTENT_TYPE, "image/svg+xml"),
+            (header::CACHE_CONTROL, "public, max-age=86400"),
+        ],
+        FAVICON_SVG.clone(),
+    )
+        .into_response()
+}
+
 /// `GET /opensearch.xml` (W2-11): the OpenSearch 1.1 description document
 /// browsers fetch after seeing the page head's `<link rel="search">`.
 ///
@@ -227,19 +240,6 @@ fn xml_attribute_escape(value: &str) -> String {
             _ => c.to_string(),
         })
         .collect()
-}
-
-/// `GET /favicon.ico`: the embedded SVG site icon. Browsers request this
-/// path on every page load; wave-0 verification saw it 404 each time (#87).
-pub async fn favicon() -> Response {
-    (
-        [
-            (header::CONTENT_TYPE, "image/svg+xml"),
-            (header::CACHE_CONTROL, "public, max-age=86400"),
-        ],
-        FAVICON_SVG.clone(),
-    )
-        .into_response()
 }
 
 /// `Accept` prefers JSON (shared by every `ui` page's content negotiation).
