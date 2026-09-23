@@ -12,8 +12,10 @@ mod support;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use cauce_core::{EngineId, SearchOpts, SearchPipeline, Source, StreamEvent, Tier};
-use support::{StubStore, replay_at, req};
+use cauce_core::{
+    Admission, AdmissionLimits, EngineId, SearchOpts, SearchPipeline, Source, StreamEvent, Tier,
+};
+use support::{DialEngine, GateEngine, StubStore, replay_at, req};
 
 /// Exit criterion 1: tier-1 `latency_ms = 2000`, tier-2 `latency_ms =
 /// 200` → the tier-2 batch streams in well under 600 ms and the
@@ -174,5 +176,227 @@ async fn short_primary_page_fires_hedge_early() {
     assert!(
         cauce_core::metrics::render_prometheus().contains("cauce_hedge_total{reason=\"few\"}"),
         "early-fire metric must be labelled few"
+    );
+}
+
+/// A deferred engine must not reserve its permit upfront: with
+/// `max_concurrent_per_engine = 1` a long tier-2 call occupying the
+/// semaphore cannot `RateLimited` a flight whose primaries need no
+/// hedge — tier-2 capacity is only acquired inside the fetch when a
+/// hedge or promotion actually needs it.
+#[tokio::test]
+async fn deferred_tier2_does_not_consume_upfront_permits() {
+    let dir = tempfile::tempdir().unwrap();
+    let t1 = replay_at(dir.path(), |o| {
+        o.id = EngineId::from("t1");
+        o.latency_ms = 100;
+    });
+    let t2 = Arc::new(replay_at(dir.path(), |o| {
+        o.id = EngineId::from("t2");
+        o.tier = Tier::T2;
+        o.latency_ms = 1_200;
+    }));
+    let store = Arc::new(StubStore::default());
+    let pipe = SearchPipeline::new(store, vec![Arc::new(t1), t2.clone()]).with_admission(
+        Admission::new(AdmissionLimits {
+            max_wait: Duration::from_millis(50),
+            max_concurrent_per_engine: 1,
+        }),
+    );
+
+    // Occupy the single tier-2 permit with a pinned tier-2-only search
+    // (the promoted wave acquires inside its fetch and holds for the
+    // whole 1200 ms call).
+    let mut pinned = req("occupy tier two");
+    pinned.engines = Some(vec![EngineId::from("t2")]);
+    let pipe_occ = pipe.clone();
+    let occupier = tokio::spawn(async move { pipe_occ.search(&pinned).await });
+    tokio::time::sleep(Duration::from_millis(50)).await;
+
+    // The fast tier-1 page fills min_results before the hedge point, so
+    // this flight never touches tier-2 capacity.
+    let resp = pipe
+        .search(&req("healthy primaries"))
+        .await
+        .expect("primary-only flight must not queue behind tier-2");
+    assert!(!resp.meta.hedged);
+    assert_eq!(
+        resp.meta.engines_used.len(),
+        1,
+        "only the tier-1 engine ran"
+    );
+
+    let occ = occupier.await.unwrap().expect("occupier search");
+    assert_eq!(
+        occ.meta.engines_used.len(),
+        1,
+        "the pinned flight ran tier-2 alone"
+    );
+}
+
+/// The other half of the split: when the hedge does trigger while
+/// tier-2 capacity is saturated, the flight waits for the permit inside
+/// its remaining budget and fires when it frees — it is not rejected
+/// at fan-out like an exhausted primary queue.
+#[tokio::test]
+async fn hedge_waits_for_tier2_permit_then_fires() {
+    let dir = tempfile::tempdir().unwrap();
+    let t1 = replay_at(dir.path(), |o| {
+        o.id = EngineId::from("t1");
+        o.latency_ms = 2_000;
+    });
+    // The occupier's 1 s tier-2 call holds the only permit past the
+    // 300 ms hedge point, so the hedged flight must wait for it.
+    let t2 = Arc::new(replay_at(dir.path(), |o| {
+        o.id = EngineId::from("t2");
+        o.tier = Tier::T2;
+        o.latency_ms = 1_000;
+    }));
+    let store = Arc::new(StubStore::default());
+    let pipe = SearchPipeline::new(store, vec![Arc::new(t1), t2.clone()]).with_admission(
+        Admission::new(AdmissionLimits {
+            max_wait: Duration::from_millis(50),
+            max_concurrent_per_engine: 1,
+        }),
+    );
+
+    let mut pinned = req("occupy tier two");
+    pinned.engines = Some(vec![EngineId::from("t2")]);
+    let pipe_occ = pipe.clone();
+    let occupier = tokio::spawn(async move { pipe_occ.search(&pinned).await });
+    tokio::time::sleep(Duration::from_millis(50)).await;
+
+    // Tier-1 is slow: the hedge triggers at the 300 ms floor, waits for
+    // the occupier to free the tier-2 permit (~1 s), then fires.
+    let resp = pipe
+        .search(&req("hedge behind saturated tier2"))
+        .await
+        .expect("hedge must wait for the permit, not fail");
+    assert!(resp.meta.hedged);
+    let hedge_at = resp.meta.hedge_at_ms.expect("hedge fired");
+    assert!(
+        hedge_at >= 900,
+        "the hedge fires only once the tier-2 permit frees, got {hedge_at}"
+    );
+    assert!(t2.call_count() >= 2);
+    occupier.await.unwrap().expect("occupier search");
+}
+
+/// The hedge clock starts at fan-out, not request start: a slow
+/// lexical lookup (pre-fan-out work) must not pre-consume the floor the
+/// primaries were promised. Here the 500 ms lookup exceeds the 300 ms
+/// floor, yet the fast tier-1 still clears `min_results` first and the
+/// hedge is cancelled rather than fired at t=0.
+#[tokio::test]
+async fn pre_fanout_work_does_not_eat_the_hedge_floor() {
+    let dir = tempfile::tempdir().unwrap();
+    let t1 = replay_at(dir.path(), |o| {
+        o.id = EngineId::from("t1");
+        o.latency_ms = 100;
+    });
+    let t2 = Arc::new(replay_at(dir.path(), |o| {
+        o.id = EngineId::from("t2");
+        o.tier = Tier::T2;
+        o.latency_ms = 200;
+    }));
+    let store = Arc::new(StubStore::default());
+    store
+        .lexical_delay_ms
+        .store(500, std::sync::atomic::Ordering::SeqCst);
+    let pipe = SearchPipeline::new(store, vec![Arc::new(t1), t2.clone()]);
+
+    let resp = pipe.search(&req("slow lexical")).await.expect("search");
+    assert!(
+        !resp.meta.hedged,
+        "pre-fan-out delay must not fire the hedge"
+    );
+    assert_eq!(t2.call_count(), 0);
+}
+
+/// A hedge point past the hard deadline is cancelled outright: the
+/// loop must not sleep to the floor, gate the deferred wave, and spawn
+/// zero-budget calls after the deadline already elapsed.
+#[tokio::test]
+async fn hard_deadline_cancels_a_late_hedge() {
+    let dir = tempfile::tempdir().unwrap();
+    let t1 = replay_at(dir.path(), |o| {
+        o.id = EngineId::from("t1");
+        o.latency_ms = 400;
+    });
+    let t2 = Arc::new(replay_at(dir.path(), |o| {
+        o.id = EngineId::from("t2");
+        o.tier = Tier::T2;
+        o.latency_ms = 50;
+    }));
+    let store = Arc::new(StubStore::default());
+    // Deadline 100 ms < hedge floor 300 ms: the hedge can never fire.
+    let pipe = SearchPipeline::new(store, vec![Arc::new(t1), t2.clone()])
+        .with_deadline(Duration::from_millis(100));
+
+    let started = Instant::now();
+    let outcome = pipe.search(&req("tight deadline")).await;
+    assert!(
+        started.elapsed() < Duration::from_millis(250),
+        "the response must return near the deadline, not at the hedge point ({:?})",
+        started.elapsed()
+    );
+    assert!(outcome.is_err(), "the timed-out primary reports an error");
+    assert_eq!(
+        t2.call_count(),
+        0,
+        "a post-deadline hedge must not spawn or gate"
+    );
+}
+
+/// The hedge point pools P90 over the engines this request actually
+/// admitted: a breaker-skipped tier-1's slow history must not postpone
+/// the hedge for the healthy set. t1a builds a 1500 ms history then
+/// opens its breaker; t1b's own history is 100 ms. If the pool included
+/// t1a the hedge point would clamp to the 1500 ms ceiling and the
+/// all-answered short page would fire `reason=few` at ~800 ms instead —
+/// so the assertion is on `hedge_at_ms` near the floor.
+#[tokio::test]
+async fn skipped_engine_history_does_not_delay_hedge() {
+    let dir = tempfile::tempdir().unwrap();
+    let t1a = Arc::new(GateEngine::new(
+        replay_at(dir.path(), |o| {
+            o.id = EngineId::from("t1a");
+            o.latency_ms = 1_500;
+        }),
+        true,
+    ));
+    let t1b = Arc::new(DialEngine::new(
+        replay_at(dir.path(), |o| {
+            o.id = EngineId::from("t1b");
+            o.empty = true;
+        }),
+        100,
+    ));
+    let t2 = Arc::new(replay_at(dir.path(), |o| {
+        o.id = EngineId::from("t2");
+        o.tier = Tier::T2;
+        o.latency_ms = 100;
+    }));
+    let store = Arc::new(StubStore::default());
+    let pipe = SearchPipeline::new(store, vec![t1a.clone(), t1b.clone(), t2.clone()]);
+
+    // History: one call gives t1a a ~1500 ms sample and t1b a ~100 ms
+    // one (distinct queries so the cache never short-circuits).
+    pipe.search(&req("warmup one")).await.expect("warmup");
+    // A single Blocked call opens t1a's breaker for 15 min.
+    t1a.set_healthy(false);
+    pipe.search(&req("warmup two")).await.expect("warmup");
+
+    // t1b now answers short but slowly: the hedge point over the gated
+    // set {t1b} is the 300 ms floor (P90 100), while pooling t1a's
+    // history would push it to the ceiling.
+    t1b.set_latency_ms(800);
+    let resp = pipe.search(&req("measured")).await.expect("search");
+    assert!(resp.meta.hedged, "the short page still hedges");
+    let hedge_at = resp.meta.hedge_at_ms.expect("hedge fired");
+    assert!(
+        hedge_at < 600,
+        "gated-only P90 fires near the floor; pooling the skipped \
+         engine's history would land ~800 ms, got {hedge_at}"
     );
 }
