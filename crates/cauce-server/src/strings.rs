@@ -225,6 +225,8 @@ pub mod audit {
     pub const MATCHING: &str = "matching";
     pub const CAP_NOTE_PREFIX: &str = "showing the newest";
     pub const CAP_NOTE_SUFFIX: &str = "raise `limit` (max 1000) for more";
+    /// Accessible name of the horizontally scrollable table region.
+    pub const TABLE_REGION: &str = "audit table";
 }
 
 pub mod trace {
@@ -237,4 +239,8 @@ pub mod trace {
     /// `{days}` is replaced with the configured `logs.retention_days`.
     pub const NO_TRACE: &str = "no trace for this request id. traces are kept for logs.retention_days days (currently {days}).";
     pub const BAD_ID: &str = "that is not a request id";
+    /// Accessible name of the horizontally scrollable timeline region.
+    pub const TIMELINE_REGION: &str = "request timeline";
+    /// Accessible name of one span's expandable raw-fields block.
+    pub const SPAN_REGION: &str = "span fields";
 }
