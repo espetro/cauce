@@ -564,20 +564,39 @@ pub async fn audit_list(
     Extension(ctx): Extension<RequestCtx>,
     uri: Uri,
 ) -> Result<Json<Vec<AuditRow>>, ApiError> {
-    let params = QueryParams::parse(uri.query(), &ctx)?;
-    params.allow(&ctx, &["since", "actor", "action", "limit"])?;
+    audit_list_data(state.store().as_ref(), uri, &ctx)
+        .await
+        .map(|(_, rows)| Json(rows))
+}
+
+/// Shared audit query path for JSON and HTML responses.
+///
+/// Empty actor/action values are treated as unset for both surfaces. The
+/// limit default and cap also stay identical regardless of content type.
+pub(crate) async fn audit_list_data(
+    store: &dyn Store,
+    uri: Uri,
+    ctx: &RequestCtx,
+) -> Result<(AuditFilter, Vec<AuditRow>), ApiError> {
+    let params = QueryParams::parse(uri.query(), ctx)?;
+    params.allow(ctx, &["since", "actor", "action", "limit"])?;
     let filter = AuditFilter {
-        since: params.since(&ctx, "since")?,
-        actor: params.get("actor").map(str::to_string),
-        action: params.get("action").map(str::to_string),
-        limit: params.u32(&ctx, "limit", 50)?.clamp(1, MAX_LIMIT),
+        since: params.since(ctx, "since")?,
+        actor: params
+            .get("actor")
+            .filter(|value| !value.is_empty())
+            .map(str::to_string),
+        action: params
+            .get("action")
+            .filter(|value| !value.is_empty())
+            .map(str::to_string),
+        limit: params.u32(ctx, "limit", 50)?.clamp(1, MAX_LIMIT),
     };
-    state
-        .store()
+    let rows = store
         .list_audit(&filter)
         .await
-        .map(Json)
-        .map_err(|e| ctx.store(&e))
+        .map_err(|error| ctx.store(&error))?;
+    Ok((filter, rows))
 }
 
 /// `GET /health`: liveness plus store connectivity. The pipeline degrades

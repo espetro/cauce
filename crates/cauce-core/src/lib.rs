@@ -47,7 +47,7 @@ pub use response::{
     StreamMeta,
 };
 pub use store::{
-    AdmissionStats, AuditFilter, AuditRow, BreakerState, ClickRow, ClientCount, DayCount,
-    EngineHealthRow, EngineStatsRow, HistoryFilter, HistoryItem, LatencyPercentiles, LogSource,
-    PhaseStats, SearchLogRow, StatsSnapshot, Store, StoreError, StoreTuning,
+    AdmissionStats, AuditFacets, AuditFilter, AuditRow, BreakerState, ClickRow, ClientCount,
+    DayCount, EngineHealthRow, EngineStatsRow, HistoryFilter, HistoryItem, LatencyPercentiles,
+    LogSource, PhaseStats, SearchLogRow, StatsSnapshot, Store, StoreError, StoreTuning,
 };
