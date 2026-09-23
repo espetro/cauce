@@ -6,3 +6,4 @@
 [[profile.default.overrides]]
 filter = "binary(exec)"
 threads-required = "num-test-threads"
+retries = 3
