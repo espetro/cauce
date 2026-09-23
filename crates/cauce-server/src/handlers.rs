@@ -788,7 +788,12 @@ pub(crate) async fn engine_views(state: &AppState) -> Result<Vec<EngineView>, Ap
     let mut ids: BTreeSet<String> = BTreeSet::new();
     ids.extend(entries.iter().map(|e| e.id.to_string()));
     ids.extend(live.iter().map(|(id, _)| id.to_string()));
-    ids.extend(health.keys().cloned());
+    // Persisted `engine_health` rows rebuild their `EngineId` unvalidated
+    // (the row decode path predates the parse-time charset check), so a
+    // pre-validation garbage id — space, colon — would otherwise mint a
+    // card that no config could ever produce. Configured and live ids
+    // already passed validation; health keys get the check here.
+    ids.extend(health.keys().filter(|id| EngineId::is_valid(id)).cloned());
 
     Ok(ids
         .into_iter()

@@ -13,7 +13,7 @@ use axum::Router;
 use axum::body::{Body, to_bytes};
 use axum::http::{Request, StatusCode};
 use cauce_core::config::Config;
-use cauce_core::{EngineId, SearchPipeline, StoreTuning};
+use cauce_core::{BreakerState, EngineHealthRow, EngineId, SearchPipeline, Store, StoreTuning};
 use cauce_engines::{Replay, ReplayOpts};
 use cauce_server::{AppState, build_router};
 use cauce_store_sqlite::SqliteStore;
@@ -606,3 +606,44 @@ async fn engine_card_selectors_are_dot_free_and_unique() {
     assert_eq!(ids.len(), total, "duplicate engine card ids: {ids:?}");
 }
 
+/// A pre-validation `engine_health` row can hold an id the charset now
+/// rejects (`"bad id"`): the row decode path rebuilds `EngineId`
+/// unvalidated, so `engine_views` must not union it into a card — the
+/// page would render it forever and no config could ever produce it.
+#[tokio::test]
+async fn persisted_health_row_with_invalid_id_renders_no_card() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let store = Arc::new(
+        SqliteStore::open(tmp.path().join("cauce.db"), StoreTuning::default()).expect("store"),
+    );
+    store
+        .put_health(&EngineHealthRow {
+            engine: EngineId::from("bad id"),
+            ewma_ms: 12.0,
+            failures: 1,
+            breaker: BreakerState::Closed,
+            breaker_until: None,
+            last_ok_at: None,
+            last_error: None,
+        })
+        .await
+        .expect("put_health");
+    let pipeline = Arc::new(SearchPipeline::new(
+        store.clone(),
+        vec![Arc::new(Replay::new(ReplayOpts::default()))],
+    ));
+    pipeline.load_health().await.expect("health rows load");
+    let router = build_router(AppState::new(pipeline, store, Config::default()));
+
+    let (status, body) = call(&router, "GET", "/api/engines").await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let rows = body.as_array().expect("engine list");
+    assert!(
+        !rows.iter().any(|r| r["engine"] == "bad id"),
+        "invalid persisted id leaked into /api/engines: {body}"
+    );
+
+    let (status, page, _) = fetch(&router, "GET", "/engines", &[("accept", "text/html")]).await;
+    assert_eq!(status, StatusCode::OK, "{page}");
+    assert!(!page.contains("bad id"), "{page}");
+}
