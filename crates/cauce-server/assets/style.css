@@ -401,9 +401,12 @@ article.cache-entry + article.cache-entry {
         flex-direction: column;
     }
 
-    /* `<details>` does not shrink below its expanded content under
+    /* The details block does not shrink below its expanded content under
        cross-axis stretch; pin it to the row width so the payload block
-       scrolls inside itself instead of widening the page. */
+       scrolls inside itself instead of widening the page. (The literal
+       element name must stay out of this comment: every page inlines this
+       stylesheet, so the test asserting no rendered details element would
+       match the comment itself.) */
     .cache-details {
         width: 100%;
     }
