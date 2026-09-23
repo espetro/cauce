@@ -312,8 +312,9 @@ pub struct DayCount {
     pub cache_hits: u64,
 }
 
-/// Latency percentiles over `search_log.latency_ms` in the window.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// Latency percentiles over `search_log.latency_ms` in the window (and the
+/// in-process TTFR rolling window, W2-03).
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
 pub struct LatencyPercentiles {
     pub p50_ms: u32,
     pub p90_ms: u32,
@@ -325,6 +326,21 @@ pub struct LatencyPercentiles {
 pub struct ClientCount {
     pub client: String,
     pub searches: u64,
+}
+
+/// Request count for one stored `query` string (dashboard top-queries panel).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QueryCount {
+    pub query: String,
+    pub searches: u64,
+}
+
+/// Cache hits served by one tier (`search_log.tier` on `source = 'cache'`
+/// rows). The dashboard renders the per-tier hit rate as `hits / searches`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TierHit {
+    pub tier: u8,
+    pub hits: u64,
 }
 
 /// Median/p80/p95 of a millisecond sample window (engine phases, admission
@@ -458,9 +474,27 @@ pub struct StatsSnapshot {
     pub hit_rate: f64,
     /// None when the window has no searches.
     pub latency: Option<LatencyPercentiles>,
+    /// TTFR percentiles (p50/p90/p99) over the in-process `cauce_ttfr_ms`
+    /// rolling window (W2-03). Filled by `merge_metrics`; `None` before the
+    /// first network search.
+    pub ttfr: Option<LatencyPercentiles>,
     pub by_client: Vec<ClientCount>,
+    /// Most frequent queries in the window, count descending (cap 10).
+    pub top_queries: Vec<QueryCount>,
     /// Queries with `result_count = 0`, most frequent first.
     pub zero_result_queries: Vec<String>,
+    /// Cache hits grouped by serving tier (W2-03 hit-rate-by-tier panel).
+    pub hits_by_tier: Vec<TierHit>,
+    /// Search outcome counts (`ok` / `error` / `rejected`) folded from
+    /// `cauce_search_requests_total`'s `outcome` label (W2-03 amendment).
+    /// Filled by `merge_metrics`; empty in store results.
+    pub outcomes: std::collections::BTreeMap<String, u64>,
+    /// Searches in the window that hit the hard deadline
+    /// (`search_log.deadline_hit`). The windowed counterpart of the
+    /// lifetime `admission.deadline_hits` counter: the reliability panel
+    /// rates this against `searches`, never the lifetime counter, so
+    /// numerator and denominator share the window.
+    pub deadline_hits: u64,
     pub per_day: Vec<DayCount>,
     /// Engine table: one row per engine in `engine_health`, extended with
     /// the in-process request metrics by `merge_metrics` (W1-09).
@@ -469,6 +503,11 @@ pub struct StatsSnapshot {
     pub cache_entries: u64,
     /// Rows past `expires_at` awaiting eviction.
     pub cache_entries_expired: u64,
+    /// Database file size in bytes (`page_count * page_size`; 0 when the
+    /// store cannot report it).
+    pub cache_db_bytes: u64,
+    /// `created_at` of the newest `cache_entries` row.
+    pub cache_newest_at: Option<DateTime<Utc>>,
     /// Admission/queue aggregates. Zeroed by store impls; the HTTP handler
     /// fills it from the in-process metrics registry via `merge_metrics`.
     pub admission: AdmissionStats,
@@ -489,6 +528,8 @@ impl StatsSnapshot {
         }
         self.engines.sort_by(|a, b| a.engine.cmp(&b.engine));
         self.admission = crate::metrics::admission_stats();
+        self.ttfr = crate::metrics::ttfr_percentiles();
+        self.outcomes = crate::metrics::search_outcome_counts();
     }
 }
 

@@ -46,6 +46,7 @@ fn asset_string(name: &str) -> String {
 
 static HTMX_JS: LazyLock<String> = LazyLock::new(|| asset_string("htmx.min.js"));
 static JSON_ENC_JS: LazyLock<String> = LazyLock::new(|| asset_string("json-enc.js"));
+/// Shared page stylesheet; the other `ui` pages (W2) inject it too.
 pub(crate) static STYLE_CSS: LazyLock<String> = LazyLock::new(|| asset_string("style.css"));
 static FAVICON_SVG: LazyLock<Cow<'static, [u8]>> = LazyLock::new(|| {
     Assets::get("favicon.svg")
@@ -313,6 +314,7 @@ fn xml_attribute_escape(value: &str) -> String {
         .collect()
 }
 
+/// `Accept` prefers JSON (shared by every `ui` page's content negotiation).
 pub(crate) fn prefers_json(accept: &str) -> bool {
     accept.contains("application/json") && !accept.contains("text/html")
 }
@@ -462,6 +464,7 @@ fn more_url(resp: &SearchResponse, params: &QueryParams, req: &SearchRequest) ->
     format!("/search?{}", parts.join("&"))
 }
 
+/// The footer id every page renders (settled input: copyable request id).
 pub(crate) fn short_id(request_id: &str) -> String {
     request_id.chars().take(8).collect()
 }
@@ -486,6 +489,8 @@ struct Field {
 /// One `[[engines]]` row of the settings form.
 struct EngineSettings {
     id: String,
+    /// The row's `fe-*` error element id (`fe-engines-<id>`, dot-free).
+    fe_id: String,
     kind: &'static str,
     enabled: bool,
     /// `""` for "no override", else `"1"`/`"2"`/`"3"`.
@@ -537,22 +542,24 @@ struct CacheBlock {
 /// validation errors: htmx only swaps 2xx.
 #[derive(Template)]
 #[template(
-    source = "<span class=\"form-status {{ kind }}\">{{ text }}</span>{% for id in clear_ids %}<p class=\"field-error\" id=\"fe-{{ id }}\" hx-swap-oob=\"true\"></p>{% endfor %}{% for (id, msg) in field_errors %}<p class=\"field-error\" id=\"fe-{{ id }}\" hx-swap-oob=\"true\">{{ msg }}</p>{% endfor %}",
+    source = "<span class=\"form-status {{ kind }}\">{{ text }}</span>{% for id in clear_ids %}<p class=\"field-error\" id=\"{{ id }}\" hx-swap-oob=\"true\"></p>{% endfor %}{% for (id, msg) in field_errors %}<p class=\"field-error\" id=\"{{ id }}\" hx-swap-oob=\"true\">{{ msg }}</p>{% endfor %}",
     ext = "html"
 )]
 struct SettingsStatus {
     kind: &'static str,
     text: String,
-    /// Field names whose error line should be emptied.
+    /// `fe-*` element ids whose error line should be emptied.
     clear_ids: Vec<String>,
-    /// `(field name, message)` pairs rendered under their inputs.
+    /// `(fe-* element id, message)` pairs rendered under their inputs.
     field_errors: Vec<(String, String)>,
 }
 
 /// `GET /settings`: the config file as a form (W2-07). Reads the redacted
-/// display tree — `${...}` templates verbatim, secrets as `<redacted>` —
-/// and saves through `PUT /api/config` (urlencoded merge, `crate::settings`),
-/// never a second write path.
+/// display tree — `${...}` templates verbatim — except `ai.api_key`, which
+/// comes from the raw file layer so a literal key renders as typed (a
+/// `<redacted>` placeholder in the input would save back as the literal
+/// string). Saves through `PUT /api/config` (urlencoded merge,
+/// `crate::settings`), never a second write path.
 pub async fn settings(
     State(state): State<AppState>,
     Extension(ctx): Extension<RequestCtx>,
@@ -575,9 +582,10 @@ pub async fn settings(
         let block = CacheBlock { line: cache_line };
         return Ok(Html(block.render().map_err(|e| render_err(e, rid))?).into_response());
     }
-    let (tree, ai, engines, config_path) = state.with_config(|c| {
+    let (tree, raw_tree, ai, engines, config_path) = state.with_config(|c| {
         (
             c.display_tree(),
+            c.raw_tree().cloned(),
             c.ai.clone(),
             c.engines.clone(),
             c.config_path().display().to_string(),
@@ -591,22 +599,30 @@ pub async fn settings(
         value: tree_display(&tree, path),
         env: env_override(path).unwrap_or_default(),
     };
-    let ai_key_status = env_status(&tree_display(&tree, "ai.api_key")).unwrap_or_default();
+    // The file layer for the one secret the form renders: a literal key
+    // shows as typed and a `${env:...}` template verbatim. File-less
+    // configs (`Config::default()` in tests) fall back to the display tree.
+    let file_tree = raw_tree.as_ref().unwrap_or(&tree);
+    let ai_key_status = env_status(&tree_display(file_tree, "ai.api_key")).unwrap_or_default();
     let engines_pinned = std::env::var("CAUCE_ENGINES")
         .map(|v| !v.trim().is_empty())
         .unwrap_or(false);
     let engine_rows = engines
         .iter()
-        .map(|e| EngineSettings {
-            id: e.id.to_string(),
-            kind: kind_label(e.kind),
-            enabled: e.enabled,
-            tier: e.tier.map(|t| t.as_u8().to_string()).unwrap_or_default(),
-            proxy: e
-                .egress
-                .as_ref()
-                .and_then(|g| g.proxy.clone())
-                .unwrap_or_default(),
+        .map(|e| {
+            let id = e.id.to_string();
+            EngineSettings {
+                fe_id: crate::settings::fe_id(&format!("engines.{id}")),
+                id,
+                kind: kind_label(e.kind),
+                enabled: e.enabled,
+                tier: e.tier.map(|t| t.as_u8().to_string()).unwrap_or_default(),
+                proxy: e
+                    .egress
+                    .as_ref()
+                    .and_then(|g| g.proxy.clone())
+                    .unwrap_or_default(),
+            }
         })
         .collect();
 
@@ -626,7 +642,10 @@ pub async fn settings(
         max_concurrent: field("admission.max_concurrent_per_engine"),
         retention: field("logs.retention_days"),
         ai_base_url: field("ai.base_url"),
-        ai_api_key: field("ai.api_key"),
+        ai_api_key: Field {
+            value: tree_display(file_tree, "ai.api_key"),
+            env: env_override("ai.api_key").unwrap_or_default(),
+        },
         ai_key_status,
         ai_model: field("ai.model"),
         ai_enabled: ai.enabled,
@@ -725,12 +744,13 @@ pub(crate) fn settings_status(
             }
         }
     };
-    // `engines.<id>.<field>` names land on the row's `fe-engines.<id>`
+    // `engines.<id>.<field>` names land on the row's `fe-engines-<id>`
     // element (there is no per-input error element); errors hitting the
-    // same row merge into one line.
+    // same row merge into one line. `fe_id` keeps the emitted ids dot-free
+    // so htmx's oob `querySelector` lookup can find them.
     let mut merged: std::collections::BTreeMap<String, String> = std::collections::BTreeMap::new();
     for (name, msg) in field_errors {
-        let target = crate::settings::error_target(&name, engine_ids);
+        let target = crate::settings::fe_id(&crate::settings::error_target(&name, engine_ids));
         merged
             .entry(target)
             .and_modify(|m| {
@@ -743,11 +763,11 @@ pub(crate) fn settings_status(
     let errored: std::collections::BTreeSet<&String> =
         field_errors.iter().map(|(id, _)| id).collect();
     // Clears only name elements the page renders — the same row-level
-    // mapping applies, so `engines.<id>.tier` clears `fe-engines.<id>`,
-    // never a `fe-engines.<id>.tier` phantom.
+    // mapping applies, so `engines.<id>.tier` clears `fe-engines-<id>`,
+    // never a `fe-engines-<id>-tier` phantom.
     let clear_ids: Vec<String> = submitted
         .into_iter()
-        .map(|name| crate::settings::error_target(&name, engine_ids))
+        .map(|name| crate::settings::fe_id(&crate::settings::error_target(&name, engine_ids)))
         .collect::<std::collections::BTreeSet<_>>()
         .into_iter()
         .filter(|id| !errored.contains(id))
@@ -1337,6 +1357,7 @@ fn click_line(c: &ClickRow) -> ClickLine {
     }
 }
 
+/// Askama render failure -> 500 envelope (shared by the `ui` pages).
 pub(crate) fn render_err(e: askama::Error, request_id: uuid::Uuid) -> ApiError {
     ApiError::internal(format!("template render failed: {e}")).with_request_id(Some(request_id))
 }

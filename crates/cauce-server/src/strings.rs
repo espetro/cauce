@@ -274,6 +274,49 @@ pub mod history {
     pub const DELETE_FAILED: &str = "error: delete failed ({status})";
     pub const REQUEST_LABEL: &str = "request";
 }
+/// `/dashboard` (W2-03).
+pub mod dashboard {
+    pub const TITLE: &str = "dashboard";
+    pub const WINDOW: &str = "window";
+    pub const DAYS_7: &str = "7 days";
+    pub const DAYS_30: &str = "30 days";
+    /// Flat muted placeholder for panels whose source table has no rows in
+    /// the window (the screen spec's empty state).
+    pub const NO_DATA: &str = "no search log data yet";
+    pub const NO_ENGINES: &str = "no engine data yet";
+
+    pub const SEARCHES_PER_DAY: &str = "searches per day";
+    pub const LEGEND_CACHE: &str = "cache";
+    pub const LEGEND_NETWORK: &str = "network";
+    pub const HIT_RATE: &str = "cache hit rate";
+    pub const LATENCY: &str = "latency";
+    pub const TTFR: &str = "time to first result";
+    pub const FULL: &str = "full request";
+    pub const CLIENTS: &str = "client split";
+    pub const OUTCOMES: &str = "request outcomes";
+    pub const TOP_QUERIES: &str = "top queries";
+    pub const ZERO_RESULTS: &str = "zero-result queries";
+    pub const RELIABILITY: &str = "reliability";
+    pub const DEADLINE_HITS: &str = "deadline-hit";
+    pub const STALE_SERVED: &str = "stale-served";
+    pub const ADMISSION_REJECTED: &str = "admission-rejected";
+    pub const ENGINES: &str = "engines";
+    pub const CACHE: &str = "cache";
+
+    pub const COL_ENGINE: &str = "engine";
+    pub const COL_BREAKER: &str = "breaker";
+    pub const COL_RELIABILITY: &str = "reliability";
+    pub const COL_CALLS: &str = "calls";
+    pub const COL_TOTAL: &str = "total ms (med/p80/p95)";
+    pub const COL_HTTP: &str = "http ms (med/p80/p95)";
+    pub const COL_PARSE: &str = "parse ms (med/p80/p95)";
+
+    pub const CACHE_ROWS: &str = "rows";
+    pub const CACHE_UNEXPIRED: &str = "unexpired";
+    pub const CACHE_DB_SIZE: &str = "db size";
+    pub const CACHE_NEWEST: &str = "newest";
+}
+
 pub mod audit {
     pub const PAGE_TITLE: &str = "Audit";
     pub const ANY: &str = "any";
