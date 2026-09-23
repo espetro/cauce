@@ -11,8 +11,6 @@
   <link rel="icon" href="/favicon.ico" type="image/svg+xml">
   <style>{{ style_css|safe }}</style>
   <style>
-    header.nav { display: flex; gap: 1rem; align-items: baseline; margin-bottom: 1rem; }
-    header.nav a { color: var(--accent); text-decoration: none; }
     .window a { color: var(--accent); }
     .window a[aria-current] { font-weight: 700; color: var(--fg); text-decoration: none; }
     .panels { display: grid; grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr)); gap: 0.75rem; margin-bottom: 0.75rem; }
@@ -47,12 +45,11 @@
     dl.kv dd { margin: 0; }
     footer.meta { margin-top: 1.5rem; }
   </style>
+  {% include "theme_head.html" %}
 </head>
 <body>
-  <header class="nav">
-    <a href="/">cauce</a>
-    <strong>{{ crate::strings::dashboard::TITLE }}</strong>
-  </header>
+  {% include "header.html" %}
+  <main>
   <p class="meta window">{{ crate::strings::dashboard::WINDOW }}:
     <a href="/dashboard?days=7"{% if days == 7 %} aria-current="true"{% endif %}>{{ crate::strings::dashboard::DAYS_7 }}</a>
     ·
@@ -228,6 +225,7 @@
     </dl>
   </section>
 
+  </main>
   <footer class="meta">
     <span class="request-id" title="{{ request_id }}">{{ short_request_id }}</span>
   </footer>

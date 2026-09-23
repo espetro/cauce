@@ -1,0 +1,75 @@
+{# The shared page header (W2-08): brand, the primary nav
+   (`search · history · dashboard`), the quieter operator group
+   (`engines · cache · audit`), then `settings`, the version label and
+   the theme toggle. Below 700 px the operator group collapses into the
+   `more` <details> menu (CSS-only, works without JS). `nav_active`
+   marks the current page's link with `aria-current`; pass "" when the
+   page has no nav entry (e.g. /trace). #}
+<header class="site">
+  <a class="brand" href="/">{{ crate::strings::common::BRAND }}</a>
+  <nav class="nav-primary" aria-label="{{ crate::strings::common::NAV_PRIMARY_LABEL }}">
+    <a href="/"{% if nav_active == "search" %} aria-current="page"{% endif %}>{{ crate::strings::common::NAV_SEARCH }}</a>
+    <a href="/history"{% if nav_active == "history" %} aria-current="page"{% endif %}>{{ crate::strings::common::NAV_HISTORY }}</a>
+    <a href="/dashboard"{% if nav_active == "dashboard" %} aria-current="page"{% endif %}>{{ crate::strings::common::NAV_DASHBOARD }}</a>
+  </nav>
+  <span class="nav-right">
+    <nav class="nav-operator" aria-label="{{ crate::strings::common::NAV_OPERATOR_LABEL }}">
+      <a href="/engines"{% if nav_active == "engines" %} aria-current="page"{% endif %}>{{ crate::strings::common::NAV_ENGINES }}</a>
+      <a href="/cache"{% if nav_active == "cache" %} aria-current="page"{% endif %}>{{ crate::strings::common::NAV_CACHE }}</a>
+      <a href="/audit"{% if nav_active == "audit" %} aria-current="page"{% endif %}>{{ crate::strings::common::NAV_AUDIT }}</a>
+    </nav>
+    <a href="/settings"{% if nav_active == "settings" %} aria-current="page"{% endif %}>{{ crate::strings::common::NAV_SETTINGS }}</a>
+    <span class="nav-version">{{ crate::html::VERSION_LABEL }}</span>
+    <button type="button" id="theme-toggle"
+      data-label-system="{{ crate::strings::common::THEME_SYSTEM }}"
+      data-label-light="{{ crate::strings::common::THEME_LIGHT }}"
+      data-label-dark="{{ crate::strings::common::THEME_DARK }}"
+      aria-label="{{ crate::strings::common::THEME_ARIA }}"
+    >{{ crate::strings::common::THEME_SWITCH }}</button>
+    <details class="nav-more">
+      <summary>{{ crate::strings::common::NAV_MORE }}</summary>
+      <nav class="nav-more-links" aria-label="{{ crate::strings::common::NAV_OPERATOR_LABEL }}">
+        <a href="/engines"{% if nav_active == "engines" %} aria-current="page"{% endif %}>{{ crate::strings::common::NAV_ENGINES }}</a>
+        <a href="/cache"{% if nav_active == "cache" %} aria-current="page"{% endif %}>{{ crate::strings::common::NAV_CACHE }}</a>
+        <a href="/audit"{% if nav_active == "audit" %} aria-current="page"{% endif %}>{{ crate::strings::common::NAV_AUDIT }}</a>
+      </nav>
+    </details>
+  </span>
+</header>
+<script>
+  // W2-08 theme toggle: cycles system -> light -> dark, persisted in
+  // localStorage under `cauce-theme` (`system` removes the key so the
+  // prefers-color-scheme media query rules again). The head script in
+  // theme_head.html applies the stored choice before first paint; this
+  // script only wires the button and its state word. Without JS the
+  // button inertly shows `theme` and the media query keeps working.
+  (function () {
+    var KEY = "cauce-theme";
+    var btn = document.getElementById("theme-toggle");
+    if (!btn) return;
+    var root = document.documentElement;
+    function stored() {
+      try { return localStorage.getItem(KEY); } catch (_) { return null; }
+    }
+    function state() {
+      var s = stored();
+      return s === "light" || s === "dark" ? s : "system";
+    }
+    function render() {
+      btn.textContent = btn.getAttribute("data-label-" + state()) || state();
+    }
+    btn.addEventListener("click", function () {
+      var order = ["system", "light", "dark"];
+      var next = order[(order.indexOf(state()) + 1) % order.length];
+      if (next === "system") {
+        delete root.dataset.theme;
+        try { localStorage.removeItem(KEY); } catch (_) {}
+      } else {
+        root.dataset.theme = next;
+        try { localStorage.setItem(KEY, next); } catch (_) {}
+      }
+      render();
+    });
+    render();
+  })();
+</script>

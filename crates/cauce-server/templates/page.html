@@ -10,8 +10,11 @@
   <link rel="search" type="application/opensearchdescription+xml" title="cauce" href="/opensearch.xml">
   <link rel="icon" href="/favicon.ico" type="image/svg+xml">
   <style>{{ style_css|safe }}</style>
+  {% include "theme_head.html" %}
 </head>
 <body>
+  {% include "header.html" %}
+  <main>
   <form id="search-form" action="/search" method="get">
     <input type="search" name="q" value="{{ q }}" placeholder="{{ crate::strings::search::PLACEHOLDER }}" autofocus>
     <button type="submit">{{ crate::strings::search::SUBMIT }}</button>
@@ -32,6 +35,7 @@
   {% endif %}
   {% include "results.html" %}
   {% endif %}
+  </main>
   <script>{{ htmx_js|safe }}</script>
   <script>{{ json_enc_js|safe }}</script>
   <script>{{ sse_js|safe }}</script>

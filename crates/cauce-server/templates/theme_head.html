@@ -1,0 +1,15 @@
+{# W2-08: applies the stored theme before first paint so a saved
+   light/dark choice never flashes the opposite palette. Runs during
+   <head> parse, before any body pixels exist. `localStorage` can throw
+   (private mode); the prefers-color-scheme media query stays the
+   default then. The value lands on <html data-theme="...">, which the
+   `:root[data-theme="dark"]` / `:root:not([data-theme="light"])`
+   selectors in style.css read. #}
+<script>
+  (function () {
+    try {
+      var t = localStorage.getItem("cauce-theme");
+      if (t === "light" || t === "dark") document.documentElement.dataset.theme = t;
+    } catch (_) {}
+  })();
+</script>

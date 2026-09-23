@@ -87,6 +87,8 @@ struct EngineRow {
 #[derive(Template)]
 #[template(path = "dashboard.html")]
 struct Dashboard {
+    /// The shared header's active nav item.
+    nav_active: &'static str,
     days: u32,
     has_data: bool,
     hit_rate_pct: String,
@@ -273,6 +275,7 @@ impl Dashboard {
             .collect();
 
         Self {
+            nav_active: "dashboard",
             days: snap.window_days,
             has_data: searches > 0,
             hit_rate_pct: format!("{:.0}%", snap.hit_rate * 100.0),

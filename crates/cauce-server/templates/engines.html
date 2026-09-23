@@ -8,12 +8,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{ crate::strings::engines::PAGE_TITLE|lower }} · cauce</title>
   <style>{{ style_css|safe }}</style>
+  {% include "theme_head.html" %}
 </head>
 <body class="engines-page">
-  <header class="nav">
-    <a href="/">{{ crate::strings::common::NAV_SEARCH }}</a>
-    <strong>{{ crate::strings::engines::PAGE_TITLE }}</strong>
-  </header>
+  {% include "header.html" %}
   <main>
   <h1>{{ crate::strings::engines::PAGE_TITLE }}</h1>
   <p class="meta"><span>{{ summary }}</span></p>

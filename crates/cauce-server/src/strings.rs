@@ -15,10 +15,42 @@ pub mod common {
     pub const BRAND: &str = "cauce";
     /// Empty-cell placeholder.
     pub const DASH: &str = "-";
-    /// Link back to the search landing page.
-    pub const NAV_SEARCH: &str = "search";
     /// Footer label ahead of the page's own request id.
     pub const REQUEST_LABEL: &str = "request";
+
+    /// Primary nav link to the search landing page.
+    pub const NAV_SEARCH: &str = "search";
+    /// Primary nav link to `/history`.
+    pub const NAV_HISTORY: &str = "history";
+    /// Primary nav link to `/dashboard`.
+    pub const NAV_DASHBOARD: &str = "dashboard";
+    /// Operator nav link to `/engines`.
+    pub const NAV_ENGINES: &str = "engines";
+    /// Operator nav link to `/cache`.
+    pub const NAV_CACHE: &str = "cache";
+    /// Operator nav link to `/audit`.
+    pub const NAV_AUDIT: &str = "audit";
+    /// Header link to `/settings` (outside the operator group).
+    pub const NAV_SETTINGS: &str = "settings";
+    /// Label of the collapsed operator-group menu below 700 px.
+    pub const NAV_MORE: &str = "more";
+    /// `aria-label` of the primary nav landmark.
+    pub const NAV_PRIMARY_LABEL: &str = "primary";
+    /// `aria-label` of the operator nav landmark (inline and inside `more`).
+    pub const NAV_OPERATOR_LABEL: &str = "operator";
+
+    /// Theme toggle button text and `aria-label`; cycles system -> light
+    /// -> dark (W2-08). JS rewrites the text to the active state's word.
+    pub const THEME_SWITCH: &str = "theme";
+    /// Theme state word shown on the toggle while following
+    /// `prefers-color-scheme` (no stored choice).
+    pub const THEME_SYSTEM: &str = "system";
+    /// Theme state word while light is forced.
+    pub const THEME_LIGHT: &str = "light";
+    /// Theme state word while dark is forced.
+    pub const THEME_DARK: &str = "dark";
+    /// `aria-label` for the toggle; names the cycle it steps through.
+    pub const THEME_ARIA: &str = "theme: cycles system, light, dark";
 }
 
 /// `/` and `/search` page copy: the landing form, the server-rendered
@@ -205,8 +237,6 @@ pub mod settings {
 
 /// `/history` page copy (W2-02).
 pub mod history {
-    pub const NAV_SEARCH: &str = "search";
-    pub const NAV_HISTORY: &str = "history";
     pub const TITLE: &str = "History";
     /// Stats line: `N searches in last 24h · N total · N clicks today`.
     pub const STAT_SEARCHES_24H: &str = "searches in last 24h";
