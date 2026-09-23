@@ -144,9 +144,44 @@ pre.trace {
     overflow-x: auto;
 }
 
+/* Span field dumps can carry lines wider than the column; they scroll
+   inside themselves so the page never gains a horizontal scrollbar.
+   The template makes each block keyboard-focusable (axe
+   scrollable-region-focusable). */
+details.span pre {
+    overflow-x: auto;
+}
+
+/* Span status color roles reuse the settings `.form-status` palette. */
+.span-status-ok {
+    color: #15803d;
+}
+
+.span-status-error {
+    color: #b91c1c;
+}
+
 @media (max-width: 768px) {
     .audit-table .col-target {
         display: none;
+    }
+}
+
+/* Below 640 px `actor` and `action` share one cell rendered
+   `ui · cache.delete`: the actor column hides and the action cell's
+   inline prefix supplies the actor (the same single-cell merge the
+   history table uses for its card layout). */
+.audit-table .actor-prefix {
+    display: none;
+}
+
+@media (max-width: 640px) {
+    .audit-table .c-actor {
+        display: none;
+    }
+
+    .audit-table .actor-prefix {
+        display: inline;
     }
 }
 
@@ -405,6 +440,15 @@ article.cache-entry + article.cache-entry {
 }
 
 /* --- W2-02 /history ------------------------------------------------------- */
+new-results-above {
+    display: inline-block;
+    margin: 0.5rem 0;
+    padding: 0.25rem 0.75rem;
+    border: 1px solid var(--border);
+    border-radius: 9999px;
+    color: var(--muted);
+    font-size: 0.875rem;
+}
 
 nav.top {
     display: flex;
@@ -668,4 +712,7 @@ table.history details[open] summary {
 
 p.empty {
     color: var(--muted);
+}
+new-results-above[hidden] {
+    display: none;
 }
