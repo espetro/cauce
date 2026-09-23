@@ -235,8 +235,11 @@ fn handler_for(spec: &RouteSpec, state: &AppState) -> Option<MethodRouter<AppSta
         ("GET", "/opensearch.xml", RouteKind::Html) => Some(get(html::opensearch)),
         #[cfg(feature = "ui")]
         ("GET", "/favicon.ico", RouteKind::Static) => Some(get(html::favicon)),
+        #[cfg(feature = "ui")]
+        ("GET", "/history", RouteKind::Html) => Some(get(html::history)),
         ("GET", "/api/search", RouteKind::Json) => Some(get(handlers::search)),
         ("GET", "/api/history", RouteKind::Json) => Some(get(handlers::history)),
+        ("DELETE", "/api/history/{id}", RouteKind::Json) => Some(delete(handlers::history_delete)),
         ("POST", "/api/click", RouteKind::Json) => Some(post(handlers::click)),
         ("GET", "/api/stats", RouteKind::Json) => Some(get(handlers::stats)),
         ("GET", "/api/cache", RouteKind::Json) => Some(get(handlers::cache_list)),

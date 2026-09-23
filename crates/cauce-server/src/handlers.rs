@@ -141,19 +141,70 @@ pub async fn history(
     Extension(ctx): Extension<RequestCtx>,
     uri: Uri,
 ) -> Result<Json<Vec<HistoryItem>>, ApiError> {
-    let params = QueryParams::parse(uri.query(), &ctx)?;
-    params.allow(&ctx, &["since", "q", "limit"])?;
+    history_inner(&state, &ctx, &uri, 50)
+        .await
+        .map(|(_params, items)| Json(items))
+}
+
+/// Shared `GET /api/history` / `/history` query handling (W2-02): one
+/// filter grammar and one data path (`Store::list_history`) for the JSON
+/// route and the HTMX page. Returns the parsed params so the page can
+/// re-render the current filter state.
+pub(crate) async fn history_inner(
+    state: &AppState,
+    ctx: &RequestCtx,
+    uri: &Uri,
+    default_limit: u32,
+) -> Result<(QueryParams, Vec<HistoryItem>), ApiError> {
+    let params = QueryParams::parse(uri.query(), ctx)?;
+    params.allow(ctx, &["since", "q", "limit"])?;
     let filter = HistoryFilter {
-        since: params.since(&ctx, "since")?,
+        since: params.since(ctx, "since")?,
         q: params.get("q").map(str::to_string),
-        limit: params.u32(&ctx, "limit", 50)?.clamp(1, MAX_LIMIT),
+        limit: params.u32(ctx, "limit", default_limit)?.clamp(1, MAX_LIMIT),
     };
-    state
+    let items = state
         .store()
         .list_history(&filter)
         .await
-        .map(Json)
-        .map_err(|e| ctx.store(&e))
+        .map_err(|e| ctx.store(&e))?;
+    Ok((params, items))
+}
+
+/// `DELETE /api/history/{id}` (W2-02): audited history-row delete. The
+/// `search_log` row goes together with the `clicks` rows sharing its
+/// `query_hash` (the join the page renders).
+pub async fn history_delete(
+    State(state): State<AppState>,
+    Extension(ctx): Extension<RequestCtx>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+) -> Result<Json<Value>, ApiError> {
+    let id = id
+        .parse::<i64>()
+        .map_err(|_| ctx.bad_request(format!("invalid history id {id:?}")))?;
+    let Some(outcome) = state
+        .store()
+        .delete_search_log(id)
+        .await
+        .map_err(|e| ctx.store(&e))?
+    else {
+        return Err(ctx.not_found(format!("no history row {id}")));
+    };
+    write_audit(
+        state.store(),
+        &ctx,
+        &headers,
+        "history.delete",
+        id.to_string(),
+        json!({ "query": outcome.query, "clicks_removed": outcome.clicks_removed }),
+    )
+    .await?;
+    Ok(Json(json!({
+        "deleted": true,
+        "id": id,
+        "clicks_removed": outcome.clicks_removed,
+    })))
 }
 
 /// `POST /api/click`: the result-click beacon. `id`, `ts` and `client` are
@@ -760,8 +811,10 @@ impl QueryParams {
         }
     }
 
-    /// `since` accepts RFC 3339 (`2026-10-01T12:00:00Z`) or a bare
-    /// `YYYY-MM-DD` date (interpreted as that UTC midnight).
+    /// `since` accepts RFC 3339 (`2026-10-01T12:00:00Z`), a bare
+    /// `YYYY-MM-DD` date (interpreted as that UTC midnight) or a relative
+    /// window token — `24h`, `7d`, `30d` (W2-02's history filter set) or
+    /// `all` (no lower bound).
     pub(crate) fn since(
         &self,
         ctx: &RequestCtx,
@@ -770,6 +823,13 @@ impl QueryParams {
         let Some(v) = self.get(key) else {
             return Ok(None);
         };
+        match v {
+            "24h" => return Ok(Some(Utc::now() - chrono::Duration::hours(24))),
+            "7d" => return Ok(Some(Utc::now() - chrono::Duration::days(7))),
+            "30d" => return Ok(Some(Utc::now() - chrono::Duration::days(30))),
+            "all" => return Ok(None),
+            _ => {}
+        }
         if let Ok(dt) = DateTime::parse_from_rfc3339(v) {
             return Ok(Some(dt.with_timezone(&Utc)));
         }
@@ -779,7 +839,7 @@ impl QueryParams {
             return Ok(Some(dt.and_utc()));
         }
         Err(ctx.bad_request(format!(
-            "invalid {key} {v:?}: expected RFC 3339 or YYYY-MM-DD"
+            "invalid {key} {v:?}: expected RFC 3339, YYYY-MM-DD, or one of 24h|7d|30d|all"
         )))
     }
 }

@@ -13,9 +13,9 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use cauce_core::{
-    AuditFilter, AuditRow, CacheKey, CachedSearch, ClickRow, ClientKind, Engine, EngineError,
-    EngineHealthRow, EngineId, EngineStatus, HistoryFilter, HistoryItem, SafeSearch, SearchLogRow,
-    SearchRequest, SearchResponse, StatsSnapshot, Store, StoreError, Tier,
+    AuditFilter, AuditRow, CacheKey, CachedSearch, ClickRow, ClientKind, DeleteSearchLog, Engine,
+    EngineError, EngineHealthRow, EngineId, EngineStatus, HistoryFilter, HistoryItem, SafeSearch,
+    SearchLogRow, SearchRequest, SearchResponse, StatsSnapshot, Store, StoreError, Tier,
 };
 use cauce_engines::{Replay, ReplayOpts};
 use chrono::{DateTime, Utc};
@@ -228,6 +228,9 @@ impl Store for StubStore {
         unimplemented!()
     }
     async fn list_history(&self, _: &HistoryFilter) -> Result<Vec<HistoryItem>, StoreError> {
+        unimplemented!()
+    }
+    async fn delete_search_log(&self, _: i64) -> Result<Option<DeleteSearchLog>, StoreError> {
         unimplemented!()
     }
     async fn stats(&self, _: u32) -> Result<StatsSnapshot, StoreError> {

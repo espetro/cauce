@@ -16,9 +16,9 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use cauce_core::{
-    AdmissionStats, AuditFilter, AuditRow, CacheKey, CachedSearch, ClickRow, EngineHealthRow,
-    EngineStatsRow, EngineStatus, HistoryFilter, HistoryItem, LatencyPercentiles, SearchLogRow,
-    SearchResponse, StatsSnapshot, Store, StoreError, StoreTuning,
+    AdmissionStats, AuditFilter, AuditRow, CacheKey, CachedSearch, ClickRow, DeleteSearchLog,
+    EngineHealthRow, EngineStatsRow, EngineStatus, HistoryFilter, HistoryItem, LatencyPercentiles,
+    SearchLogRow, SearchResponse, StatsSnapshot, Store, StoreError, StoreTuning,
 };
 use rusqlite::{Connection, OptionalExtension, params};
 use tokio::task::{JoinError, spawn_blocking};
@@ -472,6 +472,42 @@ impl Store for SqliteStore {
             items.sort_by_key(|(ts, id, _)| std::cmp::Reverse((*ts, *id)));
             items.truncate(limit.max(0) as usize);
             Ok(items.into_iter().map(|(_, _, item)| item).collect())
+        })
+        .await
+    }
+
+    /// `DELETE /api/history/{id}` (W2-02): one `search_log` row plus the
+    /// `clicks` rows that share its `query_hash`, in one transaction so the
+    /// row can never disappear while its clicks stay visible.
+    async fn delete_search_log(&self, id: i64) -> Result<Option<DeleteSearchLog>, StoreError> {
+        self.with_writer(move |conn| {
+            // `unchecked_transaction` gives a tx from `&Connection`; the
+            // writer mutex already guarantees exclusivity.
+            let tx = conn.unchecked_transaction().map_err(sql_err)?;
+            let found: Option<(String, String)> = tx
+                .query_row(
+                    "SELECT query_hash, query FROM search_log WHERE id = ?1",
+                    params![id],
+                    |r| Ok((r.get(0)?, r.get(1)?)),
+                )
+                .optional()
+                .map_err(sql_err)?;
+            let Some((query_hash, query)) = found else {
+                return Ok(None);
+            };
+            tx.execute("DELETE FROM search_log WHERE id = ?1", params![id])
+                .map_err(sql_err)?;
+            let clicks_removed = tx
+                .execute(
+                    "DELETE FROM clicks WHERE query_hash = ?1",
+                    params![query_hash],
+                )
+                .map_err(sql_err)? as u64;
+            tx.commit().map_err(sql_err)?;
+            Ok(Some(DeleteSearchLog {
+                query,
+                clicks_removed,
+            }))
         })
         .await
     }

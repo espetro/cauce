@@ -538,6 +538,58 @@ pub async fn log_clicks_history(store: &impl Store) {
         .await
         .expect("limited history");
     assert_eq!(one.len(), 1);
+
+    // `delete_search_log` removes the row and cascades to the clicks that
+    // share its query_hash; deleting a missing id is a `None`, not an error.
+    let alpha_id = history
+        .iter()
+        .find_map(|i| match i {
+            HistoryItem::Search(s) if s.query == alpha => s.id,
+            _ => None,
+        })
+        .expect("alpha row id");
+    let outcome = store
+        .delete_search_log(alpha_id)
+        .await
+        .expect("delete_search_log failed")
+        .expect("existing row returns Some");
+    assert_eq!(outcome.query, alpha);
+    assert_eq!(outcome.clicks_removed, 1, "alpha's click cascades");
+
+    let after = store
+        .list_history(&HistoryFilter {
+            since: None,
+            q: None,
+            limit: 50,
+        })
+        .await
+        .expect("history after delete");
+    assert!(
+        !after
+            .iter()
+            .any(|i| matches!(i, HistoryItem::Search(s) if s.query == alpha)),
+        "deleted search is gone"
+    );
+    assert!(
+        !after
+            .iter()
+            .any(|i| matches!(i, HistoryItem::Click(c) if c.url.as_str() == click_url)),
+        "the click went with its search"
+    );
+    assert!(
+        after
+            .iter()
+            .any(|i| matches!(i, HistoryItem::Search(s) if s.query == beta)),
+        "other rows survive"
+    );
+    assert!(
+        store
+            .delete_search_log(alpha_id)
+            .await
+            .expect("second delete")
+            .is_none(),
+        "deleting a missing id returns None"
+    );
 }
 
 /// `stats` aggregates: hit rate over `search_log` (never `cache_entries`),

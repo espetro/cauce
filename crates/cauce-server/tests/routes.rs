@@ -49,7 +49,7 @@ const EXPECTED_WAVE0_JSON: &[(&str, &str)] = &[
 const EXPECTED_WAVE0_UI: &[(&str, &str)] = &[("GET", "/"), ("GET", "/search")];
 
 /// Wave-2 HTMX pages mounted so far.
-const EXPECTED_WAVE2_UI: &[(&str, &str)] = &[("GET", "/settings")];
+const EXPECTED_WAVE2_UI: &[(&str, &str)] = &[("GET", "/settings"), ("GET", "/history")];
 
 /// Wave-1 rows mounted so far (W1-06 engine health, W1-09 metrics).
 /// `/mcp` (W1-08) is added under `cfg!(feature = "mcp")` because its
@@ -60,6 +60,8 @@ const EXPECTED_WAVE1_MOUNTED: &[(&str, &str)] = &[
     ("GET", "/metrics"),
 ];
 
+/// Wave-2 rows mounted so far: W2-02's audited history-row delete.
+const EXPECTED_WAVE2_MOUNTED: &[(&str, &str)] = &[("DELETE", "/api/history/{id}")];
 /// Wave-2 rows mounted so far: the cache page (W2-04), `/opensearch.xml`
 /// (W2-11), and the favicon (#87). They are `requires: "ui"` rows, so they
 /// join the mounted set only in `ui` builds and drop under `--headless` like
@@ -299,8 +301,8 @@ fn wave0_routes_match_plan_filter() {
 
 /// `mounted_routes` (the builder's own view) equals the wave-0 set plus
 /// every wave-1 row implemented so far (`* /mcp` from W1-08, the engine
-/// health pair from W1-06, `/metrics` from W1-09) and the wave-2 favicon
-/// (#87), filtered to the compiled cargo features.
+/// health pair from W1-06, `/metrics` from W1-09), W2-02's history
+/// routes, and the wave-2 favicon (#87), filtered to compiled cargo features.
 #[test]
 fn mounted_routes_match_declaration() {
     let (state, _tmp) = test_state();
@@ -310,6 +312,7 @@ fn mounted_routes_match_declaration() {
     let mut expected: BTreeSet<(String, String)> = EXPECTED_WAVE0_JSON
         .iter()
         .chain(EXPECTED_WAVE1_MOUNTED)
+        .chain(EXPECTED_WAVE2_MOUNTED)
         .map(|(m, p)| (m.to_string(), p.to_string()))
         .collect();
     if cfg!(feature = "ui") {
@@ -375,6 +378,7 @@ async fn headless_drops_ui_routes_keeps_api() {
         "/opensearch.xml",
         "/favicon.ico",
         "/settings",
+        "/history",
     ] {
         let (status, _, body) = get(&router, uri).await;
         assert_eq!(status, StatusCode::NOT_FOUND, "{uri}: {body}");

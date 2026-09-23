@@ -140,3 +140,61 @@ pub mod settings {
     pub const NOSCRIPT: &str =
         "Saving needs JavaScript (the form issues PUT /api/config via htmx).";
 }
+
+/// `/history` page copy (W2-02).
+pub mod history {
+    /// Every user-visible string on the history page.
+    #[derive(Debug, Clone, Copy)]
+    pub struct Copy {
+        pub heading: &'static str,
+        pub filter_submit: &'static str,
+        pub window_24h: &'static str,
+        pub window_7d: &'static str,
+        pub window_30d: &'static str,
+        pub window_all: &'static str,
+        pub query_placeholder: &'static str,
+        pub empty: &'static str,
+        pub capped: &'static str,
+        pub col_query: &'static str,
+        pub col_when: &'static str,
+        pub col_source: &'static str,
+        pub col_engines: &'static str,
+        pub col_results: &'static str,
+        pub col_latency: &'static str,
+        pub col_client: &'static str,
+        pub col_clicks: &'static str,
+        pub rerun: &'static str,
+        pub copy_json: &'static str,
+        pub delete: &'static str,
+        pub delete_confirm: &'static str,
+        pub click_row: &'static str,
+        pub no_clicks: &'static str,
+    }
+
+    /// The English copy (only language in v3.0).
+    pub const COPY: Copy = Copy {
+        heading: "History",
+        filter_submit: "Filter",
+        window_24h: "last 24h",
+        window_7d: "last 7 days",
+        window_30d: "last 30 days",
+        window_all: "all time",
+        query_placeholder: "filter by query text...",
+        empty: "No history yet — searches you run show up here.",
+        capped: "showing the newest entries (capped)",
+        col_query: "query",
+        col_when: "when (UTC)",
+        col_source: "source",
+        col_engines: "engines",
+        col_results: "results",
+        col_latency: "ms",
+        col_client: "client",
+        col_clicks: "clicks",
+        rerun: "re-run",
+        copy_json: "json",
+        delete: "delete",
+        delete_confirm: "Delete this history row and its clicks?",
+        click_row: "clicked",
+        no_clicks: "—",
+    };
+}

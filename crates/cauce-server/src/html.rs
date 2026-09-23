@@ -21,7 +21,8 @@ use axum::response::{Html, IntoResponse, Response};
 use cauce_core::config::{AiConfig, EngineKind};
 use cauce_core::http::HttpClient;
 use cauce_core::{
-    CacheKey, EngineError, EngineId, EngineStatus, SearchRequest, SearchResponse, Source,
+    CacheKey, EngineError, EngineId, EngineStatus, HistoryItem, LogSource, SearchRequest,
+    SearchResponse, Source,
 };
 use rust_embed::Embed;
 use serde_json::{Value, json};
@@ -741,6 +742,216 @@ async fn fetch_models(url: &str, api_key: &str) -> Result<Vec<String>, EngineErr
                 .collect()
         })
         .unwrap_or_default())
+}
+
+// ---------------------------------------------------------------------------
+// `/history` (W2-02)
+// ---------------------------------------------------------------------------
+
+/// Max rows the history page renders (the step's 200-row cap).
+const HISTORY_PAGE_LIMIT: u32 = 200;
+/// Fetch one extra row so the page can distinguish exactly 200 from truncated.
+const HISTORY_FETCH_LIMIT: u32 = HISTORY_PAGE_LIMIT + 1;
+
+/// One clicked link inside a search row's `clicks` cell.
+#[derive(Debug)]
+struct ClickCell {
+    url: String,
+    title: String,
+}
+
+/// One table row on the history page: a logged search, or a click whose
+/// `query_hash` matches no shown search (rendered standalone so the feed
+/// never hides recorded clicks).
+#[derive(Debug)]
+struct HistRow {
+    is_search: bool,
+    /// `search_log` id (drives the delete button); unused on click rows.
+    id: i64,
+    /// `YYYY-MM-DD HH:MM` UTC.
+    when: String,
+    /// The search query, or the clicked title on click rows.
+    query: String,
+    /// `network` | `cache · tN` | `click`.
+    source: String,
+    engines: String,
+    result_count: String,
+    latency: String,
+    client: String,
+    /// Click target; only set on standalone click rows.
+    url: String,
+    clicks: Vec<ClickCell>,
+    rerun_url: String,
+    json_url: String,
+}
+
+/// `/history` full page.
+#[derive(Template)]
+#[template(path = "history.html")]
+struct History {
+    s: crate::strings::history::Copy,
+    /// Selected `since` window (`24h` | `7d` | `30d` | `all`).
+    since: String,
+    /// Active `q` substring filter.
+    q: String,
+    rows: Vec<HistRow>,
+    /// The feed hit the page cap — older rows exist beyond it.
+    capped: bool,
+    request_id: String,
+    short_request_id: String,
+    htmx_js: String,
+    style_css: String,
+}
+
+/// `GET /history?since&q` (W2-02): the `search_log` + `clicks` table.
+/// `Accept: application/json` delegates to the `/api/history` handler — one
+/// data path for both surfaces.
+pub async fn history(
+    State(state): State<AppState>,
+    Extension(ctx): Extension<RequestCtx>,
+    uri: Uri,
+    headers: HeaderMap,
+) -> Result<Response, ApiError> {
+    let accept = headers
+        .get("accept")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    if prefers_json(accept) {
+        return crate::handlers::history(State(state), Extension(ctx), uri)
+            .await
+            .map(|j| j.into_response());
+    }
+
+    let (params, mut items) =
+        crate::handlers::history_inner(&state, &ctx, &uri, HISTORY_FETCH_LIMIT).await?;
+    let capped = items.len() as u32 > HISTORY_PAGE_LIMIT;
+    items.truncate(HISTORY_PAGE_LIMIT as usize);
+
+    let rid = ctx.request_id.as_uuid().to_string();
+    let page = History {
+        s: crate::strings::history::COPY,
+        since: params.get("since").unwrap_or("all").to_string(),
+        q: params.get("q").unwrap_or("").to_string(),
+        rows: history_rows(items),
+        capped,
+        short_request_id: short_id(&rid),
+        request_id: rid,
+        htmx_js: HTMX_JS.clone(),
+        style_css: STYLE_CSS.clone(),
+    };
+    Ok(Html(
+        page.render()
+            .map_err(|e| render_err(e, ctx.request_id.as_uuid()))?,
+    )
+    .into_response())
+}
+
+/// Fold the merged `list_history` feed into display rows: clicks join the
+/// newest search row sharing their `query_hash`; clicks without one render
+/// as standalone rows in feed position.
+fn history_rows(items: Vec<HistoryItem>) -> Vec<HistRow> {
+    use std::collections::{HashMap, HashSet};
+
+    let search_hashes: HashSet<String> = items
+        .iter()
+        .filter_map(|i| match i {
+            HistoryItem::Search(s) => Some(s.query_hash.as_str().to_string()),
+            _ => None,
+        })
+        .collect();
+    let mut clicks_by_hash: HashMap<String, Vec<ClickCell>> = HashMap::new();
+    for item in &items {
+        if let HistoryItem::Click(c) = item
+            && let Some(hash) = &c.query_hash
+            && search_hashes.contains(hash.as_str())
+        {
+            clicks_by_hash
+                .entry(hash.as_str().to_string())
+                .or_default()
+                .push(ClickCell {
+                    url: c.url.as_str().to_string(),
+                    title: if c.title.is_empty() {
+                        c.url.as_str().to_string()
+                    } else {
+                        c.title.clone()
+                    },
+                });
+        }
+    }
+
+    let mut attached: HashSet<String> = HashSet::new();
+    let mut rows = Vec::with_capacity(items.len());
+    for item in items {
+        match item {
+            HistoryItem::Search(s) => {
+                let query = s.query_raw.clone().unwrap_or_else(|| s.query.clone());
+                let encoded = urlencoding::encode(&query).into_owned();
+                // First occurrence wins: items are newest-first, so clicks
+                // attach to the newest search row with their query_hash.
+                let clicks = if attached.insert(s.query_hash.as_str().to_string()) {
+                    clicks_by_hash
+                        .remove(s.query_hash.as_str())
+                        .unwrap_or_default()
+                } else {
+                    Vec::new()
+                };
+                let source = match (s.source, s.tier) {
+                    (LogSource::Cache, Some(t)) => format!("cache · t{}", t.as_u8()),
+                    (LogSource::Cache, None) => "cache".to_string(),
+                    (LogSource::Network, _) => "network".to_string(),
+                };
+                rows.push(HistRow {
+                    is_search: true,
+                    id: s.id.unwrap_or(0),
+                    when: s.ts.format("%Y-%m-%d %H:%M").to_string(),
+                    query,
+                    source,
+                    engines: s
+                        .engines
+                        .iter()
+                        .map(|e| e.to_string())
+                        .collect::<Vec<_>>()
+                        .join(", "),
+                    result_count: s.result_count.to_string(),
+                    latency: s.latency_ms.to_string(),
+                    client: s.client.label(),
+                    url: String::new(),
+                    clicks,
+                    rerun_url: format!("/search?q={encoded}"),
+                    json_url: format!("/api/search?q={encoded}"),
+                });
+            }
+            HistoryItem::Click(c) => {
+                let absorbed = c
+                    .query_hash
+                    .as_ref()
+                    .is_some_and(|h| search_hashes.contains(h.as_str()));
+                if absorbed {
+                    continue;
+                }
+                rows.push(HistRow {
+                    is_search: false,
+                    id: 0,
+                    when: c.ts.format("%Y-%m-%d %H:%M").to_string(),
+                    query: if c.title.is_empty() {
+                        c.url.as_str().to_string()
+                    } else {
+                        c.title
+                    },
+                    source: "click".to_string(),
+                    engines: "—".to_string(),
+                    result_count: "—".to_string(),
+                    latency: "—".to_string(),
+                    client: c.client.label(),
+                    url: c.url.as_str().to_string(),
+                    clicks: Vec::new(),
+                    rerun_url: String::new(),
+                    json_url: String::new(),
+                });
+            }
+        }
+    }
+    rows
 }
 
 fn render_err(e: askama::Error, request_id: uuid::Uuid) -> ApiError {

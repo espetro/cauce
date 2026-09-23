@@ -231,6 +231,17 @@ pub enum HistoryItem {
     Click(ClickRow),
 }
 
+/// Outcome of [`Store::delete_search_log`] (`DELETE /api/history/{id}`,
+/// W2-02): enough context for the audit row without a second read.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeleteSearchLog {
+    /// The removed row's query text.
+    pub query: String,
+    /// `clicks` rows removed alongside it (they share `query_hash`: a click
+    /// belongs to a query, not to one row instance).
+    pub clicks_removed: u64,
+}
+
 /// Filters for `Store::list_audit` (`GET /api/audit`).
 #[derive(Debug, Clone)]
 pub struct AuditFilter {
@@ -497,6 +508,11 @@ pub trait Store: Send + Sync {
     /// Combined history feed (`GET /api/history`): searches and clicks merged
     /// newest-first.
     async fn list_history(&self, filter: &HistoryFilter) -> Result<Vec<HistoryItem>, StoreError>;
+
+    /// `DELETE /api/history/{id}` (W2-02): remove one `search_log` row plus
+    /// the `clicks` rows that share its `query_hash`. Returns `None` when no
+    /// row has that id. The caller writes the audit row.
+    async fn delete_search_log(&self, id: i64) -> Result<Option<DeleteSearchLog>, StoreError>;
 
     // ---- stats --------------------------------------------------------------
 
