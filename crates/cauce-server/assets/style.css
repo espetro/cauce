@@ -113,11 +113,24 @@ article a:hover {
     color: var(--muted);
 }
 
-/* /cache page (W2-04). Strictly additive; shared base styles above. */
+/* /cache page (W2-04). Strictly additive; shared base styles above.
+   The page body carries `cache-page` so the wider content column and
+   heading scale stay scoped to this route (the search page keeps
+   720px / default h1). */
+
+body.cache-page {
+    max-width: 72rem;
+}
+
+.cache-page h1 {
+    font-size: 1.5rem;
+    font-weight: 600;
+}
 
 .cache-actions {
     display: flex;
     gap: 0.5rem;
+    align-items: center;
     margin-bottom: 1rem;
 }
 
@@ -135,9 +148,26 @@ article a:hover {
     border-color: #dc2626;
 }
 
-.cache-entry.expired .cache-query {
+.cache-noscript {
     color: var(--muted);
-    text-decoration: line-through;
+    font-size: 0.8125rem;
+}
+
+/* Table-like list: no per-row cards, a hairline between rows. */
+article.cache-entry {
+    margin: 0;
+    padding: 0.75rem 0;
+    border: none;
+    border-radius: 0;
+}
+
+article.cache-entry + article.cache-entry {
+    border-top: 1px solid var(--border);
+}
+
+/* Expired rows keep their place but render muted, never hidden. */
+.cache-entry.expired {
+    opacity: 0.6;
 }
 
 .cache-row {
@@ -152,16 +182,21 @@ article a:hover {
 }
 
 .cache-query {
-    font-weight: 600;
+    font-weight: 500;
 }
 
 .cache-meta {
     color: var(--muted);
-    font-size: 0.875rem;
+    font-size: 0.8125rem;
 }
 
 .cache-meta span + span::before {
     content: " · ";
+}
+
+.cache-payload {
+    color: var(--muted);
+    font-size: 0.8125rem;
 }
 
 .cache-payload-json {
@@ -170,8 +205,8 @@ article a:hover {
     padding: 0.5rem;
     border: 1px solid var(--border);
     border-radius: var(--radius);
-    white-space: pre-wrap;
-    word-break: break-all;
+    color: var(--fg);
+    white-space: pre;
 }
 
 .cache-pager {
@@ -181,4 +216,27 @@ article a:hover {
 
 .cache-pager a {
     color: var(--accent);
+}
+
+@media (max-width: 640px) {
+    /* The row delete drops under the meta line; bulk actions stack. */
+    .cache-row {
+        flex-direction: column;
+    }
+
+    /* `<details>` does not shrink below its expanded content under
+       cross-axis stretch; pin it to the row width so the payload block
+       scrolls inside itself instead of widening the page. */
+    .cache-details {
+        width: 100%;
+    }
+
+    .cache-delete {
+        align-self: flex-end;
+    }
+
+    .cache-actions {
+        flex-direction: column;
+        align-items: stretch;
+    }
 }
