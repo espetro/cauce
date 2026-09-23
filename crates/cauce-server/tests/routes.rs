@@ -60,8 +60,13 @@ const EXPECTED_WAVE1_MOUNTED: &[(&str, &str)] = &[
     ("GET", "/metrics"),
 ];
 
-/// Wave-2 rows mounted so far: W2-02's audited history-row delete.
-const EXPECTED_WAVE2_MOUNTED: &[(&str, &str)] = &[("DELETE", "/api/history/{id}")];
+/// Wave-2 API rows mounted so far: W2-02's audited history-row delete and
+/// the SSE stream endpoint (W2-01), which mounts in every build including
+/// headless.
+const EXPECTED_WAVE2_MOUNTED: &[(&str, &str)] = &[
+    ("DELETE", "/api/history/{id}"),
+    ("GET", "/api/search/stream"),
+];
 /// Wave-2 rows mounted so far: the cache page (W2-04), `/opensearch.xml`
 /// (W2-11), the audit + trace pages (W2-06), and the favicon (#87). They are
 /// `requires: "ui"` rows, so they join the mounted set only in `ui` builds
