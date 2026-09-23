@@ -9,6 +9,8 @@ mod app;
 mod audit_page;
 #[cfg(feature = "ui")]
 mod cache_page;
+#[cfg(feature = "ui")]
+mod dashboard;
 mod error;
 mod handlers;
 #[cfg(feature = "ui")]

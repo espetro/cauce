@@ -21,6 +21,66 @@ pub mod common {
     pub const REQUEST_LABEL: &str = "request";
 }
 
+/// `/` and `/search` page copy: the landing form, the server-rendered
+/// results page and the W2-01 streaming shell. The streaming page's
+/// inline JS interpolates these too (serialized once into the page as a
+/// `var S = {...}` literal), so no user-visible string lives in the
+/// template or the script.
+pub mod search {
+    /// Search-box placeholder.
+    pub const PLACEHOLDER: &str = "Search...";
+    /// Search-box submit label.
+    pub const SUBMIT: &str = "Search";
+    /// Result-count suffix (`12 results`).
+    pub const RESULTS: &str = "results";
+    /// Empty-state lead-in (`No results` / `No results · <statuses>`).
+    pub const NO_RESULTS: &str = "No results";
+    /// Next-page button label.
+    pub const MORE: &str = "More";
+
+    /// Badge while the SSE stream is in flight.
+    pub const SEARCHING: &str = "searching...";
+    /// Status line under the stream shell before the first event.
+    pub const WAITING: &str = "Waiting for engines...";
+    /// Status line once the terminal `meta` event lands.
+    pub const COMPLETE: &str = "Search complete";
+    /// Status line when an SSE frame fails to parse.
+    pub const INVALID_STREAM: &str = "Search stream returned invalid data";
+    /// `<noscript>` on the streaming shell: the events need JavaScript,
+    /// while a plain form submit still runs a server-rendered search.
+    pub const NOSCRIPT_STREAM: &str =
+        "Streaming needs JavaScript; submit the form for a plain search.";
+
+    /// Outranking pill (`{n}` is the late-result count).
+    pub const NEW_ABOVE: &str = "{n} new results above";
+    /// Live (network) badge (`{ms}` is the elapsed time in ms).
+    pub const LIVE_BADGE: &str = "live · {ms} ms";
+    /// Cache badge (`{age}`/`{ttl}` in seconds).
+    pub const CACHED_BADGE: &str = "cached · {age} s ago · ttl {ttl} s";
+    /// JS-side cache lead-in (the stream only knows `source != network`).
+    pub const CACHED: &str = "cached";
+
+    /// Engine status phrase (`{kind}` is an `ERR_*` word).
+    pub const ENGINE_FAILED: &str = "{engine} failed ({kind})";
+    /// Breaker-skipped engine phrase.
+    pub const ENGINE_SKIPPED: &str = "{engine} skipped (breaker)";
+
+    /// `EngineError::RateLimited` kind word.
+    pub const ERR_RATE_LIMITED: &str = "rate limited";
+    /// `EngineError::Blocked` kind word.
+    pub const ERR_BLOCKED: &str = "blocked";
+    /// `EngineError::Timeout` kind word.
+    pub const ERR_TIMEOUT: &str = "timeout";
+    /// `EngineError::Parse` kind word.
+    pub const ERR_PARSE: &str = "parse";
+    /// `EngineError::Transport` kind word.
+    pub const ERR_TRANSPORT: &str = "transport";
+    /// `EngineError::NoResults` kind word.
+    pub const ERR_NO_RESULTS: &str = "no results";
+    /// Kind word when the wire payload names none.
+    pub const ERR_UNKNOWN: &str = "failed";
+}
+
 /// `/cache` page copy (W2-04).
 pub mod cache {
     pub const PAGE_TITLE: &str = "Cache";
@@ -143,6 +203,49 @@ pub mod settings {
         "Saving needs JavaScript (the form issues PUT /api/config via htmx).";
 }
 
+/// `/dashboard` (W2-03).
+pub mod dashboard {
+    pub const TITLE: &str = "dashboard";
+    pub const WINDOW: &str = "window";
+    pub const DAYS_7: &str = "7 days";
+    pub const DAYS_30: &str = "30 days";
+    /// Flat muted placeholder for panels whose source table has no rows in
+    /// the window (the screen spec's empty state).
+    pub const NO_DATA: &str = "no search log data yet";
+    pub const NO_ENGINES: &str = "no engine data yet";
+
+    pub const SEARCHES_PER_DAY: &str = "searches per day";
+    pub const LEGEND_CACHE: &str = "cache";
+    pub const LEGEND_NETWORK: &str = "network";
+    pub const HIT_RATE: &str = "cache hit rate";
+    pub const LATENCY: &str = "latency";
+    pub const TTFR: &str = "time to first result";
+    pub const FULL: &str = "full request";
+    pub const CLIENTS: &str = "client split";
+    pub const OUTCOMES: &str = "request outcomes";
+    pub const TOP_QUERIES: &str = "top queries";
+    pub const ZERO_RESULTS: &str = "zero-result queries";
+    pub const RELIABILITY: &str = "reliability";
+    pub const DEADLINE_HITS: &str = "deadline-hit";
+    pub const STALE_SERVED: &str = "stale-served";
+    pub const ADMISSION_REJECTED: &str = "admission-rejected";
+    pub const ENGINES: &str = "engines";
+    pub const CACHE: &str = "cache";
+
+    pub const COL_ENGINE: &str = "engine";
+    pub const COL_BREAKER: &str = "breaker";
+    pub const COL_RELIABILITY: &str = "reliability";
+    pub const COL_CALLS: &str = "calls";
+    pub const COL_TOTAL: &str = "total ms (med/p80/p95)";
+    pub const COL_HTTP: &str = "http ms (med/p80/p95)";
+    pub const COL_PARSE: &str = "parse ms (med/p80/p95)";
+
+    pub const CACHE_ROWS: &str = "rows";
+    pub const CACHE_UNEXPIRED: &str = "unexpired";
+    pub const CACHE_DB_SIZE: &str = "db size";
+    pub const CACHE_NEWEST: &str = "newest";
+}
+
 pub mod audit {
     pub const PAGE_TITLE: &str = "Audit";
     pub const ANY: &str = "any";
@@ -165,6 +268,8 @@ pub mod audit {
     pub const MATCHING: &str = "matching";
     pub const CAP_NOTE_PREFIX: &str = "showing the newest";
     pub const CAP_NOTE_SUFFIX: &str = "raise `limit` (max 1000) for more";
+    /// Accessible name of the horizontally scrollable table region.
+    pub const TABLE_REGION: &str = "audit table";
 }
 
 pub mod trace {
@@ -177,4 +282,8 @@ pub mod trace {
     /// `{days}` is replaced with the configured `logs.retention_days`.
     pub const NO_TRACE: &str = "no trace for this request id. traces are kept for logs.retention_days days (currently {days}).";
     pub const BAD_ID: &str = "that is not a request id";
+    /// Accessible name of the horizontally scrollable timeline region.
+    pub const TIMELINE_REGION: &str = "request timeline";
+    /// Accessible name of one span's expandable raw-fields block.
+    pub const SPAN_REGION: &str = "span fields";
 }

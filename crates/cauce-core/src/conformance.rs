@@ -71,6 +71,7 @@ pub fn response(q: &str, results: &[(&str, &str, &str)]) -> SearchResponse {
                 latency_ms: 12,
                 result_count: results.len() as u32,
             }],
+            engines_skipped: Vec::new(),
             deadline_hit: false,
             elapsed_ms: 12,
             request_id: Uuid::now_v7(),
@@ -548,7 +549,7 @@ pub async fn stats_aggregates(store: &impl Store) {
     let before = store.stats(DAYS).await.expect("baseline stats");
 
     let now = Utc::now();
-    let rows = [
+    let mut rows = [
         log_row(
             now,
             "conf stats one",
@@ -582,6 +583,9 @@ pub async fn stats_aggregates(store: &impl Store) {
             0,
         ),
     ];
+    // One row flags `deadline_hit`: the windowed counter reads the
+    // `search_log.deadline_hit` column, not the metrics registry.
+    rows[2].deadline_hit = true;
     for row in rows {
         store.log_search(row).await.expect("log_search");
     }
@@ -613,6 +617,11 @@ pub async fn stats_aggregates(store: &impl Store) {
     assert_eq!(after.window_days, DAYS);
     assert_eq!(after.searches, before.searches + 4);
     assert_eq!(after.cache_hits, before.cache_hits + 2);
+    assert_eq!(
+        after.deadline_hits,
+        before.deadline_hits + 1,
+        "deadline_hits counts search_log.deadline_hit rows in the window"
+    );
 
     let expected_rate = after.cache_hits as f64 / after.searches as f64;
     assert!(

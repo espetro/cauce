@@ -18,7 +18,8 @@ use async_trait::async_trait;
 use cauce_core::{
     AdmissionStats, AuditFacets, AuditFilter, AuditRow, CacheKey, CachedSearch, ClickRow,
     EngineHealthRow, EngineStatsRow, EngineStatus, HistoryFilter, HistoryItem, LatencyPercentiles,
-    SearchLogRow, SearchResponse, StatsSnapshot, Store, StoreError, StoreTuning,
+    QueryCount, SearchLogRow, SearchResponse, StatsSnapshot, Store, StoreError, StoreTuning,
+    TierHit,
 };
 use rusqlite::{Connection, OptionalExtension, params};
 use tokio::task::{JoinError, spawn_blocking};
@@ -489,12 +490,13 @@ impl Store for SqliteStore {
             };
             let now = rows::now_ms();
 
-            let (searches, cache_hits): (i64, i64) = conn
+            let (searches, cache_hits, deadline_hits): (i64, i64, i64) = conn
                 .query_row(
-                    "SELECT count(*), coalesce(sum(source = 'cache'), 0)
+                    "SELECT count(*), coalesce(sum(source = 'cache'), 0),
+                            coalesce(sum(deadline_hit), 0)
                        FROM search_log WHERE ts >= ?1",
                     params![since],
-                    |r| Ok((r.get(0)?, r.get(1)?)),
+                    |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
                 )
                 .map_err(sql_err)?;
 
@@ -540,6 +542,25 @@ impl Store for SqliteStore {
                 .map_err(sql_err)?
             };
 
+            let top_queries = {
+                let mut stmt = conn
+                    .prepare(
+                        "SELECT query, count(*) AS n FROM search_log
+                          WHERE ts >= ?1
+                          GROUP BY query ORDER BY n DESC, query LIMIT 10",
+                    )
+                    .map_err(sql_err)?;
+                stmt.query_map(params![since], |r| {
+                    Ok(QueryCount {
+                        query: r.get::<_, String>(0)?,
+                        searches: r.get::<_, i64>(1)? as u64,
+                    })
+                })
+                .map_err(sql_err)?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(sql_err)?
+            };
+
             let zero_result_queries = {
                 let mut stmt = conn
                     .prepare(
@@ -552,6 +573,27 @@ impl Store for SqliteStore {
                     .map_err(sql_err)?
                     .collect::<Result<Vec<_>, _>>()
                     .map_err(sql_err)?
+            };
+
+            // Cache hits grouped by serving tier (`tier` is only set on
+            // `source = 'cache'` rows).
+            let hits_by_tier = {
+                let mut stmt = conn
+                    .prepare(
+                        "SELECT tier, count(*) FROM search_log
+                          WHERE ts >= ?1 AND source = 'cache' AND tier IS NOT NULL
+                          GROUP BY tier ORDER BY tier",
+                    )
+                    .map_err(sql_err)?;
+                stmt.query_map(params![since], |r| {
+                    Ok(TierHit {
+                        tier: r.get::<_, i64>(0)? as u8,
+                        hits: r.get::<_, i64>(1)? as u64,
+                    })
+                })
+                .map_err(sql_err)?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(sql_err)?
             };
 
             let per_day = {
@@ -618,6 +660,26 @@ impl Store for SqliteStore {
                 )
                 .map_err(sql_err)?;
 
+            // Cache panel extras (W2-03): db file size from the page
+            // counters and the newest entry's `created_at` (`max` is NULL on
+            // an empty table).
+            let cache_db_bytes = {
+                let page_count = conn
+                    .pragma_query_value(None, "page_count", |r| r.get::<_, i64>(0))
+                    .map_err(sql_err)?;
+                let page_size = conn
+                    .pragma_query_value(None, "page_size", |r| r.get::<_, i64>(0))
+                    .map_err(sql_err)?;
+                (page_count.max(0) * page_size.max(0)) as u64
+            };
+            let cache_newest_at = conn
+                .query_row("SELECT max(created_at) FROM cache_entries", [], |r| {
+                    r.get::<_, Option<i64>>(0)
+                })
+                .map_err(sql_err)?
+                .map(rows::from_ms)
+                .transpose()?;
+
             let searches = searches as u64;
             let cache_hits = cache_hits as u64;
             Ok(StatsSnapshot {
@@ -631,13 +693,20 @@ impl Store for SqliteStore {
                 },
                 latency,
                 by_client,
+                top_queries,
                 zero_result_queries,
+                hits_by_tier,
+                deadline_hits: deadline_hits as u64,
                 per_day,
                 engines,
                 cache_entries: cache_entries as u64,
                 cache_entries_expired: cache_entries_expired as u64,
+                cache_db_bytes,
+                cache_newest_at,
                 // Filled from the in-process metrics registry by the
                 // `/api/stats` handler (`StatsSnapshot::merge_metrics`).
+                ttfr: None,
+                outcomes: Default::default(),
                 admission: AdmissionStats::default(),
             })
         })
