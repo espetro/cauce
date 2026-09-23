@@ -275,10 +275,10 @@ async fn invalid_field_reports_inline_error() {
     assert!(body.contains("form-status error"), "{body}");
     assert!(body.contains("not saved: 1 error"), "{body}");
     assert!(
-        body.contains("id=\"fe-search.deadline_ms\""),
+        body.contains("id=\"fe-search-deadline_ms\""),
         "error line targets the deadline field: {body}"
     );
-    let pos = body.find("id=\"fe-search.deadline_ms\"").unwrap();
+    let pos = body.find("id=\"fe-search-deadline_ms\"").unwrap();
     assert!(
         body[pos..].contains("hx-swap-oob"),
         "error element swaps out of band: {body}"
@@ -317,9 +317,9 @@ async fn engine_fields_write_file_entries() {
     clear_env();
 }
 
-/// Engine field errors and clears target the row's `fe-engines.<id>`
+/// Engine field errors and clears target the row's `fe-engines-<id>`
 /// element — the page renders one error line per row, never a per-field
-/// `fe-engines.<id>.<field>` phantom.
+/// `fe-engines-<id>-<field>` phantom.
 #[tokio::test]
 async fn engine_field_errors_target_the_row() {
     let _guard = env_lock().await;
@@ -331,11 +331,11 @@ async fn engine_field_errors_target_the_row() {
     assert_eq!(status, StatusCode::OK, "{body}");
     assert!(body.contains("not saved: 1 error"), "{body}");
     assert!(
-        body.contains("id=\"fe-engines.replay\""),
+        body.contains("id=\"fe-engines-replay\""),
         "the row error element must carry the message: {body}"
     );
     assert!(
-        !body.contains("fe-engines.replay.tier"),
+        !body.contains("fe-engines-replay-tier"),
         "no per-field error element exists: {body}"
     );
 
@@ -349,14 +349,62 @@ async fn engine_field_errors_target_the_row() {
     .await;
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(
-        body.matches("id=\"fe-engines.replay\"").count(),
+        body.matches("id=\"fe-engines-replay\"").count(),
         1,
         "one OOB clear for the row: {body}"
     );
-    assert!(!body.contains("fe-engines.replay.tier"), "{body}");
-    assert!(!body.contains("fe-engines.replay.egress.proxy"), "{body}");
-    assert!(body.contains("id=\"fe-search.deadline_ms\""), "{body}");
+    assert!(!body.contains("fe-engines-replay-tier"), "{body}");
+    assert!(!body.contains("fe-engines-replay-egress-proxy"), "{body}");
+    assert!(body.contains("id=\"fe-search-deadline_ms\""), "{body}");
     clear_env();
+}
+
+/// htmx resolves oob targets with `querySelector("#<id>")`, where a dot
+/// parses as a class selector and the swap silently misses. Every `fe-*`
+/// id the page renders and the status fragment emits must be dot-free, and
+/// the emitted id must be the exact id of an element on the page so
+/// `document.getElementById` finds it — checked here with a dotted engine
+/// id, the case that produced dotted row ids.
+#[tokio::test]
+async fn oob_error_ids_are_dot_free_and_match_the_page() {
+    let _guard = env_lock().await;
+    clear_env();
+    let tmp = config_env("[[engines]]\nid = \"dotted.id\"\nkind = \"replay\"\n");
+    let app = app(&tmp);
+
+    // The page's row error element carries the encoded id.
+    let (status, page) = get_html(&app, "/settings").await;
+    assert_eq!(status, StatusCode::OK, "{page}");
+    assert!(
+        page.contains("id=\"fe-engines-dotted-id\""),
+        "the dotted-id row must render a dot-free error element: {page}"
+    );
+    for id in fe_ids(&page) {
+        assert!(!id.contains('.'), "page fe-* id holds a dot: {id:?}");
+    }
+
+    // The oob fragment for a bad engine field emits the very same id, so a
+    // JS-side `document.getElementById` lands on the rendered row.
+    let (status, body) = put_form(&app, "engines.dotted.id.tier=9", true).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert!(
+        body.contains("id=\"fe-engines-dotted-id\""),
+        "oob error must target the rendered row id: {body}"
+    );
+    for id in fe_ids(&body) {
+        assert!(!id.contains('.'), "oob fe-* id holds a dot: {id:?}");
+    }
+    clear_env();
+}
+
+/// Every `id="fe-..."` value in `html`, for the dot-free assertions.
+fn fe_ids(html: &str) -> Vec<String> {
+    html.split("id=\"")
+        .skip(1)
+        .filter_map(|rest| rest.split('\"').next())
+        .filter(|id| id.starts_with("fe-"))
+        .map(String::from)
+        .collect()
 }
 
 #[tokio::test]
@@ -478,7 +526,7 @@ async fn multiple_invalid_fields_report_per_field_errors() {
     .await;
     assert_eq!(status, StatusCode::OK, "{body}");
     assert!(body.contains("not saved: 2 errors"), "{body}");
-    for id in ["fe-search.deadline_ms", "fe-admission.max_wait_ms"] {
+    for id in ["fe-search-deadline_ms", "fe-admission-max_wait_ms"] {
         assert!(body.contains(&format!("id=\"{id}\"")), "{body}");
     }
     // The file is untouched: values stay in the submitted form only.
