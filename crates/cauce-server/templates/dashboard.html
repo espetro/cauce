@@ -50,19 +50,20 @@
 <body>
   {% include "header.html" %}
   <main>
+  <h1>{{ crate::strings::dashboard::TITLE }}</h1>
   <p class="meta window">{{ crate::strings::dashboard::WINDOW }}:
-    <a href="/dashboard?days=7"{% if days == 7 %} aria-current="true"{% endif %}>{{ crate::strings::dashboard::DAYS_7 }}</a>
+    <a href="/dashboard?days=7"{% if days == 7 %} aria-current="page"{% endif %}>{{ crate::strings::dashboard::DAYS_7 }}</a>
     ·
-    <a href="/dashboard?days=30"{% if days == 30 %} aria-current="true"{% endif %}>{{ crate::strings::dashboard::DAYS_30 }}</a>
+    <a href="/dashboard?days=30"{% if days == 30 %} aria-current="page"{% endif %}>{{ crate::strings::dashboard::DAYS_30 }}</a>
   </p>
 
   <div class="panels">
     <section class="panel">
-      <h2>{{ crate::strings::dashboard::SEARCHES_PER_DAY }}</h2>
+      <h2 id="searches-per-day">{{ crate::strings::dashboard::SEARCHES_PER_DAY }}</h2>
       {% if bars.is_empty() %}
       <p class="muted">{{ crate::strings::dashboard::NO_DATA }}</p>
       {% else %}
-      <svg class="bars" viewBox="0 0 {{ chart_w }} {{ chart_h }}" role="img">
+      <svg class="bars" viewBox="0 0 {{ chart_w }} {{ chart_h }}" role="img" aria-labelledby="searches-per-day">
         {% for bar in bars %}
         <rect class="network" x="{{ bar.x }}" y="{{ bar.net_y }}" width="{{ bar.w }}" height="{{ bar.net_h }}"><title>{{ bar.title }}</title></rect>
         <rect class="cache" x="{{ bar.x }}" y="{{ bar.cache_y }}" width="{{ bar.w }}" height="{{ bar.cache_h }}"><title>{{ bar.title }}</title></rect>
