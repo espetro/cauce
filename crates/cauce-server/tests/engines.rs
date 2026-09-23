@@ -647,3 +647,94 @@ async fn persisted_health_row_with_invalid_id_renders_no_card() {
     assert_eq!(status, StatusCode::OK, "{page}");
     assert!(!page.contains("bad id"), "{page}");
 }
+
+/// The same pre-validation row must not reach `StatsSnapshot.engines`
+/// either: the dashboard's engines table would render a `card_anchor`
+/// link to a card `/engines` never produces, and `/api/stats` would
+/// diverge from the filtered `/api/engines`.
+#[tokio::test]
+async fn persisted_health_row_with_invalid_id_is_absent_from_stats() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let store = Arc::new(
+        SqliteStore::open(tmp.path().join("cauce.db"), StoreTuning::default()).expect("store"),
+    );
+    store
+        .put_health(&EngineHealthRow {
+            engine: EngineId::from("bad id"),
+            ewma_ms: 12.0,
+            failures: 1,
+            breaker: BreakerState::Closed,
+            breaker_until: None,
+            last_ok_at: None,
+            last_error: None,
+        })
+        .await
+        .expect("put_health");
+    let pipeline = Arc::new(SearchPipeline::new(
+        store.clone(),
+        vec![Arc::new(Replay::new(ReplayOpts::default()))],
+    ));
+    pipeline.load_health().await.expect("health rows load");
+    let router = build_router(AppState::new(pipeline, store, Config::default()));
+
+    let (status, body) = call(&router, "GET", "/api/stats").await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let engines = body["engines"].as_array().expect("engines rows");
+    assert!(
+        !engines.iter().any(|r| r["engine"] == "bad id"),
+        "invalid persisted id leaked into /api/stats engines: {body}"
+    );
+}
+
+/// `POST /api/engines/{id}/reset` on a persisted-but-invalid id 404s like
+/// any unknown id: the handler must not reset the tracker, re-persist the
+/// phantom row through `put_health`, or audit it.
+#[tokio::test]
+async fn engine_reset_rejects_invalid_persisted_id() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let store = Arc::new(
+        SqliteStore::open(tmp.path().join("cauce.db"), StoreTuning::default()).expect("store"),
+    );
+    store
+        .put_health(&EngineHealthRow {
+            engine: EngineId::from("bad id"),
+            ewma_ms: 12.0,
+            failures: 1,
+            breaker: BreakerState::Closed,
+            breaker_until: None,
+            last_ok_at: None,
+            last_error: None,
+        })
+        .await
+        .expect("put_health");
+    let pipeline = Arc::new(SearchPipeline::new(
+        store.clone(),
+        vec![Arc::new(Replay::new(ReplayOpts::default()))],
+    ));
+    pipeline.load_health().await.expect("health rows load");
+    let router = build_router(AppState::new(pipeline, store.clone(), Config::default()));
+
+    let (status, body) = call(&router, "POST", "/api/engines/bad%20id/reset").await;
+    assert_eq!(status, StatusCode::NOT_FOUND, "{body}");
+    assert_eq!(body["error"]["code"], "not_found");
+
+    // No `put_health` rewrite: a reset would have zeroed the failure
+    // count and persisted `half_open`.
+    let rows = store.health().await.expect("health rows");
+    let row = rows
+        .iter()
+        .find(|r| r.engine.as_str() == "bad id")
+        .expect("persisted row");
+    assert_eq!(row.failures, 1, "{row:?}");
+    assert_eq!(row.breaker, BreakerState::Closed, "{row:?}");
+
+    let (_, audit) = call(&router, "GET", "/api/audit").await;
+    assert!(
+        !audit
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|r| r["action"] == "engine.reset" && r["target"] == "bad id"),
+        "phantom reset audited: {audit}"
+    );
+}
