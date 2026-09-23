@@ -8,14 +8,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{ crate::strings::audit::PAGE_TITLE|lower }} · {{ crate::strings::common::BRAND }}</title>
   <style>{{ style_css|safe }}</style>
+  {% include "theme_head.html" %}
 </head>
 <body>
-<nav class="topnav">
-  <a href="/">{{ crate::strings::common::NAV_SEARCH }}</a>
-</nav>
+{% include "header.html" %}
 <main>
   <h1>{{ crate::strings::audit::PAGE_TITLE }}</h1>
-  <form action="/audit" method="get">
+  <form action="/audit" method="get" class="filters">
     <select name="actor" aria-label="{{ crate::strings::audit::ACTOR_LABEL }}">
       <option value="">{{ crate::strings::audit::ANY }}</option>
       {% for o in actor_options %}
