@@ -1,0 +1,11 @@
+/Users/josocjoq/.worktrees/oxe-audit-ui-fix/target-local/debug/deps/zeroize-5085cb196bfac508.d: /Users/josocjoq/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zeroize-1.9.0/src/lib.rs /Users/josocjoq/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zeroize-1.9.0/src/aarch64.rs /Users/josocjoq/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zeroize-1.9.0/src/barrier.rs /Users/josocjoq/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zeroize-1.9.0/src/stack.rs /Users/josocjoq/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zeroize-1.9.0/src/../README.md
+
+/Users/josocjoq/.worktrees/oxe-audit-ui-fix/target-local/debug/deps/libzeroize-5085cb196bfac508.rlib: /Users/josocjoq/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zeroize-1.9.0/src/lib.rs /Users/josocjoq/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zeroize-1.9.0/src/aarch64.rs /Users/josocjoq/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zeroize-1.9.0/src/barrier.rs /Users/josocjoq/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zeroize-1.9.0/src/stack.rs /Users/josocjoq/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zeroize-1.9.0/src/../README.md
+
+/Users/josocjoq/.worktrees/oxe-audit-ui-fix/target-local/debug/deps/libzeroize-5085cb196bfac508.rmeta: /Users/josocjoq/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zeroize-1.9.0/src/lib.rs /Users/josocjoq/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zeroize-1.9.0/src/aarch64.rs /Users/josocjoq/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zeroize-1.9.0/src/barrier.rs /Users/josocjoq/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zeroize-1.9.0/src/stack.rs /Users/josocjoq/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zeroize-1.9.0/src/../README.md
+
+/Users/josocjoq/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zeroize-1.9.0/src/lib.rs:
+/Users/josocjoq/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zeroize-1.9.0/src/aarch64.rs:
+/Users/josocjoq/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zeroize-1.9.0/src/barrier.rs:
+/Users/josocjoq/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zeroize-1.9.0/src/stack.rs:
+/Users/josocjoq/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zeroize-1.9.0/src/../README.md:
