@@ -45,6 +45,7 @@ pub fn system_env() -> EnvMap {
 const ENV_OVERRIDES: &[(&str, &[&str], bool)] = &[
     ("CAUCE_SERVER_HOST", &["server", "host"], false),
     ("CAUCE_SERVER_PORT", &["server", "port"], true),
+    ("CAUCE_SERVER_PUBLIC_URL", &["server", "public_url"], false),
     ("CAUCE_SEARCH_DEADLINE_MS", &["search", "deadline_ms"], true),
     ("CAUCE_SEARCH_MIN_RESULTS", &["search", "min_results"], true),
     ("CAUCE_SEARCH_TTL_S", &["search", "ttl_s"], true),
@@ -221,6 +222,10 @@ pub struct ServerConfig {
     /// Bind port; 4479 by default.
     #[serde(default = "default_port")]
     pub port: u16,
+    /// Canonical externally visible HTTP(S) origin for absolute browser URLs.
+    /// When unset, the effective bind host and port are used over HTTP.
+    #[serde(default)]
+    pub public_url: Option<String>,
 }
 
 impl Default for ServerConfig {
@@ -228,7 +233,30 @@ impl Default for ServerConfig {
         Self {
             host: default_host(),
             port: default_port(),
+            public_url: None,
         }
+    }
+}
+
+impl ServerConfig {
+    /// Absolute origin used by the OpenSearch descriptor. `public_url` is
+    /// validated by `Config::from_raw`; request headers are never consulted.
+    pub fn public_origin(&self, bind_host: &str, bind_port: u16) -> String {
+        if let Some(public_url) = &self.public_url {
+            return url::Url::parse(public_url)
+                .expect("ServerConfig::public_url is validated when loaded")
+                .origin()
+                .ascii_serialization();
+        }
+
+        let bind_host = match bind_host.parse::<std::net::IpAddr>() {
+            Ok(std::net::IpAddr::V6(_)) => format!("[{bind_host}]"),
+            _ => bind_host.to_string(),
+        };
+        let fallback = format!("http://{bind_host}:{bind_port}");
+        url::Url::parse(&fallback)
+            .map(|url| url.origin().ascii_serialization())
+            .unwrap_or_else(|_| format!("http://127.0.0.1:{bind_port}"))
     }
 }
 
@@ -238,6 +266,40 @@ fn default_host() -> String {
 
 fn default_port() -> u16 {
     4479
+}
+
+/// Validate the configured canonical origin before it can reach XML output.
+fn validate_public_url(value: &str) -> Result<(), String> {
+    if value
+        .chars()
+        .any(|c| c.is_control() || c.is_whitespace() || matches!(c, '\'' | '"'))
+    {
+        return Err("expected an HTTP(S) origin without whitespace, controls, or quotes".into());
+    }
+    let url =
+        url::Url::parse(value).map_err(|e| format!("expected an absolute HTTP(S) origin: {e}"))?;
+    if !matches!(url.scheme(), "http" | "https") {
+        return Err("scheme must be http or https".into());
+    }
+    if url.host_str().is_none_or(str::is_empty) {
+        return Err("origin must contain a valid host".into());
+    }
+    if !url.username().is_empty() || url.password().is_some() {
+        return Err("username and password are not allowed".into());
+    }
+    if url.query().is_some() || url.fragment().is_some() {
+        return Err("query and fragment are not allowed".into());
+    }
+    let (_, authority_and_path) = value
+        .split_once("://")
+        .ok_or_else(|| "expected an absolute hierarchical URL with an authority".to_string())?;
+    let suffix_start = authority_and_path
+        .find(['/', '?', '#'])
+        .unwrap_or(authority_and_path.len());
+    if !matches!(&authority_and_path[suffix_start..], "" | "/") || url.path() != "/" {
+        return Err("path must be empty or /".into());
+    }
+    Ok(())
 }
 
 /// `[auth]`: the admin-auth switch (W1-13). The token mechanism itself is
@@ -810,6 +872,13 @@ impl Config {
         }
 
         let mut cfg: Config = merged.try_into().map_err(ConfigError::Invalid)?;
+
+        if let Some(public_url) = &cfg.server.public_url {
+            validate_public_url(public_url).map_err(|msg| ConfigError::InvalidValue {
+                path: "server.public_url".to_string(),
+                msg,
+            })?;
+        }
 
         // `cache.lexical.threshold` gates a serve decision: reject
         // non-finite and out-of-`(0.0, 1.0]` values rather than silently
@@ -1539,6 +1608,64 @@ mod tests {
     }
 
     #[test]
+    fn public_url_is_optional_validated_and_used_as_origin() {
+        let (tmp, env) = sandbox(&[]);
+        assert_eq!(Config::load_with(&env).unwrap().server.public_url, None);
+
+        for value in [
+            "https://search.localhost",
+            "https://search.localhost/",
+            "http://127.0.0.1:4480",
+        ] {
+            write_config(
+                &tmp.path().join("cfg"),
+                &format!("[server]\npublic_url = {value:?}\n"),
+            );
+            let cfg = Config::load_with(&env).unwrap();
+            assert_eq!(cfg.server.public_url.as_deref(), Some(value));
+            assert_eq!(
+                cfg.server.public_origin("127.0.0.1", 4479),
+                value.trim_end_matches('/')
+            );
+        }
+
+        for value in [
+            "relative/path",
+            "ftp://search.localhost",
+            "https://user:pass@search.localhost",
+            "https://search.localhost/path",
+            "https://search.localhost/?q=x",
+            "https://search.localhost/#fragment",
+            "https://search.localhost\" x=\"bad.localhost",
+            "https://search.localhost\n.evil",
+            "https://bad host.localhost",
+            "https://search.localhost:invalid",
+        ] {
+            write_config(
+                &tmp.path().join("cfg"),
+                &format!("[server]\npublic_url = {value:?}\n"),
+            );
+            assert!(
+                matches!(
+                    Config::load_with(&env),
+                    Err(ConfigError::InvalidValue { ref path, .. }) if path == "server.public_url"
+                ),
+                "public_url {value:?} must be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn public_origin_fallback_uses_bind_host_and_port_safely() {
+        let server = ServerConfig::default();
+        assert_eq!(
+            server.public_origin("search.localhost", 4480),
+            "http://search.localhost:4480"
+        );
+        assert_eq!(server.public_origin("::1", 4479), "http://[::1]:4479");
+    }
+
+    #[test]
     fn file_overrides_defaults() {
         let (tmp, env) = sandbox(&[]);
         write_config(
@@ -1615,10 +1742,18 @@ mod tests {
 
     #[test]
     fn env_overrides_file_and_defaults() {
-        let (tmp, env) = sandbox(&[("CAUCE_SERVER_PORT", "4490"), ("CAUCE_AI_ENABLED", "true")]);
+        let (tmp, env) = sandbox(&[
+            ("CAUCE_SERVER_PORT", "4490"),
+            ("CAUCE_SERVER_PUBLIC_URL", "https://search.localhost"),
+            ("CAUCE_AI_ENABLED", "true"),
+        ]);
         write_config(&tmp.path().join("cfg"), "[server]\nport = 4480\n");
         let cfg = Config::load_with(&env).unwrap();
         assert_eq!(cfg.server.port, 4490);
+        assert_eq!(
+            cfg.server.public_url.as_deref(),
+            Some("https://search.localhost")
+        );
         assert!(cfg.ai.enabled);
     }
 

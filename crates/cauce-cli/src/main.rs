@@ -1,6 +1,6 @@
-//! `cauce` binary: `serve`, `mcp`, `record`, `engine`, `trace`, `tail`,
-//! `config` are implemented (`mcp` only with the `mcp` cargo feature);
-//! `search` and `cache` land in later waves.
+//! `cauce` binary: `serve`, `search`, `mcp`, `record`, `engine`, `trace`,
+//! `tail`, `config` are implemented (`mcp` only with the `mcp` cargo
+//! feature); `cache` lands in a later wave.
 //!
 //! This Source Code Form is subject to the terms of the Mozilla Public
 //! License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -23,6 +23,9 @@ fn main() {
             eprintln!("cauce mcp: this binary was built without the `mcp` feature");
             std::process::exit(2);
         }
+        "search" => std::process::exit(cmds::search::run(
+            &std::env::args().skip(2).collect::<Vec<_>>(),
+        )),
         "record" => std::process::exit(cmds::record::run(
             &std::env::args().skip(2).collect::<Vec<_>>(),
         )),
@@ -38,12 +41,12 @@ fn main() {
         )),
         // Declared in the plan but not implemented yet: say so instead of
         // falling into generic usage.
-        "search" | "cache" => {
+        "cache" => {
             eprintln!("cauce {sub}: not implemented yet; lands in a later wave");
             std::process::exit(2);
         }
         _ => {
-            eprintln!("usage: cauce <serve|mcp|record|engine|trace|tail|config> [args]");
+            eprintln!("usage: cauce <serve|search|mcp|record|engine|trace|tail|config> [args]");
             std::process::exit(2);
         }
     }

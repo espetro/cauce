@@ -131,9 +131,34 @@ belong here; raise it as a new reference-doc finding instead.
 | 8.5 | Each citation link carries `aria-label="Source N: example.com"` | P1 | `references/patterns-answer-streaming.md` ## Citations |
 | 8.6 | Thinking/loading state lives in a polite live region; streamed text replaces it rather than a layout jump | P1 | `references/patterns-states.md` ## Accessibility |
 
+## 9. Operator pages (history, cache, engines, audit/trace, settings)
+
+Applies to the v3 pages specced 2026-09-23. Walk this section plus
+Typography, Layout, Motion and Accessibility for those screens. The wave 2
+settled inputs (`.agents/plans/v3/wave-2-ui-and-observability.md`) are
+normative here and are cited directly.
+
+| # | Assertion | Severity | Cites |
+|---|---|---|---|
+| 9.1 | Footer shows the full `request_id` of the render as selectable text; no abbreviation in visible text | P0 | wave-2 "Settled inputs" (request_id footer); `cache.md` / `history.md` / `engines.md` / `audit.md` / `settings.md` Behavior "Footer" |
+| 9.2 | The page route and its `/api/*` twin share one handler (content negotiation on `Accept`): same params, same defaults, same row set | P0 | wave-2 "Settled inputs" (same handlers); each spec's Behavior "Data path" |
+| 9.3 | All visible copy is sourced from `strings.rs`; no literal English in templates | P1 | wave-2 "Settled inputs" (strings.rs); each spec's Behavior last bullet |
+| 9.4 | Filter forms are plain GET forms and work with JS disabled; `clear` appears only while a filter is active | P1 | `history.md` Behavior "Filters"; `cache.md` Behavior "Filter"; `audit.md` Behavior "Filters" |
+| 9.5 | Empty states are one sentence with an action, and filtered-empty copy names the active filter | P1 | `references/patterns-states.md` ## Empty state; each spec's "Empty state" mockup |
+| 9.6 | Errors render inline where the action happened (`error: ... (<status>)`), never a toast | P1 | `references/patterns-states.md` ## Error; `cache.md` Behavior "payload"; `settings.md` Behavior "Save" |
+| 9.7 | Destructive actions confirm first with copy that names what goes; `delete all` uses the `error` color role | P0 | `cache.md` Behavior "Deletes"; `settings.md` Behavior "Cache block"; `references/tokens.md` ## Color roles |
+| 9.8 | History rows are searches (one per `search_log` row) with clicks nested; `source` reads `cached · <age>`, `cached · expired` or `network · t<n>` | P0 | `history.md` Behavior "One row per search", "Source column" |
+| 9.9 | Breaker chip reads exactly `Closed`, `Open` (with `retries in Ns`) or `HalfOpen`, coloured success/error/warning | P0 | `engines.md` "Breaker chip states"; `references/tokens.md` ## Color roles |
+| 9.10 | Engine test query calls `/api/search?q=&engines=<id>` and renders the shared result partial under the card | P0 | `engines.md` Behavior "test query"; wave-2 W2-05 Do |
+| 9.11 | Trace page output equals the CLI timeline (same renderer), shown preformatted in the mono face | P0 | `audit.md` Behavior: trace "Same code path"; wave-2 W2-06 Do |
+| 9.12 | Settings shows `${env:...}` templates verbatim and env-pinned fields disabled with `set by CAUCE_*` | P0 | `settings.md` Behavior "Templates", "Environment overrides"; wave-2 W2-07 Do |
+| 9.13 | No horizontal page scroll at 390 px: tables hide columns or become cards per spec, preformatted and JSON blocks scroll inside themselves | P0 | wave-2 "Exit criteria" 2; each spec's Responsive |
+| 9.14 | Header nav: primary `search · history · dashboard`, operator group `engines · cache · audit`, `settings`; operator group collapses below 700 px | P1 | `README.md` "Header nav"; `references/patterns-layout-grid.md` ## Gutters and breakpoints |
+
 ## Sources
 
 - `~/UILOOP.md` (loop mechanics, hard gates, verdict schema this rubric feeds)
 - `.agents/docs/screens/references/*.md` (all ten reference docs, cited per row above)
-- `.agents/docs/screens/{landing,search,history,dashboard}.md` (screen specs, cited per row above)
+- `.agents/docs/screens/{landing,search,history,dashboard,cache,engines,audit,settings}.md` (screen specs, cited per row above)
+- `.agents/plans/v3/wave-2-ui-and-observability.md` "Settled inputs" and "Exit criteria" (section 9)
 - `.agents/docs/screens/userflow-checkpoints.md` (checkpoint numbering referenced in a few rows)
