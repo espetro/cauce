@@ -241,6 +241,9 @@ fn audit_writes_event_and_row() {
         async fn cache_states(&self, _: &[CacheKey]) -> Result<Vec<CacheState>, StoreError> {
             unimplemented!()
         }
+        async fn search_hashes(&self, _: &[CacheKey]) -> Result<Vec<CacheKey>, StoreError> {
+            unimplemented!()
+        }
         async fn history_stats(&self, _: &HistoryFilter) -> Result<HistoryStats, StoreError> {
             unimplemented!()
         }

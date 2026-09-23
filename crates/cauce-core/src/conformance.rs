@@ -672,6 +672,23 @@ pub async fn log_clicks_history(store: &impl Store) {
         outcome.clicks_removed, 1,
         "the last row for the hash takes the clicks"
     );
+
+    // `search_hashes` reports which hashes still have a `search_log` row.
+    let present = store
+        .search_hashes(&[
+            CacheKey::from(&request(dup)),
+            CacheKey::from(&request(beta)),
+        ])
+        .await
+        .expect("search_hashes");
+    assert!(
+        present.iter().any(|k| *k == CacheKey::from(&request(beta))),
+        "beta's row is present"
+    );
+    assert!(
+        !present.iter().any(|k| *k == CacheKey::from(&request(dup))),
+        "dup's rows are gone"
+    );
 }
 
 /// `stats` aggregates: hit rate over `search_log` (never `cache_entries`),

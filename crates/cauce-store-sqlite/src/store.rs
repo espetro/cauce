@@ -536,6 +536,40 @@ impl Store for SqliteStore {
         .await
     }
 
+    /// Batched `search_log` existence check for the history page's orphan
+    /// clicks: one `IN` query returning the subset of `hashes` that still
+    /// have a `search_log` row.
+    async fn search_hashes(&self, hashes: &[CacheKey]) -> Result<Vec<CacheKey>, StoreError> {
+        let hashes: Vec<String> = hashes.iter().map(|k| k.as_str().to_string()).collect();
+        self.with_reader(move |conn| {
+            if hashes.is_empty() {
+                return Ok(Vec::new());
+            }
+            let marks = std::iter::repeat_n("?", hashes.len())
+                .collect::<Vec<_>>()
+                .join(",");
+            let sql = format!(
+                "SELECT DISTINCT query_hash FROM search_log WHERE query_hash IN ({marks})"
+            );
+            let mut stmt = conn.prepare(&sql).map_err(sql_err)?;
+            let rows_out = stmt
+                .query_map(rusqlite::params_from_iter(hashes.iter()), |r| {
+                    r.get::<_, String>(0)
+                })
+                .map_err(sql_err)?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(sql_err)?;
+            rows_out
+                .into_iter()
+                .map(|h| {
+                    h.parse()
+                        .map_err(|e: String| StoreError::Corrupt(e))
+                })
+                .collect()
+        })
+        .await
+    }
+
     /// The page's header counts plus `matching`: `search_log` rows satisfying
     /// the same filters as `list_history` (without `limit`).
     async fn history_stats(&self, filter: &HistoryFilter) -> Result<HistoryStats, StoreError> {

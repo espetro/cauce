@@ -547,6 +547,12 @@ pub trait Store: Send + Sync {
     /// request — batched, not per row.
     async fn cache_states(&self, keys: &[CacheKey]) -> Result<Vec<CacheState>, StoreError>;
 
+    /// Which of `hashes` still have a `search_log` row (W2-02): the history
+    /// page uses this to tell a true orphan click (`(click only)` row) from
+    /// one whose search fell outside the rendered window — batched, one
+    /// `IN` query per page.
+    async fn search_hashes(&self, hashes: &[CacheKey]) -> Result<Vec<CacheKey>, StoreError>;
+
     /// The `/history` header aggregates and the filtered total behind the
     /// "showing N of M" cap note (W2-02).
     async fn history_stats(&self, filter: &HistoryFilter) -> Result<HistoryStats, StoreError>;

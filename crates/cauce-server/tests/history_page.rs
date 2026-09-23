@@ -809,3 +809,68 @@ async fn history_blank_q_is_no_filter() {
         "whitespace q must not filter rows: {feed:?}"
     );
 }
+
+/// A click whose `search_log` row fell outside the rendered window (here:
+/// filtered out by `q`, which keeps clicks) must NOT render as
+/// `(click only)` — it is dropped. A click with no `search_log` row at
+/// all still renders `(click only)`.
+#[tokio::test]
+async fn history_off_window_click_is_not_click_only() {
+    let (app, _state, _tmp) = app();
+    search(&app, "w2-offwin").await;
+
+    // Click attached to an existing (but filtered-out) search.
+    let click = json!({
+        "query_hash": query_hash("w2-offwin"),
+        "url": "https://offwin.example.com/picked",
+        "title": "off-window click",
+        "position": 0
+    });
+    let (status, _) = call(
+        &app,
+        Request::builder()
+            .method(Method::POST)
+            .uri("/api/click")
+            .header("content-type", "application/json")
+            .body(Body::from(click.to_string()))
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+
+    // Orphan click: no search_log row anywhere for this hash.
+    let orphan = json!({
+        "query_hash": query_hash("w2-never-searched"),
+        "url": "https://orphan.example.com/picked",
+        "title": "true orphan click",
+        "position": 1
+    });
+    let (status, _) = call(
+        &app,
+        Request::builder()
+            .method(Method::POST)
+            .uri("/api/click")
+            .header("content-type", "application/json")
+            .body(Body::from(orphan.to_string()))
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+
+    // `q` filters searches only; both clicks remain in the feed.
+    let (status, body) = get_html(&app, "/history?since=all&q=no-such-query").await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(
+        !body.contains("offwin.example.com"),
+        "click whose search exists off-window is dropped: {body}"
+    );
+    assert!(
+        body.contains("orphan.example.com"),
+        "true orphan click still renders: {body}"
+    );
+    assert_eq!(
+        body.matches("(click only)").count(),
+        1,
+        "only the true orphan renders click-only: {body}"
+    );
+}

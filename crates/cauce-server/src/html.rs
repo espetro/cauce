@@ -877,7 +877,39 @@ pub(crate) async fn history_page(
         .map(|st| (st.key.as_str().to_string(), st))
         .collect();
 
-    let rows = history_rows(items, &cache, &s);
+    // Clicks whose search row fell outside the rendered window (the feed
+    // cap counts searches AND clicks) must not render as `(click only)` —
+    // only a click with no `search_log` row at all is an orphan.
+    let search_hashes_in_feed: std::collections::HashSet<String> = items
+        .iter()
+        .filter_map(|i| match i {
+            HistoryItem::Search(row) => Some(row.query_hash.as_str().to_string()),
+            _ => None,
+        })
+        .collect();
+    let orphan_candidates: Vec<CacheKey> = {
+        let mut seen = std::collections::HashSet::new();
+        items
+            .iter()
+            .filter_map(|i| match i {
+                HistoryItem::Click(c) => c.query_hash.as_ref().filter(|h| {
+                    !search_hashes_in_feed.contains(h.as_str()) && seen.insert(h.as_str())
+                }),
+                _ => None,
+            })
+            .cloned()
+            .collect()
+    };
+    let off_window: std::collections::HashSet<String> = state
+        .store()
+        .search_hashes(&orphan_candidates)
+        .await
+        .map_err(|e| ctx.store(&e))?
+        .into_iter()
+        .map(|k| k.as_str().to_string())
+        .collect();
+
+    let rows = history_rows(items, &cache, &off_window, &s);
     let filters_active = filter.cached || filter.q.is_some() || filter.since.is_some();
     let empty_message = if rows.is_empty() {
         empty_message(&s, &params, &filter)
@@ -969,11 +1001,14 @@ fn cache_age(from: chrono::DateTime<chrono::Utc>, now: chrono::DateTime<chrono::
 
 /// Fold the merged `list_history` feed into display rows: clicks join the
 /// newest search row sharing their `query_hash`; clicks without one render
-/// as standalone `(click only)` rows in feed position. `cache` carries the
-/// render-time `cache_entries` state for the page's distinct query_hashes.
+/// as standalone `(click only)` rows in feed position — except hashes in
+/// `off_window`, which have a `search_log` row outside the rendered window
+/// and are dropped rather than mislabeled. `cache` carries the render-time
+/// `cache_entries` state for the page's distinct query_hashes.
 fn history_rows(
     items: Vec<HistoryItem>,
     cache: &std::collections::HashMap<String, cauce_core::CacheState>,
+    off_window: &std::collections::HashSet<String>,
     s: &crate::strings::history::Copy,
 ) -> Vec<HistRow> {
     use std::collections::{HashMap, HashSet};
@@ -1074,10 +1109,9 @@ fn history_rows(
                 });
             }
             HistoryItem::Click(c) => {
-                let absorbed = c
-                    .query_hash
-                    .as_ref()
-                    .is_some_and(|h| search_hashes.contains(h.as_str()));
+                let absorbed = c.query_hash.as_ref().is_some_and(|h| {
+                    search_hashes.contains(h.as_str()) || off_window.contains(h.as_str())
+                });
                 if absorbed {
                     continue;
                 }
