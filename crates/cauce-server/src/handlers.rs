@@ -325,16 +325,22 @@ pub async fn engines_list(State(state): State<AppState>) -> Json<Vec<EngineHealt
     Json(state.pipeline().health().snapshot())
 }
 
-/// `POST /api/engines/{id}/reset` (W1-06): close the breaker and clear
-/// EWMA/failures for one engine. Audited (`engine.reset`, with the
-/// previous breaker in `details`); the fresh row is persisted immediately
-/// rather than through the 1/s debounce.
+/// `POST /api/engines/{id}/reset` (W1-06): clear EWMA/failures and put the
+/// breaker into `HalfOpen` (W2-05: the next call is the single probe, so a
+/// reset engine re-earns trust instead of rejoining the fan-out at full
+/// concurrency). Audited (`engine.reset`, with the previous and new
+/// breaker in `details`); the fresh row is persisted immediately rather
+/// than through the 1/s debounce.
+///
+/// HTMX callers (`HX-Request` header, the engines page's reset button) get
+/// the re-rendered card partial for `hx-swap="outerHTML"` instead of the
+/// JSON row — same data plane, negotiated like `html::search` does.
 pub async fn engine_reset(
     State(state): State<AppState>,
     Extension(ctx): Extension<RequestCtx>,
     headers: HeaderMap,
     Path(id): Path<String>,
-) -> Result<Json<EngineHealthRow>, ApiError> {
+) -> Result<Response, ApiError> {
     let id = EngineId::from(id);
     let Some((previous, row)) = state.pipeline().health().reset(&id) else {
         return Err(ctx.not_found(format!("no such engine {id}")));
@@ -350,10 +356,169 @@ pub async fn engine_reset(
         &headers,
         "engine.reset",
         id.to_string(),
-        json!({ "from": previous, "to": "closed" }),
+        json!({ "from": previous, "to": row.breaker }),
     )
     .await?;
-    Ok(Json(row))
+    #[cfg(feature = "ui")]
+    if headers.get("hx-request").is_some() {
+        return crate::html::engine_card(&state, &id, ctx.request_id.as_uuid()).await;
+    }
+    Ok(Json(row).into_response())
+}
+
+/// `POST /api/engines/{id}/enabled?enabled=true|false` (W2-05): flip an
+/// engine's `enabled` flag in `config.toml`, audited (`engine.set_enabled`).
+///
+/// The mutation patches the raw (pre-interpolation) file tree in place so
+/// `${env:...}`/`${file:...}` templates persist verbatim, validates the
+/// candidate in memory, then writes + swaps the live config — the same
+/// discipline as `PUT /api/config`. Engines absent from the file get a
+/// synthesized `[[engines]]` entry (built-ins serialize their full typed
+/// entry; auto-registered declarative specs get `{id, kind = "declarative"}`,
+/// which resolves the spec by id). Unknown ids 404. The running pipeline
+/// keeps its engine set until restart, so the response carries
+/// `effective_after_restart: true`.
+pub async fn engine_set_enabled(
+    State(state): State<AppState>,
+    Extension(ctx): Extension<RequestCtx>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    uri: Uri,
+) -> Result<Response, ApiError> {
+    let id = EngineId::from(id);
+    let params = QueryParams::parse(uri.query(), &ctx)?;
+    params.allow(&ctx, &["enabled"])?;
+    let enabled = match params.get("enabled").map(str::to_ascii_lowercase) {
+        None => {
+            return Err(ctx.bad_request("missing required parameter \"enabled\""));
+        }
+        Some(v) if matches!(v.as_str(), "" | "true" | "1" | "yes") => true,
+        Some(v) if matches!(v.as_str(), "false" | "0" | "no") => false,
+        Some(v) => {
+            return Err(ctx.bad_request(format!("invalid enabled {v:?}: expected a boolean")));
+        }
+    };
+
+    // 404 before touching the file: a togglable engine is one the resolved
+    // config names (file entry or built-in) or one live in the pipeline
+    // (spec auto-registered). Persisted health rows for removed engines
+    // cannot be re-enabled — there is no entry to flip.
+    let known = state.with_config(|cfg| cfg.engine(id.as_str()).is_some())
+        || state.pipeline().engines().iter().any(|e| e.id() == id);
+    if !known {
+        return Err(ctx.not_found(format!("no such engine {id}")));
+    }
+
+    // All sync file IO inside the lock; nothing awaits in the closure
+    // (same discipline as `config_put`).
+    state.with_config(|cfg| -> Result<(), ApiError> {
+        let mut tree = match cfg.raw_tree() {
+            Some(raw) => raw.clone(),
+            // `Config::default()` has no file layer; the display tree is a
+            // complete schema-valid tree to patch (identical to what
+            // `Config::save` would write as a first file).
+            None => cfg.display_tree().map_err(|e| {
+                ctx.err(StatusCode::INTERNAL_SERVER_ERROR, "internal", e.to_string())
+            })?,
+        };
+        set_engine_enabled(&mut tree, &id, enabled, cfg, state.pipeline())
+            .map_err(|e| ctx.bad_request(e))?;
+        let new_cfg = Config::from_raw(&tree, &system_env()).map_err(|e| {
+            ctx.err(
+                StatusCode::BAD_REQUEST,
+                "invalid_config",
+                format!("invalid config: {e}"),
+            )
+        })?;
+        new_cfg.save().map_err(|e| {
+            ctx.err(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "internal",
+                format!("cannot write {}: {e}", new_cfg.config_path().display()),
+            )
+        })?;
+        *cfg = new_cfg;
+        Ok(())
+    })?;
+
+    write_audit(
+        state.store(),
+        &ctx,
+        &headers,
+        "engine.set_enabled",
+        id.to_string(),
+        json!({ "enabled": enabled }),
+    )
+    .await?;
+
+    #[cfg(feature = "ui")]
+    if headers.get("hx-request").is_some() {
+        return crate::html::engine_card(&state, &id, ctx.request_id.as_uuid()).await;
+    }
+    Ok(Json(json!({
+        "id": id.to_string(),
+        "enabled": enabled,
+        "effective_after_restart": true,
+    }))
+    .into_response())
+}
+
+/// Set `enabled` on the `engines` entry for `id` inside the raw file-layer
+/// tree, appending a synthesized `[[engines]]` table when the file does not
+/// name the engine (built-ins and spec auto-registered engines only appear
+/// in the resolved config, not in `config.toml`).
+fn set_engine_enabled(
+    tree: &mut toml::Value,
+    id: &EngineId,
+    enabled: bool,
+    cfg: &Config,
+    pipeline: &cauce_core::SearchPipeline,
+) -> Result<(), String> {
+    let table = tree
+        .as_table_mut()
+        .ok_or_else(|| "config root is not a TOML table".to_string())?;
+    let entries = table
+        .entry("engines")
+        .or_insert_with(|| toml::Value::Array(Vec::new()));
+    let arr = entries
+        .as_array_mut()
+        .ok_or_else(|| "config key \"engines\" is not an array".to_string())?;
+    for entry in arr.iter_mut() {
+        if entry.get("id").and_then(toml::Value::as_str) == Some(id.as_str()) {
+            let entry_table = entry
+                .as_table_mut()
+                .ok_or_else(|| format!("engines entry {id:?} is not a table"))?;
+            entry_table.insert("enabled".to_string(), toml::Value::Boolean(enabled));
+            return Ok(());
+        }
+    }
+    // Not in the file: a built-in (`replay`, `ddgs`) or a spec
+    // auto-registered engine. Built-ins serialize their typed entry —
+    // every field of a built-in is non-secret (env maps are empty); a
+    // file-defined engine never reaches this branch.
+    if let Some(entry) = cfg.engine(id.as_str()) {
+        let mut value = toml::Value::try_from(entry.clone())
+            .map_err(|e| format!("cannot serialize engine {id:?}: {e}"))?;
+        if let Some(t) = value.as_table_mut() {
+            t.insert("enabled".to_string(), toml::Value::Boolean(enabled));
+        }
+        arr.push(value);
+        return Ok(());
+    }
+    // Auto-registered spec engines are always declarative; the entry id
+    // resolves the spec (path or embedded name) at next load.
+    if pipeline.engines().iter().any(|e| e.id() == *id) {
+        let mut t = toml::Table::new();
+        t.insert("id".to_string(), toml::Value::String(id.to_string()));
+        t.insert(
+            "kind".to_string(),
+            toml::Value::String("declarative".to_string()),
+        );
+        t.insert("enabled".to_string(), toml::Value::Boolean(enabled));
+        arr.push(toml::Value::Table(t));
+        return Ok(());
+    }
+    Err(format!("no such engine {id}"))
 }
 
 /// `GET /api/audit?since&actor&action&limit`.

@@ -51,8 +51,9 @@ async fn call(router: &Router, method: &str, uri: &str) -> (StatusCode, Value) {
     )
 }
 
-/// Healthy engine: listed as `closed`; reset is a 200 no-op state-wise and
-/// is audited; unknown ids 404.
+/// Healthy engine: listed as `closed`; reset is a 200 that leaves the
+/// engine in `half_open` (the next call is the single probe, per the W2-05
+/// acceptance) and is audited; unknown ids 404.
 #[tokio::test]
 async fn engines_list_and_reset() {
     let (router, _tmp) = state_with(ReplayOpts::default());
@@ -68,7 +69,7 @@ async fn engines_list_and_reset() {
     let (status, body) = call(&router, "POST", "/api/engines/replay/reset").await;
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["engine"], "replay");
-    assert_eq!(body["breaker"], "closed");
+    assert_eq!(body["breaker"], "half_open");
 
     let (status, body) = call(&router, "GET", "/api/audit").await;
     assert_eq!(status, StatusCode::OK);
@@ -111,11 +112,11 @@ async fn blocked_engine_reports_open_and_reset_readmits() {
     assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE, "{body}");
     assert_eq!(body["error"]["code"], "breaker_open");
 
-    // Reset closes the breaker; the next search reaches the engine again
-    // (it fails once more and re-opens).
+    // Reset half-opens the breaker; the next search is admitted as the
+    // single probe (it fails once more and re-opens).
     let (status, body) = call(&router, "POST", "/api/engines/replay/reset").await;
     assert_eq!(status, StatusCode::OK, "{body}");
-    assert_eq!(body["breaker"], "closed");
+    assert_eq!(body["breaker"], "half_open");
     assert_eq!(body["failures"], 0);
     assert_eq!(body["breaker_until"], Value::Null);
 

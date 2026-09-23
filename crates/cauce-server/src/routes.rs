@@ -113,6 +113,7 @@ pub const ROUTES: &[RouteSpec] = &[
     },
     // ---- wave 2 ------------------------------------------------------------
     sse("GET", "/api/search/stream", 2),
+    json("POST", "/api/engines/{id}/enabled", 2),
     html("/history", 2),
     html("/dashboard", 2),
     html("/cache", 2),

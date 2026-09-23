@@ -1,0 +1,44 @@
+<!doctype html>
+<!-- This Source Code Form is subject to the terms of the Mozilla Public
+     License, v. 2.0. If a copy of the MPL was not distributed with this
+     file, You can obtain one at https://mozilla.org/MPL/2.0/. -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>engines · cauce</title>
+  <style>{{ style_css|safe }}</style>
+</head>
+<body>
+  <h1>Engines</h1>
+  <p class="meta">
+    Enable/disable writes config.toml and takes effect on restart.
+    {% if engines_pinned %}
+    CAUCE_ENGINES currently pins the enabled set, so the resolved state will
+    not move while the variable is set.
+    {% endif %}
+  </p>
+  {% if cards.is_empty() %}
+  <p>No engines configured.</p>
+  {% endif %}
+  {% for card in cards %}
+  {% include "engine_card.html" %}
+  {% endfor %}
+  <div class="meta">
+    <span class="request-id" title="{{ request_id }}">{{ short_request_id }}</span>
+  </div>
+  <script>{{ htmx_js|safe }}</script>
+  <script>{{ json_enc_js|safe }}</script>
+  <script>
+    // A failed test query (502/503) produces no swap by default; show the
+    // status in the card's result slot instead of failing silently.
+    document.body.addEventListener('htmx:responseError', function (ev) {
+      var card = ev.detail.elt.closest('.engine-card');
+      var slot = card && card.querySelector('.test-results');
+      if (slot) {
+        slot.textContent = 'test query failed: HTTP ' + ev.detail.xhr.status;
+      }
+    });
+  </script>
+</body>
+</html>

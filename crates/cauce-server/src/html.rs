@@ -20,6 +20,9 @@ use cauce_core::{CacheKey, EngineStatus, SearchRequest, SearchResponse, Source};
 use rust_embed::Embed;
 use serde_json::json;
 
+use cauce_core::config::EngineEntry;
+use cauce_core::{EngineHealthRow, EngineId, HistoryFilter, HistoryItem, config::EngineKind};
+
 use crate::app::{AppState, RouterOptions};
 use crate::error::ApiError;
 use crate::handlers::{QueryParams, search_inner};
@@ -308,6 +311,328 @@ fn more_url(resp: &SearchResponse, params: &QueryParams, req: &SearchRequest) ->
         parts.push(format!("engines={}", urlencoding::encode(engines)));
     }
     format!("/search?{}", parts.join("&"))
+}
+
+// ---------------------------------------------------------------------------
+// W2-05 `/engines` page
+// ---------------------------------------------------------------------------
+
+/// One `/engines` card. Plain strings so Askama only needs `Display`; the
+/// card doubles as the `outerHTML` swap target for the card's actions.
+#[derive(Debug)]
+pub(crate) struct EngineCard {
+    id: String,
+    /// `declarative` | `exec` | `replay` | `—` (health-only leftovers).
+    kind: String,
+    /// Effective tier (`1`/`2`/`3`) — the live engine's own tier, else the
+    /// `[[engines]]` override, else `—`.
+    tier: String,
+    enabled: bool,
+    /// The resolved config names this engine (file entry or built-in).
+    configured: bool,
+    /// Live in the running pipeline's fan-out set.
+    live: bool,
+    /// `Closed` | `Open` | `HalfOpen` (capitalized; the acceptance asserts
+    /// on this spelling).
+    breaker: String,
+    /// CSS class fragment of `breaker` (`closed`/`open`/`half-open`).
+    breaker_class: String,
+    /// Humanized time left on an open breaker (`"14m 32s"`); empty
+    /// otherwise. `breaker_until` in the past reads "elapsed — next call
+    /// probes", which is the lazy `Open -> HalfOpen` truth.
+    breaker_remaining: String,
+    ewma: String,
+    last_ok: String,
+    last_error: String,
+    p95: String,
+    reliability: String,
+    /// Searches served by this engine since UTC midnight (`search_log`).
+    requests_today: u64,
+    /// `POST` target flipping `enabled`; label switches with the state.
+    toggle_url: String,
+    toggle_label: String,
+}
+
+/// `engines.html` — the full page shell.
+#[derive(Template)]
+#[template(path = "engines.html")]
+struct EnginesPage {
+    cards: Vec<EngineCard>,
+    /// `CAUCE_ENGINES` pins the enabled set; toggles then still write the
+    /// file but the page explains why resolved `enabled` does not move.
+    engines_pinned: bool,
+    request_id: String,
+    short_request_id: String,
+    htmx_js: String,
+    json_enc_js: String,
+    style_css: String,
+}
+
+/// `engine_card.html` — one card, also the HX action response.
+#[derive(Template)]
+#[template(path = "engine_card.html")]
+struct EngineCardPartial {
+    card: EngineCard,
+}
+
+/// `GET /engines` (W2-05): one card per configured engine (plus engines the
+/// health tracker still knows from a previous config), reading the same
+/// planes as `/api/engines` + `/api/stats` + `/api/history`.
+pub async fn engines(
+    State(state): State<AppState>,
+    Extension(ctx): Extension<RequestCtx>,
+) -> Result<Html<String>, ApiError> {
+    let rid = ctx.request_id.as_uuid().to_string();
+    let page = EnginesPage {
+        cards: engine_cards(&state).await?,
+        engines_pinned: std::env::var("CAUCE_ENGINES").is_ok_and(|v| !v.trim().is_empty()),
+        request_id: rid.clone(),
+        short_request_id: short_id(&rid),
+        htmx_js: HTMX_JS.clone(),
+        json_enc_js: JSON_ENC_JS.clone(),
+        style_css: STYLE_CSS.clone(),
+    };
+    page.render()
+        .map_err(|e| render_err(e, ctx.request_id.as_uuid()))
+        .map(Html)
+}
+
+/// The re-rendered card partial an HX action response swaps in
+/// (`hx-swap="outerHTML"` on `.engine-card`). Called by the `POST
+/// /api/engines/{id}/reset` and `.../enabled` handlers when the request is
+/// an HTMX one.
+pub(crate) async fn engine_card(
+    state: &AppState,
+    id: &EngineId,
+    request_id: uuid::Uuid,
+) -> Result<Response, ApiError> {
+    let ctx = CardCtx::load(state).await?;
+    let Some(card) = ctx.card(id) else {
+        return Err(
+            ApiError::not_found(format!("no such engine {id}")).with_request_id(Some(request_id))
+        );
+    };
+    let tpl = EngineCardPartial { card };
+    Ok(Html(tpl.render().map_err(|e| render_err(e, request_id))?).into_response())
+}
+
+/// Data planes the cards read, loaded once per page render / action.
+struct CardCtx {
+    entries: Vec<EngineEntry>,
+    live: Vec<(EngineId, cauce_core::Tier)>,
+    health: std::collections::BTreeMap<String, EngineHealthRow>,
+    metrics: std::collections::BTreeMap<String, cauce_core::EngineMetricStats>,
+    /// Engine id -> searches it served since UTC midnight (`search_log`).
+    requests_today: std::collections::BTreeMap<String, u64>,
+}
+
+impl CardCtx {
+    async fn load(state: &AppState) -> Result<Self, ApiError> {
+        let entries = state.with_config(|cfg| cfg.engines.clone());
+        let live = state
+            .pipeline()
+            .engines()
+            .iter()
+            .map(|e| (e.id(), e.tier()))
+            .collect();
+        let health = state
+            .pipeline()
+            .health()
+            .snapshot()
+            .into_iter()
+            .map(|r| (r.engine.to_string(), r))
+            .collect();
+        let metrics = cauce_core::metrics::engine_stats()
+            .into_iter()
+            .map(|m| (m.engine.to_string(), m))
+            .collect();
+
+        // "Requests today": today's `search_log` rows naming the engine —
+        // the same plane `/api/history` reads. The 1000-row cap matches
+        // the handler's `limit` clamp; a heavier day just undercounts.
+        let midnight = chrono::Utc::now()
+            .date_naive()
+            .and_hms_opt(0, 0, 0)
+            .map(|t| t.and_utc());
+        let history = state
+            .store()
+            .list_history(&HistoryFilter {
+                since: midnight,
+                q: None,
+                limit: 1000,
+            })
+            .await
+            .map_err(|e| ApiError::store(&e))?;
+        let mut requests_today = std::collections::BTreeMap::new();
+        for item in history {
+            if let HistoryItem::Search(row) = item {
+                for engine in &row.engines {
+                    *requests_today.entry(engine.to_string()).or_insert(0) += 1;
+                }
+            }
+        }
+
+        Ok(Self {
+            entries,
+            live,
+            health,
+            metrics,
+            requests_today,
+        })
+    }
+
+    /// One card per engine in the union of configured entries, live
+    /// engines and known health rows, sorted by id.
+    fn cards(&self) -> Vec<EngineCard> {
+        let mut ids: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+        ids.extend(self.entries.iter().map(|e| e.id.to_string()));
+        ids.extend(self.live.iter().map(|(id, _)| id.to_string()));
+        ids.extend(self.health.keys().cloned());
+        ids.iter()
+            .filter_map(|id| self.card(&EngineId::from(id)))
+            .collect()
+    }
+
+    fn card(&self, id: &EngineId) -> Option<EngineCard> {
+        let entry = self.entries.iter().find(|e| e.id == *id);
+        let live_tier = self.live.iter().find(|(e, _)| e == id).map(|(_, t)| *t);
+        // A card exists only for engines the config or the pipeline knows
+        // about, or that still have a persisted health row.
+        if entry.is_none() && live_tier.is_none() && !self.health.contains_key(id.as_str()) {
+            return None;
+        }
+        let configured = entry.is_some();
+        let enabled = entry.map(|e| e.enabled).unwrap_or(live_tier.is_some());
+        let kind = entry.map(|e| kind_label(e.kind)).unwrap_or_else(|| {
+            if live_tier.is_some() {
+                "declarative" // auto-registered spec engines
+            } else {
+                "—"
+            }
+        });
+        let tier = live_tier
+            .or_else(|| entry.and_then(|e| e.tier))
+            .map(|t| t.as_u8().to_string())
+            .unwrap_or_else(|| "—".to_string());
+
+        let (breaker, breaker_class, breaker_remaining, ewma, last_ok, last_error) =
+            match self.health.get(id.as_str()) {
+                Some(row) => health_fields(row),
+                None => (
+                    "Closed".to_string(),
+                    "closed".to_string(),
+                    String::new(),
+                    "—".to_string(),
+                    "—".to_string(),
+                    "—".to_string(),
+                ),
+            };
+
+        let metrics = self.metrics.get(id.as_str());
+        let p95 = metrics
+            .filter(|m| m.requests > 0)
+            .map(|m| format!("{} ms", m.total.p95_ms))
+            .unwrap_or_else(|| "—".to_string());
+        let reliability = metrics
+            .filter(|m| m.requests > 0)
+            .map(|m| format!("{:.1}%", m.reliability_pct))
+            .unwrap_or_else(|| "—".to_string());
+        let requests_today = *self.requests_today.get(id.as_str()).unwrap_or(&0);
+
+        Some(EngineCard {
+            toggle_url: format!(
+                "/api/engines/{}/enabled?enabled={}",
+                urlencoding::encode(id.as_str()),
+                !enabled
+            ),
+            toggle_label: if enabled { "Disable" } else { "Enable" }.to_string(),
+            id: id.to_string(),
+            kind: kind.to_string(),
+            tier,
+            enabled,
+            configured,
+            live: live_tier.is_some(),
+            breaker,
+            breaker_class,
+            breaker_remaining,
+            ewma,
+            last_ok,
+            last_error,
+            p95,
+            reliability,
+            requests_today,
+        })
+    }
+}
+
+fn kind_label(kind: EngineKind) -> &'static str {
+    match kind {
+        EngineKind::Declarative => "declarative",
+        EngineKind::Exec => "exec",
+        EngineKind::Replay => "replay",
+    }
+}
+
+/// Card fields derived from an `engine_health` row.
+fn health_fields(row: &EngineHealthRow) -> (String, String, String, String, String, String) {
+    use cauce_core::BreakerState;
+    let (label, class, remaining) = match row.breaker {
+        BreakerState::Closed => ("Closed", "closed", String::new()),
+        BreakerState::HalfOpen => ("HalfOpen", "half-open", String::new()),
+        BreakerState::Open => {
+            let remaining = row
+                .breaker_until
+                .map(|until| {
+                    let left = until - chrono::Utc::now();
+                    if left.num_seconds() <= 0 {
+                        "window elapsed — next call probes".to_string()
+                    } else {
+                        format!("resets in {}", humanize(left))
+                    }
+                })
+                .unwrap_or_default();
+            ("Open", "open", remaining)
+        }
+    };
+    let ewma = if row.ewma_ms > 0.0 {
+        format!("{:.0} ms", row.ewma_ms)
+    } else {
+        "—".to_string()
+    };
+    let last_ok = row
+        .last_ok_at
+        .map(|t| format!("{} ago", humanize(chrono::Utc::now() - t)))
+        .unwrap_or_else(|| "—".to_string());
+    let last_error = row
+        .last_error
+        .as_deref()
+        .map(|e| e.chars().take(160).collect())
+        .unwrap_or_else(|| "—".to_string());
+    (
+        label.to_string(),
+        class.to_string(),
+        remaining,
+        ewma,
+        last_ok,
+        last_error,
+    )
+}
+
+/// `90m 12s`-style duration rendering for breaker windows and `last_ok`.
+fn humanize(d: chrono::Duration) -> String {
+    let secs = d.num_seconds().max(0);
+    if secs >= 3600 {
+        format!("{}h {}m", secs / 3600, secs % 3600 / 60)
+    } else if secs >= 60 {
+        format!("{}m {}s", secs / 60, secs % 60)
+    } else {
+        format!("{secs}s")
+    }
+}
+
+/// Every card for `GET /engines`.
+async fn engine_cards(state: &AppState) -> Result<Vec<EngineCard>, ApiError> {
+    Ok(CardCtx::load(state).await?.cards())
 }
 
 fn short_id(request_id: &str) -> String {

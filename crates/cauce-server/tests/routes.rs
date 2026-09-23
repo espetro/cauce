@@ -57,11 +57,16 @@ const EXPECTED_WAVE1_MOUNTED: &[(&str, &str)] = &[
     ("GET", "/metrics"),
 ];
 
-/// Wave-2 rows mounted so far: `/opensearch.xml` (W2-11) and the favicon
-/// (#87). They are `requires: "ui"` rows, so they join the mounted set only
-/// in `ui` builds and drop under `--headless` like the pages.
+/// Wave-2 `requires: "ui"` rows mounted so far: `/opensearch.xml` (W2-11)
+/// and the favicon (#87). They join the mounted set only in `ui` builds and
+/// drop under `--headless` like the pages.
 const EXPECTED_WAVE2_UI_MOUNTED: &[(&str, &str)] =
     &[("GET", "/opensearch.xml"), ("GET", "/favicon.ico")];
+
+/// Wave-2 JSON rows mounted so far (W2-05 enable/disable).
+/// `/engines` is `requires: "ui"` and is added conditionally below.
+const EXPECTED_WAVE2_MOUNTED: &[(&str, &str)] = &[("POST", "/api/engines/{id}/enabled")];
+
 /// Serialises tests that mutate process env (`CAUCE_CONFIG_DIR` and friends).
 /// Under nextest each test is its own process anyway; this keeps plain
 /// `cargo test` (one process per test binary) safe too.
@@ -292,8 +297,9 @@ fn wave0_routes_match_plan_filter() {
 
 /// `mounted_routes` (the builder's own view) equals the wave-0 set plus
 /// every wave-1 row implemented so far (`* /mcp` from W1-08, the engine
-/// health pair from W1-06, `/metrics` from W1-09) and the wave-2 favicon
-/// (#87), filtered to the compiled cargo features.
+/// health pair from W1-06, `/metrics` from W1-09), the wave-2 favicon
+/// (#87) and W2-05's enable/disable route plus `/engines` page, filtered
+/// to the compiled cargo features.
 #[test]
 fn mounted_routes_match_declaration() {
     let (state, _tmp) = test_state();
@@ -303,6 +309,7 @@ fn mounted_routes_match_declaration() {
     let mut expected: BTreeSet<(String, String)> = EXPECTED_WAVE0_JSON
         .iter()
         .chain(EXPECTED_WAVE1_MOUNTED)
+        .chain(EXPECTED_WAVE2_MOUNTED)
         .map(|(m, p)| (m.to_string(), p.to_string()))
         .collect();
     if cfg!(feature = "ui") {
@@ -312,6 +319,7 @@ fn mounted_routes_match_declaration() {
                 .chain(EXPECTED_WAVE2_UI_MOUNTED)
                 .map(|(m, p)| (m.to_string(), p.to_string())),
         );
+        expected.insert(("GET".to_string(), "/engines".to_string()));
     }
     if cfg!(feature = "mcp") {
         expected.insert(("*".to_string(), "/mcp".to_string()));

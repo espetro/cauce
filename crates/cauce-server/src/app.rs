@@ -240,6 +240,11 @@ fn handler_for(spec: &RouteSpec, state: &AppState) -> Option<MethodRouter<AppSta
         ("GET", "/api/audit", RouteKind::Json) => Some(get(handlers::audit_list)),
         ("GET", "/api/engines", RouteKind::Json) => Some(get(handlers::engines_list)),
         ("POST", "/api/engines/{id}/reset", RouteKind::Json) => Some(post(handlers::engine_reset)),
+        ("POST", "/api/engines/{id}/enabled", RouteKind::Json) => {
+            Some(post(handlers::engine_set_enabled))
+        }
+        #[cfg(feature = "ui")]
+        ("GET", "/engines", RouteKind::Html) => Some(get(html::engines)),
         ("GET", "/health", RouteKind::Json) => Some(get(handlers::health)),
         ("GET", "/metrics", RouteKind::Json) => Some(get(handlers::metrics)),
         ("GET", "/api/config", RouteKind::Json) => Some(get(handlers::config_get)),
