@@ -124,6 +124,12 @@ article a:hover {
     text-decoration: none;
 }
 
+/* The global `form { display: flex }` rule is the search box's; the settings
+   form stacks its fieldsets vertically. */
+form.settings-form {
+    display: block;
+}
+
 .settings-form fieldset,
 fieldset {
     border: 1px solid var(--border);

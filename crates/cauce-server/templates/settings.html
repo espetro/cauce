@@ -14,7 +14,7 @@
 <h1>{{ crate::strings::settings::PAGE_TITLE }}</h1>
 <p class="hint">{{ crate::strings::settings::EDITING }} <code>{{ config_path }}</code> · {{ crate::strings::settings::RESTART_NOTE }}</p>
 
-<form hx-put="/api/config"
+<form class="settings-form" hx-put="/api/config"
       hx-ext="json-enc"
       hx-target="#settings-status"
       hx-swap="innerHTML"
@@ -24,12 +24,12 @@
 <fieldset>
   <legend>{{ crate::strings::settings::SECTION_SEARCH }}</legend>
   <label>{{ crate::strings::settings::DEADLINE }}
-    <input name="search.deadline_ms" value="{{ deadline.value }}" {% if !deadline.env.is_empty() %}disabled{% endif %}>
+    <input type="text" name="search.deadline_ms" value="{{ deadline.value }}" {% if !deadline.env.is_empty() %}disabled{% endif %}>
   </label>
   {% if !deadline.env.is_empty() %}<p class="hint">{{ crate::strings::settings::SET_BY }} {{ deadline.env }}</p>{% endif %}
   <p class="field-error" id="fe-search.deadline_ms"></p>
   <label>{{ crate::strings::settings::TTL }}
-    <input name="search.ttl_s" value="{{ ttl.value }}" {% if !ttl.env.is_empty() %}disabled{% endif %}>
+    <input type="text" name="search.ttl_s" value="{{ ttl.value }}" {% if !ttl.env.is_empty() %}disabled{% endif %}>
   </label>
   {% if !ttl.env.is_empty() %}<p class="hint">{{ crate::strings::settings::SET_BY }} {{ ttl.env }}</p>{% endif %}
   <p class="field-error" id="fe-search.ttl_s"></p>
@@ -70,12 +70,12 @@
 <fieldset>
   <legend>{{ crate::strings::settings::SECTION_ADMISSION }}</legend>
   <label>{{ crate::strings::settings::MAX_WAIT }}
-    <input name="admission.max_wait_ms" value="{{ max_wait.value }}" {% if !max_wait.env.is_empty() %}disabled{% endif %}>
+    <input type="text" name="admission.max_wait_ms" value="{{ max_wait.value }}" {% if !max_wait.env.is_empty() %}disabled{% endif %}>
   </label>
   {% if !max_wait.env.is_empty() %}<p class="hint">{{ crate::strings::settings::SET_BY }} {{ max_wait.env }}</p>{% endif %}
   <p class="field-error" id="fe-admission.max_wait_ms"></p>
   <label>{{ crate::strings::settings::MAX_CONCURRENT }}
-    <input name="admission.max_concurrent_per_engine" value="{{ max_concurrent.value }}" {% if !max_concurrent.env.is_empty() %}disabled{% endif %}>
+    <input type="text" name="admission.max_concurrent_per_engine" value="{{ max_concurrent.value }}" {% if !max_concurrent.env.is_empty() %}disabled{% endif %}>
   </label>
   {% if !max_concurrent.env.is_empty() %}<p class="hint">{{ crate::strings::settings::SET_BY }} {{ max_concurrent.env }}</p>{% endif %}
   <p class="field-error" id="fe-admission.max_concurrent_per_engine"></p>
@@ -84,7 +84,7 @@
 <fieldset>
   <legend>{{ crate::strings::settings::SECTION_LOGGING }}</legend>
   <label>{{ crate::strings::settings::RETENTION }}
-    <input name="logs.retention_days" value="{{ retention.value }}" {% if !retention.env.is_empty() %}disabled{% endif %}>
+    <input type="text" name="logs.retention_days" value="{{ retention.value }}" {% if !retention.env.is_empty() %}disabled{% endif %}>
   </label>
   {% if !retention.env.is_empty() %}<p class="hint">{{ crate::strings::settings::SET_BY }} {{ retention.env }}</p>{% endif %}
   <p class="field-error" id="fe-logs.retention_days"></p>
@@ -95,18 +95,18 @@
 <fieldset class="greyed">
   <legend>{{ crate::strings::settings::SECTION_AI }} ({{ crate::strings::settings::AI_WAVE }})</legend>
   <label>{{ crate::strings::settings::AI_BASE_URL }}
-    <input name="ai.base_url" value="{{ ai_base_url.value }}" {% if !ai_base_url.env.is_empty() %}disabled{% endif %}>
+    <input type="text" name="ai.base_url" value="{{ ai_base_url.value }}" {% if !ai_base_url.env.is_empty() %}disabled{% endif %}>
   </label>
   {% if !ai_base_url.env.is_empty() %}<p class="hint">{{ crate::strings::settings::SET_BY }} {{ ai_base_url.env }}</p>{% endif %}
   <p class="field-error" id="fe-ai.base_url"></p>
   <label>{{ crate::strings::settings::AI_API_KEY }}
-    <input name="ai.api_key" value="{{ ai_api_key.value }}" placeholder="{{ crate::strings::settings::AI_API_KEY_PLACEHOLDER }}" {% if !ai_api_key.env.is_empty() %}disabled{% endif %}>
+    <input type="text" name="ai.api_key" value="{{ ai_api_key.value }}" placeholder="{{ crate::strings::settings::AI_API_KEY_PLACEHOLDER }}" {% if !ai_api_key.env.is_empty() %}disabled{% endif %}>
   </label>
   {% if !ai_api_key.env.is_empty() %}<p class="hint">{{ crate::strings::settings::SET_BY }} {{ ai_api_key.env }}</p>{% endif %}
   {% if !ai_key_status.is_empty() %}<p class="hint">{{ ai_key_status }}</p>{% endif %}
   <p class="field-error" id="fe-ai.api_key"></p>
   <label>{{ crate::strings::settings::AI_MODEL }}
-    <input name="ai.model" value="{{ ai_model.value }}" list="ai-models" placeholder="{{ crate::strings::settings::AI_MODEL_PLACEHOLDER }}" {% if !ai_model.env.is_empty() %}disabled{% endif %}>
+    <input type="text" name="ai.model" value="{{ ai_model.value }}" list="ai-models" placeholder="{{ crate::strings::settings::AI_MODEL_PLACEHOLDER }}" {% if !ai_model.env.is_empty() %}disabled{% endif %}>
     <datalist id="ai-models">
       {% for m in ai_models %}<option value="{{ m }}">{% endfor %}
     </datalist>
