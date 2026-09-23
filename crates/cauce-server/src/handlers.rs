@@ -771,6 +771,7 @@ pub(crate) async fn engine_views(state: &AppState) -> Result<Vec<EngineView>, Ap
         .list_history(&HistoryFilter {
             since: midnight,
             q: None,
+            cached: false,
             limit: MAX_LIMIT,
         })
         .await
