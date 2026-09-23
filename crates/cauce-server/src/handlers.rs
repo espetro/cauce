@@ -515,8 +515,6 @@ async fn config_put_inner(
             )
         })?
     };
-    let changed = changed_config_paths(&old_tree, &tree);
-
     // `<redacted>` leaves from a `GET /api/config` roundtrip get their real
     // values back from the current config; a literal `<redacted>` with no
     // current secret behind it is rejected rather than persisted.
@@ -532,6 +530,10 @@ async fn config_put_inner(
     if !restored.is_empty() {
         tracing::info!(paths = ?restored, "restored redacted config secrets on PUT");
     }
+
+    // Computed after `restore_redacted`: a `<redacted>` leaf the restore
+    // just filled back with the file's own secret is no change at all.
+    let changed = changed_config_paths(&old_tree, &tree);
 
     // In-memory validation: resolve `${...}` templates, apply `CAUCE_*` env
     // overrides, check schema and engine pinning. The original file is not

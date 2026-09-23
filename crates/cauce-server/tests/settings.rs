@@ -538,6 +538,56 @@ async fn save_writes_audit_with_changed_keys() {
     clear_env();
 }
 
+/// A file-literal secret displays as `<redacted>`; submitting that
+/// placeholder back restores the file value, so the audit row must not
+/// report `ai.api_key` as changed.
+#[tokio::test]
+async fn redacted_secret_roundtrip_reports_no_change() {
+    let _guard = env_lock().await;
+    clear_env();
+    let tmp = config_env("[ai]\napi_key = \"sk-file-literal\"\n");
+    let app = app(&tmp);
+
+    let (status, body) = get_html(&app, "/settings").await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert!(
+        body.contains("value=\"&#60;redacted&#62;\""),
+        "a literal secret must render redacted: {body}"
+    );
+
+    // The browser submits the decoded `<redacted>` placeholder verbatim.
+    let (status, body) = put_form(&app, "ai.api_key=%3Credacted%3E", false).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert!(
+        saved_config(&tmp).contains("api_key = \"sk-file-literal\""),
+        "the restore must write the file secret back"
+    );
+
+    let (status, body) = call(
+        &app,
+        Request::builder()
+            .method(Method::GET)
+            .uri("/api/audit?action=config.put")
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let rows: Value = serde_json::from_str(&body).expect("audit rows");
+    let row = rows
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["action"].as_str() == Some("config.put"))
+        .expect("config.put audit row");
+    assert_eq!(
+        row["details"]["changed"],
+        serde_json::json!([]),
+        "a restored redacted leaf is no change: {row}"
+    );
+    clear_env();
+}
+
 /// Under `CAUCE_ENGINES=replay` every `enabled` control renders disabled —
 /// the hidden `false` fallback included — so a browser submits no
 /// `engines.<id>.enabled` pair at all. A full-form save then creates the
