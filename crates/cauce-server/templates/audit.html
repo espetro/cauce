@@ -29,7 +29,7 @@
     {% if filtered %}<a href="/audit">{{ crate::strings::audit::CLEAR }}</a>{% endif %}
   </form>
   <p class="meta">
-    {{ rows.len() }} {% if filtered %}{{ crate::strings::audit::ROWS_MATCHING }}{% else %}{{ crate::strings::audit::ROWS }}{% endif %}
+    {{ rows.len() }} {% if rows.len() == 1 %}{{ crate::strings::audit::ROW }}{% else %}{{ crate::strings::audit::ROWS }}{% endif %}{% if filtered %} {{ crate::strings::audit::MATCHING }}{% endif %}
     {% if capped %} · {{ crate::strings::audit::CAP_NOTE_PREFIX }} {{ limit }} · {{ crate::strings::audit::CAP_NOTE_SUFFIX }}{% endif %}
   </p>
   {% if rows.is_empty() %}
@@ -66,7 +66,7 @@
   </div>
   {% endif %}
   <div class="meta">
-    <code class="request-id">{{ request_id }}</code>
+    {{ crate::strings::common::REQUEST_LABEL }} <code class="request-id">{{ request_id }}</code>
   </div>
 </body>
 </html>

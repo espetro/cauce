@@ -32,7 +32,7 @@
   {% endif %}
   {% endif %}
   <div class="meta">
-    <code class="request-id">{{ request_id }}</code>
+    {{ crate::strings::common::REQUEST_LABEL }} <code class="request-id">{{ request_id }}</code>
   </div>
   <script>
     (function () {

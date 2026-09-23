@@ -280,8 +280,8 @@ async fn audit_page_selects_populate_from_facets() {
     );
 }
 
-/// Filtered listings say `N rows matching` and the filtered-empty copy
-/// names every active filter.
+/// Filtered listings say `1 row matching` / `N rows matching` and the
+/// filtered-empty copy names every active filter.
 #[tokio::test]
 async fn audit_page_filtered_count_and_empty_copy() {
     let (app, _state, _tmp) = app();
@@ -289,7 +289,7 @@ async fn audit_page_filtered_count_and_empty_copy() {
 
     let (status, body) = get_html(&app, "/audit?actor=ui").await;
     assert_eq!(status, StatusCode::OK, "{body}");
-    assert!(body.contains("1 rows matching"), "{body}");
+    assert!(body.contains("1 row matching"), "{body}");
 
     let (status, body) = get_html(&app, "/audit?actor=ui&action=config.put").await;
     assert_eq!(status, StatusCode::OK, "{body}");

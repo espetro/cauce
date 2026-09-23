@@ -12,6 +12,8 @@ pub mod common {
     pub const BRAND: &str = "cauce";
     pub const DASH: &str = "-";
     pub const NAV_SEARCH: &str = "search";
+    /// Footer label ahead of the page's own request id.
+    pub const REQUEST_LABEL: &str = "request";
 }
 
 pub mod audit {
@@ -31,8 +33,9 @@ pub mod audit {
     pub const TARGET_COLUMN: &str = "target";
     pub const REQUEST_COLUMN: &str = "request";
     pub const DETAILS_SUMMARY: &str = "details";
+    pub const ROW: &str = "row";
     pub const ROWS: &str = "rows";
-    pub const ROWS_MATCHING: &str = "rows matching";
+    pub const MATCHING: &str = "matching";
     pub const CAP_NOTE_PREFIX: &str = "showing the newest";
     pub const CAP_NOTE_SUFFIX: &str = "raise `limit` (max 1000) for more";
 }
