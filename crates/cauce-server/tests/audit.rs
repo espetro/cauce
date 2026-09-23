@@ -136,7 +136,10 @@ async fn audit_page_lists_ui_cache_delete() {
         body.contains("<code>cache.delete</code>"),
         "delete row missing: {body}"
     );
-    assert!(body.contains("<td>ui</td>"), "actor ui missing: {body}");
+    assert!(
+        body.contains("<td class=\"c-actor\">ui</td>"),
+        "actor ui missing: {body}"
+    );
     assert!(
         body.contains("<code>engine.reset</code>"),
         "reset row missing: {body}"
@@ -146,7 +149,7 @@ async fn audit_page_lists_ui_cache_delete() {
         "rows should be newest first:\n{body}"
     );
     assert!(
-        body.contains("<details"),
+        body.contains("<details><summary>"),
         "details should be expandable: {body}"
     );
     assert!(
@@ -186,9 +189,10 @@ async fn audit_page_filters_by_actor_and_action() {
     assert_eq!(status, StatusCode::OK);
     assert!(body.contains("<code>cache.delete</code>"), "{body}");
     // `cache.delete` writes `{}` details: an empty object must omit the
-    // toggle the same way `null` does.
+    // toggle the same way `null` does. (`<summary>`, not `<details`: the
+    // embedded stylesheet mentions `<details>` in a comment.)
     assert!(
-        !body.contains("<details"),
+        !body.contains("<summary>"),
         "empty-object details must omit the toggle: {body}"
     );
 
@@ -239,7 +243,7 @@ async fn audit_page_shares_api_defaults_and_empty_filters() {
     );
     // All 50 seeded rows have null details: no details toggle may render.
     assert!(
-        !body.contains("<details"),
+        !body.contains("<summary>"),
         "null details must omit the toggle: {body}"
     );
 }

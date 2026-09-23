@@ -10,7 +10,10 @@
   <style>{{ style_css|safe }}</style>
 </head>
 <body>
-  <p><a href="/">{{ crate::strings::common::NAV_SEARCH }}</a></p>
+<nav class="topnav">
+  <a href="/">{{ crate::strings::common::NAV_SEARCH }}</a>
+</nav>
+<main>
   <h1>{{ crate::strings::trace::PAGE_TITLE }}</h1>
   <div class="meta">
     <code class="request-id" id="traced-id">{{ traced_id }}</code>
@@ -23,17 +26,18 @@
   {% if !kind.is_empty() %}
   <p class="meta">{{ kind }}{% if has_query %} "{{ query }}"{% endif %}{% if !summary_ts.is_empty() %} · {{ summary_ts }}{% endif %} · {{ summary_ms }} · {{ outcome }}</p>
   {% endif %}
-  <pre class="trace">{{ timeline }}</pre>
+  <pre class="trace" tabindex="0" role="region" aria-label="{{ crate::strings::trace::TIMELINE_REGION }}">{{ timeline }}</pre>
   {% if !spans.is_empty() %}
   <h2>{{ crate::strings::trace::SPANS_HEADING }}</h2>
   {% for span in spans %}
-  <details class="span"><summary>{{ span.summary }}</summary><pre>{{ span.fields_json }}</pre></details>
+  <details class="span"><summary>{{ span.name }} · {{ span.elapsed }}{% if !span.status.is_empty() %} · <span{% if !span.status_class.is_empty() %} class="{{ span.status_class }}"{% endif %}>{{ span.status }}</span>{% endif %}{% if !span.results.is_empty() %} · {{ span.results }}{% endif %}</summary><pre tabindex="0" role="group" aria-label="{{ crate::strings::trace::SPAN_REGION }}">{{ span.fields_json }}</pre></details>
   {% endfor %}
   {% endif %}
   {% endif %}
   <div class="meta">
     {{ crate::strings::common::REQUEST_LABEL }} <code class="request-id">{{ request_id }}</code>
   </div>
+  </main>
   <script>
     (function () {
       var btn = document.getElementById("copy-traced");
