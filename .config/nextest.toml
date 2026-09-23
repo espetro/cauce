@@ -1,0 +1,8 @@
+# The exec integration tests spawn real `python3` fixture children with
+# deadline assertions; under a parallel `mise run validate` (fmt/clippy/
+# check/test sharing the cargo lock) the children starve and exit early,
+# failing as `Transport("engine process exited")`. Running the binary with
+# all test threads isolates it from concurrent load.
+[[profile.default.overrides]]
+filter = "binary(exec)"
+threads-required = "num-test-threads"
