@@ -143,118 +143,58 @@ pub mod settings {
 
 /// `/history` page copy (W2-02).
 pub mod history {
-    /// Every user-visible string on the history page.
-    #[derive(Debug, Clone, Copy)]
-    pub struct Copy {
-        pub nav_search: &'static str,
-        pub nav_history: &'static str,
-        pub heading: &'static str,
-        /// Stats line: `N searches in last 24h · N total · N clicks today`.
-        pub stat_searches_24h: &'static str,
-        pub stat_total: &'static str,
-        pub stat_clicks_today: &'static str,
-        pub filter_submit: &'static str,
-        pub window_24h: &'static str,
-        pub window_7d: &'static str,
-        pub window_30d: &'static str,
-        pub window_all: &'static str,
-        pub query_placeholder: &'static str,
-        pub cached_only: &'static str,
-        pub clear: &'static str,
-        pub empty: &'static str,
-        /// Filtered-empty fragments, composed as
-        /// `no searches match "q" in the last 7 days that are still cached.`
-        pub ef_match: &'static str,
-        pub ef_none: &'static str,
-        pub in_24h: &'static str,
-        pub in_7d: &'static str,
-        pub in_30d: &'static str,
-        pub in_since: &'static str,
-        pub ef_cached: &'static str,
-        /// Cap note: `showing 200 of N · use the filters to reach older searches`.
-        pub capped_showing: &'static str,
-        pub capped_of: &'static str,
-        pub capped_hint: &'static str,
-        pub col_query: &'static str,
-        pub col_when: &'static str,
-        pub col_source: &'static str,
-        pub col_engines: &'static str,
-        pub col_results: &'static str,
-        pub col_latency: &'static str,
-        pub col_client: &'static str,
-        /// Source-cell fragments: `cached · 41m`, `cached · expired`,
-        /// `network · t1`.
-        pub src_cached: &'static str,
-        pub src_expired: &'static str,
-        pub src_network: &'static str,
-        /// `t` in `network · t1`.
-        pub tier_prefix: &'static str,
-        /// Empty search-column cell on `(click only)` rows.
-        pub dash: &'static str,
-        /// `#` in a click's `#position` marker.
-        pub position_prefix: &'static str,
-        /// The product name in the title suffix and brand link.
-        pub brand: &'static str,
-        pub clicks_word: &'static str,
-        pub click_only: &'static str,
-        pub rerun: &'static str,
-        pub copy_json: &'static str,
-        pub copied: &'static str,
-        pub payload: &'static str,
-        pub delete: &'static str,
-        pub delete_confirm: &'static str,
-        pub request_label: &'static str,
-    }
-
-    /// The English copy (only language in v3.0).
-    pub const COPY: Copy = Copy {
-        nav_search: "search",
-        nav_history: "history",
-        heading: "History",
-        stat_searches_24h: "searches in last 24h",
-        stat_total: "total",
-        stat_clicks_today: "clicks today",
-        filter_submit: "Filter",
-        window_24h: "last 24h",
-        window_7d: "last 7d",
-        window_30d: "last 30d",
-        window_all: "all time",
-        query_placeholder: "filter query text...",
-        cached_only: "cached only",
-        clear: "clear",
-        empty: "nothing searched yet. run a search and it lands here.",
-        ef_match: "no searches match",
-        ef_none: "no searches",
-        in_24h: "in the last 24h",
-        in_7d: "in the last 7 days",
-        in_30d: "in the last 30 days",
-        in_since: "since",
-        ef_cached: "that are still cached",
-        capped_showing: "showing",
-        capped_of: "of",
-        capped_hint: "use the filters to reach older searches",
-        col_query: "query",
-        col_when: "when",
-        col_source: "source",
-        col_engines: "engines",
-        col_results: "n",
-        col_latency: "ms",
-        col_client: "by",
-        src_cached: "cached",
-        src_expired: "expired",
-        src_network: "network",
-        tier_prefix: "t",
-        dash: "-",
-        position_prefix: "#",
-        brand: "cauce",
-        clicks_word: "clicks",
-        click_only: "(click only)",
-        rerun: "re-run",
-        copy_json: "copy json",
-        copied: "copied",
-        payload: "payload",
-        delete: "delete",
-        delete_confirm: "Delete this search?",
-        request_label: "request",
-    };
+    pub const NAV_SEARCH: &str = "search";
+    pub const NAV_HISTORY: &str = "history";
+    pub const TITLE: &str = "History";
+    /// Stats line: `N searches in last 24h · N total · N clicks today`.
+    pub const STAT_SEARCHES_24H: &str = "searches in last 24h";
+    pub const STAT_TOTAL: &str = "total";
+    pub const STAT_CLICKS_TODAY: &str = "clicks today";
+    pub const FILTER_SUBMIT: &str = "Filter";
+    pub const WINDOW_24H: &str = "last 24h";
+    pub const WINDOW_7D: &str = "last 7d";
+    pub const WINDOW_30D: &str = "last 30d";
+    pub const WINDOW_ALL: &str = "all time";
+    pub const QUERY_PLACEHOLDER: &str = "filter query text...";
+    pub const CACHED_ONLY: &str = "cached only";
+    pub const CLEAR: &str = "clear";
+    pub const EMPTY: &str = "nothing searched yet. run a search and it lands here.";
+    /// Filtered-empty fragments, composed as
+    /// `no searches match "q" in the last 7 days that are still cached.`
+    pub const EF_MATCH: &str = "no searches match";
+    pub const EF_NONE: &str = "no searches";
+    pub const IN_24H: &str = "in the last 24h";
+    pub const IN_7D: &str = "in the last 7 days";
+    pub const IN_30D: &str = "in the last 30 days";
+    pub const IN_SINCE: &str = "since";
+    pub const EF_CACHED: &str = "that are still cached";
+    /// Cap note: `showing 200 of N · use the filters to reach older searches`.
+    pub const CAPPED_SHOWING: &str = "showing";
+    pub const CAPPED_OF: &str = "of";
+    pub const CAPPED_HINT: &str = "use the filters to reach older searches";
+    pub const COL_QUERY: &str = "query";
+    pub const COL_WHEN: &str = "when";
+    pub const COL_SOURCE: &str = "source";
+    pub const COL_ENGINES: &str = "engines";
+    pub const COL_RESULTS: &str = "n";
+    pub const COL_LATENCY: &str = "ms";
+    pub const COL_CLIENT: &str = "by";
+    /// Source-cell fragments: `cached · 41m`, `cached · expired`,
+    /// `network · t1`.
+    pub const SRC_CACHED: &str = "cached";
+    pub const SRC_EXPIRED: &str = "expired";
+    pub const SRC_NETWORK: &str = "network";
+    /// `t` in `network · t1`.
+    pub const TIER_PREFIX: &str = "t";
+    /// `#` in a click's `#position` marker.
+    pub const POSITION_PREFIX: &str = "#";
+    pub const CLICKS_WORD: &str = "clicks";
+    pub const CLICK_ONLY: &str = "(click only)";
+    pub const RERUN: &str = "re-run";
+    pub const COPY_JSON: &str = "copy json";
+    pub const COPIED: &str = "copied";
+    pub const PAYLOAD: &str = "payload";
+    pub const DELETE: &str = "delete";
+    pub const DELETE_CONFIRM: &str = "Delete this search?";
+    pub const REQUEST_LABEL: &str = "request";
 }

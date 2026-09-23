@@ -6,32 +6,32 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{{ s.heading }} · {{ s.brand }}</title>
+  <title>{{ crate::strings::history::TITLE }} · {{ crate::strings::common::BRAND }}</title>
   <link rel="icon" href="/favicon.ico" type="image/svg+xml">
   <style>{{ style_css|safe }}</style>
 </head>
 <body>
   <nav class="top">
-    <a class="brand" href="/">{{ s.brand }}</a>
-    <a href="/">{{ s.nav_search }}</a>
-    <a href="/history" aria-current="page">{{ s.nav_history }}</a>
+    <a class="brand" href="/">{{ crate::strings::common::BRAND }}</a>
+    <a href="/">{{ crate::strings::history::NAV_SEARCH }}</a>
+    <a href="/history" aria-current="page">{{ crate::strings::history::NAV_HISTORY }}</a>
   </nav>
-  <h1>{{ s.heading }}</h1>
+  <h1>{{ crate::strings::history::TITLE }}</h1>
   <p class="stats">{{ stats_line }}</p>
   <form action="/history" method="get" class="filters">
     <select name="since">
-      <option value="all"{% if since == "all" %} selected{% endif %}>{{ s.window_all }}</option>
-      <option value="24h"{% if since == "24h" %} selected{% endif %}>{{ s.window_24h }}</option>
-      <option value="7d"{% if since == "7d" %} selected{% endif %}>{{ s.window_7d }}</option>
-      <option value="30d"{% if since == "30d" %} selected{% endif %}>{{ s.window_30d }}</option>
+      <option value="all"{% if since == "all" %} selected{% endif %}>{{ crate::strings::history::WINDOW_ALL }}</option>
+      <option value="24h"{% if since == "24h" %} selected{% endif %}>{{ crate::strings::history::WINDOW_24H }}</option>
+      <option value="7d"{% if since == "7d" %} selected{% endif %}>{{ crate::strings::history::WINDOW_7D }}</option>
+      <option value="30d"{% if since == "30d" %} selected{% endif %}>{{ crate::strings::history::WINDOW_30D }}</option>
     </select>
-    <input type="search" name="q" value="{{ q }}" placeholder="{{ s.query_placeholder }}">
+    <input type="search" name="q" value="{{ q }}" placeholder="{{ crate::strings::history::QUERY_PLACEHOLDER }}">
     <label class="cached-only">
       <input type="checkbox" name="cached" value="1"{% if cached %} checked{% endif %}>
-      {{ s.cached_only }}
+      {{ crate::strings::history::CACHED_ONLY }}
     </label>
-    <button type="submit">{{ s.filter_submit }}</button>
-    {% if filters_active %}<a class="clear" href="/history">{{ s.clear }}</a>{% endif %}
+    <button type="submit">{{ crate::strings::history::FILTER_SUBMIT }}</button>
+    {% if filters_active %}<a class="clear" href="/history">{{ crate::strings::history::CLEAR }}</a>{% endif %}
   </form>
   {% if rows.is_empty() %}
   <p class="empty">{{ empty_message }}</p>
@@ -39,13 +39,13 @@
   <table class="history">
     <thead>
       <tr>
-        <th class="c-when">{{ s.col_when }}</th>
-        <th class="c-query">{{ s.col_query }}</th>
-        <th class="c-source">{{ s.col_source }}</th>
-        <th class="c-engines h-md">{{ s.col_engines }}</th>
-        <th class="c-n">{{ s.col_results }}</th>
-        <th class="c-ms h-md">{{ s.col_latency }}</th>
-        <th class="c-by">{{ s.col_client }}</th>
+        <th class="c-when">{{ crate::strings::history::COL_WHEN }}</th>
+        <th class="c-query">{{ crate::strings::history::COL_QUERY }}</th>
+        <th class="c-source">{{ crate::strings::history::COL_SOURCE }}</th>
+        <th class="c-engines h-md">{{ crate::strings::history::COL_ENGINES }}</th>
+        <th class="c-n">{{ crate::strings::history::COL_RESULTS }}</th>
+        <th class="c-ms h-md">{{ crate::strings::history::COL_LATENCY }}</th>
+        <th class="c-by">{{ crate::strings::history::COL_CLIENT }}</th>
       </tr>
     </thead>
     {% for row in rows %}
@@ -59,7 +59,7 @@
         <td class="c-when">{{ row.when }}</td>
         <td class="c-query">
           {% if row.is_search %}<a href="{{ row.rerun_url }}">{{ row.query }}</a>
-          {% else %}{{ s.click_only }}{% endif %}
+          {% else %}{{ crate::strings::history::CLICK_ONLY }}{% endif %}
         </td>
         <td class="c-source">
           {% if !row.source_url.is_empty() %}<a href="{{ row.source_url }}">{{ row.source }}</a>
@@ -74,26 +74,26 @@
         <td colspan="7">
           {% if row.is_search %}
           <details{% if !row.clicks.is_empty() %} open{% endif %}>
-            <summary>{{ row.clicks.len() }} {{ s.clicks_word }}</summary>
+            <summary>{{ row.clicks.len() }} {{ crate::strings::history::CLICKS_WORD }}</summary>
             {% for c in row.clicks %}
             <div class="click-line">
               <span class="cdom">{{ c.domain }}</span>
               <a href="{{ c.url }}" target="_blank" rel="noopener">{{ c.title }}</a>
-              <span class="cpos">{{ s.position_prefix }}{{ c.position }}</span>
+              <span class="cpos">{{ crate::strings::history::POSITION_PREFIX }}{{ c.position }}</span>
             </div>
             {% endfor %}
           </details>
           <span class="row-actions">
-            <a href="{{ row.rerun_url }}">{{ s.rerun }}</a>
-            <a href="{{ row.json_url }}" class="copy-json">{{ s.copy_json }}</a>
-            {% if row.cached_live %}<a href="{{ row.source_url }}">{{ s.payload }}</a>{% endif %}
+            <a href="{{ row.rerun_url }}">{{ crate::strings::history::RERUN }}</a>
+            <a href="{{ row.json_url }}" class="copy-json">{{ crate::strings::history::COPY_JSON }}</a>
+            {% if row.cached_live %}<a href="{{ row.source_url }}">{{ crate::strings::history::PAYLOAD }}</a>{% endif %}
             <button
               hx-delete="/api/history/{{ row.id }}"
               hx-target="closest tbody"
               hx-swap="delete"
-              hx-confirm="{{ s.delete_confirm }}"
+              hx-confirm="{{ crate::strings::history::DELETE_CONFIRM }}"
               hx-headers='{"X-Cauce-Client":"ui"}'
-            >{{ s.delete }}</button>
+            >{{ crate::strings::history::DELETE }}</button>
           </span>
           <code class="copy-fallback" hidden></code>
           {% else %}
@@ -101,7 +101,7 @@
           <div class="click-line">
             <span class="cdom">{{ c.domain }}</span>
             <a href="{{ c.url }}" target="_blank" rel="noopener">{{ c.title }}</a>
-            <span class="cpos">{{ s.position_prefix }}{{ c.position }}</span>
+            <span class="cpos">{{ crate::strings::history::POSITION_PREFIX }}{{ c.position }}</span>
           </div>
           {% endfor %}
           {% endif %}
@@ -114,7 +114,7 @@
   {% endif %}
   <div class="meta">
     {% if !capped_line.is_empty() %}<span>{{ capped_line }}</span>{% endif %}
-    <span>{{ s.request_label }} <span class="request-id">{{ request_id }}</span></span>
+    <span>{{ crate::strings::history::REQUEST_LABEL }} <span class="request-id">{{ request_id }}</span></span>
   </div>
   <script>{{ htmx_js|safe }}</script>
   <script>
@@ -132,7 +132,7 @@
         await navigator.clipboard.writeText(await resp.text());
         const label = a.dataset.label || a.textContent;
         a.dataset.label = label;
-        a.textContent = '{{ s.copied }}';
+        a.textContent = '{{ crate::strings::history::COPIED }}';
         setTimeout(() => { a.textContent = label; }, 1500);
       } catch (err) {
         if (code) { code.hidden = false; code.textContent = a.href; }

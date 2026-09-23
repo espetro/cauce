@@ -548,9 +548,8 @@ impl Store for SqliteStore {
             let marks = std::iter::repeat_n("?", hashes.len())
                 .collect::<Vec<_>>()
                 .join(",");
-            let sql = format!(
-                "SELECT DISTINCT query_hash FROM search_log WHERE query_hash IN ({marks})"
-            );
+            let sql =
+                format!("SELECT DISTINCT query_hash FROM search_log WHERE query_hash IN ({marks})");
             let mut stmt = conn.prepare(&sql).map_err(sql_err)?;
             let rows_out = stmt
                 .query_map(rusqlite::params_from_iter(hashes.iter()), |r| {
@@ -561,10 +560,7 @@ impl Store for SqliteStore {
                 .map_err(sql_err)?;
             rows_out
                 .into_iter()
-                .map(|h| {
-                    h.parse()
-                        .map_err(|e: String| StoreError::Corrupt(e))
-                })
+                .map(|h| h.parse().map_err(|e: String| StoreError::Corrupt(e)))
                 .collect()
         })
         .await

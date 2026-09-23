@@ -31,6 +31,7 @@ use crate::app::{AppState, RouterOptions};
 use crate::error::ApiError;
 use crate::handlers::{QueryParams, search_inner};
 use crate::middleware::RequestCtx;
+use crate::strings::{common, history as hs};
 
 /// Static assets vendored under `crates/cauce-server/assets`.
 #[derive(Embed)]
@@ -781,7 +782,7 @@ struct HistRow {
     day_header: Option<String>,
     /// `HH:MM` local time.
     when: String,
-    /// The search query (click rows render `s.click_only` instead).
+    /// The search query (click rows render `hs::CLICK_ONLY` instead).
     query: String,
     /// `cached · <age>` | `cached · expired` | `network · t<N>`;
     /// `-` on click rows.
@@ -804,7 +805,6 @@ struct HistRow {
 #[derive(Template)]
 #[template(path = "history.html")]
 struct History {
-    s: crate::strings::history::Copy,
     /// Selected `since` window (`24h` | `7d` | `30d` | `all`).
     since: String,
     /// Active `q` substring filter.
@@ -845,7 +845,6 @@ pub(crate) async fn history_page(
     Extension(ctx): Extension<RequestCtx>,
     uri: Uri,
 ) -> Result<Response, ApiError> {
-    let s = crate::strings::history::COPY;
     let (params, filter, items) =
         crate::handlers::history_inner(&state, &ctx, &uri, crate::handlers::HISTORY_LIMIT).await?;
     let stats = state
@@ -909,21 +908,21 @@ pub(crate) async fn history_page(
         .map(|k| k.as_str().to_string())
         .collect();
 
-    let rows = history_rows(items, &cache, &off_window, &s);
+    let rows = history_rows(items, &cache, &off_window);
     let filters_active = filter.cached || filter.q.is_some() || filter.since.is_some();
     let empty_message = if rows.is_empty() {
-        empty_message(&s, &params, &filter)
+        empty_message(&params, &filter)
     } else {
         String::new()
     };
     let capped_line = if stats.matching as usize > rows.len() && !rows.is_empty() {
         format!(
             "{} {} {} {} · {}",
-            s.capped_showing,
+            hs::CAPPED_SHOWING,
             rows.len(),
-            s.capped_of,
+            hs::CAPPED_OF,
             stats.matching,
-            s.capped_hint
+            hs::CAPPED_HINT
         )
     } else {
         String::new()
@@ -931,15 +930,14 @@ pub(crate) async fn history_page(
     let stats_line = format!(
         "{} {} · {} {} · {} {}",
         stats.searches_24h,
-        s.stat_searches_24h,
+        hs::STAT_SEARCHES_24H,
         stats.searches_total,
-        s.stat_total,
+        hs::STAT_TOTAL,
         stats.clicks_today,
-        s.stat_clicks_today,
+        hs::STAT_CLICKS_TODAY,
     );
 
     let page = History {
-        s,
         since: params.get("since").unwrap_or("all").to_string(),
         q: params.get("q").unwrap_or("").to_string(),
         cached: filter.cached,
@@ -961,28 +959,24 @@ pub(crate) async fn history_page(
 
 /// The one-sentence empty state: plain `empty` when nothing is stored, or
 /// the filtered-empty sentence naming the active filters.
-fn empty_message(
-    s: &crate::strings::history::Copy,
-    params: &QueryParams,
-    filter: &cauce_core::HistoryFilter,
-) -> String {
+fn empty_message(params: &QueryParams, filter: &cauce_core::HistoryFilter) -> String {
     if !filter.cached && filter.q.is_none() && filter.since.is_none() {
-        return s.empty.to_string();
+        return hs::EMPTY.to_string();
     }
     let mut msg = match params.get("q").filter(|v| !v.trim().is_empty()) {
-        Some(q) => format!("{} \"{q}\"", s.ef_match),
-        None => s.ef_none.to_string(),
+        Some(q) => format!("{} \"{q}\"", hs::EF_MATCH),
+        None => hs::EF_NONE.to_string(),
     };
     match params.get("since") {
-        Some("24h") => msg.push_str(&format!(" {}", s.in_24h)),
-        Some("7d") => msg.push_str(&format!(" {}", s.in_7d)),
-        Some("30d") => msg.push_str(&format!(" {}", s.in_30d)),
+        Some("24h") => msg.push_str(&format!(" {}", hs::IN_24H)),
+        Some("7d") => msg.push_str(&format!(" {}", hs::IN_7D)),
+        Some("30d") => msg.push_str(&format!(" {}", hs::IN_30D)),
         // `all` adds no time clause; an absolute timestamp is spelled out.
-        Some(v) if v != "all" => msg.push_str(&format!(" {} {v}", s.in_since)),
+        Some(v) if v != "all" => msg.push_str(&format!(" {} {v}", hs::IN_SINCE)),
         _ => {}
     }
     if filter.cached {
-        msg.push_str(&format!(" {}", s.ef_cached));
+        msg.push_str(&format!(" {}", hs::EF_CACHED));
     }
     msg.push('.');
     msg
@@ -1009,7 +1003,6 @@ fn history_rows(
     items: Vec<HistoryItem>,
     cache: &std::collections::HashMap<String, cauce_core::CacheState>,
     off_window: &std::collections::HashSet<String>,
-    s: &crate::strings::history::Copy,
 ) -> Vec<HistRow> {
     use std::collections::{HashMap, HashSet};
 
@@ -1062,25 +1055,22 @@ fn history_rows(
                             st.key.as_str()
                         );
                         (
-                            format!("{} · {}", s.src_cached, cache_age(st.created_at, now)),
+                            format!("{} · {}", hs::SRC_CACHED, cache_age(st.created_at, now)),
                             url,
                             true,
                         )
                     }
                     Some(_) => (
-                        format!("{} · {}", s.src_cached, s.src_expired),
+                        format!("{} · {}", hs::SRC_CACHED, hs::SRC_EXPIRED),
                         String::new(),
                         false,
                     ),
                     None => (
                         match s_row.tier {
-                            Some(t) => format!(
-                                "{} · {}{}",
-                                s.src_network,
-                                s.tier_prefix,
-                                t.as_u8()
-                            ),
-                            None => s.src_network.to_string(),
+                            Some(t) => {
+                                format!("{} · {}{}", hs::SRC_NETWORK, hs::TIER_PREFIX, t.as_u8())
+                            }
+                            None => hs::SRC_NETWORK.to_string(),
                         },
                         String::new(),
                         false,
@@ -1130,12 +1120,12 @@ fn history_rows(
                         .format("%H:%M")
                         .to_string(),
                     query: String::new(),
-                    source: s.dash.to_string(),
+                    source: common::DASH.to_string(),
                     source_url: String::new(),
                     cached_live: false,
-                    engines: s.dash.to_string(),
-                    result_count: s.dash.to_string(),
-                    latency: s.dash.to_string(),
+                    engines: common::DASH.to_string(),
+                    result_count: common::DASH.to_string(),
+                    latency: common::DASH.to_string(),
                     client: c.client.label(),
                     clicks: vec![click_line(&c)],
                     rerun_url: String::new(),
