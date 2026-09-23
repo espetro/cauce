@@ -16,10 +16,10 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use cauce_core::{
-    AdmissionStats, AuditFacets, AuditFilter, AuditRow, CacheKey, CachedSearch, ClickRow,
-    EngineHealthRow, EngineStatsRow, EngineStatus, HistoryFilter, HistoryItem, LatencyPercentiles,
-    QueryCount, SearchLogRow, SearchResponse, StatsSnapshot, Store, StoreError, StoreTuning,
-    TierHit,
+    AdmissionStats, AuditFacets, AuditFilter, AuditRow, CacheKey, CacheState, CachedSearch,
+    ClickRow, DeleteSearchLog, EngineHealthRow, EngineStatsRow, EngineStatus, HistoryFilter,
+    HistoryItem, HistoryStats, LatencyPercentiles, QueryCount, SearchLogRow, SearchResponse,
+    StatsSnapshot, Store, StoreError, StoreTuning, TierHit,
 };
 use rusqlite::{Connection, OptionalExtension, params};
 use tokio::task::{JoinError, spawn_blocking};
@@ -410,11 +410,15 @@ impl Store for SqliteStore {
 
     /// Merged feed: searches honour `q` (substring, case-insensitive-ish via
     /// LIKE), clicks are never filtered by `q`; `since` applies to both.
+    /// `cached=1` (W2-02) keeps only rows whose `query_hash` has a live
+    /// `cache_entries` row — one EXISTS subquery, no join.
     async fn list_history(&self, filter: &HistoryFilter) -> Result<Vec<HistoryItem>, StoreError> {
         let since = filter.since.map(|t| rows::to_ms(&t));
         let q = filter.q.as_deref().map(like_pattern);
         let limit = i64::from(filter.limit);
+        let cached = filter.cached;
         self.with_reader(move |conn| {
+            let now = rows::now_ms();
             let mut stmt = conn
                 .prepare(
                     "SELECT id, ts, query_hash, query, client, source, tier,
@@ -423,12 +427,16 @@ impl Store for SqliteStore {
                        FROM search_log
                       WHERE (?1 IS NULL OR ts >= ?1)
                         AND (?2 IS NULL OR query LIKE ?2 ESCAPE '\\')
+                        AND (?3 = 0 OR EXISTS (
+                            SELECT 1 FROM cache_entries ce
+                             WHERE ce.key = search_log.query_hash
+                               AND ce.expires_at > ?4))
                       ORDER BY ts DESC, id DESC
-                      LIMIT ?3",
+                      LIMIT ?5",
                 )
                 .map_err(sql_err)?;
             let searches = stmt
-                .query_map(params![since, q, limit], |r| {
+                .query_map(params![since, q, cached, now, limit], |r| {
                     rows::search_log(r).map_err(rows::as_sql)
                 })
                 .map_err(sql_err)?
@@ -440,12 +448,16 @@ impl Store for SqliteStore {
                     "SELECT id, ts, query_hash, url, title, position, client
                        FROM clicks
                       WHERE (?1 IS NULL OR ts >= ?1)
+                        AND (?2 = 0 OR EXISTS (
+                            SELECT 1 FROM cache_entries ce
+                             WHERE ce.key = clicks.query_hash
+                               AND ce.expires_at > ?3))
                       ORDER BY ts DESC, id DESC
-                      LIMIT ?2",
+                      LIMIT ?4",
                 )
                 .map_err(sql_err)?;
             let clicks = stmt
-                .query_map(params![since, limit], |r| {
+                .query_map(params![since, cached, now, limit], |r| {
                     rows::click(r).map_err(rows::as_sql)
                 })
                 .map_err(sql_err)?
@@ -473,6 +485,164 @@ impl Store for SqliteStore {
             items.sort_by_key(|(ts, id, _)| std::cmp::Reverse((*ts, *id)));
             items.truncate(limit.max(0) as usize);
             Ok(items.into_iter().map(|(_, _, item)| item).collect())
+        })
+        .await
+    }
+
+    /// Batched `cache_entries` lookup for the history `source` column: one
+    /// `IN` query for the page's distinct `query_hash`es, expired rows
+    /// included (the page renders `cached · expired` for them).
+    async fn cache_states(&self, keys: &[CacheKey]) -> Result<Vec<CacheState>, StoreError> {
+        let keys: Vec<String> = keys.iter().map(|k| k.as_str().to_string()).collect();
+        self.with_reader(move |conn| {
+            if keys.is_empty() {
+                return Ok(Vec::new());
+            }
+            let marks = std::iter::repeat_n("?", keys.len())
+                .collect::<Vec<_>>()
+                .join(",");
+            let sql = format!(
+                "SELECT key, query, created_at, expires_at
+                   FROM cache_entries WHERE key IN ({marks})"
+            );
+            let mut stmt = conn.prepare(&sql).map_err(sql_err)?;
+            let rows_out = stmt
+                .query_map(rusqlite::params_from_iter(keys.iter()), |r| {
+                    let key: String = r
+                        .get(0)
+                        .map_err(|e| rows::as_sql(StoreError::Corrupt(format!("key: {e}"))))?;
+                    Ok(CacheState {
+                        key: key
+                            .parse()
+                            .map_err(|e: String| rows::as_sql(StoreError::Corrupt(e)))?,
+                        query: r.get(1).map_err(|e| {
+                            rows::as_sql(StoreError::Corrupt(format!("query: {e}")))
+                        })?,
+                        created_at: rows::from_ms(r.get(2).map_err(|e| {
+                            rows::as_sql(StoreError::Corrupt(format!("created_at: {e}")))
+                        })?)
+                        .map_err(rows::as_sql)?,
+                        expires_at: rows::from_ms(r.get(3).map_err(|e| {
+                            rows::as_sql(StoreError::Corrupt(format!("expires_at: {e}")))
+                        })?)
+                        .map_err(rows::as_sql)?,
+                    })
+                })
+                .map_err(sql_err)?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(sql_err)?;
+            Ok(rows_out)
+        })
+        .await
+    }
+
+    /// Batched `search_log` existence check for the history page's orphan
+    /// clicks: one `IN` query returning the subset of `hashes` that still
+    /// have a `search_log` row.
+    async fn search_hashes(&self, hashes: &[CacheKey]) -> Result<Vec<CacheKey>, StoreError> {
+        let hashes: Vec<String> = hashes.iter().map(|k| k.as_str().to_string()).collect();
+        self.with_reader(move |conn| {
+            if hashes.is_empty() {
+                return Ok(Vec::new());
+            }
+            let marks = std::iter::repeat_n("?", hashes.len())
+                .collect::<Vec<_>>()
+                .join(",");
+            let sql =
+                format!("SELECT DISTINCT query_hash FROM search_log WHERE query_hash IN ({marks})");
+            let mut stmt = conn.prepare(&sql).map_err(sql_err)?;
+            let rows_out = stmt
+                .query_map(rusqlite::params_from_iter(hashes.iter()), |r| {
+                    r.get::<_, String>(0)
+                })
+                .map_err(sql_err)?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(sql_err)?;
+            rows_out
+                .into_iter()
+                .map(|h| h.parse().map_err(|e: String| StoreError::Corrupt(e)))
+                .collect()
+        })
+        .await
+    }
+
+    /// The page's header counts plus `matching`: `search_log` rows satisfying
+    /// the same filters as `list_history` (without `limit`).
+    async fn history_stats(&self, filter: &HistoryFilter) -> Result<HistoryStats, StoreError> {
+        let since = filter.since.map(|t| rows::to_ms(&t));
+        let q = filter.q.as_deref().map(like_pattern);
+        let cached = filter.cached;
+        self.with_reader(move |conn| {
+            let now = rows::now_ms();
+            let day_ago = now - 24 * 60 * 60 * 1_000;
+            let today_start = chrono::Utc::now()
+                .date_naive()
+                .and_hms_opt(0, 0, 0)
+                .map(|t| t.and_utc().timestamp_millis())
+                .unwrap_or(now);
+            conn.query_row(
+                "SELECT
+                   (SELECT COUNT(*) FROM search_log WHERE ts >= ?1),
+                   (SELECT COUNT(*) FROM search_log),
+                   (SELECT COUNT(*) FROM clicks WHERE ts >= ?2),
+                   (SELECT COUNT(*) FROM search_log
+                     WHERE (?3 IS NULL OR ts >= ?3)
+                       AND (?4 IS NULL OR query LIKE ?4 ESCAPE '\\')
+                       AND (?5 = 0 OR EXISTS (
+                           SELECT 1 FROM cache_entries ce
+                            WHERE ce.key = search_log.query_hash
+                              AND ce.expires_at > ?6)))",
+                params![day_ago, today_start, since, q, cached, now],
+                |r| {
+                    Ok(HistoryStats {
+                        searches_24h: r.get::<_, i64>(0)? as u64,
+                        searches_total: r.get::<_, i64>(1)? as u64,
+                        clicks_today: r.get::<_, i64>(2)? as u64,
+                        matching: r.get::<_, i64>(3)? as u64,
+                    })
+                },
+            )
+            .map_err(sql_err)
+        })
+        .await
+    }
+
+    /// `DELETE /api/history/{id}` (W2-02): one `search_log` row, plus the
+    /// `clicks` rows that share its `query_hash` only when no other
+    /// `search_log` row carries that hash — a click belongs to the query,
+    /// and the surviving newest row still displays them. One transaction,
+    /// so the row can never disappear while its clicks stay visible.
+    async fn delete_search_log(&self, id: i64) -> Result<Option<DeleteSearchLog>, StoreError> {
+        self.with_writer(move |conn| {
+            // `unchecked_transaction` gives a tx from `&Connection`; the
+            // writer mutex already guarantees exclusivity.
+            let tx = conn.unchecked_transaction().map_err(sql_err)?;
+            let found: Option<(String, String)> = tx
+                .query_row(
+                    "SELECT query_hash, query FROM search_log WHERE id = ?1",
+                    params![id],
+                    |r| Ok((r.get(0)?, r.get(1)?)),
+                )
+                .optional()
+                .map_err(sql_err)?;
+            let Some((query_hash, query)) = found else {
+                return Ok(None);
+            };
+            tx.execute("DELETE FROM search_log WHERE id = ?1", params![id])
+                .map_err(sql_err)?;
+            let clicks_removed = tx
+                .execute(
+                    "DELETE FROM clicks WHERE query_hash = ?1
+                       AND NOT EXISTS
+                         (SELECT 1 FROM search_log WHERE query_hash = ?1)",
+                    params![query_hash],
+                )
+                .map_err(sql_err)? as u64;
+            tx.commit().map_err(sql_err)?;
+            Ok(Some(DeleteSearchLog {
+                query,
+                clicks_removed,
+            }))
         })
         .await
     }

@@ -1,0 +1,161 @@
+<!doctype html>
+<!-- This Source Code Form is subject to the terms of the Mozilla Public
+     License, v. 2.0. If a copy of the MPL was not distributed with this
+     file, You can obtain one at https://mozilla.org/MPL/2.0/. -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ crate::strings::history::TITLE }} · {{ crate::strings::common::BRAND }}</title>
+  <link rel="icon" href="/favicon.ico" type="image/svg+xml">
+  <style>{{ style_css|safe }}</style>
+</head>
+<body>
+  <nav class="top">
+    <a class="brand" href="/">{{ crate::strings::common::BRAND }}</a>
+    <a href="/">{{ crate::strings::history::NAV_SEARCH }}</a>
+    <a href="/history" aria-current="page">{{ crate::strings::history::NAV_HISTORY }}</a>
+  </nav>
+  <main>
+  <h1>{{ crate::strings::history::TITLE }}</h1>
+  <p class="stats">{{ stats_line }}</p>
+  <form action="/history" method="get" class="filters">
+    <select name="since" aria-label="{{ crate::strings::history::SINCE_LABEL }}">
+      <option value="all"{% if since == "all" %} selected{% endif %}>{{ crate::strings::history::WINDOW_ALL }}</option>
+      <option value="24h"{% if since == "24h" %} selected{% endif %}>{{ crate::strings::history::WINDOW_24H }}</option>
+      <option value="7d"{% if since == "7d" %} selected{% endif %}>{{ crate::strings::history::WINDOW_7D }}</option>
+      <option value="30d"{% if since == "30d" %} selected{% endif %}>{{ crate::strings::history::WINDOW_30D }}</option>
+    </select>
+    <input type="search" name="q" value="{{ q }}" placeholder="{{ crate::strings::history::QUERY_PLACEHOLDER }}" aria-label="{{ crate::strings::history::QUERY_LABEL }}">
+    <label class="cached-only">
+      <input type="checkbox" name="cached" value="1"{% if cached %} checked{% endif %}>
+      {{ crate::strings::history::CACHED_ONLY }}
+    </label>
+    <button type="submit">{{ crate::strings::history::FILTER_SUBMIT }}</button>
+    {% if filters_active %}<a class="clear" href="/history">{{ crate::strings::history::CLEAR }}</a>{% endif %}
+  </form>
+  {% if rows.is_empty() %}
+  <p class="empty">{{ empty_message }}</p>
+  {% else %}
+  <table class="history">
+    <thead>
+      <tr>
+        <th class="c-when">{{ crate::strings::history::COL_WHEN }}</th>
+        <th class="c-query">{{ crate::strings::history::COL_QUERY }}</th>
+        <th class="c-source">{{ crate::strings::history::COL_SOURCE }}</th>
+        <th class="c-engines h-md">{{ crate::strings::history::COL_ENGINES }}</th>
+        <th class="c-n">{{ crate::strings::history::COL_RESULTS }}</th>
+        <th class="c-ms h-md">{{ crate::strings::history::COL_LATENCY }}</th>
+        <th class="c-by">{{ crate::strings::history::COL_CLIENT }}</th>
+      </tr>
+    </thead>
+    {% for row in rows %}
+    {% if let Some(day) = row.day_header %}
+    <tbody class="day-group">
+      <tr class="day"><td colspan="7">{{ day }}</td></tr>
+    </tbody>
+    {% endif %}
+    <tbody>
+      <tr class="{% if row.is_search %}search{% else %}click{% endif %}">
+        <td class="c-when">{{ row.when }}</td>
+        <td class="c-query">
+          {% if row.is_search %}<a href="{{ row.rerun_url }}">{{ row.query }}</a>
+          {% else %}{{ crate::strings::history::CLICK_ONLY }}{% endif %}
+        </td>
+        <td class="c-source">
+          {% if !row.source_url.is_empty() %}<a href="{{ row.source_url }}">{{ row.source }}</a>
+          {% else %}{{ row.source }}{% endif %}
+        </td>
+        <td class="c-engines h-md">{{ row.engines }}</td>
+        <td class="c-n">{{ row.result_count }}</td>
+        <td class="c-ms h-md">{{ row.latency }}</td>
+        <td class="c-by">{{ row.client }}</td>
+      </tr>
+      <tr class="detail">
+        <td colspan="7">
+          <span class="meta2">{{ row.result_count }} · {{ row.client }} · {{ row.when }}</span>
+          {% if row.is_search %}
+          <details{% if !row.clicks.is_empty() %} open{% endif %}>
+            <summary>{{ row.clicks.len() }} {{ row.clicks_word }}</summary>
+            {% for c in row.clicks %}
+            <div class="click-line">
+              <span class="cdom">{{ c.domain }}</span>
+              <a href="{{ c.url }}" target="_blank" rel="noopener">{{ c.title }}</a>
+              <span class="cpos">{{ crate::strings::history::POSITION_PREFIX }}{{ c.position }}</span>
+            </div>
+            {% endfor %}
+          </details>
+          <span class="row-actions">
+            <a href="{{ row.rerun_url }}">{{ crate::strings::history::RERUN }}</a>
+            <a href="{{ row.json_url }}" class="copy-json">{{ crate::strings::history::COPY_JSON }}</a>
+            {% if row.cached_live %}<a href="{{ row.source_url }}">{{ crate::strings::history::PAYLOAD }}</a>{% endif %}
+            <button
+              hx-delete="/api/history/{{ row.id }}"
+              hx-target="closest tbody"
+              hx-swap="delete"
+              hx-confirm="{{ row.delete_confirm }}"
+              hx-headers='{"X-Cauce-Client":"ui"}'
+              hx-on::response-error="var p=this.closest('td').querySelector('.row-error');if(p)p.textContent='{{ crate::strings::history::DELETE_FAILED }}'.replace('{status}',event.detail.xhr.status)"
+            >{{ crate::strings::history::DELETE }}</button>
+            <span class="row-error" role="status"></span>
+          </span>
+          <code class="copy-fallback" hidden></code>
+          {% else %}
+          {% for c in row.clicks %}
+          <div class="click-line">
+            <span class="cdom">{{ c.domain }}</span>
+            <a href="{{ c.url }}" target="_blank" rel="noopener">{{ c.title }}</a>
+            <span class="cpos">{{ crate::strings::history::POSITION_PREFIX }}{{ c.position }}</span>
+          </div>
+          {% endfor %}
+          {% endif %}
+        </td>
+      </tr>
+    </tbody>
+    {% endfor %}
+  </table>
+  {% endif %}
+  <div class="meta">
+    {% if !capped_line.is_empty() %}<span>{{ capped_line }}</span>{% endif %}
+    <span>{{ crate::strings::history::REQUEST_LABEL }} <span class="request-id">{{ request_id }}</span></span>
+  </div>
+  </main>
+  <script>{{ htmx_js|safe }}</script>
+  <script>
+    // `copy json`: fetch the cached /api/search payload into the clipboard;
+    // fall back to a selectable <code> with the URL when the clipboard API
+    // is unavailable or the fetch fails. The footer request id copies its
+    // text on click (selection fallback when the clipboard API is absent).
+    document.addEventListener('click', async (e) => {
+      const rid = e.target.closest('.request-id');
+      if (rid) {
+        try {
+          await navigator.clipboard.writeText(rid.textContent.trim());
+        } catch (_) {
+          const r = document.createRange();
+          r.selectNodeContents(rid);
+          const s = window.getSelection();
+          s.removeAllRanges();
+          s.addRange(r);
+        }
+        return;
+      }
+      const a = e.target.closest('a.copy-json');
+      if (!a) return;
+      e.preventDefault();
+      const code = a.closest('td').querySelector('.copy-fallback');
+      try {
+        const resp = await fetch(a.getAttribute('href'));
+        if (!resp.ok) throw new Error('status ' + resp.status);
+        await navigator.clipboard.writeText(await resp.text());
+        const label = a.dataset.label || a.textContent;
+        a.dataset.label = label;
+        a.textContent = '{{ crate::strings::history::COPIED }}';
+        setTimeout(() => { a.textContent = label; }, 1500);
+      } catch (err) {
+        if (code) { code.hidden = false; code.textContent = a.href; }
+      }
+    });
+  </script>
+</body>
+</html>

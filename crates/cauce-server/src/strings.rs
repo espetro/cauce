@@ -203,6 +203,77 @@ pub mod settings {
         "Saving needs JavaScript (the form issues PUT /api/config via htmx).";
 }
 
+/// `/history` page copy (W2-02).
+pub mod history {
+    pub const NAV_SEARCH: &str = "search";
+    pub const NAV_HISTORY: &str = "history";
+    pub const TITLE: &str = "History";
+    /// Stats line: `N searches in last 24h · N total · N clicks today`.
+    pub const STAT_SEARCHES_24H: &str = "searches in last 24h";
+    pub const STAT_TOTAL: &str = "total";
+    pub const STAT_CLICKS_TODAY: &str = "clicks today";
+    pub const FILTER_SUBMIT: &str = "Filter";
+    pub const WINDOW_24H: &str = "last 24h";
+    pub const WINDOW_7D: &str = "last 7d";
+    pub const WINDOW_30D: &str = "last 30d";
+    pub const WINDOW_ALL: &str = "all time";
+    /// `aria-label` for the `since` select; the control renders no
+    /// visible label, so the accessible name comes from the attribute.
+    pub const SINCE_LABEL: &str = "time window";
+    /// `aria-label` for the `q` input; the placeholder is not an
+    /// accessible name.
+    pub const QUERY_LABEL: &str = "filter by query text";
+    pub const QUERY_PLACEHOLDER: &str = "filter query text...";
+    pub const CACHED_ONLY: &str = "cached only";
+    pub const CLEAR: &str = "clear";
+    pub const EMPTY: &str = "nothing searched yet. run a search and it lands here.";
+    /// Filtered-empty fragments, composed as
+    /// `no searches match "q" in the last 7 days that are still cached.`
+    pub const EF_MATCH: &str = "no searches match";
+    pub const EF_NONE: &str = "no searches";
+    pub const IN_24H: &str = "in the last 24h";
+    pub const IN_7D: &str = "in the last 7 days";
+    pub const IN_30D: &str = "in the last 30 days";
+    pub const IN_SINCE: &str = "since";
+    pub const EF_CACHED: &str = "that are still cached";
+    /// Cap note: `showing 200 of N · use the filters to reach older searches`.
+    pub const CAPPED_SHOWING: &str = "showing";
+    pub const CAPPED_OF: &str = "of";
+    pub const CAPPED_HINT: &str = "use the filters to reach older searches";
+    pub const COL_QUERY: &str = "query";
+    pub const COL_WHEN: &str = "when";
+    pub const COL_SOURCE: &str = "source";
+    pub const COL_ENGINES: &str = "engines";
+    pub const COL_RESULTS: &str = "n";
+    pub const COL_LATENCY: &str = "ms";
+    pub const COL_CLIENT: &str = "by";
+    /// Source-cell fragments: `cached · 41m`, `cached · expired`,
+    /// `network · t1`.
+    pub const SRC_CACHED: &str = "cached";
+    pub const SRC_EXPIRED: &str = "expired";
+    pub const SRC_NETWORK: &str = "network";
+    /// `t` in `network · t1`.
+    pub const TIER_PREFIX: &str = "t";
+    /// `#` in a click's `#position` marker.
+    pub const POSITION_PREFIX: &str = "#";
+    pub const CLICKS_WORD: &str = "clicks";
+    /// Singular of `CLICKS_WORD` for the delete confirm.
+    pub const CLICK_ONE: &str = "click";
+    pub const CLICK_ONLY: &str = "(click only)";
+    pub const RERUN: &str = "re-run";
+    pub const COPY_JSON: &str = "copy json";
+    pub const COPIED: &str = "copied";
+    pub const PAYLOAD: &str = "payload";
+    pub const DELETE: &str = "delete";
+    pub const DELETE_CONFIRM: &str = "Delete this search?";
+    /// `hx-confirm` prefix when the row has nested clicks, composed as
+    /// `Delete this search and its {n} {click|clicks}?`.
+    pub const DELETE_CONFIRM_CLICKS_PRE: &str = "Delete this search and its";
+    /// Inline error a failed `DELETE /api/history/<id>` writes into the
+    /// row (htmx `response-error`); `{status}` is replaced client-side.
+    pub const DELETE_FAILED: &str = "error: delete failed ({status})";
+    pub const REQUEST_LABEL: &str = "request";
+}
 /// `/dashboard` (W2-03).
 pub mod dashboard {
     pub const TITLE: &str = "dashboard";

@@ -523,6 +523,7 @@ impl CauceMcp {
             .list_history(&HistoryFilter {
                 since: None,
                 q: None,
+                cached: false,
                 limit: HISTORY_LIMIT,
             })
             .await
