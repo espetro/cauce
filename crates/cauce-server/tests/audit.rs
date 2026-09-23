@@ -178,8 +178,8 @@ async fn audit_page_filters_by_actor_and_action() {
         "cli filter should hide the ui row: {body}"
     );
     assert!(
-        body.contains("No audit rows match"),
-        "filtered empty state missing: {body}"
+        body.contains("no audit rows match actor &#34;cli&#34;"),
+        "filtered empty state should name the active filter: {body}"
     );
 
     let (status, body) = get_html(&app, "/audit?action=cache.delete").await;
@@ -223,8 +223,18 @@ async fn audit_page_shares_api_defaults_and_empty_filters() {
     let (status, body) = get_html(&app, "/audit?actor=&action=").await;
     assert_eq!(status, StatusCode::OK, "{body}");
     assert!(
-        body.contains("<span>50 rows</span>"),
+        body.contains("50 rows"),
         "HTML must use the API default limit and treat empty filters equally: {body}"
+    );
+    // The listing is exactly at the limit: the cap note must show.
+    assert!(
+        body.contains("showing the newest 50"),
+        "cap note missing: {body}"
+    );
+    // All 50 seeded rows have null details: no details toggle may render.
+    assert!(
+        !body.contains("<details"),
+        "null details must omit the toggle: {body}"
     );
 }
 
@@ -243,78 +253,118 @@ async fn audit_page_negotiates_json() {
     assert_eq!(rows[0]["actor"], "ui");
 }
 
-/// JSONL records in the shape `jsonl.rs` writes for a replay search: the
-/// request span, the `engine` span (open + close with `busy_ms`) and one
-/// event inside it.
-fn fixture_lines(request_id: &uuid::Uuid) -> Vec<String> {
-    let rid = request_id.to_string();
-    vec![
-        format!(
-            r#"{{"v":1,"kind":"span_open","ts":"2026-10-28T12:00:00.000Z","level":"INFO","target":"cauce_core::pipeline","request_id":"{rid}","span":{{"id":1,"name":"pipeline.search","parent":null,"fields":{{"request_id":"{rid}","query":"replay trace","client":"ui"}}}},"spans":["pipeline.search"]}}"#
-        ),
-        format!(
-            r#"{{"v":1,"kind":"span_open","ts":"2026-10-28T12:00:00.010Z","level":"INFO","target":"cauce_core::pipeline","request_id":"{rid}","span":{{"id":2,"name":"engine","parent":1,"fields":{{"request_id":"{rid}","engine":"replay","tier":1}}}},"spans":["pipeline.search","engine"]}}"#
-        ),
-        format!(
-            r#"{{"v":1,"kind":"event","ts":"2026-10-28T12:00:00.020Z","level":"INFO","target":"cauce_core::pipeline","request_id":"{rid}","span":{{"id":2,"name":"engine"}},"spans":["pipeline.search","engine"],"fields":{{"message":"engine done","results":10}}}}"#
-        ),
-        format!(
-            r#"{{"v":1,"kind":"span_close","ts":"2026-10-28T12:00:00.030Z","level":"INFO","target":"cauce_core::pipeline","request_id":"{rid}","span":{{"id":2,"name":"engine","parent":1,"fields":{{"request_id":"{rid}","engine":"replay","status":"ok","results":10}}}},"spans":["pipeline.search","engine"],"busy_ms":12.4}}"#
-        ),
-        format!(
-            r#"{{"v":1,"kind":"span_close","ts":"2026-10-28T12:00:00.050Z","level":"INFO","target":"cauce_core::pipeline","request_id":"{rid}","span":{{"id":1,"name":"pipeline.search","parent":null,"fields":{{"request_id":"{rid}","query":"replay trace","client":"ui"}}}},"spans":["pipeline.search"],"busy_ms":43.1}}"#
-        ),
-    ]
+/// The filter `<select>`s are populated from the distinct actors/actions
+/// the store has seen (`Store::audit_facets`), each with an `any` default.
+#[tokio::test]
+async fn audit_page_selects_populate_from_facets() {
+    let (app, _state, _tmp) = app();
+    ui_cache_delete(&app, "audit-facets-seed").await;
+
+    let (status, body) = get_html(&app, "/audit").await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert!(body.contains("<select name=\"actor\""), "{body}");
+    assert!(body.contains("<select name=\"action\""), "{body}");
+    assert!(
+        body.contains("<option value=\"ui\""),
+        "actor option missing: {body}"
+    );
+    assert!(
+        body.contains("<option value=\"cache.delete\""),
+        "action option missing: {body}"
+    );
 }
 
-/// W2-06 acceptance, second half: `/trace/<id>` of a replay search lists
-/// the engine span. The page reads the same JSONL `cauce trace` reads and
-/// renders it through `render_trace`, so the assertions track the CLI's
-/// golden-path ones (`engine`, `replay`, a duration).
+/// Filtered listings say `N rows matching` and the filtered-empty copy
+/// names every active filter.
 #[tokio::test]
-async fn trace_page_lists_engine_span() {
+async fn audit_page_filtered_count_and_empty_copy() {
+    let (app, _state, _tmp) = app();
+    ui_cache_delete(&app, "audit-count-seed").await;
+
+    let (status, body) = get_html(&app, "/audit?actor=ui").await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert!(body.contains("1 rows matching"), "{body}");
+
+    let (status, body) = get_html(&app, "/audit?actor=ui&action=config.put").await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert!(body.contains("0 rows matching"), "{body}");
+    assert!(
+        body.contains("no audit rows match actor &#34;ui&#34; and action &#34;config.put&#34;"),
+        "filtered empty must name both filters: {body}"
+    );
+}
+
+/// W2-06 acceptance, second half: `/trace/<id>` of a real replay search
+/// through the app lists the `replay` engine span in both the timeline and
+/// the HTML spans list. The search runs under a JSONL subscriber pointed at
+/// the test's logs dir, the same wiring `cauce serve` installs.
+#[tokio::test]
+async fn trace_page_lists_replay_span() {
     let (app, _state, tmp) = app();
-    let request_id = uuid::Uuid::now_v7();
     let logs_dir = tmp.path().join("data").join("logs");
     std::fs::create_dir_all(&logs_dir).unwrap();
-    let mut content = fixture_lines(&request_id).join("\n");
-    content.push('\n');
-    std::fs::write(logs_dir.join("cauce-2026-10-28.jsonl"), content).unwrap();
+
+    let obs = cauce_server::observability::ObservabilityConfig {
+        logs_dir: logs_dir.clone(),
+        ..Default::default()
+    };
+    let (dispatch, guard) = cauce_server::observability::build(&obs).expect("obs build");
+    let request_id = {
+        let _default = tracing::dispatcher::set_default(&dispatch);
+        let request = Request::builder()
+            .method(Method::GET)
+            .uri("/api/search?q=trace-replay")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.clone().oneshot(request).await.expect("response");
+        assert_eq!(resp.status(), StatusCode::OK);
+        resp.headers()["x-request-id"].to_str().unwrap().to_string()
+    };
+    drop(guard); // flush the non-blocking JSONL writer
 
     let (status, body) = get_html(&app, &format!("/trace/{request_id}")).await;
     assert_eq!(status, StatusCode::OK, "{body}");
+    assert!(body.contains(&request_id), "traced id missing: {body}");
     assert!(
-        body.contains("engine=replay"),
-        "engine span missing from trace page:\n{body}"
+        body.contains("replay"),
+        "replay engine span missing from trace page:\n{body}"
     );
+    // The HTML spans list is one <details> per span.
     assert!(
-        body.contains("ms"),
-        "span durations missing from trace page:\n{body}"
+        body.contains("<details class=\"span\">"),
+        "spans list missing: {body}"
     );
-    assert!(
-        body.contains(&request_id.to_string()),
-        "traced id missing: {body}"
-    );
+    // Footer carries the page render's own request id, distinct from the
+    // traced id.
+    assert!(body.contains("class=\"request-id\""), "{body}");
 }
 
-/// A non-UUID trace id is a 400 (the CLI's usage-error contract), not a
-/// panic or a 404 — the routes-table probe hits this path too.
+/// A malformed trace id renders the page frame with `that is not a request
+/// id` at 400; the JSON arm keeps the ApiError envelope.
 #[tokio::test]
 async fn trace_page_rejects_bad_id() {
     let (app, _state, _tmp) = app();
-    let (status, body) = get_html(&app, "/trace/replay").await;
+    let (status, body) = get_html(&app, "/trace/not-an-id").await;
     assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
-    assert!(body.contains("not a UUID"), "{body}");
+    assert!(body.contains("that is not a request id"), "{body}");
+    assert!(body.contains("Trace"), "{body}");
+
+    let (status, body) = get_json(&app, "/trace/not-an-id").await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    assert_eq!(body["error"]["code"], "bad_request", "{body}");
 }
 
-/// A request id with no log records renders the "no records" timeline, not
-/// an error page — retention may have already dropped the files.
+/// A well-formed id with no log records is a 404 inside the page frame,
+/// with the `logs.retention_days` hint.
 #[tokio::test]
-async fn trace_page_empty_when_no_records() {
+async fn trace_page_not_found_frame() {
     let (app, _state, tmp) = app();
     std::fs::create_dir_all(tmp.path().join("data").join("logs")).unwrap();
     let request_id = uuid::Uuid::now_v7();
     let (status, body) = get_html(&app, &format!("/trace/{request_id}")).await;
-    assert_eq!(status, StatusCode::OK, "{body}");
-    assert!(body.contains("no records found"), "{body}");
+    assert_eq!(status, StatusCode::NOT_FOUND, "{body}");
+    assert!(
+        body.contains("no trace for this request id. traces are kept for logs.retention_days days"),
+        "retention hint missing: {body}"
+    );
 }
