@@ -69,6 +69,11 @@ const EXPECTED_WAVE2_UI_MOUNTED: &[(&str, &str)] = &[
     ("GET", "/opensearch.xml"),
     ("GET", "/favicon.ico"),
 ];
+
+/// Wave-2 API rows mounted so far: the SSE stream endpoint (W2-01). It is
+/// not a `ui`-gated page, so it mounts in every build including headless.
+const EXPECTED_WAVE2_MOUNTED: &[(&str, &str)] = &[("GET", "/api/search/stream")];
+
 /// Serialises tests that mutate process env (`CAUCE_CONFIG_DIR` and friends).
 /// Under nextest each test is its own process anyway; this keeps plain
 /// `cargo test` (one process per test binary) safe too.
@@ -310,6 +315,7 @@ fn mounted_routes_match_declaration() {
     let mut expected: BTreeSet<(String, String)> = EXPECTED_WAVE0_JSON
         .iter()
         .chain(EXPECTED_WAVE1_MOUNTED)
+        .chain(EXPECTED_WAVE2_MOUNTED)
         .map(|(m, p)| (m.to_string(), p.to_string()))
         .collect();
     if cfg!(feature = "ui") {
@@ -515,6 +521,66 @@ async fn search_network_then_cache_hit() {
     assert_eq!(source["cache"]["stale"], false);
     // A second request gets its own id.
     assert_ne!(headers["x-request-id"].to_str().unwrap(), request_id);
+}
+
+#[tokio::test]
+async fn search_stream_sends_result_batches_then_flattened_meta() {
+    let (router, _state, _tmp) = app();
+    let request = Request::builder()
+        .method("GET")
+        .uri("/api/search/stream?q=sse-test")
+        .header("accept", "text/event-stream")
+        .body(Body::empty())
+        .unwrap();
+    let response = router.oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response.headers()[header::CONTENT_TYPE],
+        "text/event-stream"
+    );
+    let request_id = response.headers()["x-request-id"]
+        .to_str()
+        .unwrap()
+        .to_string();
+    let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let body = String::from_utf8(bytes.to_vec()).unwrap();
+    assert!(body.contains("event: results\n"), "{body}");
+    assert!(body.contains("event: meta\n"), "{body}");
+    assert!(
+        body.find("event: results").unwrap() < body.find("event: meta").unwrap(),
+        "results must precede terminal meta: {body}"
+    );
+    let meta_frame = body
+        .split("\n\n")
+        .find(|frame| frame.starts_with("event: meta"))
+        .expect("meta frame");
+    let meta_json: Value = serde_json::from_str(
+        meta_frame
+            .lines()
+            .find_map(|line| line.strip_prefix("data: "))
+            .expect("meta data line"),
+    )
+    .unwrap();
+    assert_eq!(meta_json["request_id"], request_id);
+    assert_eq!(meta_json["engines_skipped"], json!([]));
+    assert_eq!(meta_json["order"].as_array().unwrap().len(), 10);
+}
+
+#[tokio::test]
+async fn search_stream_maps_pipeline_failures_to_error_events() {
+    let (router, _state, _tmp) = app();
+    let request = Request::builder()
+        .method("GET")
+        .uri("/api/search/stream?q=sse-error&engines=unknown")
+        .body(Body::empty())
+        .unwrap();
+    let response = router.oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let body = String::from_utf8(bytes.to_vec()).unwrap();
+    assert!(body.contains("event: error\n"), "{body}");
+    assert!(!body.contains("event: meta\n"), "{body}");
+    assert!(body.contains("\"code\":\"unknown_engines\""), "{body}");
 }
 
 /// An inbound `X-Request-Id` that parses as a UUID is honoured end to end.

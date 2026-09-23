@@ -75,6 +75,12 @@ pub struct SearchResult {
 pub struct SearchMeta {
     pub source: Source,
     pub engines_used: Vec<EngineReport>,
+    /// Engine ids suppressed by an open breaker on this request (W2-01
+    /// amendment): collected at the fan-out gate and surfaced on the page
+    /// meta line and the SSE `meta` event. `default` keeps `payload_json`
+    /// rows written before the field existed decodable.
+    #[serde(default)]
+    pub engines_skipped: Vec<EngineId>,
     /// True when the hard deadline cancelled at least one engine call.
     pub deadline_hit: bool,
     pub elapsed_ms: u32,
@@ -88,4 +94,40 @@ pub struct SearchResponse {
     pub query: String,
     pub results: Vec<SearchResult>,
     pub meta: SearchMeta,
+}
+
+/// One event of [`crate::SearchPipeline::search_stream`] (W2-01):
+/// `Results` batches arrive per engine in return order; `Meta` is the
+/// terminal event on success, `Error` on failure. The channel closes after
+/// the terminal event.
+#[derive(Debug, Clone)]
+pub enum StreamEvent {
+    /// One engine's batch: `results` is that engine's raw page (pre-merge);
+    /// `elapsed_ms` is measured from request start. Whole-response serves
+    /// (tier-1/2 hit, stale overflow, singleflight join) emit one batch per
+    /// producing engine instead.
+    Results {
+        engine: EngineId,
+        results: Vec<SearchResult>,
+        elapsed_ms: u32,
+    },
+    /// Terminal metadata — the shared [`SearchMeta`] plus `order`.
+    Meta(StreamMeta),
+    /// Terminal failure; the inbound surface maps the typed error to its
+    /// wire code (HTTP status for `GET /api/search`, the SSE `error`
+    /// payload for `GET /api/search/stream`).
+    Error(crate::pipeline::PipelineError),
+}
+
+/// The `meta` event payload of the search stream (W2-01): the canonical
+/// [`SearchMeta`] flattened, plus `order` — the final RRF ordering of the
+/// merged results as URLs, best first. The progressive page never reorders
+/// what it rendered; `order` is what lets it tell the user how many late
+/// results would have ranked above the visible ones.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct StreamMeta {
+    #[serde(flatten)]
+    pub meta: SearchMeta,
+    /// Final RRF order: the emitted results' URLs, best first.
+    pub order: Vec<Url>,
 }

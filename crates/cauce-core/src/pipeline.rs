@@ -84,6 +84,8 @@ use tracing::{Instrument, debug, info, info_span, warn};
 use url::Url;
 use uuid::Uuid;
 
+use tokio::sync::mpsc;
+
 use crate::admission::{Admission, FlightResult, Lead};
 use crate::cache::{CacheKey, CachedSearch, lexical_tokens, normalize_query, token_jaccard};
 use crate::config::LexicalConfig;
@@ -93,7 +95,8 @@ use crate::metrics::{Metrics, engine_error_label};
 use crate::normalize::normalize_url;
 use crate::request::SearchRequest;
 use crate::response::{
-    EngineReport, EngineStatus, SearchMeta, SearchResponse, SearchResult, Source,
+    EngineReport, EngineStatus, SearchMeta, SearchResponse, SearchResult, Source, StreamEvent,
+    StreamMeta,
 };
 use crate::store::{BreakerState, LogSource, SearchLogRow, Store, StoreError};
 
@@ -280,6 +283,50 @@ struct EngineOutcome {
     outcome: Result<Result<Vec<SearchResult>, EngineError>, tokio::time::error::Elapsed>,
 }
 
+/// Fan-out bookkeeping shared by the collect and incremental stream paths.
+struct FanOut {
+    answered: Vec<bool>,
+    reports: Vec<(usize, EngineReport)>,
+    failures: Vec<(usize, EngineId, EngineError)>,
+    deadline_hit: bool,
+    had_answer: bool,
+    ttfr_recorded: bool,
+    started_at: Instant,
+}
+
+impl FanOut {
+    fn new(engines: usize, started_at: Instant) -> Self {
+        Self {
+            answered: vec![false; engines],
+            reports: Vec::with_capacity(engines),
+            failures: Vec::new(),
+            deadline_hit: false,
+            had_answer: false,
+            ttfr_recorded: false,
+            started_at,
+        }
+    }
+}
+
+/// Borrowed context shared by the fetch completion stages.
+struct FetchCtx<'a> {
+    req: &'a SearchRequest,
+    key: &'a CacheKey,
+    ttl: Duration,
+    request_id: Uuid,
+    started: Instant,
+}
+
+/// Shared borrowed state for a progressive search flight.
+struct StreamCtx<'a> {
+    req: &'a SearchRequest,
+    key: &'a CacheKey,
+    ttl: Duration,
+    request_id: Uuid,
+    started: Instant,
+    tx: &'a mpsc::UnboundedSender<StreamEvent>,
+}
+
 /// The search pipeline: tier-1 cache lookup, admission (singleflight +
 /// bounded per-engine queue), parallel fan-out under a hard deadline,
 /// RRF merge, persist, unconditional `search_log`.
@@ -441,40 +488,78 @@ impl SearchPipeline {
         self.run(req, opts.ttl, request_id).instrument(span).await
     }
 
-    async fn run(
+    /// Streaming variant of [`SearchPipeline::search_opts`] (W2-01, parent
+    /// plan 4.4 step 7): engine batches are yielded as calls return
+    /// instead of waiting for the whole fan-out. Same cache/admission/
+    /// breaker semantics as `search`:
+    ///
+    /// - a tier-1 hit emits one `results` batch per producing engine plus
+    ///   the terminal `meta`, still writing its `search_log` row;
+    /// - a miss elects a singleflight leader whose stream emits batches as
+    ///   its engines return (merge state is kept incrementally and the
+    ///   final RRF order goes out in `meta.order`); a follower joining an
+    ///   in-flight flight emits the shared response once it publishes,
+    ///   batched per producing engine;
+    /// - pipeline failures arrive as a terminal `error` event; the inbound
+    ///   surface maps the typed [`PipelineError`] to its wire code.
+    ///
+    /// The work runs in a spawned task holding a pipeline clone, so a
+    /// dropped receiver (disconnected SSE client) still finishes the
+    /// flight, persists, and publishes to followers. The channel closes
+    /// after the terminal `meta`/`error` event.
+    pub fn search_stream(
         &self,
         req: &SearchRequest,
-        ttl_override: Option<Duration>,
-        request_id: Uuid,
-    ) -> Result<SearchResponse, PipelineError> {
-        let started = Instant::now();
-        let query = normalize_query(&req.q);
-        let key = CacheKey::from(req);
+        opts: SearchOpts,
+    ) -> mpsc::UnboundedReceiver<StreamEvent> {
+        let (tx, rx) = mpsc::unbounded_channel();
+        let request_id = opts.request_id.unwrap_or_else(Uuid::now_v7);
+        let span = info_span!(
+            "pipeline.search",
+            request_id = %request_id,
+            query = %normalize_query(&req.q),
+            page = req.page,
+            client = %req.client,
+            // Runnable count (post-pin) is recorded once known.
+            engines = tracing::field::Empty,
+            streaming = true,
+        );
+        let pipe = self.clone();
+        let req = req.clone();
+        tokio::spawn(
+            async move { pipe.run_stream(&req, opts.ttl, request_id, tx).await }.instrument(span),
+        );
+        rx
+    }
 
-        // ---- pin validation (issue #90 strict contract) -------------------
-        // Any pin id outside the configured set rejects the whole request —
-        // ahead of the cache lookups, so a stale pin can never be served
-        // out of a row a silently-truncated run once stored. The
-        // unconditional `search_log` row is still written (`engines` stays
-        // empty: nothing ran).
+    /// Reject invalid engine pins before cache lookups on both the ordinary
+    /// and streaming surfaces. The rejected request still receives its
+    /// unconditional search-log row.
+    async fn validate_engine_pin(
+        &self,
+        req: &SearchRequest,
+        key: &CacheKey,
+        query: &str,
+        started: Instant,
+    ) -> Result<(), PipelineError> {
         if let Some(ids) = &req.engines {
             let configured: Vec<EngineId> = self.engines.iter().map(|e| e.id()).collect();
-            let mut unknown: Vec<EngineId> = Vec::new();
+            let mut unknown = Vec::new();
             for id in ids {
                 if !configured.contains(id) && !unknown.contains(id) {
                     unknown.push(id.clone());
                 }
             }
             if !unknown.is_empty() {
-                let err = PipelineError::UnknownEngines {
+                let error = PipelineError::UnknownEngines {
                     unknown,
                     configured,
                 };
-                warn!(pinned = ?ids, error = %err, "unknown engine ids in pin");
+                warn!(pinned = ?ids, error = %error, "unknown engine ids in pin");
                 self.write_log(
                     req,
-                    &key,
-                    &query,
+                    key,
+                    query,
                     LogRow {
                         source: LogSource::Network,
                         tier: None,
@@ -487,9 +572,274 @@ impl SearchPipeline {
                 .await;
                 self.metrics
                     .record_search(&req.client, "network", None, started.elapsed());
-                return Err(err);
+                return Err(error);
             }
         }
+        Ok(())
+    }
+
+    /// The streaming request body: tier-1 hit, then the admission election
+    /// — leaders run [`SearchPipeline::lead_stream`] (which emits events as
+    /// it goes) while followers await the shared outcome and emit it at
+    /// once. Every request lands in [`SearchPipeline::shared_response`] for
+    /// its own `search_log` row and metrics, exactly like `run`.
+    async fn run_stream(
+        &self,
+        req: &SearchRequest,
+        ttl_override: Option<Duration>,
+        request_id: Uuid,
+        tx: mpsc::UnboundedSender<StreamEvent>,
+    ) {
+        let started = Instant::now();
+        let query = normalize_query(&req.q);
+        let key = CacheKey::from(req);
+        if let Err(error) = self.validate_engine_pin(req, &key, &query, started).await {
+            let _ = tx.send(StreamEvent::Error(error));
+            return;
+        }
+
+        // ---- tier-1 exact lookup ---------------------------------------
+        if let Some(hit) = self.cache_lookup(&key, request_id).await {
+            let engines = hit.engines.clone();
+            let resp = self.cache_hit_response(hit, Tier::T1, request_id, started, false);
+            self.emit_response(&tx, &resp, started);
+            self.write_log(
+                req,
+                &key,
+                &query,
+                LogRow {
+                    source: LogSource::Cache,
+                    tier: Some(Tier::T1),
+                    result_count: resp.results.len() as u32,
+                    engines,
+                    deadline_hit: false,
+                },
+                started,
+            )
+            .await;
+            info!(
+                source = "cache",
+                results = resp.results.len(),
+                elapsed_ms = resp.meta.elapsed_ms,
+                "search complete"
+            );
+            self.metrics
+                .record_search(&req.client, "cache", Some(Tier::T1), started.elapsed());
+            return;
+        }
+
+        // ---- fan-out set ---------------------------------------------------
+        let runnable = self.runnable(req);
+        // `pipeline.search` is the current span here (via `instrument`).
+        tracing::Span::current().record("engines", runnable.len() as u64);
+
+        // ---- admission: singleflight + bounded per-engine queue ----------
+        // Same election contract as `run`: one leader per key does the
+        // work, followers await the shared outcome. The leader emits its
+        // own events inside `lead_stream`; a follower emits once, below.
+        let ttl = ttl_override.unwrap_or(self.default_ttl).min(self.ttl_cap);
+        let stream = StreamCtx {
+            req,
+            key: &key,
+            ttl,
+            request_id,
+            started,
+            tx: &tx,
+        };
+        let mut re_elected = false;
+        let mut led = false;
+        let shared: FlightResult = loop {
+            let (lead, mut rx) = self.admission.enter(&key);
+            if let Some(lead) = lead {
+                led = true;
+                break self.lead_stream(&stream, &runnable, lead).await;
+            }
+            match rx.wait_for(|outcome| outcome.is_some()).await {
+                Ok(guard) => break guard.clone().expect("wait_for observed Some"),
+                Err(_) => {
+                    // The flight task died without publishing (panic/abort);
+                    // the `Lead` drop freed the slot, so the next `enter`
+                    // elects a new leader. Retry once, then surface the
+                    // failure instead of spinning on a poisoned fetch.
+                    if re_elected {
+                        break Err(PipelineError::AllEnginesFailed(
+                            runnable
+                                .iter()
+                                .map(|e| {
+                                    (
+                                        e.id(),
+                                        EngineError::Transport(
+                                            "in-flight search task vanished".to_string(),
+                                        ),
+                                    )
+                                })
+                                .collect(),
+                        ));
+                    }
+                    re_elected = true;
+                    warn!("admission: flight vanished before publishing; re-electing");
+                    continue;
+                }
+            }
+        };
+
+        let res = self
+            .shared_response(req, &key, &runnable, shared, request_id, started)
+            .await;
+        match res {
+            // The leader already emitted its batches and `meta` inside
+            // `lead_stream`; a follower emits the whole shared response now.
+            Ok(resp) if !led => self.emit_response(&tx, &resp, started),
+            Ok(_) => {}
+            Err(e) => {
+                let _ = tx.send(StreamEvent::Error(e));
+            }
+        }
+    }
+
+    /// The streaming leader's flight body: the same stages as
+    /// [`SearchPipeline::flight`] (tier-2 lexical, bounded permit wait with
+    /// overflow fallback, fan-out, publish, stale refresh) but the fan-out
+    /// is [`SearchPipeline::fetch_stream`], which pushes a `results` event
+    /// per engine the moment its call resolves and the `meta` event once
+    /// the merge is final. Returns the published [`FlightResult`]; error
+    /// events are emitted by `run_stream` after `shared_response` so every
+    /// failure still writes its `search_log` row first.
+    async fn lead_stream(
+        &self,
+        stream: &StreamCtx<'_>,
+        runnable: &[Arc<dyn Engine>],
+        lead: Lead,
+    ) -> FlightResult {
+        // ---- tier-2 lexical lookup (W1-10) -------------------------------
+        if self.lexical.enabled
+            && let Some(hit) = self
+                .lexical_lookup(
+                    stream.req,
+                    &normalize_query(&stream.req.q),
+                    stream.request_id,
+                )
+                .await
+        {
+            let resp = Arc::new(self.cache_hit_response(
+                hit,
+                Tier::T2,
+                stream.request_id,
+                stream.started,
+                false,
+            ));
+            self.emit_response(stream.tx, &resp, stream.started);
+            lead.complete(Ok(resp.clone()));
+            return Ok(resp);
+        }
+        if runnable.is_empty() {
+            warn!(pinned = ?stream.req.engines, "no engines to run");
+            let err = PipelineError::NoEngines;
+            lead.complete(Err(err.clone()));
+            return Err(err);
+        }
+
+        let ids: Vec<EngineId> = runnable.iter().map(|e| e.id()).collect();
+        let queued = Instant::now();
+        let permits = self.admission.acquire(&ids).await;
+        self.metrics.record_admission_wait(queued.elapsed());
+        let outcome: FlightResult = match permits {
+            Ok(_permits) => self.fetch_stream(stream, runnable).await.map(Arc::new),
+            Err(_) => {
+                self.overflow(stream.key, stream.request_id, stream.started)
+                    .await
+            }
+        };
+        // A stored row served on overflow streams like a cache hit (the
+        // network path already emitted its own events inside fetch_stream).
+        if let Ok(resp) = &outcome
+            && matches!(resp.meta.source, Source::Cache { .. })
+        {
+            self.emit_response(stream.tx, resp, stream.started);
+        }
+        let served_stale = matches!(
+            &outcome,
+            Ok(resp) if matches!(resp.meta.source, Source::Cache { stale: true, .. })
+        );
+        lead.complete(outcome.clone());
+        // The refresh is spawned *after* `complete` cleared the slot so it
+        // can elect itself, same as `flight`.
+        if served_stale {
+            self.spawn_refresh(
+                stream.req.clone(),
+                stream.key.clone(),
+                runnable.to_vec(),
+                stream.ttl,
+            );
+        }
+        outcome
+    }
+
+    /// Emit a complete response as one `results` batch per producing
+    /// engine plus the terminal `meta` — used by every non-incremental
+    /// serve (tier-1/2 hits, stale overflow, singleflight followers). Batch
+    /// order is `engines_used` fan-out order; a leftover batch labelled
+    /// `merged` carries results whose producing engine is not in the
+    /// reports (belt-and-braces for stored payloads).
+    fn emit_response(
+        &self,
+        tx: &mpsc::UnboundedSender<StreamEvent>,
+        resp: &SearchResponse,
+        started: Instant,
+    ) {
+        let elapsed_ms = millis(started.elapsed());
+        let mut emitted = vec![false; resp.results.len()];
+        for report in &resp.meta.engines_used {
+            if !matches!(report.status, EngineStatus::Ok) {
+                continue;
+            }
+            let mut batch = Vec::new();
+            for (i, r) in resp.results.iter().enumerate() {
+                if r.engine == report.engine {
+                    emitted[i] = true;
+                    batch.push(r.clone());
+                }
+            }
+            if !batch.is_empty() {
+                let _ = tx.send(StreamEvent::Results {
+                    engine: report.engine.clone(),
+                    results: batch,
+                    elapsed_ms,
+                });
+            }
+        }
+        let rest: Vec<SearchResult> = resp
+            .results
+            .iter()
+            .zip(&emitted)
+            .filter(|(_, seen)| !**seen)
+            .map(|(r, _)| r.clone())
+            .collect();
+        if !rest.is_empty() {
+            let _ = tx.send(StreamEvent::Results {
+                engine: EngineId::from("merged"),
+                results: rest,
+                elapsed_ms,
+            });
+        }
+        let _ = tx.send(StreamEvent::Meta(StreamMeta {
+            meta: resp.meta.clone(),
+            order: resp.results.iter().map(|r| r.url.clone()).collect(),
+        }));
+    }
+
+    async fn run(
+        &self,
+        req: &SearchRequest,
+        ttl_override: Option<Duration>,
+        request_id: Uuid,
+    ) -> Result<SearchResponse, PipelineError> {
+        let started = Instant::now();
+        let query = normalize_query(&req.q);
+        let key = CacheKey::from(req);
+
+        // ---- strict engine-pin validation before cache lookup (#90) -------
+        self.validate_engine_pin(req, &key, &query, started).await?;
 
         // ---- tier-1 exact lookup ---------------------------------------
         if let Some(hit) = self.cache_lookup(&key, request_id).await {
@@ -908,12 +1258,102 @@ impl SearchPipeline {
         request_id: Uuid,
         started: Instant,
     ) -> Result<SearchResponse, PipelineError> {
-        // ---- breaker gate (W1-06) -----------------------------------------
-        // `Open` engines are skipped, `HalfOpen` admits exactly one probe.
-        // Gated here — after the permit wait, immediately before fan-out —
-        // so a claimed probe is always followed by its call: the tier-2 hit
-        // and overflow paths return before this point and never consume the
-        // single probe slot.
+        let (runnable, skipped) = self.breaker_gate(runnable, request_id);
+        if runnable.is_empty() {
+            // Nothing ran; `shared_response` still writes this request's
+            // search_log row on the error path.
+            return Err(PipelineError::BreakerOpen(skipped));
+        }
+
+        let mut fan = FanOut::new(runnable.len(), started);
+        let mut ok_results: Vec<(usize, Vec<SearchResult>)> = Vec::new();
+        for outcome in self.fan_out(req, &runnable, request_id).await {
+            let idx = outcome.idx;
+            if let Some(results) = self.fold_outcome(&mut fan, outcome, started) {
+                ok_results.push((idx, results));
+            }
+        }
+        let merged = self.merge_outcomes(&runnable, &mut fan, ok_results, request_id);
+
+        let ctx = FetchCtx {
+            req,
+            key,
+            ttl,
+            request_id,
+            started,
+        };
+        self.finish_fetch(skipped, fan, merged, ctx).await
+    }
+
+    /// The streaming fan-out (W2-01): identical stages to
+    /// [`SearchPipeline::fetch`] — breaker gate, per-engine reports,
+    /// health, merge, persist — but each engine's page is pushed as a
+    /// `results` event the moment its call resolves, merge state is kept
+    /// incrementally in an [`RrfMerge`], and the terminal `meta` event
+    /// carries the final RRF `order` (the same list `resp.results` holds).
+    async fn fetch_stream(
+        &self,
+        stream: &StreamCtx<'_>,
+        runnable: &[Arc<dyn Engine>],
+    ) -> Result<SearchResponse, PipelineError> {
+        let (runnable, skipped) = self.breaker_gate(runnable, stream.request_id);
+        if runnable.is_empty() {
+            return Err(PipelineError::BreakerOpen(skipped));
+        }
+
+        let mut fan = FanOut::new(runnable.len(), stream.started);
+        let mut merge = RrfMerge::new();
+        self.fan_out_stream(stream, &runnable, &mut fan, &mut merge)
+            .await;
+        self.reconcile_unanswered(&runnable, &mut fan, stream.request_id);
+        let merge_span = info_span!(
+            "merge",
+            request_id = %stream.request_id,
+            r#in = tracing::field::Empty,
+            out = tracing::field::Empty,
+            deadline_hit = fan.deadline_hit,
+        );
+        let merged = {
+            let _entered = merge_span.enter();
+            let raw = merge.raw_count;
+            let merged = merge.finish();
+            merge_span.record("in", raw as u64);
+            merge_span.record("out", merged.len() as u64);
+            debug!(
+                raw,
+                merged = merged.len(),
+                deadline_hit = fan.deadline_hit,
+                "merged results"
+            );
+            merged
+        };
+        let fetch = FetchCtx {
+            req: stream.req,
+            key: stream.key,
+            ttl: stream.ttl,
+            request_id: stream.request_id,
+            started: stream.started,
+        };
+        let resp = self.finish_fetch(skipped, fan, merged, fetch).await?;
+        let _ = stream.tx.send(StreamEvent::Meta(StreamMeta {
+            meta: resp.meta.clone(),
+            order: resp.results.iter().map(|r| r.url.clone()).collect(),
+        }));
+        Ok(resp)
+    }
+
+    /// The breaker gate (W1-06), extracted so `fetch` and `fetch_stream`
+    /// share it verbatim: `Open` engines are skipped, `HalfOpen` admits
+    /// exactly one probe. Gated here — after the permit wait, immediately
+    /// before fan-out — so a claimed probe is always followed by its call:
+    /// the tier-2 hit and overflow paths return before this point and
+    /// never consume the single probe slot. Returns the admitted engines
+    /// (fan-out order) and the ids the open breakers suppressed.
+    fn breaker_gate(
+        &self,
+        runnable: &[Arc<dyn Engine>],
+        request_id: Uuid,
+    ) -> (Vec<Arc<dyn Engine>>, Vec<EngineId>) {
         let mut gated: Vec<Arc<dyn Engine>> = Vec::with_capacity(runnable.len());
         let mut skipped: Vec<EngineId> = Vec::new();
         for engine in runnable {
@@ -936,159 +1376,207 @@ impl SearchPipeline {
                 "engines skipped by open breaker"
             );
         }
-        if gated.is_empty() {
-            // Nothing ran; `shared_response` still writes this request's
-            // search_log row on the error path.
-            return Err(PipelineError::BreakerOpen(skipped));
-        }
-        let runnable = gated;
+        (gated, skipped)
+    }
 
-        let outcomes = self.fan_out(req, &runnable, request_id).await;
-
-        // ---- per-engine reports ------------------------------------------
-        let mut reports: Vec<(usize, EngineReport)> = Vec::with_capacity(runnable.len());
-        let mut ok_results: Vec<(usize, Vec<SearchResult>)> = Vec::new();
-        let mut failures: Vec<(usize, EngineId, EngineError)> = Vec::new();
-        let mut deadline_hit = false;
-        let mut answered = vec![false; runnable.len()];
-        let mut ttfr_recorded = false;
-
-        for outcome in outcomes {
-            let idx = outcome.idx;
-            answered[idx] = true;
-            let latency_ms = millis(outcome.latency);
-            match outcome.outcome {
-                Ok(Ok(results)) => {
-                    self.metrics.record_engine_call(
-                        &outcome.id,
-                        "ok",
-                        outcome.latency,
-                        Some(results.len()),
-                    );
-                    if !ttfr_recorded {
-                        // Time to first engine result, measured from the
-                        // search start (includes the cache-miss lookup).
-                        self.metrics.record_ttfr(started.elapsed());
-                        ttfr_recorded = true;
-                    }
-                    reports.push((
-                        idx,
-                        EngineReport {
-                            engine: outcome.id.clone(),
-                            status: EngineStatus::Ok,
-                            latency_ms,
-                            result_count: results.len() as u32,
-                        },
-                    ));
-                    ok_results.push((idx, results));
+    /// Fold one [`EngineOutcome`] into the [`FanOut`] bookkeeping: metrics,
+    /// health, the per-engine report, and (for answers) the result list.
+    /// Returns `Some(results)` when the engine answered — an empty vec for
+    /// `NoResults`, which is an answer, not a failure: the engine
+    /// responded and there is simply no page to serve (the exec protocol's
+    /// first-class code; `replay` uses it for pages beyond `page_limit`;
+    /// an `Ok` empty page normalizes to it in `fan_out`, issue #120). It
+    /// counts toward "an engine answered" so an all-`NoResults` fan-out is
+    /// a 200-shaped empty response, not `AllEnginesFailed` (v2's "page 2
+    /// always 502" defect). The report stays `Failed(NoResults)` for
+    /// honesty.
+    fn fold_outcome(
+        &self,
+        fan: &mut FanOut,
+        outcome: EngineOutcome,
+        started: Instant,
+    ) -> Option<Vec<SearchResult>> {
+        let idx = outcome.idx;
+        fan.answered[idx] = true;
+        let latency_ms = millis(outcome.latency);
+        match outcome.outcome {
+            Ok(Ok(results)) => {
+                fan.had_answer = true;
+                self.metrics.record_engine_call(
+                    &outcome.id,
+                    "ok",
+                    outcome.latency,
+                    Some(results.len()),
+                );
+                if !fan.ttfr_recorded {
+                    // Time to first engine result, measured from the
+                    // search start (includes the cache-miss lookup).
+                    self.metrics.record_ttfr(started.elapsed());
+                    fan.ttfr_recorded = true;
                 }
-                // `NoResults` is an answer, not a failure: the engine
-                // responded and there is simply no page to serve (the exec
-                // protocol's first-class code; `replay` uses it for pages
-                // beyond `page_limit`; an `Ok` empty page normalizes to it
-                // in `fan_out`, issue #120). It counts toward "an engine
-                // answered" so an all-`NoResults` fan-out is a 200-shaped
-                // empty response, not `AllEnginesFailed` (v2's "page 2
-                // always 502" defect). The report stays `Failed(NoResults)`
-                // for honesty.
-                Ok(Err(EngineError::NoResults)) => {
-                    // A completed call with an empty answer.
-                    self.metrics.record_engine_call(
-                        &outcome.id,
-                        "no_results",
-                        outcome.latency,
-                        Some(0),
-                    );
-                    reports.push((
-                        idx,
-                        EngineReport {
-                            engine: outcome.id.clone(),
-                            status: EngineStatus::Failed(EngineError::NoResults),
-                            latency_ms,
-                            result_count: 0,
-                        },
-                    ));
-                    ok_results.push((idx, Vec::new()));
-                }
-                Ok(Err(err)) => {
-                    self.metrics.record_engine_call(
-                        &outcome.id,
-                        engine_error_label(&err),
-                        outcome.latency,
-                        None,
-                    );
-                    reports.push((
-                        idx,
-                        EngineReport {
-                            engine: outcome.id.clone(),
-                            status: EngineStatus::Failed(err.clone()),
-                            latency_ms,
-                            result_count: 0,
-                        },
-                    ));
-                    failures.push((idx, outcome.id, err));
-                }
-                Err(_elapsed) => {
-                    deadline_hit = true;
-                    self.metrics
-                        .record_engine_call(&outcome.id, "timeout", outcome.latency, None);
-                    reports.push((
-                        idx,
-                        EngineReport {
-                            engine: outcome.id.clone(),
-                            status: EngineStatus::Failed(EngineError::Timeout),
-                            latency_ms,
-                            result_count: 0,
-                        },
-                    ));
-                    failures.push((idx, outcome.id, EngineError::Timeout));
-                }
+                fan.reports.push((
+                    idx,
+                    EngineReport {
+                        engine: outcome.id.clone(),
+                        status: EngineStatus::Ok,
+                        latency_ms,
+                        result_count: results.len() as u32,
+                    },
+                ));
+                Some(results)
+            }
+            Ok(Err(EngineError::NoResults)) => {
+                // A completed call with an empty answer.
+                fan.had_answer = true;
+                self.metrics.record_engine_call(
+                    &outcome.id,
+                    "no_results",
+                    outcome.latency,
+                    Some(0),
+                );
+                fan.reports.push((
+                    idx,
+                    EngineReport {
+                        engine: outcome.id.clone(),
+                        status: EngineStatus::Failed(EngineError::NoResults),
+                        latency_ms,
+                        result_count: 0,
+                    },
+                ));
+                Some(Vec::new())
+            }
+            Ok(Err(err)) => {
+                self.metrics.record_engine_call(
+                    &outcome.id,
+                    engine_error_label(&err),
+                    outcome.latency,
+                    None,
+                );
+                fan.reports.push((
+                    idx,
+                    EngineReport {
+                        engine: outcome.id.clone(),
+                        status: EngineStatus::Failed(err.clone()),
+                        latency_ms,
+                        result_count: 0,
+                    },
+                ));
+                fan.failures.push((idx, outcome.id, err));
+                None
+            }
+            Err(_elapsed) => {
+                fan.deadline_hit = true;
+                self.metrics
+                    .record_engine_call(&outcome.id, "timeout", outcome.latency, None);
+                fan.reports.push((
+                    idx,
+                    EngineReport {
+                        engine: outcome.id.clone(),
+                        status: EngineStatus::Failed(EngineError::Timeout),
+                        latency_ms,
+                        result_count: 0,
+                    },
+                ));
+                fan.failures.push((idx, outcome.id, EngineError::Timeout));
+                None
             }
         }
-        // A JoinError (panic/cancel) never names its engine; the unanswered
-        // slots are exactly those failures.
+    }
+
+    /// Final merge for the non-streaming fan-out: fill the slots whose
+    /// tasks never answered (a `JoinError` — panic/cancel — never names
+    /// its engine), then dedupe-by-URL + RRF in fan-out order.
+    fn merge_outcomes(
+        &self,
+        runnable: &[Arc<dyn Engine>],
+        fan: &mut FanOut,
+        mut ok_results: Vec<(usize, Vec<SearchResult>)>,
+        request_id: Uuid,
+    ) -> Vec<SearchResult> {
+        self.reconcile_unanswered(runnable, fan, request_id);
+        ok_results.sort_by_key(|(idx, _)| *idx);
+        let mut merge = RrfMerge::new();
+        for (idx, results) in &ok_results {
+            merge.add(*idx, results);
+        }
+        let raw = merge.raw_count;
+        let span = info_span!(
+            "merge",
+            request_id = %request_id,
+            r#in = tracing::field::Empty,
+            out = tracing::field::Empty,
+            deadline_hit = fan.deadline_hit,
+        );
+        let _e = span.enter();
+        let merged = merge.finish();
+        span.record("in", raw as u64);
+        span.record("out", merged.len() as u64);
+        debug!(
+            raw,
+            merged = merged.len(),
+            deadline_hit = fan.deadline_hit,
+            "merged results"
+        );
+        merged
+    }
+
+    /// Mark panicked/cancelled engine tasks as transport failures. A JoinError
+    /// does not carry its engine id, so unanswered slots identify them.
+    fn reconcile_unanswered(
+        &self,
+        runnable: &[Arc<dyn Engine>],
+        fan: &mut FanOut,
+        request_id: Uuid,
+    ) {
         for (idx, engine) in runnable.iter().enumerate() {
-            if answered[idx] {
+            if fan.answered[idx] {
                 continue;
             }
             let id = engine.id();
+            let elapsed = fan.started_at.elapsed();
+            let err = EngineError::Transport("engine task failed".to_string());
             self.metrics
-                .record_engine_call(&id, "transport", started.elapsed(), None);
-            self.health.record_err(
-                &id,
-                started.elapsed(),
-                &EngineError::Transport("engine task failed".to_string()),
-                request_id,
-            );
-            reports.push((
+                .record_engine_call(&id, "transport", elapsed, None);
+            self.health.record_err(&id, elapsed, &err, request_id);
+            fan.reports.push((
                 idx,
                 EngineReport {
                     engine: id.clone(),
-                    status: EngineStatus::Failed(EngineError::Transport(
-                        "engine task failed".to_string(),
-                    )),
-                    latency_ms: millis(started.elapsed()),
+                    status: EngineStatus::Failed(err.clone()),
+                    latency_ms: millis(elapsed),
                     result_count: 0,
                 },
             ));
-            failures.push((
-                idx,
-                id,
-                EngineError::Transport("engine task failed".to_string()),
-            ));
+            fan.failures.push((idx, id, err));
         }
+    }
+
+    /// Everything after the fan-out both `fetch` variants share: report
+    /// ordering, deadline metric, health flush, the all-failed error,
+    /// response assembly (with breaker-skipped ids in `engines_skipped`,
+    /// W2-01), and the cache persist. `merged` is the final RRF list —
+    /// computed incrementally on the stream path, batch-sorted here on the
+    /// collect path.
+    async fn finish_fetch(
+        &self,
+        skipped: Vec<EngineId>,
+        mut fan: FanOut,
+        merged: Vec<SearchResult>,
+        ctx: FetchCtx<'_>,
+    ) -> Result<SearchResponse, PipelineError> {
         // Fan-out order, not completion order: deterministic on replay.
-        reports.sort_by_key(|(idx, _)| *idx);
-        failures.sort_by_key(|(idx, _, _)| *idx);
-        let engines_used: Vec<EngineReport> = reports.into_iter().map(|(_, r)| r).collect();
+        let had_answer = fan.had_answer;
+        fan.reports.sort_by_key(|(idx, _)| *idx);
+        fan.failures.sort_by_key(|(idx, _, _)| *idx);
+        let engines_used: Vec<EngineReport> = fan.reports.into_iter().map(|(_, r)| r).collect();
         let failures: Vec<(EngineId, EngineError)> =
-            failures.into_iter().map(|(_, id, e)| (id, e)).collect();
+            fan.failures.into_iter().map(|(_, id, e)| (id, e)).collect();
 
         // `cauce_deadline_hit_total` counts flights the hard deadline cut,
         // once per flight — including the all-engines-timed-out case that
         // surfaces as `AllEnginesFailed` and never reaches the Ok metrics
         // in `shared_response`.
-        if deadline_hit {
+        if fan.deadline_hit {
             self.metrics.record_deadline_hit();
         }
 
@@ -1098,57 +1586,39 @@ impl SearchPipeline {
             warn!(error = %e, "engine health persist failed");
         }
 
-        if ok_results.is_empty() {
+        if !had_answer {
             warn!(failures = failures.len(), "all engines failed");
             // No log write here: every waiter on the flight logs its own
             // failure row in `shared_response`.
             return Err(PipelineError::AllEnginesFailed(failures));
         }
 
-        // ---- merge: dedupe by normalized URL, RRF k=60 ---------------------
-        ok_results.sort_by_key(|(idx, _)| *idx);
-        let merged = {
-            let span = info_span!(
-                "merge",
-                request_id = %request_id,
-                r#in = tracing::field::Empty,
-                out = tracing::field::Empty,
-                deadline_hit,
-            );
-            let _e = span.enter();
-            let raw: usize = ok_results.iter().map(|(_, r)| r.len()).sum();
-            let merged = merge_rrf(ok_results.iter().map(|(_, results)| results.as_slice()));
-            span.record("in", raw as u64);
-            span.record("out", merged.len() as u64);
-            debug!(raw, merged = merged.len(), deadline_hit, "merged results");
-            merged
-        };
-
         let resp = SearchResponse {
-            query: normalize_query(&req.q),
+            query: normalize_query(&ctx.req.q),
             results: merged,
             meta: SearchMeta {
                 source: Source::Network,
                 engines_used,
-                deadline_hit,
-                elapsed_ms: millis(started.elapsed()),
-                request_id,
+                engines_skipped: skipped,
+                deadline_hit: fan.deadline_hit,
+                elapsed_ms: millis(ctx.started.elapsed()),
+                request_id: ctx.request_id,
             },
         };
 
         // ---- persist -------------------------------------------------------
         let persist = info_span!(
             "persist",
-            request_id = %request_id,
-            key = %key,
-            ttl_s = ttl.as_secs(),
+            request_id = %ctx.request_id,
+            key = %ctx.key,
+            ttl_s = ctx.ttl.as_secs(),
         );
         // Instrument the awaited future; an `Entered` guard held across
         // `.await` would leak the span onto unrelated tasks under a
         // multi-threaded runtime.
         let put = self
             .store
-            .put(key, &resp, ttl)
+            .put(ctx.key, &resp, ctx.ttl)
             .instrument(persist.clone())
             .await;
         persist.in_scope(|| match put {
@@ -1295,24 +1765,19 @@ impl SearchPipeline {
         })
     }
 
-    /// Parallel fan-out with a hard deadline per engine. Returns one
-    /// [`EngineOutcome`] per task that answered or timed out; panicking
-    /// tasks are logged and reconciled by the caller via `answered`.
-    async fn fan_out(
+    /// Spawn one bounded-deadline task per engine. Both result collectors
+    /// share this path so streaming cannot diverge in health or error rules.
+    fn spawn_engine_calls(
         &self,
         req: &SearchRequest,
         runnable: &[Arc<dyn Engine>],
         request_id: Uuid,
-    ) -> Vec<EngineOutcome> {
+    ) -> tokio::task::JoinSet<EngineOutcome> {
         let mut set = tokio::task::JoinSet::new();
         for (idx, engine) in runnable.iter().enumerate() {
             let engine = engine.clone();
             let id = engine.id();
             let deadline = self.deadline;
-            // Created while `pipeline.search` is the current span, so this
-            // span's parent is the search span; `request_id` is also
-            // recorded directly so the field survives even if the span is
-            // ever emitted detached.
             let span = info_span!(
                 "engine",
                 request_id = %request_id,
@@ -1322,15 +1787,7 @@ impl SearchPipeline {
                 results = tracing::field::Empty,
             );
             let req2 = req.clone();
-            // A second handle on the same span for post-hoc `record`s;
-            // `instrument` consumes the other.
             let recorder = span.clone();
-            // Health is recorded inside the task, the moment the call
-            // resolves — recording it later in `run` would leave a gap
-            // where a completed-but-unrecorded probe has already released
-            // the half-open gate. The guard releases that gate if the
-            // task is aborted instead (request cancelled, JoinSet
-            // dropped); for non-probe engines the drop is a no-op.
             let health = self.health.clone();
             set.spawn(
                 async move {
@@ -1339,14 +1796,7 @@ impl SearchPipeline {
                     let outcome = tokio::time::timeout(deadline, engine.search(&req2, deadline))
                         .await
                         .map(|done| match done {
-                            // `Ok` with an empty page is `NoResults` (issue
-                            // #120), uniform across runtimes: an exec
-                            // `{"results":[],"error":null}` used to decode to
-                            // `Ok(vec![])` and report `EngineStatus::Ok`, so a
-                            // wedged engine looked healthy. The engine still
-                            // answered — health records `record_ok` below —
-                            // but the report and the `no_results` metric tell
-                            // the truth.
+                            // Normalize empty successes across engine runtimes.
                             Ok(results) if results.is_empty() => Err(EngineError::NoResults),
                             done => done,
                         });
@@ -1358,7 +1808,6 @@ impl SearchPipeline {
                             recorder.record("results", r.len() as u64);
                             debug!(results = r.len(), "engine done");
                         }
-                        // `NoResults` is an answer, not a failure.
                         Ok(Err(e @ EngineError::NoResults)) => {
                             health.record_ok(&id, latency, request_id);
                             recorder.record("status", "error");
@@ -1388,16 +1837,60 @@ impl SearchPipeline {
                 .instrument(span),
             );
         }
+        set
+    }
+
+    /// Collect outcomes after the fan-out barrier (non-streaming search).
+    async fn fan_out(
+        &self,
+        req: &SearchRequest,
+        runnable: &[Arc<dyn Engine>],
+        request_id: Uuid,
+    ) -> Vec<EngineOutcome> {
+        let mut set = self.spawn_engine_calls(req, runnable, request_id);
         let mut outcomes = Vec::with_capacity(runnable.len());
         while let Some(joined) = set.join_next().await {
             match joined {
                 Ok(outcome) => outcomes.push(outcome),
-                Err(join_err) => {
-                    warn!(error = %join_err, "engine task failed to join");
-                }
+                Err(join_err) => warn!(error = %join_err, "engine task failed to join"),
             }
         }
         outcomes
+    }
+
+    /// Fold and emit each engine as soon as its task completes. The shared
+    /// `RrfMerge` keeps contribution and stable tie-break state by engine
+    /// index, so arrival order never changes the terminal ranking.
+    async fn fan_out_stream(
+        &self,
+        stream: &StreamCtx<'_>,
+        runnable: &[Arc<dyn Engine>],
+        fan: &mut FanOut,
+        merge: &mut RrfMerge,
+    ) {
+        let mut set = self.spawn_engine_calls(stream.req, runnable, stream.request_id);
+        while let Some(joined) = set.join_next().await {
+            let outcome = match joined {
+                Ok(outcome) => outcome,
+                Err(join_err) => {
+                    warn!(error = %join_err, "engine task failed to join");
+                    continue;
+                }
+            };
+            let idx = outcome.idx;
+            let engine = outcome.id.clone();
+            if let Some(results) = self.fold_outcome(fan, outcome, stream.started) {
+                if results.is_empty() {
+                    continue;
+                }
+                merge.add(idx, &results);
+                let _ = stream.tx.send(StreamEvent::Results {
+                    engine,
+                    results,
+                    elapsed_ms: millis(stream.started.elapsed()),
+                });
+            }
+        }
     }
 
     /// Rebuild a stored row as a cache response: provenance
@@ -1436,6 +1929,7 @@ impl SearchPipeline {
                 matched_query,
             },
             engines_used: resp.meta.engines_used,
+            engines_skipped: Vec::new(),
             deadline_hit: false,
             elapsed_ms: millis(started.elapsed()),
             request_id,
@@ -1486,54 +1980,72 @@ struct LogRow {
     deadline_hit: bool,
 }
 
-/// RRF merge over per-engine result lists in engine order: each occurrence
-/// contributes `1/(60 + rank)` (rank 1-based within its own list),
-/// duplicates are keyed by [`normalize_url`], and the occurrence with the
-/// best single contribution supplies the emitted `SearchResult`. Output is
-/// ordered by descending score, stable on first-seen position for ties.
-fn merge_rrf<'a>(lists: impl Iterator<Item = &'a [SearchResult]>) -> Vec<SearchResult> {
-    struct Acc {
-        result: SearchResult,
-        score: f32,
-        best: f32,
+/// Incremental RRF accumulator. Contributions are keyed by engine index so
+/// out-of-order completion never changes floating-point reduction or ties.
+struct RrfMerge {
+    map: HashMap<Url, RrfAcc>,
+    raw_count: usize,
+}
+
+struct RrfAcc {
+    result: SearchResult,
+    contributions: std::collections::BTreeMap<usize, f32>,
+    best: f32,
+    best_order: (usize, usize),
+    first_seen: (usize, usize),
+}
+
+impl RrfMerge {
+    fn new() -> Self {
+        Self {
+            map: HashMap::new(),
+            raw_count: 0,
+        }
     }
-    let mut order: Vec<Url> = Vec::new();
-    let mut map: HashMap<Url, Acc> = HashMap::new();
-    for results in lists {
-        for (rank0, r) in results.iter().enumerate() {
-            let contrib = 1.0 / (RRF_K + rank0 as f32 + 1.0);
-            // Dedupe on the normalized form but emit the engine's raw URL:
-            // SearXNG-parity behaviour, the displayed link is untouched.
-            let norm = normalize_url(&r.url);
-            match map.entry(norm.clone()) {
-                std::collections::hash_map::Entry::Vacant(v) => {
-                    v.insert(Acc {
-                        result: r.clone(),
-                        score: contrib,
-                        best: contrib,
-                    });
-                    order.push(norm);
-                }
-                std::collections::hash_map::Entry::Occupied(mut o) => {
-                    let acc = o.get_mut();
-                    acc.score += contrib;
-                    if contrib > acc.best {
-                        acc.best = contrib;
-                        acc.result = r.clone();
-                    }
-                }
+
+    fn add(&mut self, engine_idx: usize, results: &[SearchResult]) {
+        self.raw_count += results.len();
+        for (rank0, result) in results.iter().enumerate() {
+            let rank = rank0 + 1;
+            let contribution = 1.0 / (RRF_K + rank0 as f32 + 1.0);
+            // Dedupe on the normalized form but emit the engine's raw URL.
+            let normalized = normalize_url(&result.url);
+            let acc = self.map.entry(normalized).or_insert_with(|| RrfAcc {
+                result: result.clone(),
+                contributions: std::collections::BTreeMap::new(),
+                best: contribution,
+                best_order: (engine_idx, rank),
+                first_seen: (engine_idx, rank),
+            });
+            *acc.contributions.entry(engine_idx).or_default() += contribution;
+            acc.first_seen = acc.first_seen.min((engine_idx, rank));
+            if contribution > acc.best
+                || (contribution == acc.best && (engine_idx, rank) < acc.best_order)
+            {
+                acc.best = contribution;
+                acc.best_order = (engine_idx, rank);
+                acc.result.clone_from(result);
             }
         }
     }
-    let mut merged: Vec<SearchResult> = order
-        .into_iter()
-        .filter_map(|u| map.remove(&u))
-        .map(|acc| SearchResult {
-            score: acc.score,
-            ..acc.result
-        })
-        .collect();
-    // `sort_by` is stable: ties keep first-seen (engine order, then rank).
-    merged.sort_by(|a, b| b.score.total_cmp(&a.score));
-    merged
+
+    fn finish(self) -> Vec<SearchResult> {
+        let mut merged: Vec<(f32, (usize, usize), SearchResult)> = self
+            .map
+            .into_values()
+            .map(|acc| {
+                let score = acc.contributions.values().copied().sum();
+                (
+                    score,
+                    acc.first_seen,
+                    SearchResult {
+                        score,
+                        ..acc.result
+                    },
+                )
+            })
+            .collect();
+        merged.sort_by(|a, b| b.0.total_cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
+        merged.into_iter().map(|(_, _, result)| result).collect()
+    }
 }

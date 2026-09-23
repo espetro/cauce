@@ -18,12 +18,94 @@ use std::time::{Duration, Instant};
 
 use cauce_core::{
     CacheKey, EngineError, EngineId, EngineStatus, LexicalConfig, LogSource, PipelineError,
-    SearchOpts, SearchPipeline, SearchResult, Source, Tier, normalize_url,
+    SearchOpts, SearchPipeline, SearchResult, Source, StreamEvent, Tier, normalize_url,
 };
 use cauce_engines::{Cassette, cassette_path};
 use support::{StubStore, replay_at, req};
 use url::Url;
 use uuid::Uuid;
+
+/// W2-01 acceptance: the 100 ms replay batch is observable before the
+/// 2 s engine finishes; terminal `meta.order` matches the cached RRF result.
+#[tokio::test]
+async fn search_stream_emits_fast_batch_before_slow_engine_and_final_order() {
+    let dir = tempfile::tempdir().unwrap();
+    let query = "stream acceptance";
+    let result = |host: &str, engine: &str| SearchResult {
+        url: Url::parse(&format!("https://{host}.example/")).unwrap(),
+        title: engine.to_string(),
+        snippet: engine.to_string(),
+        engine: EngineId::from(engine),
+        published: None,
+        score: 0.0,
+    };
+    Cassette::new(EngineId::from("slow"), query, vec![result("slow", "slow")])
+        .save(&cassette_path(dir.path(), "slow", query))
+        .unwrap();
+    Cassette::new(EngineId::from("fast"), query, vec![result("fast", "fast")])
+        .save(&cassette_path(dir.path(), "fast", query))
+        .unwrap();
+    let slow = replay_at(dir.path(), |o| {
+        o.latency_ms = 2_000;
+        o.cassette_engine = Some(EngineId::from("slow"));
+    });
+    let fast = replay_at(dir.path(), |o| {
+        o.latency_ms = 100;
+        o.cassette_engine = Some(EngineId::from("fast"));
+    });
+    let store = Arc::new(StubStore::default());
+    // Slow is first in configured engine order but fast finishes first; the
+    // stable RRF tie-break must continue to use configured order.
+    let pipe = SearchPipeline::new(store, vec![Arc::new(slow), Arc::new(fast)]);
+    let request = req(query);
+
+    let started = Instant::now();
+    let mut events = pipe.search_stream(&request, SearchOpts::default());
+    let first = tokio::time::timeout(Duration::from_millis(300), events.recv())
+        .await
+        .expect("first result must arrive before the slow engine")
+        .expect("stream remains open");
+    assert!(started.elapsed() < Duration::from_millis(300));
+    let StreamEvent::Results {
+        engine,
+        results: first_results,
+        elapsed_ms: first_ms,
+    } = first
+    else {
+        panic!("expected first results event")
+    };
+    assert_eq!(engine, EngineId::from("replay"));
+    assert_eq!(first_results[0].url.as_str(), "https://fast.example/");
+    assert!(first_ms < 300);
+
+    let second = events.recv().await.expect("slow engine result batch");
+    assert!(matches!(
+        second,
+        StreamEvent::Results { results, elapsed_ms, .. }
+            if results[0].url.as_str() == "https://slow.example/" && elapsed_ms >= 1_800
+    ));
+    let terminal = events.recv().await.expect("terminal meta event");
+    let StreamEvent::Meta(meta) = terminal else {
+        panic!("expected terminal meta event")
+    };
+    assert!(meta.meta.elapsed_ms >= 1_800);
+    assert_eq!(
+        meta.order[0].as_str(),
+        "https://slow.example/",
+        "final tie order follows configured engine order, not completion order"
+    );
+    assert_eq!(
+        meta.order,
+        pipe.search(&request)
+            .await
+            .expect("stream result persisted")
+            .results
+            .iter()
+            .map(|result| result.url.clone())
+            .collect::<Vec<_>>()
+    );
+    assert!(events.recv().await.is_none(), "meta must be terminal");
+}
 
 /// Acceptance: two replay engines, one `latency_ms = 5000`, deadline
 /// 3000 ms → response at ~3000 ms, `deadline_hit`, fast results in.

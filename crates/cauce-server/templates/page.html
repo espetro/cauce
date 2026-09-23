@@ -12,19 +12,159 @@
   <style>{{ style_css|safe }}</style>
 </head>
 <body>
-  <form action="/search" method="get">
+  <form id="search-form" action="/search" method="get">
     <input type="search" name="q" value="{{ q }}" placeholder="Search..." autofocus>
     <button type="submit">Search</button>
   </form>
   {% if has_results %}
   <div class="meta">
-    <span>{{ result_count }} results</span>
-    <span>{{ badge }}</span>
-    <span class="request-id" title="{{ request_id }}">{{ short_request_id }}</span>
+    <span id="result-count">{{ result_count }} results</span>
+    <span id="search-meta">{{ badge }}</span>
+    <span id="request-id" class="request-id" title="{{ request_id }}">{{ short_request_id }}</span>
   </div>
+  {% if is_streaming %}
+  <div id="search-stream" hx-ext="sse" sse-connect="{{ stream_url }}" sse-close="meta,error"
+       data-query-hash="{{ query_hash }}" aria-live="polite" aria-busy="true">
+    <span id="stream-status" role="status">Waiting for engines...</span>
+  </div>
+  <p id="new-results-above" class="new-results-above" role="status" hidden></p>
+  {% endif %}
   {% include "results.html" %}
   {% endif %}
   <script>{{ htmx_js|safe }}</script>
   <script>{{ json_enc_js|safe }}</script>
+  <script>{{ sse_js|safe }}</script>
+  <script>
+    (function () {
+      var form = document.getElementById("search-form");
+      if (form) {
+        form.addEventListener("submit", function (event) {
+          var input = form.querySelector('input[name="q"]');
+          if (!input || !input.value.trim()) return;
+          event.preventDefault();
+          var url = new URL(form.action, window.location.origin);
+          url.searchParams.set("q", input.value);
+          url.searchParams.set("stream", "1");
+          window.location.assign(url.pathname + url.search);
+        });
+      }
+
+      {% if is_streaming %}
+      var stream = document.getElementById("search-stream");
+      var results = document.getElementById("results");
+      var status = document.getElementById("stream-status");
+      var count = document.getElementById("result-count");
+      var metaLine = document.getElementById("search-meta");
+      var requestId = document.getElementById("request-id");
+      var above = document.getElementById("new-results-above");
+      var queryHash = stream.dataset.queryHash;
+      var arrivals = [];
+      var seen = new Set();
+
+      function appendBatch(batch) {
+        batch.results.forEach(function (result) {
+          var url = result.url;
+          if (seen.has(url)) return;
+          seen.add(url);
+          arrivals.push(url);
+
+          var article = document.createElement("article");
+          var host = "";
+          try { host = new URL(url).hostname; } catch (_) {}
+          if (host) {
+            var icon = document.createElement("img");
+            icon.src = "https://icons.duckduckgo.com/ip3/" + encodeURIComponent(host) + ".ico";
+            icon.width = 16;
+            icon.height = 16;
+            icon.alt = "";
+            icon.loading = "lazy";
+            article.appendChild(icon);
+          }
+          var position = arrivals.length - 1;
+          var link = document.createElement("a");
+          link.href = url;
+          link.target = "_blank";
+          link.rel = "noopener";
+          link.textContent = result.title;
+          link.addEventListener("click", function () {
+            fetch("/api/click", {
+              method: "POST",
+              headers: { "Content-Type": "application/json", "X-Cauce-Client": "ui" },
+              body: JSON.stringify({ url: url, title: result.title, position: position, query_hash: queryHash }),
+              keepalive: true
+            });
+          });
+          article.appendChild(link);
+          if (host) {
+            var hostLine = document.createElement("span");
+            hostLine.className = "host";
+            hostLine.textContent = host;
+            article.appendChild(hostLine);
+          }
+          var snippet = document.createElement("p");
+          snippet.className = "snippet";
+          snippet.textContent = result.snippet;
+          article.appendChild(snippet);
+          results.appendChild(article);
+        });
+        count.textContent = arrivals.length + " results";
+      }
+
+      function errorKind(value) {
+        var kind = typeof value === "string" ? value : Object.keys(value || {})[0] || "failed";
+        return kind.replace(/_/g, " ");
+      }
+
+      function renderMeta(meta) {
+        var statuses = meta.engines_used.map(function (report) {
+          if (report.status === "ok") return report.engine;
+          return report.engine + " failed (" + errorKind(report.status.failed) + ")";
+        });
+        (meta.engines_skipped || []).forEach(function (engine) {
+          statuses.push(engine + " skipped (breaker)");
+        });
+        var base = meta.source === "network" ? "live · " + meta.elapsed_ms + " ms" : "cached";
+        metaLine.textContent = statuses.length ? base + " · " + statuses.join(" · ") : base;
+        requestId.title = meta.request_id;
+        requestId.textContent = meta.request_id.slice(0, 8);
+        status.textContent = "Search complete";
+        stream.setAttribute("aria-busy", "false");
+
+        var rank = new Map(meta.order.map(function (url, index) { return [url, index]; }));
+        var previousRanks = [];
+        var outranking = 0;
+        arrivals.forEach(function (url) {
+          var currentRank = rank.has(url) ? rank.get(url) : Infinity;
+          if (previousRanks.some(function (previousRank) { return currentRank < previousRank; })) {
+            outranking += 1;
+          }
+          previousRanks.push(currentRank);
+        });
+        if (outranking > 0) {
+          above.textContent = outranking + " new results above";
+          above.hidden = false;
+        }
+        if (arrivals.length === 0) {
+          var empty = document.createElement("p");
+          empty.textContent = statuses.length ? "No results · " + statuses.join(" · ") : "No results";
+          results.appendChild(empty);
+        }
+      }
+
+      document.body.addEventListener("cauce:sse", function (event) {
+        var message = event.detail;
+        var payload;
+        try { payload = JSON.parse(message.data); }
+        catch (_) { status.textContent = "Search stream returned invalid data"; return; }
+        if (message.name === "results") appendBatch(payload);
+        if (message.name === "meta") renderMeta(payload);
+        if (message.name === "error") {
+          status.textContent = payload.error.message;
+          stream.setAttribute("aria-busy", "false");
+        }
+      });
+      {% endif %}
+    })();
+  </script>
 </body>
 </html>

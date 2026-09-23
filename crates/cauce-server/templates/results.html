@@ -1,4 +1,4 @@
-<div id="results">
+<div id="results" aria-live="polite">
   <!-- This Source Code Form is subject to the terms of the Mozilla Public
        License, v. 2.0. If a copy of the MPL was not distributed with this
        file, You can obtain one at https://mozilla.org/MPL/2.0/. -->
@@ -17,8 +17,8 @@
     <p class="snippet">{{ row.snippet }}</p>
   </article>
   {% endfor %}
-  {% if results.is_empty() %}
-  <p>No results</p>
+  {% if results.is_empty() && show_empty %}
+  <p>No results{% if !empty_status.is_empty() %} · {{ empty_status }}{% endif %}</p>
   {% endif %}
   {% if !more_url.is_empty() %}
   <button hx-get="{{ more_url }}" hx-target="#results" hx-swap="outerHTML">More</button>

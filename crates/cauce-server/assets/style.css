@@ -238,7 +238,6 @@ fieldset.greyed {
     gap: 0.75em;
     align-items: baseline;
 }
-||||||| af559a1
 
 /* /cache page (W2-04). Strictly additive; shared base styles above.
    The page body carries `cache-page` so the wider content column and
@@ -368,3 +367,16 @@ article.cache-entry + article.cache-entry {
     }
 }
 
+.new-results-above {
+    display: inline-block;
+    margin: 0.5rem 0;
+    padding: 0.25rem 0.75rem;
+    border: 1px solid var(--border);
+    border-radius: 9999px;
+    color: var(--muted);
+    font-size: 0.875rem;
+}
+
+.new-results-above[hidden] {
+    display: none;
+}

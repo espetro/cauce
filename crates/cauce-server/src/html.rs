@@ -50,6 +50,7 @@ static FAVICON_SVG: LazyLock<Cow<'static, [u8]>> = LazyLock::new(|| {
         .map(|f| f.data)
         .unwrap_or_default()
 });
+static SSE_JS: LazyLock<String> = LazyLock::new(|| asset_string("sse.js"));
 
 /// One rendered result row (plain strings so Askama only needs `Display`).
 #[derive(Debug)]
@@ -68,6 +69,8 @@ struct Row {
 struct Page {
     q: String,
     has_results: bool,
+    show_empty: bool,
+    empty_status: String,
     result_count: usize,
     badge: String,
     request_id: String,
@@ -77,6 +80,10 @@ struct Page {
     htmx_js: String,
     json_enc_js: String,
     style_css: String,
+    is_streaming: bool,
+    stream_url: String,
+    query_hash: String,
+    sse_js: String,
 }
 
 /// Results partial swapped in by HTMX `hx-get` on the more button.
@@ -85,6 +92,8 @@ struct Page {
 struct Results {
     results: Vec<Row>,
     more_url: String,
+    show_empty: bool,
+    empty_status: String,
 }
 
 /// `GET /` landing page with the search form.
@@ -96,6 +105,8 @@ pub async fn index(
     let page = Page {
         q: String::new(),
         has_results: false,
+        show_empty: false,
+        empty_status: String::new(),
         result_count: 0,
         badge: String::new(),
         request_id: rid.clone(),
@@ -105,6 +116,10 @@ pub async fn index(
         htmx_js: HTMX_JS.clone(),
         json_enc_js: JSON_ENC_JS.clone(),
         style_css: STYLE_CSS.clone(),
+        is_streaming: false,
+        stream_url: String::new(),
+        query_hash: String::new(),
+        sse_js: SSE_JS.clone(),
     };
     render_html(page, ctx.request_id.as_uuid())
 }
@@ -127,19 +142,55 @@ pub async fn search(
             .map(|j| j.into_response());
     }
 
-    let (req, resp) = search_inner(&state, &ctx, &uri).await?;
     let params = QueryParams::parse(uri.query(), &ctx)?;
-    let is_hx = headers.get("hx-request").is_some();
+    let q = params.required(&ctx, "q")?.to_string();
+    let is_streaming = match params.get("stream") {
+        None => false,
+        Some("1") => true,
+        Some(_) => return Err(ctx.bad_request("stream must be 1 when present")),
+    };
 
+    if is_streaming {
+        let req = crate::handlers::parse_search_request(&ctx, &uri, &["stream"])?;
+        let rid = ctx.request_id.as_uuid().to_string();
+        let page = Page {
+            q,
+            has_results: true,
+            show_empty: false,
+            empty_status: String::new(),
+            result_count: 0,
+            badge: "searching...".to_string(),
+            request_id: rid.clone(),
+            short_request_id: short_id(&rid),
+            results: Vec::new(),
+            more_url: String::new(),
+            htmx_js: HTMX_JS.clone(),
+            json_enc_js: JSON_ENC_JS.clone(),
+            style_css: STYLE_CSS.clone(),
+            is_streaming: true,
+            stream_url: stream_url(&params, &req),
+            query_hash: CacheKey::from(&req).as_str().to_string(),
+            sse_js: SSE_JS.clone(),
+        };
+        return Ok(Html(
+            page.render()
+                .map_err(|e| render_err(e, ctx.request_id.as_uuid()))?,
+        )
+        .into_response());
+    }
+
+    let (req, resp) = search_inner(&state, &ctx, &uri).await?;
     let rid = resp.meta.request_id.to_string();
     let rows = result_rows(&req, &resp);
     let more_url = more_url(&resp, &params, &req);
-    let q = params.required(&ctx, "q")?.to_string();
+    let is_hx = headers.get("hx-request").is_some();
 
     if is_hx {
         let partial = Results {
             results: rows,
             more_url,
+            show_empty: true,
+            empty_status: engine_statuses(&resp).join(" · "),
         };
         Ok(Html(
             partial
@@ -151,6 +202,8 @@ pub async fn search(
         let page = Page {
             q,
             has_results: true,
+            show_empty: true,
+            empty_status: engine_statuses(&resp).join(" · "),
             result_count: resp.results.len(),
             badge: badge(&resp),
             request_id: rid.clone(),
@@ -160,6 +213,10 @@ pub async fn search(
             htmx_js: HTMX_JS.clone(),
             json_enc_js: JSON_ENC_JS.clone(),
             style_css: STYLE_CSS.clone(),
+            is_streaming: false,
+            stream_url: String::new(),
+            query_hash: CacheKey::from(&req).as_str().to_string(),
+            sse_js: SSE_JS.clone(),
         };
         Ok(Html(
             page.render()
@@ -246,20 +303,59 @@ fn prefers_json(accept: &str) -> bool {
 }
 
 fn badge(resp: &SearchResponse) -> String {
-    match &resp.meta.source {
+    let base = match &resp.meta.source {
         Source::Cache { age_s, ttl_s, .. } => format!("cached · {age_s} s ago · ttl {ttl_s} s"),
-        Source::Network => {
-            let engines = resp
-                .meta
-                .engines_used
-                .iter()
-                .filter(|r| matches!(r.status, EngineStatus::Ok))
-                .map(|r| r.engine.to_string())
-                .collect::<Vec<_>>()
-                .join(", ");
-            format!("live · {} ms · {engines}", resp.meta.elapsed_ms)
+        Source::Network => format!("live · {} ms", resp.meta.elapsed_ms),
+    };
+    let statuses = engine_statuses(resp);
+    if statuses.is_empty() {
+        base
+    } else {
+        format!("{base} · {}", statuses.join(" · "))
+    }
+}
+
+fn engine_statuses(resp: &SearchResponse) -> Vec<String> {
+    let mut statuses = Vec::new();
+    for report in &resp.meta.engines_used {
+        statuses.push(match &report.status {
+            EngineStatus::Ok => report.engine.to_string(),
+            EngineStatus::Failed(error) => {
+                format!("{} failed ({})", report.engine, engine_error_kind(error))
+            }
+        });
+    }
+    statuses.extend(
+        resp.meta
+            .engines_skipped
+            .iter()
+            .map(|engine| format!("{engine} skipped (breaker)")),
+    );
+    statuses
+}
+
+fn engine_error_kind(error: &EngineError) -> &'static str {
+    match error {
+        EngineError::RateLimited => "rate limited",
+        EngineError::Blocked => "blocked",
+        EngineError::Timeout => "timeout",
+        EngineError::Parse(_) => "parse",
+        EngineError::Transport(_) => "transport",
+        EngineError::NoResults => "no results",
+    }
+}
+
+fn stream_url(params: &QueryParams, req: &SearchRequest) -> String {
+    let mut parts = vec![format!("q={}", urlencoding::encode(&req.q))];
+    if req.page != 1 {
+        parts.push(format!("page={}", req.page));
+    }
+    for key in ["lang", "time_range", "safesearch", "engines"] {
+        if let Some(value) = params.get(key) {
+            parts.push(format!("{key}={}", urlencoding::encode(value)));
         }
     }
+    format!("/api/search/stream?{}", parts.join("&"))
 }
 
 fn result_rows(req: &SearchRequest, resp: &SearchResponse) -> Vec<Row> {
