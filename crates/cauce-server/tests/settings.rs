@@ -599,11 +599,12 @@ async fn save_writes_audit_with_changed_keys() {
     clear_env();
 }
 
-/// A file-literal secret displays as `<redacted>`; submitting that
-/// placeholder back restores the file value, so the audit row must not
-/// report `ai.api_key` as changed.
+/// A file-literal secret renders as typed on the page (the owner's own
+/// config file); the `restore_redacted` pass still keeps a `<redacted>`
+/// submission from clobbering the secret, so the audit row must not report
+/// `ai.api_key` as changed.
 #[tokio::test]
-async fn redacted_secret_roundtrip_reports_no_change() {
+async fn literal_secret_renders_and_redacted_restore_holds() {
     let _guard = env_lock().await;
     clear_env();
     let tmp = config_env("[ai]\napi_key = \"sk-file-literal\"\n");
@@ -612,11 +613,17 @@ async fn redacted_secret_roundtrip_reports_no_change() {
     let (status, body) = get_html(&app, "/settings").await;
     assert_eq!(status, StatusCode::OK, "{body}");
     assert!(
-        body.contains("value=\"&#60;redacted&#62;\""),
-        "a literal secret must render redacted: {body}"
+        body.contains("name=\"ai.api_key\" value=\"sk-file-literal\""),
+        "a literal secret must render as typed: {body}"
+    );
+    assert!(
+        !body.contains("&#60;redacted&#62;"),
+        "the <redacted> placeholder must not reach the input: {body}"
     );
 
-    // The browser submits the decoded `<redacted>` placeholder verbatim.
+    // A stale page (or a JSON API client) can still submit the decoded
+    // `<redacted>` placeholder verbatim; the restore pass writes the real
+    // secret back rather than persisting the literal.
     let (status, body) = put_form(&app, "ai.api_key=%3Credacted%3E", false).await;
     assert_eq!(status, StatusCode::OK, "{body}");
     assert!(

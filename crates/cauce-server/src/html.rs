@@ -406,9 +406,11 @@ struct SettingsStatus {
 }
 
 /// `GET /settings`: the config file as a form (W2-07). Reads the redacted
-/// display tree — `${...}` templates verbatim, secrets as `<redacted>` —
-/// and saves through `PUT /api/config` (urlencoded merge, `crate::settings`),
-/// never a second write path.
+/// display tree — `${...}` templates verbatim — except `ai.api_key`, which
+/// comes from the raw file layer so a literal key renders as typed (a
+/// `<redacted>` placeholder in the input would save back as the literal
+/// string). Saves through `PUT /api/config` (urlencoded merge,
+/// `crate::settings`), never a second write path.
 pub async fn settings(
     State(state): State<AppState>,
     Extension(ctx): Extension<RequestCtx>,
@@ -431,9 +433,10 @@ pub async fn settings(
         let block = CacheBlock { line: cache_line };
         return Ok(Html(block.render().map_err(|e| render_err(e, rid))?).into_response());
     }
-    let (tree, ai, engines, config_path) = state.with_config(|c| {
+    let (tree, raw_tree, ai, engines, config_path) = state.with_config(|c| {
         (
             c.display_tree(),
+            c.raw_tree().cloned(),
             c.ai.clone(),
             c.engines.clone(),
             c.config_path().display().to_string(),
@@ -447,7 +450,11 @@ pub async fn settings(
         value: tree_display(&tree, path),
         env: env_override(path).unwrap_or_default(),
     };
-    let ai_key_status = env_status(&tree_display(&tree, "ai.api_key")).unwrap_or_default();
+    // The file layer for the one secret the form renders: a literal key
+    // shows as typed and a `${env:...}` template verbatim. File-less
+    // configs (`Config::default()` in tests) fall back to the display tree.
+    let file_tree = raw_tree.as_ref().unwrap_or(&tree);
+    let ai_key_status = env_status(&tree_display(file_tree, "ai.api_key")).unwrap_or_default();
     let engines_pinned = std::env::var("CAUCE_ENGINES")
         .map(|v| !v.trim().is_empty())
         .unwrap_or(false);
@@ -486,7 +493,10 @@ pub async fn settings(
         max_concurrent: field("admission.max_concurrent_per_engine"),
         retention: field("logs.retention_days"),
         ai_base_url: field("ai.base_url"),
-        ai_api_key: field("ai.api_key"),
+        ai_api_key: Field {
+            value: tree_display(file_tree, "ai.api_key"),
+            env: env_override("ai.api_key").unwrap_or_default(),
+        },
         ai_key_status,
         ai_model: field("ai.model"),
         ai_enabled: ai.enabled,
