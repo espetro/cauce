@@ -27,12 +27,13 @@ class RunLoopTests(unittest.TestCase):
     def test_malformed_line_returns_error_not_crash(self):
         resps = run_loop("this is not json\n", lambda req: [])
         self.assertEqual(len(resps), 1)
-        self.assertEqual(resps[0]["v"], 1)
+        # No request version to echo on a parse failure: PROTOCOL_VERSION.
+        self.assertEqual(resps[0]["v"], 2)
         self.assertEqual(resps[0]["results"], [])
         self.assertIsInstance(resps[0]["error"], str)
 
     def test_wrong_version_returns_error(self):
-        resps = run_loop('{"v":2,"query":"x"}\n', lambda req: [])
+        resps = run_loop('{"v":3,"query":"x"}\n', lambda req: [])
         self.assertIsNotNone(resps[0]["error"])
 
     def test_missing_query_returns_error(self):
@@ -49,6 +50,46 @@ class RunLoopTests(unittest.TestCase):
         self.assertEqual(resps[0]["error"], None)
         self.assertEqual(resps[0]["results"][0]["title"], "hello")
         self.assertEqual(resps[0]["results"][0]["url"], "https://example.com/")
+
+    def test_v2_fields_parsed_and_version_echoed(self):
+        seen = {}
+
+        def capture(req: Request):
+            seen.update(
+                safesearch=req.safesearch,
+                time_range=req.time_range,
+                params=req.params,
+                v=req.v,
+            )
+            return []
+
+        resps = run_loop(
+            '{"v":2,"query":"x","safesearch":"strict","time_range":"week",'
+            '"params":{"region":"wt-wt"}}\n',
+            capture,
+        )
+        self.assertEqual(seen["safesearch"], "strict")
+        self.assertEqual(seen["time_range"], "week")
+        self.assertEqual(seen["params"], {"region": "wt-wt"})
+        self.assertEqual(seen["v"], 2)
+        # The response echoes the request's version so new parents can
+        # confirm the negotiated level.
+        self.assertEqual(resps[0]["v"], 2)
+
+    def test_v1_request_accepted_with_defaults(self):
+        seen = {}
+
+        def capture(req: Request):
+            seen.update(safesearch=req.safesearch, time_range=req.time_range, v=req.v)
+            return []
+
+        resps = run_loop('{"v":1,"query":"x"}\n', capture)
+        # v2 children must accept v1 requests (a strict subset) and echo v1,
+        # so old parents keep working against new children.
+        self.assertIsNone(resps[0]["error"])
+        self.assertEqual(resps[0]["v"], 1)
+        self.assertEqual(seen["safesearch"], "moderate")
+        self.assertIsNone(seen["time_range"])
 
     def test_handler_exception_becomes_error_response(self):
         def boom(req):

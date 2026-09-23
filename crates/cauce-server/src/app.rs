@@ -23,6 +23,8 @@ use axum::{Router, middleware};
 use cauce_core::{SearchPipeline, Store, config::Config};
 use tokio::net::TcpListener;
 
+#[cfg(feature = "ui")]
+use crate::cache_page;
 use crate::error::ApiError;
 use crate::handlers;
 #[cfg(feature = "ui")]
@@ -227,6 +229,8 @@ fn handler_for(spec: &RouteSpec, state: &AppState) -> Option<MethodRouter<AppSta
         ("GET", "/search", RouteKind::Html) => Some(get(html::search)),
         #[cfg(feature = "ui")]
         ("GET", "/settings", RouteKind::Html) => Some(get(html::settings)),
+        #[cfg(feature = "ui")]
+        ("GET", "/cache", RouteKind::Html) => Some(get(cache_page::cache)),
         #[cfg(feature = "ui")]
         ("GET", "/opensearch.xml", RouteKind::Html) => Some(get(html::opensearch)),
         #[cfg(feature = "ui")]

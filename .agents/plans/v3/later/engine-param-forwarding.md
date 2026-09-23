@@ -1,8 +1,9 @@
 # later: engine-param forwarding (safesearch/time_range) + parse.allow_empty
 Issue: #122
 
-Seam: declarative spec templates (`{safesearch}`/`{time_range}` vars) + exec protocol v2
-fields (related: #88).
+Seam: declarative spec templates (`{safesearch}`/`{time_range}` vars). The exec
+protocol v2 fields half of this seam landed with #88: `safesearch`/`time_range`/
+`[engines.params]` now reach exec children.
 Trigger: a spec or exec engine that can actually act on them (Bing/Brave both support
 freshness/safe params upstream). Today both params are validated and cache-keyed but
 never reach engines — honest gap.

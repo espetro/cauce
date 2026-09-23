@@ -5,6 +5,8 @@
 //! file, You can obtain one at <https://mozilla.org/MPL/2.0/>.
 
 mod app;
+#[cfg(feature = "ui")]
+mod cache_page;
 mod error;
 mod handlers;
 #[cfg(feature = "ui")]
