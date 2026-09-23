@@ -58,6 +58,8 @@ struct Opt {
 #[derive(Template)]
 #[template(path = "audit.html")]
 struct AuditPage {
+    /// The shared header's active nav item.
+    nav_active: &'static str,
     /// Distinct actors/actions from `Store::audit_facets`, for the selects.
     actor_options: Vec<Opt>,
     action_options: Vec<Opt>,
@@ -98,6 +100,9 @@ struct SpanView {
 #[derive(Template)]
 #[template(path = "trace.html")]
 struct TracePage {
+    /// The shared header's active nav item; `/trace/{id}` has no nav
+    /// entry of its own, so nothing renders `aria-current`.
+    nav_active: &'static str,
     /// The traced request id (page subject), full form.
     traced_id: String,
     traced_short: String,
@@ -148,6 +153,7 @@ pub async fn audit(
     let capped = rows.len() as u32 == filter.limit;
 
     let page = AuditPage {
+        nav_active: "audit",
         actor_options: facets
             .actors
             .iter()
@@ -237,6 +243,7 @@ pub async fn trace(
 
     let rid = ctx.request_id.as_uuid().to_string();
     let page = TracePage {
+        nav_active: "",
         traced_short: short_id(&traced),
         traced_id: traced,
         kind: summary.kind,
@@ -268,6 +275,7 @@ fn trace_frame(
     status: StatusCode,
 ) -> Result<Response, ApiError> {
     let page = TracePage {
+        nav_active: "",
         traced_short: short_id(traced_id),
         traced_id: traced_id.to_string(),
         kind: String::new(),

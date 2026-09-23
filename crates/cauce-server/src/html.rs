@@ -50,6 +50,10 @@ pub(crate) static JSON_ENC_JS: LazyLock<String> = LazyLock::new(|| asset_string(
 /// Shared page stylesheet; the other `ui` pages (W2) inject it too.
 pub(crate) static STYLE_CSS: LazyLock<String> = LazyLock::new(|| asset_string("style.css"));
 
+/// The version label the shared header renders (`v0.0.0`), hidden below
+/// 640 px by the stylesheet. Referenced from `templates/header.html`.
+pub(crate) const VERSION_LABEL: &str = concat!("v", env!("CARGO_PKG_VERSION"));
+
 static FAVICON_SVG: LazyLock<Cow<'static, [u8]>> = LazyLock::new(|| {
     Assets::get("favicon.svg")
         .map(|f| f.data)
@@ -72,6 +76,9 @@ struct Row {
 #[derive(Template)]
 #[template(path = "page.html")]
 struct Page {
+    /// The shared header's active nav item (`"search"` on `/` and
+    /// `/search`; `templates/header.html` compares against it).
+    nav_active: &'static str,
     q: String,
     has_results: bool,
     show_empty: bool,
@@ -110,6 +117,7 @@ pub async fn index(
 ) -> Result<Html<String>, ApiError> {
     let rid = ctx.request_id.as_uuid().to_string();
     let page = Page {
+        nav_active: "search",
         q: String::new(),
         has_results: false,
         show_empty: false,
@@ -168,6 +176,7 @@ pub async fn search(
             .map_err(|e| crate::handlers::search_error(&ctx, &req, e))?;
         let rid = ctx.request_id.as_uuid().to_string();
         let page = Page {
+            nav_active: "search",
             q,
             has_results: true,
             show_empty: false,
@@ -215,6 +224,7 @@ pub async fn search(
         .into_response())
     } else {
         let page = Page {
+            nav_active: "search",
             q,
             has_results: true,
             show_empty: true,
@@ -603,6 +613,8 @@ struct EngineSettings {
 #[derive(Template)]
 #[template(path = "settings.html")]
 struct SettingsPage {
+    /// The shared header's active nav item.
+    nav_active: &'static str,
     config_path: String,
     deadline: Field,
     ttl: Field,
@@ -735,6 +747,7 @@ pub async fn settings(
         .render()
         .map_err(|e| render_err(e, rid))?;
     let page = SettingsPage {
+        nav_active: "settings",
         config_path,
         deadline: field("search.deadline_ms"),
         ttl: field("search.ttl_s"),
@@ -1077,6 +1090,8 @@ struct HistRow {
 #[derive(Template)]
 #[template(path = "history.html")]
 struct History {
+    /// The shared header's active nav item.
+    nav_active: &'static str,
     /// Selected `since` window (`24h` | `7d` | `30d` | `all`).
     since: String,
     /// Active `q` substring filter.
@@ -1210,6 +1225,7 @@ pub(crate) async fn history_page(
     );
 
     let page = History {
+        nav_active: "history",
         since: params.get("since").unwrap_or("all").to_string(),
         q: params.get("q").unwrap_or("").to_string(),
         cached: filter.cached,
