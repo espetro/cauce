@@ -228,6 +228,8 @@ fn handler_for(spec: &RouteSpec, state: &AppState) -> Option<MethodRouter<AppSta
         #[cfg(feature = "ui")]
         ("GET", "/search", RouteKind::Html) => Some(get(html::search)),
         #[cfg(feature = "ui")]
+        ("GET", "/settings", RouteKind::Html) => Some(get(html::settings)),
+        #[cfg(feature = "ui")]
         ("GET", "/cache", RouteKind::Html) => Some(get(cache_page::cache)),
         #[cfg(feature = "ui")]
         ("GET", "/opensearch.xml", RouteKind::Html) => Some(get(html::opensearch)),

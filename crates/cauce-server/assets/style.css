@@ -113,6 +113,133 @@ article a:hover {
     color: var(--muted);
 }
 
+/* /settings (W2-07) */
+.topnav {
+    margin-bottom: 1rem;
+    color: var(--muted);
+}
+
+.topnav a {
+    color: var(--accent);
+    text-decoration: none;
+}
+
+/* The global `form { display: flex }` rule is the search box's; the settings
+   form stacks its fieldsets vertically. */
+form.settings-form {
+    display: block;
+}
+
+.settings-form fieldset,
+fieldset {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    margin-bottom: 1rem;
+    padding: 0.75rem;
+}
+
+fieldset legend {
+    padding: 0 0.25rem;
+    font-weight: 600;
+}
+
+fieldset label {
+    display: block;
+    margin: 0.5rem 0;
+}
+
+fieldset input[type="text"],
+fieldset input[type="number"],
+fieldset select {
+    width: 100%;
+    max-width: 28rem;
+    padding: 0.35rem 0.5rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    font-size: 0.95rem;
+    background: var(--bg);
+    color: var(--fg);
+}
+
+fieldset input[type="checkbox"] {
+    margin-right: 0.25rem;
+}
+
+fieldset input:disabled,
+fieldset.greyed input:disabled {
+    opacity: 0.55;
+}
+
+fieldset.greyed {
+    opacity: 0.85;
+    border-style: dashed;
+}
+
+.hint {
+    color: var(--muted);
+    font-size: 0.85rem;
+    margin: 0.15rem 0 0;
+}
+
+.engine-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.5rem 1rem;
+    padding: 0.5rem 0;
+    border-bottom: 1px solid var(--border);
+}
+
+.engine-row:last-child {
+    border-bottom: none;
+}
+
+.engine-row label {
+    margin: 0;
+    font-size: 0.9rem;
+}
+
+.engine-row input[type="text"] {
+    max-width: 14rem;
+}
+
+.engine-row select {
+    width: auto;
+}
+
+.engine-id {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-weight: 600;
+}
+
+.form-status.ok {
+    color: #15803d;
+}
+
+.form-status.error {
+    color: #b91c1c;
+}
+
+#settings-status {
+    margin-left: 0.75rem;
+    font-size: 0.9rem;
+}
+
+.field-error:empty {
+    display: none;
+}
+.field-error {
+    color: #b00;
+    font-size: 0.85em;
+    margin: 0.15em 0 0.5em;
+}
+.cache-actions {
+    display: flex;
+    gap: 0.75em;
+    align-items: baseline;
+}
+||||||| af559a1
+
 /* /cache page (W2-04). Strictly additive; shared base styles above.
    The page body carries `cache-page` so the wider content column and
    heading scale stay scoped to this route (the search page keeps
@@ -240,3 +367,4 @@ article.cache-entry + article.cache-entry {
         align-items: stretch;
     }
 }
+
