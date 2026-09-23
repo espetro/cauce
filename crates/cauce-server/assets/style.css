@@ -567,19 +567,25 @@ table.history details[open] summary {
         display: none;
     }
 
-    table.history tr.search td,
-    table.history tr.click td {
+    /* first line: query and source flow inline. Scoped to those two cells
+       only — a blanket `td { display: inline }` (specificity 0,2,3) would
+       beat the `.c-when`/`.c-n`/`.c-by` and `.h-md` hide rules and the card
+       layout never forms. */
+    table.history tr.search td.c-query,
+    table.history tr.search td.c-source,
+    table.history tr.click td.c-query,
+    table.history tr.click td.c-source {
         display: inline;
         padding: 0.1rem 0.5rem 0.1rem 0;
         border: none;
     }
 
-    /* first line: query and source */
     table.history td.c-query a {
         max-width: 60vw;
     }
 
-    /* n · by · when move to the card's second line */
+    /* n · by · when move to the card's second line (.meta2, emitted first
+       in the detail cell) */
     table.history td.c-when,
     table.history td.c-n,
     table.history td.c-by {

@@ -73,6 +73,7 @@
       </tr>
       <tr class="detail">
         <td colspan="7">
+          <span class="meta2">{{ row.result_count }} · {{ row.client }} · {{ row.when }}</span>
           {% if row.is_search %}
           <details{% if !row.clicks.is_empty() %} open{% endif %}>
             <summary>{{ row.clicks.len() }} {{ crate::strings::history::CLICKS_WORD }}</summary>
@@ -106,7 +107,6 @@
           </div>
           {% endfor %}
           {% endif %}
-          <span class="meta2">{{ row.result_count }} · {{ row.client }} · {{ row.when }}</span>
         </td>
       </tr>
     </tbody>
