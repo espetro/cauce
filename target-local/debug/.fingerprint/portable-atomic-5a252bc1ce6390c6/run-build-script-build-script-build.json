@@ -1,0 +1,1 @@
+{"rustc":13462371384788945141,"features":"","declared_features":"","target":0,"profile":0,"path":0,"deps":[[13052588844339377351,"build_script_build",false,17809627389260274126]],"local":[{"RerunIfChanged":{"output":"debug/build/portable-atomic-5a252bc1ce6390c6/output","paths":["build.rs","src/gen/build.rs","version.rs"]}}],"rustflags":[],"config":0,"compile_kind":0}
