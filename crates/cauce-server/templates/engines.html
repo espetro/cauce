@@ -10,7 +10,10 @@
   <style>{{ style_css|safe }}</style>
 </head>
 <body class="engines-page">
-  <p><a href="/">{{ crate::strings::common::NAV_SEARCH }}</a></p>
+  <header class="nav">
+    <a href="/">{{ crate::strings::common::NAV_SEARCH }}</a>
+    <strong>{{ crate::strings::engines::PAGE_TITLE }}</strong>
+  </header>
   <main>
   <h1>{{ crate::strings::engines::PAGE_TITLE }}</h1>
   <p class="meta"><span>{{ summary }}</span></p>
