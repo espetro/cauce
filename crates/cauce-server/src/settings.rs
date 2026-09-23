@@ -273,10 +273,13 @@ pub fn field_errors(current: &Config, pairs: &[(String, String)]) -> Vec<(String
 
 /// The `<p class="field-error">` target a submitted field name maps to on
 /// the settings page: `engines.<id>.<field>` errors and clears land on the
-/// row's `fe-engines.<id>` element — the page renders one error line per
-/// engine row, not per input. The longest configured id matching `rest`
-/// (exact, or as a `id.` prefix) wins so a dotted id still resolves to its
-/// own row; an unknown id collapses to its first segment.
+/// engine row's single error element — the page renders one error line per
+/// row, not per input. The longest configured id matching `rest` (exact,
+/// or as a `id.` prefix) wins so a dotted id still resolves to its own
+/// row; an unknown id collapses to its first segment.
+///
+/// Returns the dotted field path (`engines.dotted.id`); [`fe_id`] encodes
+/// it into the element id the page actually renders.
 #[cfg(feature = "ui")]
 pub fn error_target(name: &str, engine_ids: &[String]) -> String {
     let Some(rest) = name.strip_prefix("engines.") else {
@@ -293,6 +296,20 @@ pub fn error_target(name: &str, engine_ids: &[String]) -> String {
         Some((id, _)) => format!("engines.{id}"),
         None => name.to_string(),
     }
+}
+
+/// The `fe-*` element id for a field path: `fe-` plus the path with every
+/// `.` turned into `-` (`search.deadline_ms` -> `fe-search-deadline_ms`,
+/// `engines.dotted.id` -> `fe-engines-dotted-id`).
+///
+/// htmx resolves `hx-swap-oob` targets with `querySelector("#<id>")`,
+/// where a dot parses as a class selector and the swap silently misses, so
+/// every `fe-*` id must be dot-free. The encoding is not injective (`a.b`
+/// and `a-b` share an id), but the page's row ids and the oob fragment use
+/// the same mapping, so each error still lands on an element that exists.
+#[cfg(feature = "ui")]
+pub fn fe_id(path: &str) -> String {
+    format!("fe-{}", path.replace('.', "-"))
 }
 
 /// Write `value` at the dotted `path`, creating intermediate tables.
@@ -445,6 +462,32 @@ mod tests {
         assert!(!out.contains("enabled"), "pin must not persist: {out}");
         assert!(!out.contains("env"), "env must not persist: {out}");
         assert!(out.contains("tier = 2"), "{out}");
+    }
+
+    /// The oob id encoding must be dot-free so htmx's `querySelector("#id")`
+    /// lookup finds the row: `engines.dotted.id.enabled` targets
+    /// `fe-engines-dotted-id`.
+    #[cfg(feature = "ui")]
+    #[test]
+    fn fe_ids_are_dot_free_and_resolve_dotted_engine_rows() {
+        let ids = vec!["dotted.id".to_string(), "replay".to_string()];
+        assert_eq!(
+            fe_id(&error_target("engines.dotted.id.enabled", &ids)),
+            "fe-engines-dotted-id"
+        );
+        assert_eq!(
+            fe_id(&error_target("engines.replay.tier", &ids)),
+            "fe-engines-replay"
+        );
+        assert_eq!(
+            fe_id(&error_target("search.deadline_ms", &ids)),
+            "fe-search-deadline_ms"
+        );
+        // An unknown dotted id still collapses to a dot-free row id.
+        assert_eq!(
+            fe_id(&error_target("engines.unknown.id.enabled", &ids)),
+            "fe-engines-unknown"
+        );
     }
 
     #[test]

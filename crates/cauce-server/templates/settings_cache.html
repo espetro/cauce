@@ -4,11 +4,13 @@
   <p class="cache-actions">
     <button type="button"
             hx-delete="/api/cache?expired=true"
+            hx-params="none"
             hx-headers='{"X-Cauce-Client":"ui"}'
             hx-confirm="{{ crate::strings::settings::CONFIRM_EXPIRED }}"
             hx-on::after-request="if(event.detail.successful)htmx.ajax('GET','/settings?fragment=cache',{target:'#cache-block',swap:'outerHTML'})">{{ crate::strings::settings::DELETE_EXPIRED }}</button>
     <button type="button"
             hx-delete="/api/cache?all=true"
+            hx-params="none"
             hx-headers='{"X-Cauce-Client":"ui"}'
             hx-confirm="{{ crate::strings::settings::CONFIRM_ALL }}"
             hx-on::after-request="if(event.detail.successful)htmx.ajax('GET','/settings?fragment=cache',{target:'#cache-block',swap:'outerHTML'})">{{ crate::strings::settings::DELETE_ALL }}</button>

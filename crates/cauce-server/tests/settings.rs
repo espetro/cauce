@@ -160,6 +160,14 @@ async fn settings_page_renders_sections_and_request_id() {
     ] {
         assert!(body.contains(needle), "settings page missing {needle:?}");
     }
+    // The delete buttons live inside the settings form: without
+    // `hx-params="none"` htmx appends every enabled field to the DELETE
+    // URL and `DELETE /api/cache` 400s on the unknown params.
+    assert_eq!(
+        body.matches("hx-params=\"none\"").count(),
+        2,
+        "both cache delete buttons must opt out of form params: {body}"
+    );
     assert!(
         !body.contains("hx-ext="),
         "the form PUTs urlencoded fields; json-enc is not loaded here: {body}"
@@ -275,10 +283,10 @@ async fn invalid_field_reports_inline_error() {
     assert!(body.contains("form-status error"), "{body}");
     assert!(body.contains("not saved: 1 error"), "{body}");
     assert!(
-        body.contains("id=\"fe-search.deadline_ms\""),
+        body.contains("id=\"fe-search-deadline_ms\""),
         "error line targets the deadline field: {body}"
     );
-    let pos = body.find("id=\"fe-search.deadline_ms\"").unwrap();
+    let pos = body.find("id=\"fe-search-deadline_ms\"").unwrap();
     assert!(
         body[pos..].contains("hx-swap-oob"),
         "error element swaps out of band: {body}"
@@ -317,9 +325,9 @@ async fn engine_fields_write_file_entries() {
     clear_env();
 }
 
-/// Engine field errors and clears target the row's `fe-engines.<id>`
+/// Engine field errors and clears target the row's `fe-engines-<id>`
 /// element — the page renders one error line per row, never a per-field
-/// `fe-engines.<id>.<field>` phantom.
+/// `fe-engines-<id>-<field>` phantom.
 #[tokio::test]
 async fn engine_field_errors_target_the_row() {
     let _guard = env_lock().await;
@@ -331,11 +339,11 @@ async fn engine_field_errors_target_the_row() {
     assert_eq!(status, StatusCode::OK, "{body}");
     assert!(body.contains("not saved: 1 error"), "{body}");
     assert!(
-        body.contains("id=\"fe-engines.replay\""),
+        body.contains("id=\"fe-engines-replay\""),
         "the row error element must carry the message: {body}"
     );
     assert!(
-        !body.contains("fe-engines.replay.tier"),
+        !body.contains("fe-engines-replay-tier"),
         "no per-field error element exists: {body}"
     );
 
@@ -349,14 +357,62 @@ async fn engine_field_errors_target_the_row() {
     .await;
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(
-        body.matches("id=\"fe-engines.replay\"").count(),
+        body.matches("id=\"fe-engines-replay\"").count(),
         1,
         "one OOB clear for the row: {body}"
     );
-    assert!(!body.contains("fe-engines.replay.tier"), "{body}");
-    assert!(!body.contains("fe-engines.replay.egress.proxy"), "{body}");
-    assert!(body.contains("id=\"fe-search.deadline_ms\""), "{body}");
+    assert!(!body.contains("fe-engines-replay-tier"), "{body}");
+    assert!(!body.contains("fe-engines-replay-egress-proxy"), "{body}");
+    assert!(body.contains("id=\"fe-search-deadline_ms\""), "{body}");
     clear_env();
+}
+
+/// htmx resolves oob targets with `querySelector("#<id>")`, where a dot
+/// parses as a class selector and the swap silently misses. Every `fe-*`
+/// id the page renders and the status fragment emits must be dot-free, and
+/// the emitted id must be the exact id of an element on the page so
+/// `document.getElementById` finds it — checked here with a dotted engine
+/// id, the case that produced dotted row ids.
+#[tokio::test]
+async fn oob_error_ids_are_dot_free_and_match_the_page() {
+    let _guard = env_lock().await;
+    clear_env();
+    let tmp = config_env("[[engines]]\nid = \"dotted.id\"\nkind = \"replay\"\n");
+    let app = app(&tmp);
+
+    // The page's row error element carries the encoded id.
+    let (status, page) = get_html(&app, "/settings").await;
+    assert_eq!(status, StatusCode::OK, "{page}");
+    assert!(
+        page.contains("id=\"fe-engines-dotted-id\""),
+        "the dotted-id row must render a dot-free error element: {page}"
+    );
+    for id in fe_ids(&page) {
+        assert!(!id.contains('.'), "page fe-* id holds a dot: {id:?}");
+    }
+
+    // The oob fragment for a bad engine field emits the very same id, so a
+    // JS-side `document.getElementById` lands on the rendered row.
+    let (status, body) = put_form(&app, "engines.dotted.id.tier=9", true).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert!(
+        body.contains("id=\"fe-engines-dotted-id\""),
+        "oob error must target the rendered row id: {body}"
+    );
+    for id in fe_ids(&body) {
+        assert!(!id.contains('.'), "oob fe-* id holds a dot: {id:?}");
+    }
+    clear_env();
+}
+
+/// Every `id="fe-..."` value in `html`, for the dot-free assertions.
+fn fe_ids(html: &str) -> Vec<String> {
+    html.split("id=\"")
+        .skip(1)
+        .filter_map(|rest| rest.split('\"').next())
+        .filter(|id| id.starts_with("fe-"))
+        .map(String::from)
+        .collect()
 }
 
 #[tokio::test]
@@ -478,7 +534,7 @@ async fn multiple_invalid_fields_report_per_field_errors() {
     .await;
     assert_eq!(status, StatusCode::OK, "{body}");
     assert!(body.contains("not saved: 2 errors"), "{body}");
-    for id in ["fe-search.deadline_ms", "fe-admission.max_wait_ms"] {
+    for id in ["fe-search-deadline_ms", "fe-admission-max_wait_ms"] {
         assert!(body.contains(&format!("id=\"{id}\"")), "{body}");
     }
     // The file is untouched: values stay in the submitted form only.
@@ -543,11 +599,12 @@ async fn save_writes_audit_with_changed_keys() {
     clear_env();
 }
 
-/// A file-literal secret displays as `<redacted>`; submitting that
-/// placeholder back restores the file value, so the audit row must not
-/// report `ai.api_key` as changed.
+/// A file-literal secret renders as typed on the page (the owner's own
+/// config file); the `restore_redacted` pass still keeps a `<redacted>`
+/// submission from clobbering the secret, so the audit row must not report
+/// `ai.api_key` as changed.
 #[tokio::test]
-async fn redacted_secret_roundtrip_reports_no_change() {
+async fn literal_secret_renders_and_redacted_restore_holds() {
     let _guard = env_lock().await;
     clear_env();
     let tmp = config_env("[ai]\napi_key = \"sk-file-literal\"\n");
@@ -556,11 +613,17 @@ async fn redacted_secret_roundtrip_reports_no_change() {
     let (status, body) = get_html(&app, "/settings").await;
     assert_eq!(status, StatusCode::OK, "{body}");
     assert!(
-        body.contains("value=\"&#60;redacted&#62;\""),
-        "a literal secret must render redacted: {body}"
+        body.contains("name=\"ai.api_key\" value=\"sk-file-literal\""),
+        "a literal secret must render as typed: {body}"
+    );
+    assert!(
+        !body.contains("&#60;redacted&#62;"),
+        "the <redacted> placeholder must not reach the input: {body}"
     );
 
-    // The browser submits the decoded `<redacted>` placeholder verbatim.
+    // A stale page (or a JSON API client) can still submit the decoded
+    // `<redacted>` placeholder verbatim; the restore pass writes the real
+    // secret back rather than persisting the literal.
     let (status, body) = put_form(&app, "ai.api_key=%3Credacted%3E", false).await;
     assert_eq!(status, StatusCode::OK, "{body}");
     assert!(
@@ -593,10 +656,10 @@ async fn redacted_secret_roundtrip_reports_no_change() {
     clear_env();
 }
 
-/// Under `CAUCE_ENGINES=replay` every `enabled` control renders disabled —
-/// the hidden `false` fallback included — so a browser submits no
-/// `engines.<id>.enabled` pair at all. A full-form save then creates the
-/// tier stanza without baking the pinned flag into the file.
+/// Under `CAUCE_ENGINES=replay` the `enabled` checkboxes render as plain
+/// text (`enabled` / `disabled`) — no `engines.<id>.enabled` input exists
+/// at all, so a browser submits no enabled pair and a full-form save
+/// creates the tier stanza without baking the pinned flag into the file.
 #[tokio::test]
 async fn pinned_engine_tier_edit_writes_no_enabled() {
     let _guard = env_lock().await;
@@ -606,24 +669,18 @@ async fn pinned_engine_tier_edit_writes_no_enabled() {
     let tmp = config_env("");
     let app = app(&tmp);
 
-    // A submittable `enabled=false` hidden input would write the pin's
-    // negation into `config.toml` on every save (disabled controls do not
-    // submit, so both the checkbox and its fallback must be disabled).
     let (status, body) = get_html(&app, "/settings").await;
     assert_eq!(status, StatusCode::OK, "{body}");
-    let enabled_inputs: Vec<&str> = body
-        .split('<')
-        .filter(|tag| tag.contains(".enabled\""))
-        .collect();
     assert!(
-        !enabled_inputs.is_empty(),
-        "engine rows should render enabled controls: {body}"
+        !body.contains(".enabled\""),
+        "pinned engine rows render no submittable enabled field: {body}"
     );
-    for tag in enabled_inputs {
-        assert!(
-            tag.contains("disabled"),
-            "pinned enabled control must not submit: <{tag}"
-        );
+    for needle in [
+        "<span class=\"engine-enabled\">enabled</span>",
+        "<span class=\"engine-enabled\">disabled</span>",
+        "enabled flags are pinned by CAUCE_ENGINES",
+    ] {
+        assert!(body.contains(needle), "pinned row text missing {needle:?}");
     }
 
     // The full shape the pinned form submits: every rendered field except
@@ -690,6 +747,11 @@ async fn cache_fragment_returns_block_only() {
     assert!(body.contains("id=\"cache-block\""), "{body}");
     assert!(body.contains("entries"), "{body}");
     assert!(body.contains("unexpired"), "{body}");
+    assert_eq!(
+        body.matches("hx-params=\"none\"").count(),
+        2,
+        "the refreshed block keeps the delete buttons' hx-params opt-out: {body}"
+    );
     assert!(
         !body.contains("<legend>Search</legend>"),
         "fragment must not carry the full page: {body}"
