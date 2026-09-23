@@ -16,7 +16,7 @@
 
 use std::collections::BTreeMap;
 
-use cauce_core::config::{Config, ConfigError, EngineEntry};
+use cauce_core::config::{Config, ConfigError, EngineEntry, system_env};
 
 fn invalid(path: &str, msg: impl Into<String>) -> ConfigError {
     ConfigError::InvalidValue {
@@ -201,16 +201,22 @@ fn engine_entry<'a>(tree: &'a mut toml::Value, id: &str) -> Option<&'a mut toml:
 
 /// [`engine_entry`] that creates the stanza when missing: the new entry is
 /// seeded from the resolved [`EngineEntry`] so required fields (`kind`, an
-/// exec `command`, ...) are always present and valid.
+/// exec `command`, ...) are always present and valid — minus `enabled` (a
+/// `CAUCE_ENGINES` pin must never be baked into the file by a tier/proxy
+/// edit) and `env` (process secrets never serialise).
 fn engine_entry_mut<'a>(
     tree: &'a mut toml::Value,
     resolved: &EngineEntry,
 ) -> Result<&'a mut toml::Table, ConfigError> {
     if engine_entry(tree, resolved.id.as_str()).is_none() {
-        let entry = toml::from_str::<toml::Value>(
+        let mut entry = toml::from_str::<toml::Value>(
             &toml::to_string_pretty(resolved).map_err(ConfigError::Encode)?,
         )
         .map_err(ConfigError::Invalid)?;
+        if let Some(table) = entry.as_table_mut() {
+            table.remove("enabled");
+            table.remove("env");
+        }
         let engines = tree
             .as_table_mut()
             .ok_or_else(|| invalid("engines", "config root is not a table"))?
@@ -225,6 +231,41 @@ fn engine_entry_mut<'a>(
             .push(entry);
     }
     Ok(engine_entry(tree, resolved.id.as_str()).expect("entry just ensured"))
+}
+
+/// Per-field validation for the HTMX submit: every `(field, message)` pair
+/// `apply_field` rejects, so the page can place one error line under each
+/// offending input. Also surfaces schema errors `Config::from_raw` finds
+/// after a clean field merge (e.g. a cross-field rule).
+pub fn field_errors(current: &Config, pairs: &[(String, String)]) -> Vec<(String, String)> {
+    let mut tree = current
+        .raw_tree()
+        .cloned()
+        .or_else(|| current.display_tree().ok())
+        .unwrap_or_else(|| toml::Value::Table(toml::Table::new()));
+
+    let mut fields: BTreeMap<String, String> = BTreeMap::new();
+    for (name, value) in pairs {
+        fields.insert(name.clone(), value.clone());
+    }
+
+    let mut errors = Vec::new();
+    for (name, value) in &fields {
+        if let Err(e) = apply_field(&mut tree, current, name, value) {
+            errors.push((name.clone(), e.to_string()));
+        }
+    }
+    if errors.is_empty() {
+        if let Err(e) = Config::from_raw(&tree, &system_env()) {
+            let path = match &e {
+                ConfigError::InvalidValue { path, .. } => path.clone(),
+                ConfigError::InvalidEngine { id, .. } => format!("engines.{id}"),
+                _ => String::new(),
+            };
+            errors.push((path, e.to_string()));
+        }
+    }
+    errors
 }
 
 /// Write `value` at the dotted `path`, creating intermediate tables.
@@ -352,6 +393,31 @@ mod tests {
         let replay = &tree["engines"][0];
         assert_eq!(replay["tier"].as_integer(), Some(1));
         assert_eq!(replay["egress"]["proxy"].as_str(), Some("socks5://p:2"));
+    }
+
+    /// A `CAUCE_ENGINES=replay` pin resolves `enabled = true` on the builtin;
+    /// a tier edit that creates the stanza must not bake that pin (or any
+    /// resolved `env`) into the file.
+    #[test]
+    fn seeded_stanza_omits_pinned_enabled_and_env() {
+        let mut resolved = Config::from_raw(&toml::from_str("").unwrap(), &env())
+            .unwrap()
+            .engines
+            .iter()
+            .find(|e| e.id.as_str() == "replay")
+            .unwrap()
+            .clone();
+        resolved.enabled = true; // as CAUCE_ENGINES resolves it
+        resolved.env.insert("SECRET".to_string(), "x".to_string());
+
+        let mut tree = toml::Value::Table(toml::Table::new());
+        let entry = engine_entry_mut(&mut tree, &resolved).unwrap();
+        entry.insert("tier".to_string(), toml::Value::Integer(2));
+
+        let out = toml::to_string_pretty(&tree).unwrap();
+        assert!(!out.contains("enabled"), "pin must not persist: {out}");
+        assert!(!out.contains("env"), "env must not persist: {out}");
+        assert!(out.contains("tier = 2"), "{out}");
     }
 
     #[test]
