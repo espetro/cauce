@@ -11,6 +11,9 @@ mod audit_page;
 mod cache_page;
 #[cfg(feature = "ui")]
 mod dashboard;
+#[cfg(feature = "ui")]
+mod engines_page;
+
 mod error;
 mod handlers;
 #[cfg(feature = "ui")]

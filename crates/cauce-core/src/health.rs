@@ -413,15 +413,24 @@ impl HealthTracker {
         }
     }
 
-    /// `POST /api/engines/{id}/reset`: restore a fresh `Closed` state and
+    /// `POST /api/engines/{id}/reset`: restore a fresh `HalfOpen` state and
     /// return `(previous breaker, fresh row)` for the audit details and the
     /// response body. `None` when the engine is unknown (not configured,
     /// no persisted row).
+    ///
+    /// The post-reset state is `HalfOpen` (W2-05 acceptance: "reset flips
+    /// it to `HalfOpen`"), not `Closed`: a reset engine re-earns trust
+    /// through a single probe call instead of rejoining the fan-out at
+    /// full concurrency. A healthy engine's probe just closes the breaker
+    /// on its next call.
     pub fn reset(&self, id: &EngineId) -> Option<(BreakerState, EngineHealthRow)> {
         let mut inner = self.lock();
         let health = inner.map.get_mut(id)?;
         let previous = health.breaker;
-        *health = EngineHealth::default();
+        *health = EngineHealth {
+            breaker: BreakerState::HalfOpen,
+            ..EngineHealth::default()
+        };
         let row = health.to_row(id);
         inner.dirty.insert(id.clone());
         Some((previous, row))

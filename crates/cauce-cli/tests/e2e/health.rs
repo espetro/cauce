@@ -81,7 +81,7 @@ async fn blocked_replay_opens_skips_and_survives_restart() {
     let (status, body) = common::http(addr, "POST", "/api/engines/replay/reset", None).await;
     assert_eq!(status, 200, "reset failed: {body}");
     let row: Value = serde_json::from_str(&body).expect("reset JSON");
-    assert_eq!(row["breaker"], "closed", "{row}");
+    assert_eq!(row["breaker"], "half_open", "{row}");
 
     let (status, body) = common::http(addr, "GET", "/api/search?q=four", None).await;
     assert_eq!(status, 502, "post-reset search should reach engine: {body}");

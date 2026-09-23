@@ -358,3 +358,87 @@ pub mod trace {
     /// Accessible name of one span's expandable raw-fields block.
     pub const SPAN_REGION: &str = "span fields";
 }
+pub mod engines {
+    pub const PAGE_TITLE: &str = "Engines";
+    /// Summary line under the heading (`3 configured · 2 enabled`).
+    pub const SUMMARY: &str = "{configured} configured · {enabled} enabled";
+    /// Appended to SUMMARY only while at least one breaker is open.
+    pub const SUMMARY_OPEN: &str = " · {open} breaker open";
+    /// Page-level note: toggles persist but the live set is fixed until
+    /// restart.
+    pub const HINT_RESTART: &str = "enable/disable writes config.toml and takes effect on restart.";
+    /// Page-level note while `CAUCE_ENGINES` pins the enabled set.
+    pub const HINT_PINNED: &str =
+        "CAUCE_ENGINES pins the enabled set; resolved state will not move while it is set.";
+    /// Empty state: nothing configured, running, or tracked.
+    pub const EMPTY: &str = "No engines configured.";
+    /// Card header note for an engine the resolved config does not name.
+    pub const NOT_IN_CONFIG: &str = "not in config";
+    /// Card header note for an engine absent from the running pipeline.
+    pub const NOT_RUNNING: &str = "not running";
+    /// Breaker chip, closed state.
+    pub const BREAKER_CLOSED: &str = "Closed";
+    /// Breaker chip, open state.
+    pub const BREAKER_OPEN: &str = "Open";
+    /// Breaker chip, half-open state.
+    pub const BREAKER_HALF_OPEN: &str = "HalfOpen";
+    /// Countdown note next to an open chip; `{rel}` is `42s`-style.
+    pub const BREAKER_RETRIES: &str = "retries in {rel}";
+    /// Note next to an open chip whose window already elapsed (the lazy
+    /// `Open -> HalfOpen` truth: the next call probes).
+    pub const BREAKER_ELAPSED: &str = "next call probes";
+    /// Note next to a half-open chip.
+    pub const BREAKER_PROBING: &str = "probing";
+    /// Note next to the chip while the engine is disabled (the mockup's
+    /// `[ Closed ] disabled`); the countdown wins when both apply.
+    pub const DISABLED: &str = "disabled";
+    /// Stats labels (definition-list terms).
+    pub const STAT_ENABLED: &str = "enabled";
+    pub const STAT_EWMA: &str = "ewma";
+    pub const STAT_LAST_OK: &str = "last ok";
+    pub const STAT_LAST_ERROR: &str = "last error";
+    pub const STAT_P95: &str = "p95";
+    pub const STAT_RELIABILITY: &str = "reliability";
+    pub const STAT_REQUESTS: &str = "requests today";
+    /// `enabled` cell values.
+    pub const ENABLED_YES: &str = "yes";
+    pub const ENABLED_NO: &str = "no";
+    /// `last ok` cell: absolute local time plus relative (`01:02 (9m)`).
+    pub const LAST_OK_FMT: &str = "{hhmm} ({rel})";
+    /// `p95`/`ewma` cell for a real sub-millisecond sample (renders
+    /// instead of a misleading `0 ms`).
+    pub const SUB_MS: &str = "<1 ms";
+    /// Reset action button.
+    pub const ACTION_RESET: &str = "reset breaker";
+    /// Toggle action labels — the action that will happen.
+    pub const ACTION_DISABLE: &str = "disable";
+    pub const ACTION_ENABLE: &str = "enable";
+    /// Per-button hint while `CAUCE_ENGINES` pins the set (button disabled).
+    pub const TOGGLE_PINNED: &str = "pinned by CAUCE_ENGINES";
+    /// Card notice after an enable/disable write.
+    pub const TOGGLE_SAVED: &str = "saved; applies after restart";
+    /// Test-query form: input default, aria label, submit label.
+    pub const TEST_DEFAULT: &str = "test";
+    pub const TEST_ARIA: &str = "test query";
+    pub const ACTION_RUN: &str = "run";
+    /// Meta line above a test fragment; `{n}`/`{ms}` are substituted.
+    pub const TEST_RESULTS: &str = "{n} results · {ms} ms";
+    /// Error classes the test meta line can show (`{n} results` absent).
+    pub const TEST_NO_RESULTS: &str = "no results";
+    pub const TEST_BLOCKED: &str = "blocked";
+    pub const TEST_TIMEOUT: &str = "timeout";
+    pub const TEST_RATE_LIMITED: &str = "rate limited";
+    pub const TEST_PARSE: &str = "parse error";
+    pub const TEST_TRANSPORT: &str = "transport error";
+    pub const TEST_UPSTREAM: &str = "upstream failed";
+    pub const TEST_BREAKER_OPEN: &str = "breaker open";
+    pub const TEST_NO_ENGINES: &str = "no engines";
+    pub const TEST_UNKNOWN_ENGINES: &str = "unknown engines";
+    pub const TEST_BAD_REQUEST: &str = "bad request";
+    /// Inline meta when an htmx test fetch fails outside the handler;
+    /// `{status}` is the HTTP status code.
+    pub const TEST_FETCH_FAILED: &str = "test query failed: HTTP {status}";
+    /// Inline meta for a failed non-test htmx call (reset/toggle);
+    /// `{status}` is the HTTP status code.
+    pub const REQUEST_FAILED: &str = "request failed: HTTP {status}";
+}
