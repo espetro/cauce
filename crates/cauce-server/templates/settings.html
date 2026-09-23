@@ -29,12 +29,12 @@
     <input type="text" name="search.deadline_ms" value="{{ deadline.value }}" {% if !deadline.env.is_empty() %}disabled{% endif %}>
   </label>
   {% if !deadline.env.is_empty() %}<p class="hint">{{ crate::strings::settings::SET_BY }} {{ deadline.env }}</p>{% endif %}
-  <p class="field-error" id="fe-search.deadline_ms"></p>
+  <p class="field-error" id="fe-search-deadline_ms"></p>
   <label>{{ crate::strings::settings::TTL }}
     <input type="text" name="search.ttl_s" value="{{ ttl.value }}" {% if !ttl.env.is_empty() %}disabled{% endif %}>
   </label>
   {% if !ttl.env.is_empty() %}<p class="hint">{{ crate::strings::settings::SET_BY }} {{ ttl.env }}</p>{% endif %}
-  <p class="field-error" id="fe-search.ttl_s"></p>
+  <p class="field-error" id="fe-search-ttl_s"></p>
   <label class="greyed">{{ crate::strings::settings::HEDGE }}
     <input disabled placeholder="{{ crate::strings::settings::HEDGE_WAVE }}">
   </label>
@@ -45,13 +45,17 @@
   {% if engines_pinned %}<p class="hint">{{ crate::strings::settings::ENGINES_PINNED }}</p>{% endif %}
   {% for e in engines %}
   <div class="engine-row">
-    <strong>{{ e.id }}</strong>
-    <span class="hint">{{ e.kind }}</span>
+    <strong class="engine-id">{{ e.id }}</strong>
+    <span class="hint mono">{{ e.kind }}</span>
+    {% if engines_pinned %}
+    <span class="engine-enabled">{% if e.enabled %}{{ crate::strings::settings::ENABLED }}{% else %}{{ crate::strings::settings::DISABLED }}{% endif %}</span>
+    {% else %}
     <label>
-      <input type="hidden" name="engines.{{ e.id }}.enabled" value="false" {% if engines_pinned %}disabled{% endif %}>
-      <input type="checkbox" name="engines.{{ e.id }}.enabled" value="true" {% if e.enabled %}checked{% endif %} {% if engines_pinned %}disabled{% endif %}>
+      <input type="hidden" name="engines.{{ e.id }}.enabled" value="false">
+      <input type="checkbox" name="engines.{{ e.id }}.enabled" value="true" {% if e.enabled %}checked{% endif %}>
       {{ crate::strings::settings::ENABLED }}
     </label>
+    {% endif %}
     <label>{{ crate::strings::settings::TIER }}
       <select name="engines.{{ e.id }}.tier">
         <option value="" {% if e.tier.is_empty() %}selected{% endif %}>{{ crate::strings::settings::TIER_DEFAULT }}</option>
@@ -63,7 +67,7 @@
     <label>{{ crate::strings::settings::PROXY }}
       <input type="text" name="engines.{{ e.id }}.egress.proxy" value="{{ e.proxy }}" placeholder="{{ crate::strings::settings::PROXY_PLACEHOLDER }}">
     </label>
-    <p class="field-error" id="fe-engines.{{ e.id }}"></p>
+    <p class="field-error" id="{{ e.fe_id }}"></p>
   </div>
   {% endfor %}
   <a href="/engines">{{ crate::strings::settings::BROWSE_ENGINES }}</a>
@@ -75,12 +79,12 @@
     <input type="text" name="admission.max_wait_ms" value="{{ max_wait.value }}" {% if !max_wait.env.is_empty() %}disabled{% endif %}>
   </label>
   {% if !max_wait.env.is_empty() %}<p class="hint">{{ crate::strings::settings::SET_BY }} {{ max_wait.env }}</p>{% endif %}
-  <p class="field-error" id="fe-admission.max_wait_ms"></p>
+  <p class="field-error" id="fe-admission-max_wait_ms"></p>
   <label>{{ crate::strings::settings::MAX_CONCURRENT }}
     <input type="text" name="admission.max_concurrent_per_engine" value="{{ max_concurrent.value }}" {% if !max_concurrent.env.is_empty() %}disabled{% endif %}>
   </label>
   {% if !max_concurrent.env.is_empty() %}<p class="hint">{{ crate::strings::settings::SET_BY }} {{ max_concurrent.env }}</p>{% endif %}
-  <p class="field-error" id="fe-admission.max_concurrent_per_engine"></p>
+  <p class="field-error" id="fe-admission-max_concurrent_per_engine"></p>
 </fieldset>
 
 <fieldset>
@@ -89,7 +93,7 @@
     <input type="text" name="logs.retention_days" value="{{ retention.value }}" {% if !retention.env.is_empty() %}disabled{% endif %}>
   </label>
   {% if !retention.env.is_empty() %}<p class="hint">{{ crate::strings::settings::SET_BY }} {{ retention.env }}</p>{% endif %}
-  <p class="field-error" id="fe-logs.retention_days"></p>
+  <p class="field-error" id="fe-logs-retention_days"></p>
 </fieldset>
 
 {{ cache_block|safe }}
@@ -100,13 +104,13 @@
     <input type="text" name="ai.base_url" value="{{ ai_base_url.value }}" {% if !ai_base_url.env.is_empty() %}disabled{% endif %}>
   </label>
   {% if !ai_base_url.env.is_empty() %}<p class="hint">{{ crate::strings::settings::SET_BY }} {{ ai_base_url.env }}</p>{% endif %}
-  <p class="field-error" id="fe-ai.base_url"></p>
+  <p class="field-error" id="fe-ai-base_url"></p>
   <label>{{ crate::strings::settings::AI_API_KEY }}
     <input type="text" name="ai.api_key" value="{{ ai_api_key.value }}" placeholder="{{ crate::strings::settings::AI_API_KEY_PLACEHOLDER }}" {% if !ai_api_key.env.is_empty() %}disabled{% endif %}>
   </label>
   {% if !ai_api_key.env.is_empty() %}<p class="hint">{{ crate::strings::settings::SET_BY }} {{ ai_api_key.env }}</p>{% endif %}
   {% if !ai_key_status.is_empty() %}<p class="hint">{{ ai_key_status }}</p>{% endif %}
-  <p class="field-error" id="fe-ai.api_key"></p>
+  <p class="field-error" id="fe-ai-api_key"></p>
   <label>{{ crate::strings::settings::AI_MODEL }}
     <input type="text" name="ai.model" value="{{ ai_model.value }}" list="ai-models" placeholder="{{ crate::strings::settings::AI_MODEL_PLACEHOLDER }}" {% if !ai_model.env.is_empty() %}disabled{% endif %}>
     <datalist id="ai-models">
@@ -115,7 +119,7 @@
   </label>
   {% if !ai_model.env.is_empty() %}<p class="hint">{{ crate::strings::settings::SET_BY }} {{ ai_model.env }}</p>{% endif %}
   {% if ai_models_failed %}<p class="hint">{{ crate::strings::settings::MODELS_UNREACHABLE }}</p>{% endif %}
-  <p class="field-error" id="fe-ai.model"></p>
+  <p class="field-error" id="fe-ai-model"></p>
   <label>
     <input type="checkbox" disabled {% if ai_enabled %}checked{% endif %}> {{ crate::strings::settings::ENABLED }} {{ crate::strings::settings::AI_PIPELINE_NOTE }}
   </label>
