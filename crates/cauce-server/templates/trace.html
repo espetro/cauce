@@ -6,11 +6,11 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>trace {{ traced_short }} · cauce</title>
+  <title>{{ strings.title_prefix }}{{ traced_short }}{{ strings.title_suffix }}</title>
   <style>{{ style_css|safe }}</style>
 </head>
 <body>
-  <h1>Trace</h1>
+  <h1>{{ strings.heading }}</h1>
   <div class="meta">
     <span class="request-id" title="{{ traced_id }}">{{ traced_id }}</span>
   </div>

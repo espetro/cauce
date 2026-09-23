@@ -18,19 +18,15 @@ use axum::Extension;
 use axum::extract::{Path, State};
 use axum::http::{HeaderMap, StatusCode, Uri};
 use axum::response::{Html, IntoResponse, Response};
-use cauce_core::{AuditFilter, AuditRow};
+use cauce_core::AuditRow;
 
 use crate::app::AppState;
 use crate::error::ApiError;
-use crate::handlers::{QueryParams, audit_list};
+use crate::handlers::{audit_list, audit_list_data};
 use crate::html::{STYLE_CSS, prefers_json, render_err, short_id};
 use crate::middleware::RequestCtx;
 use crate::observability::trace::{self, TraceError};
-
-/// Page cap: the JSON handler defaults to 50; the page widens the default
-/// to 200 rows so a busy day fits on one screen.
-const PAGE_LIMIT: u32 = 200;
-const MAX_LIMIT: u32 = 1_000;
+use crate::strings::{self, AuditStrings, TraceStrings};
 
 /// One audit row pre-rendered to plain strings for the template.
 #[derive(Debug)]
@@ -60,6 +56,7 @@ struct AuditPage {
     request_id: String,
     short_request_id: String,
     style_css: String,
+    strings: &'static AuditStrings,
 }
 
 /// `/trace/{id}` page.
@@ -75,11 +72,11 @@ struct TracePage {
     request_id: String,
     short_request_id: String,
     style_css: String,
+    strings: &'static TraceStrings,
 }
 
 /// `GET /audit?actor&action&since&limit`: the audit table, newest first.
-/// `Accept: application/json` delegates to the `/api/audit` handler — the
-/// page and the API share one data path (wave-2 settled input).
+/// Both representations use the same parsing, defaults, filters, and store query.
 pub async fn audit(
     State(state): State<AppState>,
     Extension(ctx): Extension<RequestCtx>,
@@ -96,27 +93,7 @@ pub async fn audit(
             .map(|j| j.into_response());
     }
 
-    let params = QueryParams::parse(uri.query(), &ctx)?;
-    params.allow(&ctx, &["since", "actor", "action", "limit"])?;
-    // Form submissions send `actor=`/`action=` empty; an empty value means
-    // "no filter" here, not "match the empty string".
-    let filter = AuditFilter {
-        since: params.since(&ctx, "since")?,
-        actor: params
-            .get("actor")
-            .filter(|v| !v.is_empty())
-            .map(str::to_string),
-        action: params
-            .get("action")
-            .filter(|v| !v.is_empty())
-            .map(str::to_string),
-        limit: params.u32(&ctx, "limit", PAGE_LIMIT)?.clamp(1, MAX_LIMIT),
-    };
-    let rows = state
-        .store()
-        .list_audit(&filter)
-        .await
-        .map_err(|e| ctx.store(&e))?;
+    let (filter, rows) = audit_list_data(state.store().as_ref(), uri, &ctx).await?;
 
     let rid = ctx.request_id.as_uuid().to_string();
     let page = AuditPage {
@@ -127,6 +104,7 @@ pub async fn audit(
         short_request_id: short_id(&rid),
         request_id: rid,
         style_css: STYLE_CSS.clone(),
+        strings: &strings::AUDIT,
     };
     Ok(Html(
         page.render()
@@ -170,6 +148,7 @@ pub async fn trace(
         short_request_id: short_id(&rid),
         request_id: rid,
         style_css: STYLE_CSS.clone(),
+        strings: &strings::TRACE,
     };
     page.render()
         .map_err(|e| render_err(e, ctx.request_id.as_uuid()))

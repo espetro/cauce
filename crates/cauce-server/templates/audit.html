@@ -6,23 +6,23 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>audit · cauce</title>
+  <title>{{ strings.title }}</title>
   <style>{{ style_css|safe }}</style>
 </head>
 <body>
-  <h1>Audit</h1>
+  <h1>{{ strings.heading }}</h1>
   <form action="/audit" method="get">
-    <input type="search" name="actor" value="{{ actor }}" placeholder="actor (ui, api, cli, mcp:...)">
-    <input type="search" name="action" value="{{ action }}" placeholder="action (cache.delete, ...)">
-    <button type="submit">Filter</button>
-    {% if filtered %}<a href="/audit">clear</a>{% endif %}
+    <input type="search" name="actor" value="{{ actor }}" placeholder="{{ strings.actor_placeholder }}">
+    <input type="search" name="action" value="{{ action }}" placeholder="{{ strings.action_placeholder }}">
+    <button type="submit">{{ strings.filter }}</button>
+    {% if filtered %}<a href="/audit">{{ strings.clear }}</a>{% endif %}
   </form>
   {% if rows.is_empty() %}
-  <p class="empty">{% if filtered %}No audit rows match these filters.{% else %}No audit rows yet.{% endif %}</p>
+  <p class="empty">{% if filtered %}{{ strings.filtered_empty }}{% else %}{{ strings.empty }}{% endif %}</p>
   {% else %}
   <table>
     <thead>
-      <tr><th>when</th><th>actor</th><th>action</th><th>target</th><th>request</th><th>details</th></tr>
+      <tr><th>{{ strings.when_column }}</th><th>{{ strings.actor_column }}</th><th>{{ strings.action_column }}</th><th>{{ strings.target_column }}</th><th>{{ strings.request_column }}</th><th>{{ strings.details_column }}</th></tr>
     </thead>
     <tbody>
       {% for row in rows %}
@@ -35,17 +35,17 @@
           {% if !row.request_id.is_empty() %}
           <a class="request-id" href="/trace/{{ row.request_id }}" title="{{ row.request_id }}">{{ row.short_request_id }}</a>
           {% else %}
-          -
+          {{ strings.missing_request }}
           {% endif %}
         </td>
-        <td><details><summary>details</summary><pre>{{ row.details }}</pre></details></td>
+        <td><details><summary>{{ strings.details_summary }}</summary><pre>{{ row.details }}</pre></details></td>
       </tr>
       {% endfor %}
     </tbody>
   </table>
   {% endif %}
   <div class="meta">
-    <span>{{ rows.len() }} rows</span>
+    <span>{{ rows.len() }} {{ strings.rows_label }}</span>
     <span class="request-id" title="{{ request_id }}">{{ short_request_id }}</span>
   </div>
 </body>

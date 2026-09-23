@@ -19,9 +19,8 @@ use std::sync::Arc;
 use axum::Router;
 use axum::body::{Body, to_bytes};
 use axum::http::{Method, Request, StatusCode};
-use cauce_core::SearchPipeline;
-use cauce_core::StoreTuning;
 use cauce_core::config::{Config, EnvMap};
+use cauce_core::{AuditRow, SearchPipeline, StoreTuning};
 use cauce_engines::{Replay, ReplayOpts};
 use cauce_server::{AppState, build_router};
 use cauce_store_sqlite::SqliteStore;
@@ -194,6 +193,39 @@ async fn audit_page_filters_by_actor_and_action() {
     // Unknown params are 400s, same as the JSON surface.
     let (status, _) = get_html(&app, "/audit?bogus=1").await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
+}
+
+/// The HTML and JSON surfaces share default limits and empty-filter handling.
+#[tokio::test]
+async fn audit_page_shares_api_defaults_and_empty_filters() {
+    let (app, state, _tmp) = app();
+    for index in 0..55 {
+        state
+            .store()
+            .audit(AuditRow {
+                id: None,
+                ts: chrono::Utc::now(),
+                actor: "ui".to_string(),
+                action: "audit.test".to_string(),
+                target: index.to_string(),
+                details: Value::Null,
+                request_id: None,
+            })
+            .await
+            .expect("seed audit row");
+    }
+
+    let (status, api_body) = get_json(&app, "/api/audit?actor=&action=").await;
+    assert_eq!(status, StatusCode::OK);
+    let api_rows = api_body.as_array().expect("audit rows");
+    assert_eq!(api_rows.len(), 50, "API default limit changed: {api_body}");
+
+    let (status, body) = get_html(&app, "/audit?actor=&action=").await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert!(
+        body.contains("<span>50 rows</span>"),
+        "HTML must use the API default limit and treat empty filters equally: {body}"
+    );
 }
 
 /// `Accept: application/json` on `/audit` delegates to the `/api/audit`
