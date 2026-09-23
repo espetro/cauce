@@ -432,6 +432,43 @@ async fn degraded_streak_interrupted_by_answers_does_not_open() {
     );
 }
 
+/// The probe's re-open window follows the failing error kind: a
+/// `Parse`/`Transport` probe failure re-opens for `degraded_window`,
+/// not `timeout_window`.
+#[tokio::test]
+async fn probe_failure_reopens_for_degraded_window() {
+    let dir = tempfile::tempdir().unwrap();
+    write_bad_cassette(dir.path(), "drifted selector");
+    let engine = Arc::new(GateEngine::new(replay_at(dir.path(), |_| {}), true));
+    let store = Arc::new(StubStore::default());
+    let pipe =
+        SearchPipeline::new(store.clone(), vec![engine.clone()]).with_health_policy(HealthPolicy {
+            degraded_window: Duration::from_millis(80),
+            timeout_window: Duration::from_secs(60),
+            ..HealthPolicy::default()
+        });
+
+    // Five consecutive `Parse`s open the breaker for `degraded_window`.
+    for _ in 0..5 {
+        pipe.search(&req("drifted selector")).await.unwrap_err();
+    }
+    assert_eq!(engine.call_count(), 5);
+
+    // Past the window the probe runs, fails with `Parse`, and re-opens.
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    pipe.search(&req("drifted selector")).await.unwrap_err();
+    assert_eq!(engine.call_count(), 6, "one probe after the window");
+    let row = pipe.health().health_row(&EngineId::from("replay")).unwrap();
+    assert_eq!(row.breaker, BreakerState::Open);
+    let until = row.breaker_until.expect("re-opened breaker has a window");
+    // `degraded_window` (80 ms), not `timeout_window` (60 s): a re-open
+    // mapped to the wrong kind would sit ~60 s out.
+    assert!(
+        until < chrono::Utc::now() + chrono::Duration::seconds(10),
+        "re-open window should be ~80 ms, got {until}"
+    );
+}
+
 /// EWMA `alpha = 0.3`: the first sample seeds the estimate, later samples
 /// blend `0.3 * sample + 0.7 * ewma`.
 #[tokio::test]

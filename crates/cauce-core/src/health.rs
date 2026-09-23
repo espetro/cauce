@@ -66,7 +66,7 @@ pub struct HealthPolicy {
     /// Consecutive `Timeout`s that open the breaker (3).
     pub timeout_threshold: u32,
     /// Open window after `timeout_threshold` consecutive timeouts, and the
-    /// re-open window for a failed half-open probe (5 min).
+    /// re-open window for a half-open probe that timed out (5 min).
     pub timeout_window: Duration,
     /// Consecutive `Parse`/`Transport` errors that open the breaker (5,
     /// W3-07). One streak covers both kinds: they are the same "the call
