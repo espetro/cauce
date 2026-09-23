@@ -353,6 +353,9 @@ struct SearchFragment {
     /// Kept for the `results.html` include; always empty here — an inline
     /// test stays on page one.
     more_url: String,
+    /// Same include contract; an inline test never renders the empty state.
+    show_empty: bool,
+    empty_status: String,
 }
 
 /// `Accept: text/html` arm of `GET /api/search` (W2-05): the inline test
@@ -382,6 +385,8 @@ pub(crate) async fn search_fragment(
                 meta_line,
                 results: result_rows(&req, &resp),
                 more_url: String::new(),
+                show_empty: false,
+                empty_status: String::new(),
             };
             Ok(Html(
                 frag.render()
@@ -403,6 +408,8 @@ pub(crate) async fn search_fragment(
                 meta_line: class.to_string(),
                 results: Vec::new(),
                 more_url: String::new(),
+                show_empty: false,
+                empty_status: String::new(),
             };
             match frag.render() {
                 Ok(html) => Ok((status, Html(html)).into_response()),
