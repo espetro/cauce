@@ -754,3 +754,129 @@ p.empty {
 new-results-above[hidden] {
     display: none;
 }
+
+
+/* W2-05 /engines page and cards. The page body carries `engines-page`
+   so the card grid gets the wider content column (same rule as the
+   dashboard panels); `auto-fit` stacks the cards to one column below
+   ~700px and at 390px without horizontal scroll. */
+body.engines-page {
+    max-width: 72rem;
+}
+
+.engine-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr));
+    gap: 1rem;
+}
+
+.engine-grid .engine-card {
+    margin: 0;
+}
+
+.engine-card .engine-head {
+    display: flex;
+    align-items: baseline;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.engine-card .engine-head .engine-kind {
+    flex: 1;
+    margin: 0;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.8rem;
+}
+
+.breaker {
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 0.1rem 0.5rem;
+    border-radius: var(--radius);
+    border: 1px solid var(--border);
+}
+
+/* Chip roles follow the spec's success/error/warning mapping; the hues
+   reuse the `.form-status`/`.span-status` palette so every state keeps
+   >= 4.5:1 contrast on `--bg`. */
+.breaker-closed {
+    color: #15803d;
+}
+
+.breaker-open {
+    color: #dc2626;
+    border-color: #dc2626;
+}
+
+.breaker-half-open {
+    color: #b45309;
+    border-color: #b45309;
+}
+
+.breaker-note {
+    margin: 0;
+}
+
+/* One label/value pair per row (spec: label left, value right, one per
+   line). `auto 1fr` keeps each dd beside its own dt — an auto-fit
+   multi-column grid would zigzag pairs apart at >= 3 columns. Values
+   are short, so the same rule holds at phone width. */
+.engine-stats {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 0.25rem 1rem;
+    margin: 0.5rem 0;
+    font-size: 0.875rem;
+}
+
+.engine-stats dt {
+    color: var(--muted);
+}
+
+.engine-stats dd {
+    margin: 0;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    overflow-wrap: anywhere;
+}
+
+.engine-actions {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    align-items: center;
+}
+
+.engine-actions button[disabled] {
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+
+.engine-actions form {
+    display: flex;
+    gap: 0.5rem;
+    margin: 0;
+    flex: 1;
+    min-width: 12rem;
+}
+
+.engine-actions form input[type="search"] {
+    max-width: 14rem;
+}
+
+.engine-card .engine-notice {
+    margin: 0.25rem 0 0;
+}
+
+.engine-card .test-results {
+    margin-top: 0.5rem;
+    font-size: 0.875rem;
+}
+
+.engine-card .test-results .test-meta {
+    margin: 0;
+}
+
+.engine-card .test-results article {
+    margin: 0.25rem 0;
+    padding: 0.5rem;
+}

@@ -16,7 +16,8 @@ use askama::Template;
 use axum::Extension;
 use axum::Json;
 use axum::extract::{Query, State};
-use axum::http::{HeaderMap, Uri, header};
+use axum::http::{HeaderMap, StatusCode, Uri, header};
+
 use axum::response::{Html, IntoResponse, Response};
 use cauce_core::config::{AiConfig, EngineKind};
 use cauce_core::http::HttpClient;
@@ -44,10 +45,11 @@ fn asset_string(name: &str) -> String {
         .unwrap_or_default()
 }
 
-static HTMX_JS: LazyLock<String> = LazyLock::new(|| asset_string("htmx.min.js"));
-static JSON_ENC_JS: LazyLock<String> = LazyLock::new(|| asset_string("json-enc.js"));
+pub(crate) static HTMX_JS: LazyLock<String> = LazyLock::new(|| asset_string("htmx.min.js"));
+pub(crate) static JSON_ENC_JS: LazyLock<String> = LazyLock::new(|| asset_string("json-enc.js"));
 /// Shared page stylesheet; the other `ui` pages (W2) inject it too.
 pub(crate) static STYLE_CSS: LazyLock<String> = LazyLock::new(|| asset_string("style.css"));
+
 static FAVICON_SVG: LazyLock<Cow<'static, [u8]>> = LazyLock::new(|| {
     Assets::get("favicon.svg")
         .map(|f| f.data)
@@ -143,9 +145,7 @@ pub async fn search(
         .unwrap_or("");
 
     if prefers_json(accept) {
-        return crate::handlers::search(State(state), Extension(ctx), uri)
-            .await
-            .map(|j| j.into_response());
+        return crate::handlers::search(State(state), Extension(ctx), uri, headers).await;
     }
 
     let params = QueryParams::parse(uri.query(), &ctx)?;
@@ -317,6 +317,108 @@ fn xml_attribute_escape(value: &str) -> String {
 /// `Accept` prefers JSON (shared by every `ui` page's content negotiation).
 pub(crate) fn prefers_json(accept: &str) -> bool {
     accept.contains("application/json") && !accept.contains("text/html")
+}
+
+/// True when `Accept` asks for HTML — the `Accept: text/html` fragment
+/// arms on `/api/*` handlers key on this (`handlers::search`,
+/// `handlers::engines_list` keep the JSON arm for everything else).
+pub(crate) fn accepts_html(headers: &HeaderMap) -> bool {
+    headers
+        .get("accept")
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|a| a.contains("text/html"))
+}
+
+/// True for htmx-issued requests (`HX-Request: true`, sent on every
+/// `hx-*` call). Fragment error arms use it to pick a swap-friendly
+/// status (a real 4xx/5xx would skip the swap and console-error).
+pub(crate) fn is_htmx(headers: &HeaderMap) -> bool {
+    headers
+        .get("hx-request")
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|v| v == "true")
+}
+
+// ---------------------------------------------------------------------------
+// W2-05 `/api/search` HTML arm — the engines page's inline test fragment
+// ---------------------------------------------------------------------------
+
+/// The fragment `GET /api/search` answers under `Accept: text/html`: a
+/// meta line (`N results · <ms> ms`, or the error class alone) plus the
+/// same `results.html` partial the search page renders, so the inline
+/// test anatomy matches the results page (screen spec `engines.md`).
+#[derive(Template)]
+#[template(path = "search_fragment.html")]
+struct SearchFragment {
+    meta_line: String,
+    results: Vec<Row>,
+    /// Kept for the `results.html` include; always empty here — an inline
+    /// test stays on page one.
+    more_url: String,
+    /// Same include contract; an inline test never renders the empty state.
+    show_empty: bool,
+    empty_status: String,
+}
+
+/// `Accept: text/html` arm of `GET /api/search` (W2-05): the inline test
+/// result an engines card swaps under its actions row. On success the
+/// fragment is the `N results · <ms> ms` meta line (or the `no results`
+/// class) plus the result list; on failure it is the engine's error class
+/// alone, answered with a swap-friendly 200 for HTMX callers so htmx
+/// drops it in place instead of logging a `responseError`.
+pub(crate) async fn search_fragment(
+    state: &AppState,
+    ctx: &RequestCtx,
+    uri: &Uri,
+    headers: &HeaderMap,
+) -> Result<Response, ApiError> {
+    use crate::strings::engines as copy;
+
+    match crate::handlers::search_inner_classed(state, ctx, uri).await {
+        Ok((req, resp)) => {
+            let meta_line = if resp.results.is_empty() {
+                copy::TEST_NO_RESULTS.to_string()
+            } else {
+                copy::TEST_RESULTS
+                    .replace("{n}", &resp.results.len().to_string())
+                    .replace("{ms}", &resp.meta.elapsed_ms.to_string())
+            };
+            let frag = SearchFragment {
+                meta_line,
+                results: result_rows(&req, &resp),
+                more_url: String::new(),
+                show_empty: false,
+                empty_status: String::new(),
+            };
+            Ok(Html(
+                frag.render()
+                    .map_err(|e| render_err(e, ctx.request_id.as_uuid()))?,
+            )
+            .into_response())
+        }
+        Err((e, class)) => {
+            // HTMX swaps 2xx fragments in place; a real 4xx/5xx would
+            // skip the swap and console-error, so the page's own fetch
+            // gets 200 while a direct `Accept: text/html` caller sees the
+            // true status.
+            let status = if is_htmx(headers) {
+                StatusCode::OK
+            } else {
+                e.status()
+            };
+            let frag = SearchFragment {
+                meta_line: class.to_string(),
+                results: Vec::new(),
+                more_url: String::new(),
+                show_empty: false,
+                empty_status: String::new(),
+            };
+            match frag.render() {
+                Ok(html) => Ok((status, Html(html)).into_response()),
+                Err(_) => Ok((status, Html(String::new())).into_response()),
+            }
+        }
+    }
 }
 
 fn badge(resp: &SearchResponse) -> String {

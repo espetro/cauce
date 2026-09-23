@@ -260,6 +260,16 @@ fn handler_for(spec: &RouteSpec, state: &AppState) -> Option<MethodRouter<AppSta
         ("GET", "/api/audit", RouteKind::Json) => Some(get(handlers::audit_list)),
         ("GET", "/api/engines", RouteKind::Json) => Some(get(handlers::engines_list)),
         ("POST", "/api/engines/{id}/reset", RouteKind::Json) => Some(post(handlers::engine_reset)),
+        ("POST", "/api/engines/{id}/enable", RouteKind::Json) => {
+            Some(post(handlers::engine_enable))
+        }
+        ("POST", "/api/engines/{id}/disable", RouteKind::Json) => {
+            Some(post(handlers::engine_disable))
+        }
+        // `/engines` and `GET /api/engines` share one handler (screen spec
+        // `engines.md`): `Accept: text/html` renders the page, anything
+        // else the JSON rows.
+        ("GET", "/engines", RouteKind::Html) => Some(get(handlers::engines_list)),
         ("GET", "/health", RouteKind::Json) => Some(get(handlers::health)),
         ("GET", "/metrics", RouteKind::Json) => Some(get(handlers::metrics)),
         ("GET", "/api/config", RouteKind::Json) => Some(get(handlers::config_get)),
