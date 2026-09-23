@@ -37,3 +37,13 @@ Screen specs per page (.agents/docs/screens/), axe 0 serious at 1280+375 on
 EVERY page (a shared-header change means every page is in scope), scrollWidth
 == clientWidth at 390/375, playwright-cli only, eval server rebuilt after each
 fix round (CSS/templates are compile-time).
+
+## Deadline tests must prove the child is alive first
+
+exec-engine tests spawn real python3 fixtures. Under the parallel gate a
+transient spawn/boot failure resolves inside the test's deadline window
+and fails as Transport, masquerading as a deadline regression. Fix
+(05e42ea): warm_child() answers a fast query with Transport-only retries
+before the timed section; the lazy/eager spawn tests retry across fresh
+engine instances so persistent failure still shows the real EngineError.
+Retries of the SAME engine would mask eager-vs-lazy regressions.
