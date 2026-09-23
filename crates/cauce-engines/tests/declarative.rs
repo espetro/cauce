@@ -25,7 +25,7 @@ use cauce_engines::declarative::fixtures::{
     ExpectedFixture, ExpectedResult, fixture_pairs, run_pair, write_pair,
 };
 use cauce_engines::declarative::{
-    CompiledSpec, DeclarativeEngine, load_specs, resolve_spec_source,
+    CompiledSpec, DeclarativeEngine, SpecError, load_specs, resolve_spec_source,
 };
 use cauce_engines::factory::{build_engine, build_engines};
 
@@ -308,6 +308,32 @@ fn spec_validation_rejects_bad_input() {
         assert!(
             CompiledSpec::from_yaml(&yaml, &env).is_err(),
             "{label} should fail to compile"
+        );
+    }
+}
+
+/// Spec ids face the same `[A-Za-z0-9._-]+` charset `Config::from_raw`
+/// enforces on `[[engines]]` entries: they auto-register engines and name
+/// fixture dirs. `a.b` and `a-b` stay legal — `settings::fe_id` encodes
+/// them injectively.
+#[test]
+fn spec_id_charset_is_enforced() {
+    let env = env();
+    for bad in ["a b", "a:b", "a/b", "ünïcode", ""] {
+        let yaml = SPEC_YAML.replace("id: fixture", &format!("id: {bad:?}"));
+        match CompiledSpec::from_yaml(&yaml, &env) {
+            Err(SpecError::Invalid { id, msg }) => {
+                assert_eq!(id, bad);
+                assert!(msg.contains("[A-Za-z0-9._-]+"), "{msg}");
+            }
+            other => panic!("id {bad:?} must be rejected: {other:?}"),
+        }
+    }
+    for ok in ["a.b", "a-b", "a_b", "eng1"] {
+        let yaml = SPEC_YAML.replace("id: fixture", &format!("id: {ok:?}"));
+        assert!(
+            CompiledSpec::from_yaml(&yaml, &env).is_ok(),
+            "id {ok:?} must compile"
         );
     }
 }

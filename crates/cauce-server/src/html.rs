@@ -601,7 +601,8 @@ struct Field {
 /// One `[[engines]]` row of the settings form.
 struct EngineSettings {
     id: String,
-    /// The row's `fe-*` error element id (`fe-engines-<id>`, dot-free).
+    /// The row's `fe-*` error element id (`fe-engines-<id>` encoded,
+    /// dot-free and injective — see [`crate::settings::fe_id`]).
     fe_id: String,
     kind: &'static str,
     enabled: bool,
@@ -862,7 +863,8 @@ pub(crate) fn settings_status(
     // `engines.<id>.<field>` names land on the row's `fe-engines-<id>`
     // element (there is no per-input error element); errors hitting the
     // same row merge into one line. `fe_id` keeps the emitted ids dot-free
-    // so htmx's oob `querySelector` lookup can find them.
+    // and injective so htmx's oob `querySelector` lookup can find them and
+    // no two rows share an id.
     let mut merged: std::collections::BTreeMap<String, String> = std::collections::BTreeMap::new();
     for (name, msg) in field_errors {
         let target = crate::settings::fe_id(&crate::settings::error_target(&name, engine_ids));
