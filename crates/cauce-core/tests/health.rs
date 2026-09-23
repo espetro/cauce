@@ -17,6 +17,7 @@ use cauce_core::{
     BreakerState, EngineError, EngineId, Gate, HealthPolicy, HealthTracker, PipelineError,
     SearchPipeline, Store,
 };
+use cauce_engines::cassette_key;
 use support::{GateEngine, StubStore, replay_at, req};
 use uuid::Uuid;
 
@@ -170,8 +171,10 @@ async fn half_open_probe_is_single_flight() {
     );
 }
 
-/// Settled rule: 3 consecutive `Timeout`s open the breaker for 5 min;
-/// `Parse`/`Transport` count failures but never open it.
+/// Settled rule: 3 consecutive `Timeout`s open the breaker for 5 min.
+/// `Parse`/`Transport` count failures and feed the W3-07 degraded streak
+/// — kept under its default threshold of 5 here so this test stays about
+/// the timeout rule.
 #[tokio::test]
 async fn three_consecutive_timeouts_open_breaker() {
     let dir = tempfile::tempdir().unwrap();
@@ -197,21 +200,26 @@ async fn three_consecutive_timeouts_open_breaker() {
     let until = row.breaker_until.unwrap();
     assert!(until <= chrono::Utc::now() + chrono::Duration::minutes(5));
 
-    // `Transport`/`Parse` increment failures but never open the breaker.
+    // `Transport`/`Parse` increment failures and feed the W3-07 degraded
+    // streak; under the default threshold of 5 a run of four still does
+    // not open the breaker.
     let tracker = HealthTracker::new(store);
     let id = EngineId::from("flaky");
     let err = |e: EngineError| {
         tracker.record_err(&id, Duration::from_millis(10), &e, Uuid::now_v7());
     };
-    for _ in 0..5 {
+    for _ in 0..4 {
         err(EngineError::Transport("boom".to_string()));
     }
     let row = tracker.health_row(&id).unwrap();
-    assert_eq!(row.failures, 5);
+    assert_eq!(row.failures, 4);
     assert_eq!(row.breaker, BreakerState::Closed);
 
-    // "3 consecutive timeouts" is a streak: Parse, Parse, Timeout leaves
-    // the breaker Closed even though `failures` is already 8.
+    // "3 consecutive timeouts" is a streak of its own: a `Timeout`
+    // between the degraded errors resets the degraded streak, and
+    // Parse, Parse, Timeout leaves the breaker Closed even though
+    // `failures` is already 8.
+    err(EngineError::Timeout);
     err(EngineError::Parse("bad html".to_string()));
     err(EngineError::Parse("bad html".to_string()));
     err(EngineError::Timeout);
@@ -241,6 +249,187 @@ async fn three_consecutive_timeouts_open_breaker() {
     let row = tracker.health_row(&id2).unwrap();
     assert_eq!(row.failures, 1, "a success resets consecutive failures");
     assert_eq!(row.breaker, BreakerState::Closed);
+}
+
+/// A malformed cassette at `<root>/<engine>/<sha8>.json`: the read
+/// succeeds, the decode fails, so `replay` answers `EngineError::Parse`
+/// on every call for `query` — the drifted-selector shape W3-07 rests.
+fn write_bad_cassette(root: &std::path::Path, query: &str) {
+    let dir = root.join("replay");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join(format!("{}.json", cassette_key(query))),
+        "{ not a cassette",
+    )
+    .unwrap();
+}
+
+/// Acceptance (W3-07): a replay engine scripted to `Parse` 5 times in a
+/// row opens the breaker on the 5th and is skipped until the
+/// `degraded_window` (10 min) elapses.
+#[tokio::test]
+async fn five_consecutive_parse_errors_open_breaker() {
+    let dir = tempfile::tempdir().unwrap();
+    write_bad_cassette(dir.path(), "drifted selector");
+    let engine = Arc::new(GateEngine::new(replay_at(dir.path(), |_| {}), true));
+    let store = Arc::new(StubStore::default());
+    let pipe = SearchPipeline::new(store.clone(), vec![engine.clone()]);
+
+    for i in 1..=4 {
+        let err = pipe.search(&req("drifted selector")).await.unwrap_err();
+        match &err {
+            PipelineError::AllEnginesFailed(failures) => {
+                assert!(
+                    failures
+                        .iter()
+                        .any(|(_, e)| matches!(e, EngineError::Parse(_)))
+                );
+            }
+            other => panic!("expected AllEnginesFailed, got {other:?}"),
+        }
+        let row = pipe
+            .health()
+            .health_row(&EngineId::from("replay"))
+            .expect("replay health row");
+        assert_eq!(row.failures, i);
+        assert_eq!(row.breaker, BreakerState::Closed, "opened on streak {i}");
+    }
+
+    // The 5th consecutive `Parse` opens the breaker for
+    // `degraded_window`; the transition persists urgently like the
+    // timeout/abuse ones.
+    pipe.search(&req("drifted selector")).await.unwrap_err();
+    let row = pipe.health().health_row(&EngineId::from("replay")).unwrap();
+    assert_eq!(row.failures, 5);
+    assert_eq!(row.breaker, BreakerState::Open, "5 parses open it");
+    let until = row.breaker_until.expect("open breaker has a window");
+    assert!(until > chrono::Utc::now(), "window must be in the future");
+    assert!(until <= chrono::Utc::now() + chrono::Duration::minutes(10));
+    assert!(
+        row.last_error
+            .as_deref()
+            .is_some_and(|e| e.contains("parse error"))
+    );
+    let stored_breaker = store
+        .health_rows
+        .lock()
+        .unwrap()
+        .get("replay")
+        .map(|r| r.breaker);
+    assert_eq!(
+        stored_breaker,
+        Some(BreakerState::Open),
+        "health row persisted urgently"
+    );
+
+    // Inside the window the engine is skipped entirely.
+    let err = pipe.search(&req("drifted selector")).await.unwrap_err();
+    assert_eq!(breaker_open(&err), &vec![EngineId::from("replay")]);
+    assert_eq!(
+        engine.call_count(),
+        5,
+        "open engine must not be called again"
+    );
+}
+
+/// Acceptance (W3-07): the degraded streak is *consecutive* — an `Ok` or
+/// a `NoResults` answer between `Parse`/`Transport` errors resets it, so
+/// a flaky engine that still answers sometimes never trips the breaker.
+#[tokio::test]
+async fn degraded_streak_interrupted_by_answers_does_not_open() {
+    let dir = tempfile::tempdir().unwrap();
+    write_bad_cassette(dir.path(), "bad");
+    // `page_limit = 1` lets page 2 answer `NoResults` (recorded as an
+    // answer, like `Ok`) while page 1 keeps producing `Parse`.
+    let engine = Arc::new(GateEngine::new(
+        replay_at(dir.path(), |o| o.page_limit = Some(1)),
+        true,
+    ));
+    let store = Arc::new(StubStore::default());
+    let pipe = SearchPipeline::new(store, vec![engine.clone()]);
+    let replay = EngineId::from("replay");
+    let parse_err = |e: &PipelineError| match e {
+        PipelineError::AllEnginesFailed(failures) => {
+            assert!(
+                failures
+                    .iter()
+                    .any(|(_, e)| matches!(e, EngineError::Parse(_)))
+            );
+        }
+        other => panic!("expected AllEnginesFailed, got {other:?}"),
+    };
+
+    // 4 `Parse`s, an `Ok` answer, 4 more `Parse`s: the answer reset the
+    // streak, so the breaker stays Closed.
+    for _ in 0..4 {
+        parse_err(&pipe.search(&req("bad")).await.unwrap_err());
+    }
+    assert_eq!(pipe.search(&req("good")).await.unwrap().results.len(), 10);
+    for _ in 0..4 {
+        parse_err(&pipe.search(&req("bad")).await.unwrap_err());
+    }
+    let row = pipe.health().health_row(&replay).unwrap();
+    assert_eq!(row.failures, 4);
+    assert_eq!(
+        row.breaker,
+        BreakerState::Closed,
+        "an `Ok` between `Parse`s breaks the streak"
+    );
+
+    // `NoResults` is an answer too (the pipeline records it through
+    // `record_ok`): it resets the streak as well.
+    let mut page2 = req("bad");
+    page2.page = 2;
+    let resp = pipe.search(&page2).await.unwrap();
+    assert!(resp.results.is_empty(), "page 2 is an empty answer");
+    for _ in 0..4 {
+        parse_err(&pipe.search(&req("bad")).await.unwrap_err());
+    }
+    let row = pipe.health().health_row(&replay).unwrap();
+    assert_eq!(row.failures, 4);
+    assert_eq!(
+        row.breaker,
+        BreakerState::Closed,
+        "a `NoResults` between `Parse`s breaks the streak"
+    );
+    assert_eq!(engine.call_count(), 14);
+
+    // `Parse` and `Transport` share one streak, and a `Timeout` between
+    // them breaks it (it feeds the timeout streak instead).
+    let tracker = HealthTracker::new(Arc::new(StubStore::default()));
+    let id = EngineId::from("drifty");
+    let rec = |e: EngineError| {
+        tracker.record_err(&id, Duration::from_millis(10), &e, Uuid::now_v7());
+    };
+    for i in 1..=4 {
+        // Alternating kinds still accumulate into the one streak.
+        rec(if i % 2 == 0 {
+            EngineError::Transport("boom".to_string())
+        } else {
+            EngineError::Parse("bad html".to_string())
+        });
+    }
+    assert_eq!(
+        tracker.health_row(&id).unwrap().breaker,
+        BreakerState::Closed
+    );
+    rec(EngineError::Timeout);
+    for _ in 0..4 {
+        rec(EngineError::Parse("bad html".to_string()));
+    }
+    let row = tracker.health_row(&id).unwrap();
+    assert_eq!(row.failures, 9);
+    assert_eq!(
+        row.breaker,
+        BreakerState::Closed,
+        "a `Timeout` between `Parse`s breaks the degraded streak"
+    );
+    rec(EngineError::Parse("bad html".to_string()));
+    assert_eq!(
+        tracker.health_row(&id).unwrap().breaker,
+        BreakerState::Open,
+        "the 5th consecutive `Parse`/`Transport` opens it"
+    );
 }
 
 /// EWMA `alpha = 0.3`: the first sample seeds the estimate, later samples
