@@ -84,3 +84,29 @@ global store, and is never shared with or copied into another project.
   `cargo test --workspace` manually.
 - Project board: token still lacks Projects write; WIP note went on the issue
   as a comment instead (#44).
+
+## 2026-09-23 — W3-01 review fixes (PR #148, 9d4f0b5)
+
+- Devin Review on the hedge PR found 4 real bugs; all fixed + threads resolved,
+  flags got assessment replies (kept raw-sample P90 — the settled "EWMA history"
+  means the rolling window, not re-percentiled averages; no `promoted` reason —
+  `hedged:false` + `engines_used` already distinguishes it).
+- Admission permits now match what actually spawns: callers acquire only the
+  t=0 (non-T2) wave; promoted tier-2 acquires inside `fetch`/`fetch_stream`
+  (`promoted_permits`, `min(remaining, max_wait)`); a triggered hedge acquires
+  inside `drive_fan_out` via a spawned `acquire_within` task raced against
+  outcomes. `RateLimited` from fetch falls back to `overflow` like an
+  exhausted primary queue.
+- Hedge clock moved to `fan_started` (drive_fan_out entry): pre-fan-out work
+  (lexical, permit wait) no longer eats the floor; `hedge_at_ms` measures
+  from fan-out too. `ctx.started` still anchors the hard deadline.
+- Late hedges are cancelled: wake capped at `min(fan_started+at, hard_deadline)`,
+  and `queue_hedge` returns early on zero remaining budget BEFORE `breaker_gate`
+  (a claimed probe must always precede a spawn).
+- P90 pools `waves.gated`, not `runnable` — a skipped engine's history can't
+  delay the hedge.
+- Gotcha worth remembering: `tokio::select!` evaluates EVERY branch's async
+  expression even for `if`-disabled branches — `.as_mut().unwrap()` in a
+  select expr panics on `None`; use a match that returns `pending()`.
+- Test support: `DialEngine` (dialable latency so history ≠ current behaviour)
+  and `StubStore.lexical_delay_ms` added in tests/support/mod.rs.
