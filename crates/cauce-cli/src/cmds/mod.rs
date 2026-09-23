@@ -9,6 +9,7 @@ pub mod engine;
 #[cfg(feature = "mcp")]
 pub mod mcp;
 pub mod record;
+pub mod search;
 pub mod serve;
 pub mod tail;
 pub mod trace;

@@ -30,6 +30,16 @@ Defaults: loopback bind on port 4479 (`--bind`/`--port` or
 `CAUCE_SERVER_HOST`/`CAUCE_SERVER_PORT` override), config at
 `~/.config/cauce/config.toml`, data and logs under `~/.local/share/cauce/`.
 
+When serving browser discovery URLs behind TLS or a portless proxy, set the
+canonical external origin in `[server]`. It is used for the absolute URLs in
+`/opensearch.xml`; request `Host` and forwarded headers are not trusted for
+this purpose. If omitted, the configured bind host and port are used over HTTP.
+
+```toml
+[server]
+public_url = "https://search.localhost"
+```
+
 The default engine set is the `ddgs` exec bridge plus every enabled
 declarative spec (`bing`, `brave`; `wikipedia` ships `enabled: false`).
 Pin a set with `CAUCE_ENGINES=bing,brave` or `[[engines]]` entries in
