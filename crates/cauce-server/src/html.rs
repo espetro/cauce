@@ -84,6 +84,8 @@ struct Page {
     stream_url: String,
     query_hash: String,
     sse_js: String,
+    /// `crate::strings::search` copy the inline JS uses, as a JSON literal.
+    stream_strings: String,
 }
 
 /// Results partial swapped in by HTMX `hx-get` on the more button.
@@ -120,6 +122,7 @@ pub async fn index(
         stream_url: String::new(),
         query_hash: String::new(),
         sse_js: SSE_JS.clone(),
+        stream_strings: stream_strings(),
     };
     render_html(page, ctx.request_id.as_uuid())
 }
@@ -167,7 +170,7 @@ pub async fn search(
             show_empty: false,
             empty_status: String::new(),
             result_count: 0,
-            badge: "searching...".to_string(),
+            badge: crate::strings::search::SEARCHING.to_string(),
             request_id: rid.clone(),
             short_request_id: short_id(&rid),
             results: Vec::new(),
@@ -179,6 +182,7 @@ pub async fn search(
             stream_url: stream_url(&params, &req),
             query_hash: CacheKey::from(&req).as_str().to_string(),
             sse_js: SSE_JS.clone(),
+            stream_strings: stream_strings(),
         };
         return Ok(Html(
             page.render()
@@ -225,6 +229,7 @@ pub async fn search(
             stream_url: String::new(),
             query_hash: CacheKey::from(&req).as_str().to_string(),
             sse_js: SSE_JS.clone(),
+            stream_strings: stream_strings(),
         };
         Ok(Html(
             page.render()
@@ -311,9 +316,12 @@ fn prefers_json(accept: &str) -> bool {
 }
 
 fn badge(resp: &SearchResponse) -> String {
+    use crate::strings::search as s;
     let base = match &resp.meta.source {
-        Source::Cache { age_s, ttl_s, .. } => format!("cached · {age_s} s ago · ttl {ttl_s} s"),
-        Source::Network => format!("live · {} ms", resp.meta.elapsed_ms),
+        Source::Cache { age_s, ttl_s, .. } => s::CACHED_BADGE
+            .replace("{age}", &age_s.to_string())
+            .replace("{ttl}", &ttl_s.to_string()),
+        Source::Network => s::LIVE_BADGE.replace("{ms}", &resp.meta.elapsed_ms.to_string()),
     };
     let statuses = engine_statuses(resp);
     if statuses.is_empty() {
@@ -324,33 +332,62 @@ fn badge(resp: &SearchResponse) -> String {
 }
 
 fn engine_statuses(resp: &SearchResponse) -> Vec<String> {
+    use crate::strings::search as s;
     let mut statuses = Vec::new();
     for report in &resp.meta.engines_used {
         statuses.push(match &report.status {
             EngineStatus::Ok => report.engine.to_string(),
-            EngineStatus::Failed(error) => {
-                format!("{} failed ({})", report.engine, engine_error_kind(error))
-            }
+            EngineStatus::Failed(error) => s::ENGINE_FAILED
+                .replace("{engine}", report.engine.as_str())
+                .replace("{kind}", engine_error_kind(error)),
         });
     }
     statuses.extend(
         resp.meta
             .engines_skipped
             .iter()
-            .map(|engine| format!("{engine} skipped (breaker)")),
+            .map(|engine| s::ENGINE_SKIPPED.replace("{engine}", engine.as_str())),
     );
     statuses
 }
 
 fn engine_error_kind(error: &EngineError) -> &'static str {
+    use crate::strings::search as s;
     match error {
-        EngineError::RateLimited => "rate limited",
-        EngineError::Blocked => "blocked",
-        EngineError::Timeout => "timeout",
-        EngineError::Parse(_) => "parse",
-        EngineError::Transport(_) => "transport",
-        EngineError::NoResults => "no results",
+        EngineError::RateLimited => s::ERR_RATE_LIMITED,
+        EngineError::Blocked => s::ERR_BLOCKED,
+        EngineError::Timeout => s::ERR_TIMEOUT,
+        EngineError::Parse(_) => s::ERR_PARSE,
+        EngineError::Transport(_) => s::ERR_TRANSPORT,
+        EngineError::NoResults => s::ERR_NO_RESULTS,
     }
+}
+
+/// The `strings::search` copy the streaming page's inline JS interpolates,
+/// serialized once into the page as `var S = {...}` so every user-visible
+/// string lives in `crate::strings` (the i18n seam), not in the script.
+fn stream_strings() -> String {
+    use crate::strings::search as s;
+    serde_json::to_string(&json!({
+        "results": s::RESULTS,
+        "no_results": s::NO_RESULTS,
+        "waiting": s::WAITING,
+        "complete": s::COMPLETE,
+        "invalid_stream": s::INVALID_STREAM,
+        "new_above": s::NEW_ABOVE,
+        "live_badge": s::LIVE_BADGE,
+        "cached": s::CACHED,
+        "engine_failed": s::ENGINE_FAILED,
+        "engine_skipped": s::ENGINE_SKIPPED,
+        "err_rate_limited": s::ERR_RATE_LIMITED,
+        "err_blocked": s::ERR_BLOCKED,
+        "err_timeout": s::ERR_TIMEOUT,
+        "err_parse": s::ERR_PARSE,
+        "err_transport": s::ERR_TRANSPORT,
+        "err_no_results": s::ERR_NO_RESULTS,
+        "err_unknown": s::ERR_UNKNOWN,
+    }))
+    .expect("search strings serialize")
 }
 
 fn stream_url(params: &QueryParams, req: &SearchRequest) -> String {

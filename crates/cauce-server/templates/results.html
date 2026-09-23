@@ -18,9 +18,9 @@
   </article>
   {% endfor %}
   {% if results.is_empty() && show_empty %}
-  <p>No results{% if !empty_status.is_empty() %} · {{ empty_status }}{% endif %}</p>
+  <p>{{ crate::strings::search::NO_RESULTS }}{% if !empty_status.is_empty() %} · {{ empty_status }}{% endif %}</p>
   {% endif %}
   {% if !more_url.is_empty() %}
-  <button hx-get="{{ more_url }}" hx-target="#results" hx-swap="outerHTML">More</button>
+  <button hx-get="{{ more_url }}" hx-target="#results" hx-swap="outerHTML">{{ crate::strings::search::MORE }}</button>
   {% endif %}
 </div>
