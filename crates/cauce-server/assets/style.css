@@ -177,7 +177,9 @@ details.nav-more[open] > summary {
     box-shadow: 0 2px 8px rgb(0 0 0 / 15%);
 }
 
-@media (max-width: 700px) {
+/* Range syntax keeps the spec's "below 700 px" honest: an inclusive
+   `max-width: 700px` would collapse the operator group at exactly 700. */
+@media (width < 700px) {
     header.site nav.nav-operator {
         display: none;
     }
@@ -187,7 +189,7 @@ details.nav-more[open] > summary {
     }
 }
 
-@media (max-width: 640px) {
+@media (width < 640px) {
     .nav-version {
         display: none;
     }

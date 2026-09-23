@@ -146,7 +146,7 @@ fn assert_shell(uri: &str, body: &str, expect_current: Option<&str>) {
         "{uri}: missing collapsed more menu"
     );
     assert!(
-        body.contains("max-width: 700px"),
+        body.contains("width < 700px"),
         "{uri}: missing <700px header collapse rule"
     );
     assert!(
