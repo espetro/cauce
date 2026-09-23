@@ -225,6 +225,8 @@ fn handler_for(spec: &RouteSpec, state: &AppState) -> Option<MethodRouter<AppSta
         ("GET", "/search", RouteKind::Html) => Some(get(html::search)),
         #[cfg(feature = "ui")]
         ("GET", "/cache", RouteKind::Html) => Some(get(cache_page::cache)),
+        #[cfg(feature = "ui")]
+        ("GET", "/favicon.ico", RouteKind::Static) => Some(get(html::favicon)),
         ("GET", "/api/search", RouteKind::Json) => Some(get(handlers::search)),
         ("GET", "/api/history", RouteKind::Json) => Some(get(handlers::history)),
         ("POST", "/api/click", RouteKind::Json) => Some(post(handlers::click)),

@@ -35,7 +35,11 @@ struct ServeOpts {
 /// Entry point for the `serve` subcommand. Returns the process exit code.
 pub fn run(args: &[String]) -> i32 {
     let opts = match parse(args) {
-        Ok(opts) => opts,
+        Ok(Some(opts)) => opts,
+        Ok(None) => {
+            println!("{USAGE}");
+            return 0;
+        }
         Err(msg) => {
             eprintln!("cauce serve: {msg}\n{USAGE}");
             return 2;
@@ -177,7 +181,9 @@ async fn serve_async(opts: ServeOpts, cfg: Config, host: String) -> i32 {
     }
 }
 
-fn parse(args: &[String]) -> Result<ServeOpts, String> {
+/// `Ok(None)` is `-h`/`--help`: usage goes to stdout with exit 0, not
+/// through the error path.
+fn parse(args: &[String]) -> Result<Option<ServeOpts>, String> {
     let mut opts = ServeOpts {
         bind: None,
         port: None,
@@ -205,9 +211,9 @@ fn parse(args: &[String]) -> Result<ServeOpts, String> {
                 );
             }
             "--headless" => opts.headless = true,
-            "-h" | "--help" => return Err("help requested".into()),
+            "-h" | "--help" => return Ok(None),
             other => return Err(format!("unknown flag {other:?}")),
         }
     }
-    Ok(opts)
+    Ok(Some(opts))
 }

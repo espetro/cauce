@@ -160,7 +160,9 @@ pub struct SearchWebArgs {
     /// Engine pin, e.g. `["replay"]` or `["wikipedia"]` while iterating.
     /// Pins select among built engines only: `wikipedia` ships
     /// `enabled: false`, so it needs a `[[engines]]` config entry first.
-    /// Omitted or empty = the configured default fan-out.
+    /// Any id outside the configured set fails the call with
+    /// `invalid_params` naming the rejected ids (issue #90). Omitted or
+    /// empty = the configured default fan-out.
     pub engines: Option<Vec<String>>,
     /// BCP-47 language hint (`en`, `de`, ...).
     pub lang: Option<String>,
@@ -807,6 +809,21 @@ fn store_error(e: &cauce_core::StoreError, request_id: Uuid) -> ErrorData {
 /// same shape).
 fn pipeline_error(e: &PipelineError, pinned: bool, request_id: Uuid) -> ErrorData {
     match e {
+        // Issue #90 strict contract: the pin's offenders and the
+        // configured set ride along in `data`, mirroring the 400
+        // `unknown_engines` envelope's message.
+        PipelineError::UnknownEngines {
+            unknown,
+            configured,
+        } => ErrorData::invalid_params(
+            e.to_string(),
+            Some(json!({
+                "error": "unknown_engines",
+                "unknown": unknown.iter().map(|id| id.as_str()).collect::<Vec<_>>(),
+                "configured": configured.iter().map(|id| id.as_str()).collect::<Vec<_>>(),
+                "request_id": request_id,
+            })),
+        ),
         PipelineError::NoEngines if pinned => {
             invalid_params("engines pin matched no configured engine", request_id)
         }
@@ -876,6 +893,24 @@ mod tests {
         assert_eq!(extract_highlights(text), vec!["One.", "Two!", "Three?"]);
         assert!(extract_highlights("").is_empty());
         assert_eq!(extract_highlights("no terminator"), vec!["no terminator"]);
+    }
+
+    #[test]
+    fn unknown_engines_maps_to_invalid_params_with_lists() {
+        let err = PipelineError::UnknownEngines {
+            unknown: vec![EngineId::from("nope")],
+            configured: vec![EngineId::from("replay")],
+        };
+        let mcp = pipeline_error(&err, true, Uuid::nil());
+        assert_eq!(mcp.code, ErrorCode::INVALID_PARAMS);
+        assert!(mcp.message.contains("nope"), "{}", mcp.message);
+        assert!(mcp.message.contains("replay"), "{}", mcp.message);
+        assert_eq!(
+            mcp.data.as_ref().unwrap()["error"],
+            json!("unknown_engines")
+        );
+        assert_eq!(mcp.data.as_ref().unwrap()["unknown"], json!(["nope"]));
+        assert_eq!(mcp.data.as_ref().unwrap()["configured"], json!(["replay"]));
     }
 
     #[test]
