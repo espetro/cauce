@@ -242,7 +242,7 @@ pub mod history {
         copied: "copied",
         payload: "payload",
         delete: "delete",
-        delete_confirm: "Delete this search and its clicks?",
+        delete_confirm: "Delete this search?",
         request_label: "request",
     };
 }

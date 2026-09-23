@@ -577,9 +577,11 @@ impl Store for SqliteStore {
         .await
     }
 
-    /// `DELETE /api/history/{id}` (W2-02): one `search_log` row plus the
-    /// `clicks` rows that share its `query_hash`, in one transaction so the
-    /// row can never disappear while its clicks stay visible.
+    /// `DELETE /api/history/{id}` (W2-02): one `search_log` row, plus the
+    /// `clicks` rows that share its `query_hash` only when no other
+    /// `search_log` row carries that hash — a click belongs to the query,
+    /// and the surviving newest row still displays them. One transaction,
+    /// so the row can never disappear while its clicks stay visible.
     async fn delete_search_log(&self, id: i64) -> Result<Option<DeleteSearchLog>, StoreError> {
         self.with_writer(move |conn| {
             // `unchecked_transaction` gives a tx from `&Connection`; the
@@ -600,7 +602,9 @@ impl Store for SqliteStore {
                 .map_err(sql_err)?;
             let clicks_removed = tx
                 .execute(
-                    "DELETE FROM clicks WHERE query_hash = ?1",
+                    "DELETE FROM clicks WHERE query_hash = ?1
+                       AND NOT EXISTS
+                         (SELECT 1 FROM search_log WHERE query_hash = ?1)",
                     params![query_hash],
                 )
                 .map_err(sql_err)? as u64;

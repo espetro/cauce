@@ -193,8 +193,8 @@ pub(crate) async fn history_inner(
 }
 
 /// `DELETE /api/history/{id}` (W2-02): audited history-row delete. The
-/// `search_log` row goes together with the `clicks` rows sharing its
-/// `query_hash` (the join the page renders).
+/// `clicks` rows sharing its `query_hash` go with it only when it was the
+/// last `search_log` row for that hash (the join the page renders).
 pub async fn history_delete(
     State(state): State<AppState>,
     Extension(ctx): Extension<RequestCtx>,

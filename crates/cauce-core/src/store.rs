@@ -267,8 +267,10 @@ pub struct HistoryStats {
 pub struct DeleteSearchLog {
     /// The removed row's query text.
     pub query: String,
-    /// `clicks` rows removed alongside it (they share `query_hash`: a click
-    /// belongs to a query, not to one row instance).
+    /// `clicks` rows removed alongside it. Clicks cascade only when the
+    /// deleted row was the last `search_log` row carrying its
+    /// `query_hash` — a click belongs to the query, and a surviving row
+    /// still displays them.
     pub clicks_removed: u64,
 }
 
@@ -549,9 +551,10 @@ pub trait Store: Send + Sync {
     /// "showing N of M" cap note (W2-02).
     async fn history_stats(&self, filter: &HistoryFilter) -> Result<HistoryStats, StoreError>;
 
-    /// `DELETE /api/history/{id}` (W2-02): remove one `search_log` row plus
-    /// the `clicks` rows that share its `query_hash`. Returns `None` when no
-    /// row has that id. The caller writes the audit row.
+    /// `DELETE /api/history/{id}` (W2-02): remove one `search_log` row, plus
+    /// the `clicks` rows sharing its `query_hash` only when no other
+    /// `search_log` row carries that hash. Returns `None` when no row has
+    /// that id. The caller writes the audit row.
     async fn delete_search_log(&self, id: i64) -> Result<Option<DeleteSearchLog>, StoreError>;
 
     // ---- stats --------------------------------------------------------------
