@@ -926,6 +926,19 @@ impl Config {
             });
         }
 
+        // The pair bounds the hedge point; an inverted window would fire
+        // `Duration::clamp` outside its contract, so reject rather than
+        // reorder silently.
+        if cfg.search.hedge_floor_ms > cfg.search.hedge_ceiling_ms {
+            return Err(ConfigError::InvalidValue {
+                path: "search.hedge_floor_ms".to_string(),
+                msg: format!(
+                    "hedge_floor_ms ({}) must be <= hedge_ceiling_ms ({})",
+                    cfg.search.hedge_floor_ms, cfg.search.hedge_ceiling_ms
+                ),
+            });
+        }
+
         // Built-ins fill in entries the file did not define.
         for builtin in builtin_engines() {
             if !cfg.engines.iter().any(|e| e.id == builtin.id) {
@@ -1781,6 +1794,35 @@ mod tests {
             Config::load_with(&env).unwrap().cache.lexical.threshold,
             1.0
         );
+    }
+
+    /// An inverted hedge window (floor > ceiling) violates
+    /// `Duration::clamp`'s contract at the hedge point; reject it from
+    /// either source rather than panicking per engine task at runtime.
+    #[test]
+    fn hedge_floor_above_ceiling_is_rejected() {
+        let (tmp, env) = sandbox(&[]);
+        write_config(
+            &tmp.path().join("cfg"),
+            "[search]\nhedge_floor_ms = 2500\nhedge_ceiling_ms = 1500\n",
+        );
+        assert!(matches!(
+            Config::load_with(&env),
+            Err(ConfigError::InvalidValue { ref path, .. }) if path == "search.hedge_floor_ms"
+        ));
+
+        let (_tmp2, env_override) = sandbox(&[("CAUCE_SEARCH_HEDGE_FLOOR_MS", "2500")]);
+        assert!(matches!(
+            Config::load_with(&env_override),
+            Err(ConfigError::InvalidValue { ref path, .. }) if path == "search.hedge_floor_ms"
+        ));
+
+        // Equal bounds are a legal (degenerate) fixed hedge point.
+        write_config(
+            &tmp.path().join("cfg"),
+            "[search]\nhedge_floor_ms = 500\nhedge_ceiling_ms = 500\n",
+        );
+        assert!(Config::load_with(&env).is_ok());
     }
 
     #[test]

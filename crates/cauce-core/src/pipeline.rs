@@ -1524,10 +1524,12 @@ impl SearchPipeline {
             .filter(|(_, e)| e.tier() == Tier::T1)
             .map(|(_, e)| e.id())
             .collect();
-        Some(
-            Duration::from_millis(self.health.p90_ms(&t1))
-                .clamp(self.hedge.floor, self.hedge.ceiling),
-        )
+        // `Duration::clamp` panics on `min > max`; config validation
+        // rejects that, but a hand-built `HedgePolicy` must not kill
+        // engine tasks, so order the bounds here regardless.
+        let lo = self.hedge.floor.min(self.hedge.ceiling);
+        let hi = self.hedge.floor.max(self.hedge.ceiling);
+        Some(Duration::from_millis(self.health.p90_ms(&t1)).clamp(lo, hi))
     }
 
     /// Fold one [`EngineOutcome`] into the [`FanOut`] bookkeeping: metrics,
