@@ -63,13 +63,15 @@ const EXPECTED_WAVE1_MOUNTED: &[(&str, &str)] = &[
 /// Wave-2 rows mounted so far: W2-02's audited history-row delete.
 const EXPECTED_WAVE2_MOUNTED: &[(&str, &str)] = &[("DELETE", "/api/history/{id}")];
 /// Wave-2 rows mounted so far: the cache page (W2-04), `/opensearch.xml`
-/// (W2-11), and the favicon (#87). They are `requires: "ui"` rows, so they
-/// join the mounted set only in `ui` builds and drop under `--headless` like
-/// the pages.
+/// (W2-11), the audit + trace pages (W2-06), and the favicon (#87). They are
+/// `requires: "ui"` rows, so they join the mounted set only in `ui` builds
+/// and drop under `--headless` like the pages.
 const EXPECTED_WAVE2_UI_MOUNTED: &[(&str, &str)] = &[
     ("GET", "/cache"),
     ("GET", "/opensearch.xml"),
     ("GET", "/favicon.ico"),
+    ("GET", "/audit"),
+    ("GET", "/trace/{id}"),
 ];
 /// Serialises tests that mutate process env (`CAUCE_CONFIG_DIR` and friends).
 /// Under nextest each test is its own process anyway; this keeps plain
@@ -379,6 +381,7 @@ async fn headless_drops_ui_routes_keeps_api() {
         "/favicon.ico",
         "/settings",
         "/history",
+        "/audit",
     ] {
         let (status, _, body) = get(&router, uri).await;
         assert_eq!(status, StatusCode::NOT_FOUND, "{uri}: {body}");

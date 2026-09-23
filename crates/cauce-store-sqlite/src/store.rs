@@ -16,10 +16,10 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use cauce_core::{
-    AdmissionStats, AuditFilter, AuditRow, CacheKey, CacheState, CachedSearch, ClickRow,
-    DeleteSearchLog, EngineHealthRow, EngineStatsRow, EngineStatus, HistoryFilter, HistoryItem,
-    HistoryStats, LatencyPercentiles, SearchLogRow, SearchResponse, StatsSnapshot, Store,
-    StoreError, StoreTuning,
+    AdmissionStats, AuditFacets, AuditFilter, AuditRow, CacheKey, CacheState, CachedSearch,
+    ClickRow, DeleteSearchLog, EngineHealthRow, EngineStatsRow, EngineStatus, HistoryFilter,
+    HistoryItem, HistoryStats, LatencyPercentiles, SearchLogRow, SearchResponse, StatsSnapshot,
+    Store, StoreError, StoreTuning,
 };
 use rusqlite::{Connection, OptionalExtension, params};
 use tokio::task::{JoinError, spawn_blocking};
@@ -908,6 +908,27 @@ impl Store for SqliteStore {
                 .and_then(|m| m.collect::<Result<Vec<_>, _>>())
             })
             .map_err(sql_err)
+        })
+        .await
+    }
+
+    async fn audit_facets(&self) -> Result<AuditFacets, StoreError> {
+        self.with_reader(|conn| {
+            let actors = conn
+                .prepare("SELECT DISTINCT actor FROM audit ORDER BY actor")
+                .and_then(|mut s| {
+                    s.query_map([], |r| r.get::<_, String>(0))
+                        .and_then(|m| m.collect::<Result<Vec<_>, _>>())
+                })
+                .map_err(sql_err)?;
+            let actions = conn
+                .prepare("SELECT DISTINCT action FROM audit ORDER BY action")
+                .and_then(|mut s| {
+                    s.query_map([], |r| r.get::<_, String>(0))
+                        .and_then(|m| m.collect::<Result<Vec<_>, _>>())
+                })
+                .map_err(sql_err)?;
+            Ok(AuditFacets { actors, actions })
         })
         .await
     }

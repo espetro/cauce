@@ -46,7 +46,7 @@ fn asset_string(name: &str) -> String {
 
 static HTMX_JS: LazyLock<String> = LazyLock::new(|| asset_string("htmx.min.js"));
 static JSON_ENC_JS: LazyLock<String> = LazyLock::new(|| asset_string("json-enc.js"));
-static STYLE_CSS: LazyLock<String> = LazyLock::new(|| asset_string("style.css"));
+pub(crate) static STYLE_CSS: LazyLock<String> = LazyLock::new(|| asset_string("style.css"));
 static FAVICON_SVG: LazyLock<Cow<'static, [u8]>> = LazyLock::new(|| {
     Assets::get("favicon.svg")
         .map(|f| f.data)
@@ -171,6 +171,19 @@ pub async fn search(
     }
 }
 
+/// `GET /favicon.ico`: the embedded SVG site icon. Browsers request this
+/// path on every page load; wave-0 verification saw it 404 each time (#87).
+pub async fn favicon() -> Response {
+    (
+        [
+            (header::CONTENT_TYPE, "image/svg+xml"),
+            (header::CACHE_CONTROL, "public, max-age=86400"),
+        ],
+        FAVICON_SVG.clone(),
+    )
+        .into_response()
+}
+
 /// `GET /opensearch.xml` (W2-11): the OpenSearch 1.1 description document
 /// browsers fetch after seeing the page head's `<link rel="search">`.
 ///
@@ -230,20 +243,7 @@ fn xml_attribute_escape(value: &str) -> String {
         .collect()
 }
 
-/// `GET /favicon.ico`: the embedded SVG site icon. Browsers request this
-/// path on every page load; wave-0 verification saw it 404 each time (#87).
-pub async fn favicon() -> Response {
-    (
-        [
-            (header::CONTENT_TYPE, "image/svg+xml"),
-            (header::CACHE_CONTROL, "public, max-age=86400"),
-        ],
-        FAVICON_SVG.clone(),
-    )
-        .into_response()
-}
-
-fn prefers_json(accept: &str) -> bool {
+pub(crate) fn prefers_json(accept: &str) -> bool {
     accept.contains("application/json") && !accept.contains("text/html")
 }
 
@@ -318,7 +318,7 @@ fn more_url(resp: &SearchResponse, params: &QueryParams, req: &SearchRequest) ->
     format!("/search?{}", parts.join("&"))
 }
 
-fn short_id(request_id: &str) -> String {
+pub(crate) fn short_id(request_id: &str) -> String {
     request_id.chars().take(8).collect()
 }
 
@@ -1186,7 +1186,7 @@ fn click_line(c: &ClickRow) -> ClickLine {
     }
 }
 
-fn render_err(e: askama::Error, request_id: uuid::Uuid) -> ApiError {
+pub(crate) fn render_err(e: askama::Error, request_id: uuid::Uuid) -> ApiError {
     ApiError::internal(format!("template render failed: {e}")).with_request_id(Some(request_id))
 }
 

@@ -139,6 +139,244 @@ impl TimelineItem {
     }
 }
 
+/// A span reconstructed from `span_open`/`span_close` records, flat view for
+/// consumers that do not need the tree (the `/trace/{id}` spans list).
+#[derive(Debug)]
+pub struct TraceSpan {
+    pub name: String,
+    /// Open and close fields merged (close wins on conflicts).
+    pub fields: Map<String, Value>,
+    pub open_ts: Option<DateTime<Utc>>,
+    pub busy_ms: Option<f64>,
+    pub parent: Option<u64>,
+}
+
+/// One-line summary of the traced request (kind, query, timestamp, total
+/// elapsed, outcome), derived from the root span, the work span and the
+/// events.
+#[derive(Debug)]
+pub struct TraceSummary {
+    /// Focus span name minus a `pipeline.` prefix (`search`, `flight`, ...).
+    pub kind: String,
+    pub query: Option<String>,
+    pub ts: Option<DateTime<Utc>>,
+    pub total_ms: Option<f64>,
+    /// Root `status` field when present, else `error` on any error-class
+    /// evidence in the trace, else `ok`.
+    pub outcome: String,
+}
+
+/// The span tree of one request, shared by the text timeline
+/// ([`render_trace`]) and the `/trace/{id}` page.
+pub struct Trace {
+    request_id: String,
+    record_count: usize,
+    nodes: BTreeMap<u64, SpanNode>,
+    roots: Vec<TimelineItem>,
+    /// Span ids whose parent id never appeared (root spans logged with a
+    /// parent predating the log files).
+    orphan_ids: Vec<u64>,
+}
+
+impl Trace {
+    /// Reconstruct the span tree from `trace_request` records.
+    pub fn build(request_id: &str, records: &[LogRecord]) -> Trace {
+        let mut nodes: BTreeMap<u64, SpanNode> = BTreeMap::new();
+        // Order of first appearance for spans with no usable timestamp.
+        let mut roots: Vec<TimelineItem> = Vec::new();
+
+        for record in records {
+            match record.kind.as_str() {
+                "span_open" | "span_close" => {
+                    let Some(span) = &record.span else { continue };
+                    let node = nodes.entry(span.id).or_insert_with(|| SpanNode {
+                        name: span.name.clone(),
+                        ..SpanNode::default()
+                    });
+                    if node.name.is_empty() {
+                        node.name = span.name.clone();
+                    }
+                    if !span.fields.is_empty() {
+                        node.fields.extend(span.fields.clone());
+                    }
+                    if let Some(parent) = span.parent {
+                        node.parent = Some(parent);
+                    }
+                    if record.kind == "span_open" {
+                        node.open_ts = record.ts;
+                        if let Some(parent) = node.parent {
+                            nodes
+                                .entry(parent)
+                                .or_default()
+                                .children
+                                .push(TimelineItem::Span(span.id));
+                        } else {
+                            roots.push(TimelineItem::Span(span.id));
+                        }
+                    } else {
+                        node.busy_ms = record.busy_ms;
+                    }
+                }
+                _ => {
+                    let attached = record
+                        .span
+                        .as_ref()
+                        .is_some_and(|s| nodes.contains_key(&s.id));
+                    match (attached, record.span.as_ref()) {
+                        (true, Some(span)) => nodes
+                            .entry(span.id)
+                            .or_default()
+                            .children
+                            .push(TimelineItem::Event(Box::new(record.clone()))),
+                        _ => roots.push(TimelineItem::Event(Box::new(record.clone()))),
+                    }
+                }
+            }
+        }
+
+        let linked: std::collections::BTreeSet<u64> = nodes
+            .values()
+            .flat_map(|n| {
+                n.children
+                    .iter()
+                    .filter_map(|c| match c {
+                        TimelineItem::Span(id) => Some(*id),
+                        _ => None,
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .collect();
+        let rooted: std::collections::BTreeSet<u64> = roots
+            .iter()
+            .filter_map(|i| match i {
+                TimelineItem::Span(id) => Some(*id),
+                _ => None,
+            })
+            .collect();
+        let orphan_ids = nodes
+            .iter()
+            .filter(|(id, _)| !linked.contains(*id) && !rooted.contains(*id))
+            .map(|(id, _)| *id)
+            .collect();
+
+        Trace {
+            request_id: request_id.to_string(),
+            record_count: records.len(),
+            nodes,
+            roots,
+            orphan_ids,
+        }
+    }
+
+    /// All named spans (placeholder nodes skipped), ordered by open time.
+    pub fn spans(&self) -> Vec<TraceSpan> {
+        let mut spans: Vec<TraceSpan> = self
+            .nodes
+            .values()
+            .filter(|n| !(n.name.is_empty() && n.open_ts.is_none()))
+            .map(|n| TraceSpan {
+                name: n.name.clone(),
+                fields: n.fields.clone(),
+                open_ts: n.open_ts,
+                busy_ms: n.busy_ms,
+                parent: n.parent,
+            })
+            .collect();
+        spans.sort_by_key(|s| s.open_ts);
+        spans
+    }
+
+    /// The request summary line. `ts`, `total_ms` and `outcome` describe
+    /// the whole request, so they come from the outermost root span (the
+    /// middleware `request` span on server requests). `kind` and `query`
+    /// describe the work done, so they come from the first span (open
+    /// order) carrying a `query` field or a `pipeline.*` name —
+    /// `pipeline.search` under that root — falling back to the root when
+    /// no such span exists.
+    pub fn summary(&self) -> TraceSummary {
+        let root = self
+            .roots
+            .iter()
+            .filter_map(|i| match i {
+                TimelineItem::Span(id) => self.nodes.get(id),
+                _ => None,
+            })
+            .find(|n| !n.name.is_empty() || n.open_ts.is_some());
+        let mut ordered: Vec<&SpanNode> = self
+            .nodes
+            .values()
+            .filter(|n| !(n.name.is_empty() && n.open_ts.is_none()))
+            .collect();
+        ordered.sort_by_key(|n| n.open_ts);
+        let focus = ordered
+            .iter()
+            .copied()
+            .find(|n| n.fields.contains_key("query") || n.name.starts_with("pipeline."))
+            .or(root);
+
+        // Outcome fallback when the root carries no `status`: any
+        // error-class evidence in the trace — a WARN/ERROR event or a span
+        // that closed `error`/`timeout` or recorded an `error` field.
+        let has_error = self
+            .roots
+            .iter()
+            .chain(self.nodes.values().flat_map(|n| n.children.iter()))
+            .any(|i| matches!(i, TimelineItem::Event(r) if matches!(r.level.as_str(), "WARN" | "ERROR")))
+            || self.nodes.values().any(|n| span_failed(&n.fields));
+
+        let outcome = root
+            .and_then(|n| n.fields.get("status"))
+            .and_then(|v| v.as_str())
+            .map(str::to_string)
+            .unwrap_or_else(|| if has_error { "error" } else { "ok" }.to_string());
+        let (kind, query) = match focus {
+            Some(node) => (
+                node.name
+                    .strip_prefix("pipeline.")
+                    .unwrap_or(&node.name)
+                    .to_string(),
+                node.fields
+                    .get("query")
+                    .and_then(|v| v.as_str())
+                    .map(str::to_string),
+            ),
+            None => (String::new(), None),
+        };
+        TraceSummary {
+            kind,
+            query,
+            ts: root.and_then(|n| n.open_ts),
+            total_ms: root.and_then(|n| n.busy_ms),
+            outcome,
+        }
+    }
+
+    /// The human-readable timeline `cauce trace` prints.
+    pub fn render(&self) -> String {
+        let mut out = format!(
+            "trace {} ({} records)\n",
+            self.request_id, self.record_count
+        );
+        if self.record_count == 0 {
+            out.push_str("no records found\n");
+            return out;
+        }
+
+        let mut lines = Vec::new();
+        for item in &self.roots {
+            render_item(item, &self.nodes, 0, &mut lines);
+        }
+        for id in &self.orphan_ids {
+            if let Some(node) = self.nodes.get(id) {
+                render_span_line(node, 0, &mut lines);
+                render_children(node, &self.nodes, 1, &mut lines);
+            }
+        }
+        out.push_str(&lines.join(""));
+        out
+    }
+}
+
 /// Render the human-readable timeline `cauce trace` prints.
 ///
 /// ```text
@@ -148,98 +386,17 @@ impl TimelineItem {
 /// 10:00:00.002   engine  engine=ddgs                    12.4 ms
 /// ```
 pub fn render_trace(request_id: &str, records: &[LogRecord]) -> String {
-    let mut nodes: BTreeMap<u64, SpanNode> = BTreeMap::new();
-    // Order of first appearance for spans with no usable timestamp.
-    let mut roots: Vec<TimelineItem> = Vec::new();
+    Trace::build(request_id, records).render()
+}
 
-    for record in records {
-        match record.kind.as_str() {
-            "span_open" | "span_close" => {
-                let Some(span) = &record.span else { continue };
-                let node = nodes.entry(span.id).or_insert_with(|| SpanNode {
-                    name: span.name.clone(),
-                    ..SpanNode::default()
-                });
-                if node.name.is_empty() {
-                    node.name = span.name.clone();
-                }
-                if !span.fields.is_empty() {
-                    node.fields.extend(span.fields.clone());
-                }
-                if let Some(parent) = span.parent {
-                    node.parent = Some(parent);
-                }
-                if record.kind == "span_open" {
-                    node.open_ts = record.ts;
-                    if let Some(parent) = node.parent {
-                        nodes
-                            .entry(parent)
-                            .or_default()
-                            .children
-                            .push(TimelineItem::Span(span.id));
-                    } else {
-                        roots.push(TimelineItem::Span(span.id));
-                    }
-                } else {
-                    node.busy_ms = record.busy_ms;
-                }
-            }
-            _ => {
-                let attached = record
-                    .span
-                    .as_ref()
-                    .is_some_and(|s| nodes.contains_key(&s.id));
-                match (attached, record.span.as_ref()) {
-                    (true, Some(span)) => nodes
-                        .entry(span.id)
-                        .or_default()
-                        .children
-                        .push(TimelineItem::Event(Box::new(record.clone()))),
-                    _ => roots.push(TimelineItem::Event(Box::new(record.clone()))),
-                }
-            }
-        }
+/// Whether a span closed in a failure state: `status` of `error` or
+/// `timeout`, or — when no status was recorded — an `error` field. Same
+/// reading as `tail::status_of`.
+fn span_failed(fields: &Map<String, Value>) -> bool {
+    if let Some(status) = fields.get("status").and_then(Value::as_str) {
+        return matches!(status, "error" | "timeout");
     }
-
-    let mut out = format!("trace {request_id} ({} records)\n", records.len());
-    if records.is_empty() {
-        out.push_str("no records found\n");
-        return out;
-    }
-
-    let mut lines = Vec::new();
-    for item in &roots {
-        render_item(item, &nodes, 0, &mut lines);
-    }
-    // Orphan spans whose parent id was never seen (e.g. a root recorded
-    // with a parent id that predates the log files).
-    let linked: std::collections::BTreeSet<u64> = nodes
-        .values()
-        .flat_map(|n| {
-            n.children
-                .iter()
-                .filter_map(|c| match c {
-                    TimelineItem::Span(id) => Some(*id),
-                    _ => None,
-                })
-                .collect::<Vec<_>>()
-        })
-        .collect();
-    let rooted: std::collections::BTreeSet<u64> = roots
-        .iter()
-        .filter_map(|i| match i {
-            TimelineItem::Span(id) => Some(*id),
-            _ => None,
-        })
-        .collect();
-    for (id, node) in &nodes {
-        if !linked.contains(id) && !rooted.contains(id) {
-            render_span_line(node, 0, &mut lines);
-            render_children(node, &nodes, 1, &mut lines);
-        }
-    }
-    out.push_str(&lines.join(""));
-    out
+    fields.contains_key("error")
 }
 
 fn render_item(
