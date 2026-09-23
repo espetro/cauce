@@ -496,8 +496,10 @@ async fn save_writes_audit_with_changed_keys() {
     clear_env();
 }
 
-/// Under `CAUCE_ENGINES=replay` a tier edit creates the stanza without
-/// baking the pinned `enabled` flag into the file.
+/// Under `CAUCE_ENGINES=replay` every `enabled` control renders disabled —
+/// the hidden `false` fallback included — so a browser submits no
+/// `engines.<id>.enabled` pair at all. A full-form save then creates the
+/// tier stanza without baking the pinned flag into the file.
 #[tokio::test]
 async fn pinned_engine_tier_edit_writes_no_enabled() {
     let _guard = env_lock().await;
@@ -507,7 +509,40 @@ async fn pinned_engine_tier_edit_writes_no_enabled() {
     let tmp = config_env("");
     let app = app(&tmp);
 
-    let (status, body) = put_form(&app, "engines.replay.tier=2", false).await;
+    // A submittable `enabled=false` hidden input would write the pin's
+    // negation into `config.toml` on every save (disabled controls do not
+    // submit, so both the checkbox and its fallback must be disabled).
+    let (status, body) = get_html(&app, "/settings").await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let enabled_inputs: Vec<&str> = body
+        .split('<')
+        .filter(|tag| tag.contains(".enabled\""))
+        .collect();
+    assert!(
+        !enabled_inputs.is_empty(),
+        "engine rows should render enabled controls: {body}"
+    );
+    for tag in enabled_inputs {
+        assert!(
+            tag.contains("disabled"),
+            "pinned enabled control must not submit: <{tag}"
+        );
+    }
+
+    // The full shape the pinned form submits: every rendered field except
+    // the disabled `enabled` pairs.
+    let (status, body) = put_form(
+        &app,
+        concat!(
+            "search.deadline_ms=5000&search.ttl_s=60",
+            "&engines.replay.tier=2&engines.replay.egress.proxy=",
+            "&engines.ddgs.tier=&engines.ddgs.egress.proxy=",
+            "&admission.max_wait_ms=250&admission.max_concurrent_per_engine=4",
+            "&logs.retention_days=14&ai.base_url=&ai.api_key=&ai.model=",
+        ),
+        false,
+    )
+    .await;
     assert_eq!(status, StatusCode::OK, "{body}");
 
     let on_disk = saved_config(&tmp);
@@ -520,8 +555,8 @@ async fn pinned_engine_tier_edit_writes_no_enabled() {
         .expect("replay stanza written");
     assert_eq!(replay["tier"].as_integer(), Some(2));
     assert!(
-        replay.get("enabled").is_none(),
-        "the CAUCE_ENGINES pin must not persist: {on_disk}"
+        !on_disk.contains("enabled"),
+        "the CAUCE_ENGINES pin must not persist anywhere: {on_disk}"
     );
     assert!(
         replay.get("env").is_none(),

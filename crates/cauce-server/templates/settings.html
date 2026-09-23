@@ -46,7 +46,7 @@
     <strong>{{ e.id }}</strong>
     <span class="hint">{{ e.kind }}</span>
     <label>
-      <input type="hidden" name="engines.{{ e.id }}.enabled" value="false">
+      <input type="hidden" name="engines.{{ e.id }}.enabled" value="false" {% if engines_pinned %}disabled{% endif %}>
       <input type="checkbox" name="engines.{{ e.id }}.enabled" value="true" {% if e.enabled %}checked{% endif %} {% if engines_pinned %}disabled{% endif %}>
       {{ crate::strings::settings::ENABLED }}
     </label>
