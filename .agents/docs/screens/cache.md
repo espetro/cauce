@@ -67,9 +67,9 @@ Empty state (filter matched nothing):
 
 ## Behavior
 
-- Data path: the page renders exactly what `GET /api/cache` returns for the
-  same query string (`q`, `limit`, `before`), through the same handler with
-  `Accept: text/html`. There is no second data path; a test asserts HTML
+- Data path: `/cache` and `GET /api/cache` share one handler (content negotiation on
+  `Accept`); the page renders what the API returns for the same query
+  string (`q`, `limit`, `before`). There is no second data path; a test asserts HTML
   rows equal the JSON rows for the same request.
 - One row per cache entry, newest `created` first. Row line shows in this
   order: query text, created (local `YYYY-MM-DD HH:MM`), expiry as a relative

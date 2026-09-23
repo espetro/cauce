@@ -63,8 +63,8 @@ Validation error (inline, next to the field, form stays filled):
 
 ## Behavior
 
-- Data path: `GET /api/config` with `Accept: text/html` renders the page
-  from the same parsed config the JSON route returns; `PUT /api/config`
+- Data path: `/settings` and `GET /api/config` share one handler (content
+  negotiation on `Accept`), rendering from the same parsed config; `PUT /api/config`
   with the form body (HTMX, `X-Cauce-Client: ui`) writes it, audited as
   `config.save` with actor `ui` and the changed keys in details.
 - Sections, in order: Search, Engines, Admission, Logging, Cache, AI

@@ -55,7 +55,8 @@ Breaker chip states (exact labels, one chip per card):
 
 ## Behavior
 
-- Data path: `GET /api/engines` with `Accept: text/html` renders the page;
+- Data path: `/engines` and `GET /api/engines` share one handler (content
+  negotiation on `Accept`);
   the JSON body carries the same per-engine fields the cards show. Reset
   and toggle actions return the single re-rendered card (`engine_card`
   fragment) so HTMX swaps it in place without a page reload.

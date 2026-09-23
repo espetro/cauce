@@ -29,7 +29,7 @@ step W2-06 (issue #38) and the wave's "Settled inputs".
 | 2026-09-22 23:40  cli    config.save     search      -            |
 |   > details                                                      |
 |                                                                  |
-| <- newer                                              older ->   |
+| showing the newest 50 · raise `limit` (max 1000) for more          |
 |                                                                  |
 | request 01J8Z4Q7X0V2H9R6KQ3T5N8M1B                               |
 +------------------------------------------------------------------+
@@ -89,9 +89,10 @@ the line `that is not a request id`.
 
 ## Behavior: audit
 
-- Data path: `GET /api/audit` with `Accept: text/html` renders the page;
-  filters (`actor`, `action`), `limit` and `before` are the API's own
-  params, with the API's defaults (50 rows). A test asserts the HTML rows
+- Data path: `/audit` and `GET /api/audit` share one handler (content
+  negotiation on `Accept`, the page being the HTML arm); filters (`actor`,
+  `action`), `since` and `limit` are the API's own params with the API's
+  defaults (50 rows, max 1000). A test asserts the HTML rows
   equal the JSON rows for the same request.
 - Rows newest first. Columns: when (local `YYYY-MM-DD HH:MM`), actor (`ui`,
   `api`, `mcp`, `cli`), action (mono, dotted name such as `cache.delete`),
@@ -104,8 +105,8 @@ the line `that is not a request id`.
 - Details: a `<details>` under each row; the summary reads `details`, the
   body is the stored JSON pretty printed in a monospace block. Rows with no
   details omit the toggle.
-- The request column shows the first 10 characters of the id as the link
-  text, the full id in `title`, and links to `/trace/<full id>`. Rows
+- The request column shows the id's 8-character short form (the shared
+  `short_id` convention) as the link text, the full id in `title`, and links to `/trace/<full id>`. Rows
   without a request id (CLI actions) show `-`.
 - Acceptance (W2-06): a cache delete performed through `/cache` appears
   here with actor `ui` and action `cache.delete`.
@@ -166,8 +167,8 @@ request_id>`. Trace not found: any well-formed ULID never issued. Malformed:
 
 - Audit rows and the JSONL request log are W1-11 settled inputs; the audit
   schema is `ts, actor, action, target, request_id, details`.
-- `request_id` values are ULIDs; the 10-character prefix shown in the audit
-  table is display only and never used for lookups.
+- `request_id` values are UUIDv7 (W1-11); the 8-character prefix shown in
+  the audit table is display only and never used for lookups.
 - Retention for traces follows `logs.retention_days`; audit rows are not
   pruned in v3.0.
 
