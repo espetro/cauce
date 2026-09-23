@@ -17,6 +17,7 @@ mod metrics;
 mod middleware;
 pub mod observability;
 mod routes;
+mod settings;
 pub mod strings;
 
 pub use app::{
