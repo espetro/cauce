@@ -408,8 +408,20 @@ async fn headless_drops_ui_routes_keeps_api() {
 /// Probe the live router: every mounted row answers (never 404/405), every
 /// declared-but-unmounted row is absent, and undeclared paths 404 — the
 /// mechanical fix for "written but never mounted".
+///
+/// The `POST /api/engines/{id}/enable|disable` probes run the real
+/// config-write path: `Config::save()` resolves `config.toml` through
+/// `CAUCE_CONFIG_DIR`, so the env is pinned to a tempdir for the whole
+/// test (under `ENV_LOCK`, same discipline as `tests/engines.rs`) or the
+/// probe would overwrite the developer's real config.
 #[tokio::test]
 async fn live_router_matches_routes_table() {
+    let _guard = env_lock().await;
+    let cfg_dir = tempfile::tempdir().expect("tempdir");
+    // SAFETY: serialized by ENV_LOCK; nextest also isolates per process.
+    unsafe {
+        std::env::set_var("CAUCE_CONFIG_DIR", cfg_dir.path());
+    }
     let (router, state, _tmp) = app();
     let mounted: BTreeSet<(String, String)> = mounted_routes(&state, &Default::default())
         .map(|r| (r.method.to_string(), r.path.to_string()))
@@ -484,6 +496,10 @@ async fn live_router_matches_routes_table() {
         let (status, _, body) = get(&router, uri).await;
         assert_eq!(status, StatusCode::NOT_FOUND, "{uri}");
         assert_envelope(&body, "not_found");
+    }
+
+    unsafe {
+        std::env::remove_var("CAUCE_CONFIG_DIR");
     }
 }
 
