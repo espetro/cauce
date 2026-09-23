@@ -11,6 +11,7 @@
 </head>
 <body class="engines-page">
   <p><a href="/">{{ crate::strings::common::NAV_SEARCH }}</a></p>
+  <main>
   <h1>{{ crate::strings::engines::PAGE_TITLE }}</h1>
   <p class="meta"><span>{{ summary }}</span></p>
   <p class="meta">
@@ -25,23 +26,44 @@
   {% include "engine_card.html" %}
   {% endfor %}
   </div>
+  </main>
   <footer class="meta">
-    <code class="request-id">{{ request_id }}</code>
+    {{ crate::strings::common::REQUEST_LABEL }} <code class="request-id" id="page-request-id" title="{{ request_id }}">{{ request_id }}</code>
   </footer>
   <script>{{ htmx_js|safe }}</script>
   <script>{{ json_enc_js|safe }}</script>
   <script>
     // Error statuses raised outside the handlers (host guard, transport)
     // produce no swap; show the status in the card's result slot instead
-    // of failing silently.
+    // of failing silently. The test form names the failed action;
+    // reset/toggle get the neutral wording.
     document.body.addEventListener('htmx:responseError', function (ev) {
       var card = ev.detail.elt.closest('.engine-card');
       var slot = card && card.querySelector('.test-results');
       if (slot) {
-        slot.textContent = '{{ crate::strings::engines::TEST_FETCH_FAILED }}'
-          .replace('{status}', ev.detail.xhr.status);
+        var tpl = ev.detail.elt.tagName === 'FORM'
+          ? '{{ crate::strings::engines::TEST_FETCH_FAILED }}'
+          : '{{ crate::strings::engines::REQUEST_FAILED }}';
+        slot.textContent = tpl.replace('{status}', ev.detail.xhr.status);
       }
     });
+    // Footer request id is click-to-copy (clipboard API with a
+    // selection fallback, same as the trace page).
+    (function () {
+      var el = document.getElementById('page-request-id');
+      if (!el) return;
+      el.addEventListener('click', function () {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(el.textContent);
+        } else {
+          var r = document.createRange();
+          r.selectNodeContents(el);
+          var s = window.getSelection();
+          s.removeAllRanges();
+          s.addRange(r);
+        }
+      });
+    })();
   </script>
 </body>
 </html>

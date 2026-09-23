@@ -494,8 +494,11 @@ body.engines-page {
     border: 1px solid var(--border);
 }
 
+/* Chip roles follow the spec's success/error/warning mapping; the hues
+   reuse the `.form-status`/`.span-status` palette so every state keeps
+   >= 4.5:1 contrast on `--bg`. */
 .breaker-closed {
-    color: var(--muted);
+    color: #15803d;
 }
 
 .breaker-open {
@@ -504,17 +507,21 @@ body.engines-page {
 }
 
 .breaker-half-open {
-    color: #d97706;
-    border-color: #d97706;
+    color: #b45309;
+    border-color: #b45309;
 }
 
 .breaker-note {
     margin: 0;
 }
 
+/* One label/value pair per row (spec: label left, value right, one per
+   line). `auto 1fr` keeps each dd beside its own dt — an auto-fit
+   multi-column grid would zigzag pairs apart at >= 3 columns. Values
+   are short, so the same rule holds at phone width. */
 .engine-stats {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+    grid-template-columns: auto 1fr;
     gap: 0.25rem 1rem;
     margin: 0.5rem 0;
     font-size: 0.875rem;
