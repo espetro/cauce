@@ -4,7 +4,7 @@
        file, You can obtain one at https://mozilla.org/MPL/2.0/. -->
   <header class="engine-head">
     <strong>{{ card.id }}</strong>
-    <span class="meta engine-kind">{{ card.kind }} · tier {{ card.tier }}{% if !card.configured %} · {{ crate::strings::engines::NOT_IN_CONFIG }}{% endif %}{% if !card.live %} · {{ crate::strings::engines::NOT_RUNNING }}{% endif %}</span>
+    <span class="meta engine-kind">{{ card.kind_tier }}{% if !card.configured %} · {{ crate::strings::engines::NOT_IN_CONFIG }}{% endif %}{% if !card.live %} · {{ crate::strings::engines::NOT_RUNNING }}{% endif %}</span>
     <span class="breaker breaker-{{ card.breaker_class }}">{{ card.breaker }}</span>
     {% if !card.breaker_note.is_empty() %}
     <span class="breaker-note meta">{{ card.breaker_note }}</span>
@@ -27,12 +27,14 @@
     <dd>{{ card.requests_today }}</dd>
   </dl>
   <div class="engine-actions">
+    {% if card.can_reset %}
     <button
-      hx-post="/api/engines/{{ card.id }}/reset"
+      hx-post="{{ card.reset_url }}"
       hx-target="#engine-{{ card.id }}"
       hx-swap="outerHTML"
       hx-headers='{"X-Cauce-Client":"ui"}'
     >{{ crate::strings::engines::ACTION_RESET }}</button>
+    {% endif %}
     {% if card.configured || card.live %}
     <button
       hx-post="{{ card.toggle_url }}"

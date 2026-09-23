@@ -274,7 +274,10 @@ fn search_error_payload(ctx: &RequestCtx, req: &SearchRequest, error: PipelineEr
 /// `timeout`, `no results`, `breaker open`, ...) — the engines page's
 /// inline test fragment renders it as the meta line on failure (screen
 /// spec `engines.md`: "the engine's error class"). JSON callers discard
-/// the class through [`search_inner`].
+/// the class through [`search_inner`]. The dispatch below intentionally
+/// mirrors `search_inner` (the error arm needs the classed mapping, not
+/// `search_error` alone); only the `ui` build's fragment calls it.
+#[cfg_attr(not(feature = "ui"), allow(dead_code))]
 pub(crate) async fn search_inner_classed(
     state: &AppState,
     ctx: &RequestCtx,
@@ -296,6 +299,7 @@ pub(crate) async fn search_inner_classed(
 /// [`search_error`] plus the display class the engines page's inline test
 /// renders: the class mirrors the error arm, `upstream failed` or the
 /// single engine's [`EngineError`] class for an all-failed fan-out.
+#[cfg_attr(not(feature = "ui"), allow(dead_code))]
 pub(crate) fn search_error_classed(
     ctx: &RequestCtx,
     req: &SearchRequest,
@@ -317,6 +321,7 @@ pub(crate) fn search_error_classed(
 /// The error class an engines-page test query renders for an all-failed
 /// fan-out: the single engine's [`EngineError`] class when exactly one
 /// failed (a pinned test), `upstream failed` otherwise.
+#[cfg_attr(not(feature = "ui"), allow(dead_code))]
 fn engine_error_class(failures: &[(EngineId, EngineError)]) -> &'static str {
     use crate::strings::engines as copy;
 
@@ -648,6 +653,12 @@ pub struct EngineView {
     pub reliability_pct: Option<f64>,
     /// Searches that named this engine since UTC midnight (`search_log`).
     pub requests_today: u64,
+    /// The live health tracker knows this engine (registered or a
+    /// persisted row), so `POST .../reset` will not 404. Card-only: the
+    /// JSON wire predates it and stays unchanged.
+    #[serde(skip_serializing)]
+    #[cfg_attr(not(feature = "ui"), allow(dead_code))]
+    pub tracked: bool,
 }
 
 /// The shared `/api/engines` + `/engines` data plane: one row per engine
@@ -746,6 +757,7 @@ pub(crate) async fn engine_views(state: &AppState) -> Result<Vec<EngineView>, Ap
                 p95_ms: metrics.map(|m| m.total.p95_ms),
                 reliability_pct: metrics.map(|m| m.reliability_pct),
                 requests_today: *requests_today.get(&id).unwrap_or(&0),
+                tracked: health.contains_key(&id),
             }
         })
         .collect())
@@ -929,8 +941,18 @@ fn set_engine_enabled(
     let arr = entries
         .as_array_mut()
         .ok_or_else(|| "config key \"engines\" is not an array".to_string())?;
-    for entry in arr.iter_mut() {
-        if entry.get("id").and_then(toml::Value::as_str) == Some(id.as_str()) {
+    // File entries match by POSITION against `cfg.engines`, not by the
+    // raw `id` leaf: a `${env:...}`/`${file:...}` id template never equals
+    // the resolved id, and a miss here would fall through to the
+    // serialize path below — persisting the RESOLVED entry (secrets and
+    // all) into `config.toml`. `cfg.engines` holds the file's entries in
+    // file order followed by appended built-ins, so `cfg.engines[i]`
+    // resolves `arr[i]`. The literal-id compare stays as a fallback for
+    // trees that diverge from the resolved config (tests, hand-built).
+    for (index, entry) in arr.iter_mut().enumerate() {
+        let resolved_match = cfg.engines.get(index).is_some_and(|e| e.id == *id);
+        let literal_match = entry.get("id").and_then(toml::Value::as_str) == Some(id.as_str());
+        if resolved_match || literal_match {
             let entry_table = entry
                 .as_table_mut()
                 .ok_or_else(|| format!("engines entry {id:?} is not a table"))?;
@@ -941,7 +963,8 @@ fn set_engine_enabled(
     // Not in the file: a built-in (`replay`, `ddgs`) or a spec
     // auto-registered engine. Built-ins serialize their typed entry —
     // every field of a built-in is non-secret (env maps are empty); a
-    // file-defined engine never reaches this branch.
+    // file-defined engine never reaches this branch because the
+    // index-aligned lookup above already matched it.
     if let Some(entry) = cfg.engine(id.as_str()) {
         let mut value = toml::Value::try_from(entry.clone())
             .map_err(|e| format!("cannot serialize engine {id:?}: {e}"))?;

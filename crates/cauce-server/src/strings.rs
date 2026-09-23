@@ -334,6 +334,9 @@ pub mod engines {
     pub const ENABLED_NO: &str = "no";
     /// `last ok` cell: absolute local time plus relative (`01:02 (9m)`).
     pub const LAST_OK_FMT: &str = "{hhmm} ({rel})";
+    /// `p95`/`ewma` cell for a real sub-millisecond sample (renders
+    /// instead of a misleading `0 ms`).
+    pub const SUB_MS: &str = "<1 ms";
     /// Reset action button.
     pub const ACTION_RESET: &str = "reset breaker";
     /// Toggle action labels — the action that will happen.
@@ -364,4 +367,7 @@ pub mod engines {
     /// Inline meta when an htmx test fetch fails outside the handler;
     /// `{status}` is the HTTP status code.
     pub const TEST_FETCH_FAILED: &str = "test query failed: HTTP {status}";
+    /// Inline meta for a failed non-test htmx call (reset/toggle);
+    /// `{status}` is the HTTP status code.
+    pub const REQUEST_FAILED: &str = "request failed: HTTP {status}";
 }

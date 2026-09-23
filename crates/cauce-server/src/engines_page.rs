@@ -32,10 +32,9 @@ use crate::strings::{common, engines as copy};
 #[derive(Debug)]
 pub(crate) struct EngineCard {
     id: String,
-    /// `declarative` | `exec` | `replay` | `-` (health-only leftovers).
-    kind: String,
-    /// Effective tier (`1`/`2`/`3`) or `-`.
-    tier: String,
+    /// Header meta in the spec's short form (`exec · t2`); a missing half
+    /// renders just the known piece, both missing render `-`.
+    kind_tier: String,
     /// `yes` | `no` for the stats list.
     enabled_label: &'static str,
     /// The resolved config names this engine (file entry or built-in).
@@ -59,6 +58,13 @@ pub(crate) struct EngineCard {
     reliability: String,
     /// Searches served by this engine since UTC midnight (`search_log`).
     requests_today: u64,
+    /// `POST` target for the breaker reset; rendered only when
+    /// [`Self::can_reset`] is true (the tracker 404s unknown engines).
+    reset_url: String,
+    /// The health tracker knows this engine (registered or a persisted
+    /// row): `POST /api/engines/{id}/reset` answers 200. Untracked cards
+    /// hide the button instead of offering a call that 404s.
+    can_reset: bool,
     /// `POST` target flipping `enabled`; label is the action that happens.
     toggle_url: String,
     toggle_label: &'static str,
@@ -179,7 +185,16 @@ fn card_view(
         // disabled engine still flags the off state at a glance.
         breaker_note = copy::DISABLED.to_string();
     }
+    // `exec · t2` (the mockup's short form); a missing half renders just
+    // the known piece, both missing render `-`.
+    let kind_tier = match (v.kind.as_str(), v.tier) {
+        ("-", None) => common::DASH.to_string(),
+        (kind, Some(t)) => format!("{kind} · t{t}"),
+        (kind, None) => kind.to_string(),
+    };
     EngineCard {
+        reset_url: format!("/api/engines/{}/reset", urlencoding::encode(&id)),
+        can_reset: v.tracked,
         toggle_url: format!(
             "/api/engines/{}/{}",
             urlencoding::encode(&id),
@@ -196,11 +211,7 @@ fn card_view(
             copy::ENABLED_NO
         },
         id,
-        kind: v.kind.clone(),
-        tier: v
-            .tier
-            .map(|t| t.to_string())
-            .unwrap_or_else(|| common::DASH.to_string()),
+        kind_tier,
         configured: v.configured,
         live: v.live,
         breaker,
@@ -214,9 +225,18 @@ fn card_view(
             .as_deref()
             .map(|e| e.chars().take(160).collect())
             .unwrap_or_else(|| common::DASH.to_string()),
+        // `p95_ms` is `Some` only once the engine has served a request,
+        // so `Some(0)` is a real sub-millisecond sample (u32 truncation),
+        // not "unseen" — render `<1 ms`, never `0 ms`.
         p95: v
             .p95_ms
-            .map(|ms| format!("{} ms", thousands(ms as u64)))
+            .map(|ms| {
+                if ms == 0 {
+                    copy::SUB_MS.to_string()
+                } else {
+                    format!("{} ms", thousands(ms as u64))
+                }
+            })
             .unwrap_or_else(|| common::DASH.to_string()),
         reliability: v
             .reliability_pct

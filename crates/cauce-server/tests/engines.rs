@@ -442,6 +442,65 @@ async fn engine_enable_disable_writes_config_and_audits() {
     }
 }
 
+/// A file entry whose `id` leaf is a `${env:...}` template still gets the
+/// in-place patch (the match is positional against the resolved
+/// `cfg.engines`), so the written `config.toml` keeps every template
+/// verbatim — critically, resolved secret leaves can never be persisted.
+/// The previous literal-`id` match missed templated ids and fell through
+/// to serializing the resolved entry, leaking secrets into the file.
+#[tokio::test]
+async fn engine_toggle_preserves_templates_and_never_writes_secrets() {
+    let _guard = env_lock().await;
+    let cfg_dir = tempfile::tempdir().expect("tempdir");
+    std::fs::write(
+        cfg_dir.path().join("config.toml"),
+        "[[engines]]\n\
+         id = \"${env:CAUCE_TEST_ENGINE_ID}\"\n\
+         kind = \"replay\"\n\
+         enabled = false\n\
+         [engines.env]\n\
+         API_KEY = \"${env:CAUCE_TEST_SECRET}\"\n",
+    )
+    .expect("write config.toml");
+    // SAFETY: serialized by ENV_LOCK; nextest also isolates per process.
+    unsafe {
+        std::env::set_var("CAUCE_CONFIG_DIR", cfg_dir.path());
+        std::env::set_var("CAUCE_TEST_ENGINE_ID", "replay");
+        std::env::set_var("CAUCE_TEST_SECRET", "s3cret-value");
+    }
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let store = Arc::new(
+        SqliteStore::open(tmp.path().join("cauce.db"), StoreTuning::default()).expect("store"),
+    );
+    let pipeline = Arc::new(SearchPipeline::new(
+        store.clone(),
+        vec![Arc::new(Replay::new(ReplayOpts::default()))],
+    ));
+    let router = build_router(AppState::new(
+        pipeline,
+        store,
+        Config::load().expect("config loads"),
+    ));
+
+    let (status, body) = call(&router, "POST", "/api/engines/replay/enable").await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["enabled"], true);
+
+    let written = std::fs::read_to_string(cfg_dir.path().join("config.toml")).expect("config.toml");
+    // The flag flipped on the templated entry, in place.
+    assert!(written.contains("enabled = true"), "{written}");
+    // Templates round-trip verbatim; nothing resolved was persisted.
+    assert!(written.contains("${env:CAUCE_TEST_ENGINE_ID}"), "{written}");
+    assert!(written.contains("${env:CAUCE_TEST_SECRET}"), "{written}");
+    assert!(!written.contains("s3cret-value"), "{written}");
+
+    unsafe {
+        std::env::remove_var("CAUCE_CONFIG_DIR");
+        std::env::remove_var("CAUCE_TEST_ENGINE_ID");
+        std::env::remove_var("CAUCE_TEST_SECRET");
+    }
+}
+
 /// An HTMX toggle answers the re-rendered card — enabled flag flipped,
 /// the `saved; applies after restart` hint shown — so the page swaps it
 /// without a reload.
