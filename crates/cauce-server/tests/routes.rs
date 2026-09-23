@@ -613,6 +613,57 @@ async fn search_stream_maps_mid_flight_failures_to_error_events() {
     assert!(body.contains("\"code\":\"upstream_failed\""), "{body}");
 }
 
+/// Every streamed result carries its server-side dedupe `key`
+/// (`normalize_url` of `url`), and `meta.order` lists the same keys, so
+/// the page dedupes on the form the merge used.
+#[tokio::test]
+async fn search_stream_results_carry_dedupe_keys_matching_meta_order() {
+    let (router, _state, _tmp) = app();
+    let request = Request::builder()
+        .method("GET")
+        .uri("/api/search/stream?q=sse-keys")
+        .body(Body::empty())
+        .unwrap();
+    let response = router.oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let body = String::from_utf8(bytes.to_vec()).unwrap();
+
+    let mut keys = Vec::new();
+    let mut order = Vec::new();
+    for frame in body.split("\n\n") {
+        let Some(data) = frame.lines().find_map(|line| line.strip_prefix("data: ")) else {
+            continue;
+        };
+        let payload: Value = serde_json::from_str(data).unwrap();
+        if frame.starts_with("event: results") {
+            for result in payload["results"].as_array().unwrap() {
+                let url = result["url"].as_str().unwrap();
+                let key = result["key"]
+                    .as_str()
+                    .unwrap_or_else(|| panic!("streamed result missing dedupe key: {result}"));
+                assert_eq!(
+                    key,
+                    cauce_core::normalize_url(&url.parse().unwrap()).as_str(),
+                    "key must be the normalized form of url"
+                );
+                keys.push(key.to_string());
+            }
+        }
+        if frame.starts_with("event: meta") {
+            order = payload["order"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|v| v.as_str().unwrap().to_string())
+                .collect();
+        }
+    }
+    keys.sort();
+    order.sort();
+    assert_eq!(keys, order, "meta.order must list the emitted dedupe keys");
+}
+
 /// An inbound `X-Request-Id` that parses as a UUID is honoured end to end.
 #[tokio::test]
 async fn inbound_request_id_is_honoured() {

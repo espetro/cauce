@@ -22,7 +22,7 @@ use axum::response::{
 use cauce_core::{
     AuditFilter, AuditRow, CacheKey, ClickRow, EngineHealthRow, EngineId, HistoryFilter,
     HistoryItem, PipelineError, SafeSearch, SearchOpts, SearchRequest, SearchResponse,
-    StatsSnapshot, Store, StreamEvent, TimeRange,
+    SearchResult, StatsSnapshot, Store, StreamEvent, TimeRange,
     config::{Config, system_env},
 };
 use chrono::{DateTime, NaiveDate, Utc};
@@ -150,7 +150,7 @@ pub async fn search_stream(
                 .event("results")
                 .json_data(json!({
                     "engine": engine,
-                    "results": results,
+                    "results": results.iter().map(stream_result_json).collect::<Vec<_>>(),
                     "elapsed_ms": elapsed_ms,
                 }))
                 .expect("search result event serializes"),
@@ -170,7 +170,21 @@ pub async fn search_stream(
         .into_response())
 }
 
-pub(crate) fn search_error(ctx: &RequestCtx, req: &SearchRequest, error: PipelineError) -> ApiError {
+/// A streamed result plus `key`, the server-side dedupe key
+/// (`normalize_url` of its URL — the same form `meta.order` carries). The
+/// progressive page dedupes appended articles on `key`: the merge drops
+/// duplicate URL spellings the raw `url` field would render twice.
+fn stream_result_json(result: &SearchResult) -> Value {
+    let mut value = serde_json::to_value(result).expect("SearchResult serializes");
+    value["key"] = json!(cauce_core::normalize_url(&result.url));
+    value
+}
+
+pub(crate) fn search_error(
+    ctx: &RequestCtx,
+    req: &SearchRequest,
+    error: PipelineError,
+) -> ApiError {
     match error {
         error @ PipelineError::UnknownEngines { .. } => ctx.err(
             StatusCode::BAD_REQUEST,

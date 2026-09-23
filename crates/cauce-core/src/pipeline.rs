@@ -842,7 +842,7 @@ impl SearchPipeline {
         }
         let _ = tx.send(StreamEvent::Meta(StreamMeta {
             meta: resp.meta.clone(),
-            order: resp.results.iter().map(|r| r.url.clone()).collect(),
+            order: resp.results.iter().map(|r| normalize_url(&r.url)).collect(),
         }));
     }
 
@@ -1308,7 +1308,8 @@ impl SearchPipeline {
     /// health, merge, persist — but each engine's page is pushed as a
     /// `results` event the moment its call resolves, merge state is kept
     /// incrementally in an [`RrfMerge`], and the terminal `meta` event
-    /// carries the final RRF `order` (the same list `resp.results` holds).
+    /// carries the final RRF `order` (the merged rows' dedupe keys, in the
+    /// same order `resp.results` holds).
     async fn fetch_stream(
         &self,
         stream: &StreamCtx<'_>,
@@ -1355,7 +1356,7 @@ impl SearchPipeline {
         let resp = self.finish_fetch(skipped, fan, merged, fetch).await?;
         let _ = stream.tx.send(StreamEvent::Meta(StreamMeta {
             meta: resp.meta.clone(),
-            order: resp.results.iter().map(|r| r.url.clone()).collect(),
+            order: resp.results.iter().map(|r| normalize_url(&r.url)).collect(),
         }));
         Ok(resp)
     }

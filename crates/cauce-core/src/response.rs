@@ -121,13 +121,15 @@ pub enum StreamEvent {
 
 /// The `meta` event payload of the search stream (W2-01): the canonical
 /// [`SearchMeta`] flattened, plus `order` — the final RRF ordering of the
-/// merged results as URLs, best first. The progressive page never reorders
-/// what it rendered; `order` is what lets it tell the user how many late
-/// results would have ranked above the visible ones.
+/// merged results as dedupe keys (each row's `normalize_url` form, the
+/// same key the per-result `key` field and the merge itself use), best
+/// first. The progressive page never reorders what it rendered; `order`
+/// is what lets it tell the user how many late results would have ranked
+/// above the visible ones, and hide anything the merge did not keep.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct StreamMeta {
     #[serde(flatten)]
     pub meta: SearchMeta,
-    /// Final RRF order: the emitted results' URLs, best first.
+    /// Final RRF order: the emitted results' dedupe keys, best first.
     pub order: Vec<Url>,
 }

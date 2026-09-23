@@ -64,11 +64,15 @@
       function appendBatch(batch) {
         batch.results.forEach(function (result) {
           var url = result.url;
-          if (seen.has(url)) return;
-          seen.add(url);
-          arrivals.push(url);
+          // The server dedupes on the normalized URL; dedupe on `key`
+          // (its normalized form) so variant spellings cannot render twice.
+          var key = result.key || url;
+          if (seen.has(key)) return;
+          seen.add(key);
+          arrivals.push(key);
 
           var article = document.createElement("article");
+          article.dataset.key = key;
           var host = "";
           try { host = new URL(url).hostname; } catch (_) {}
           if (host) {
@@ -130,11 +134,16 @@
         status.textContent = "Search complete";
         stream.setAttribute("aria-busy", "false");
 
-        var rank = new Map(meta.order.map(function (url, index) { return [url, index]; }));
+        var rank = new Map(meta.order.map(function (key, index) { return [key, index]; }));
+        // Hide anything the final merge did not keep (e.g. a duplicate
+        // spelling that streamed before its canonical sibling).
+        Array.prototype.forEach.call(results.querySelectorAll("article[data-key]"), function (article) {
+          if (!rank.has(article.dataset.key)) article.hidden = true;
+        });
         var previousRanks = [];
         var outranking = 0;
-        arrivals.forEach(function (url) {
-          var currentRank = rank.has(url) ? rank.get(url) : Infinity;
+        arrivals.forEach(function (key) {
+          var currentRank = rank.has(key) ? rank.get(key) : Infinity;
           if (previousRanks.some(function (previousRank) { return currentRank < previousRank; })) {
             outranking += 1;
           }
