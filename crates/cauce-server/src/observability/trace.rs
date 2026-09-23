@@ -299,18 +299,18 @@ impl Trace {
         let mut has_error = false;
         for node in self.nodes.values() {
             for child in &node.children {
-                if let TimelineItem::Event(r) = child {
-                    if r.level == "ERROR" {
-                        has_error = true;
-                    }
+                if let TimelineItem::Event(r) = child
+                    && r.level == "ERROR"
+                {
+                    has_error = true;
                 }
             }
         }
         for item in &self.roots {
-            if let TimelineItem::Event(r) = item {
-                if r.level == "ERROR" {
-                    has_error = true;
-                }
+            if let TimelineItem::Event(r) = item
+                && r.level == "ERROR"
+            {
+                has_error = true;
             }
         }
         match root {
