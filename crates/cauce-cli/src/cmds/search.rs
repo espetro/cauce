@@ -215,8 +215,8 @@ fn parse(args: &[String]) -> Result<SearchArgs, String> {
     let mut it = args.iter();
     while let Some(arg) = it.next() {
         let (flag, inline) = match arg.split_once('=') {
-            Some((f, v)) => (f, Some(v.to_string())),
-            None => (arg.as_str(), None),
+            Some(("--engines", value)) => ("--engines", Some(value.to_string())),
+            _ => (arg.as_str(), None),
         };
         let mut value = |name: &str| -> Result<String, String> {
             inline

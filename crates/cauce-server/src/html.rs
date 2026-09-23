@@ -20,7 +20,7 @@ use cauce_core::{CacheKey, EngineStatus, SearchRequest, SearchResponse, Source};
 use rust_embed::Embed;
 use serde_json::json;
 
-use crate::app::AppState;
+use crate::app::{AppState, RouterOptions};
 use crate::error::ApiError;
 use crate::handlers::{QueryParams, search_inner};
 use crate::middleware::RequestCtx;
@@ -161,28 +161,30 @@ pub async fn search(
 /// `GET /opensearch.xml` (W2-11): the OpenSearch 1.1 description document
 /// browsers fetch after seeing the page head's `<link rel="search">`.
 ///
-/// The `Url` templates must be absolute, so they are built from the
-/// request's `Host` header (the Host/Origin guard has already vetted it;
-/// the listener is loopback, hence `http`). The second `Url` is the
-/// suggestions placeholder the step's contract asks for: no suggestions
-/// endpoint exists yet, so `rel="suggestions"` simply points at the path
-/// it will live on.
-pub async fn opensearch(headers: HeaderMap) -> Response {
-    let host = headers
-        .get(header::HOST)
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("127.0.0.1");
+/// The absolute URL templates use the configured canonical public origin,
+/// or the effective bind host and port when no public origin is configured.
+/// Request `Host` and forwarded headers are never used as URL input.
+pub async fn opensearch(
+    State(state): State<AppState>,
+    Extension(options): Extension<RouterOptions>,
+) -> Response {
+    let origin = state.with_config(|cfg| {
+        cfg.server
+            .public_origin(&options.bind_host, options.bind_port)
+    });
     (
         [(
             header::CONTENT_TYPE,
             "application/opensearchdescription+xml",
         )],
-        opensearch_xml(host),
+        opensearch_xml(&origin),
     )
         .into_response()
 }
 
-fn opensearch_xml(host: &str) -> String {
+fn opensearch_xml(origin: &str) -> String {
+    let results_url = xml_attribute_escape(&format!("{origin}/search?q={{searchTerms}}"));
+    let suggestions_url = xml_attribute_escape(&format!("{origin}/api/suggest?q={{searchTerms}}"));
     format!(
         concat!(
             "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n",
@@ -191,13 +193,28 @@ fn opensearch_xml(host: &str) -> String {
             "  <Description>cauce metasearch</Description>\n",
             "  <InputEncoding>UTF-8</InputEncoding>\n",
             "  <Url type=\"text/html\" rel=\"results\" \
-             template=\"http://{host}/search?q={{searchTerms}}\"/>\n",
+             template=\"{results_url}\"/>\n",
             "  <Url type=\"application/x-suggestions+json\" rel=\"suggestions\" \
-             template=\"http://{host}/api/suggest?q={{searchTerms}}\"/>\n",
+             template=\"{suggestions_url}\"/>\n",
             "</OpenSearchDescription>\n",
         ),
-        host = host
+        results_url = results_url,
+        suggestions_url = suggestions_url
     )
+}
+
+fn xml_attribute_escape(value: &str) -> String {
+    value
+        .chars()
+        .map(|c| match c {
+            '&' => "&amp;".to_string(),
+            '<' => "&lt;".to_string(),
+            '>' => "&gt;".to_string(),
+            '"' => "&quot;".to_string(),
+            '\'' => "&apos;".to_string(),
+            _ => c.to_string(),
+        })
+        .collect()
 }
 
 fn prefers_json(accept: &str) -> bool {
@@ -287,4 +304,17 @@ fn render_html(page: Page, request_id: uuid::Uuid) -> Result<Html<String>, ApiEr
     page.render()
         .map_err(|e| render_err(e, request_id))
         .map(Html)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::xml_attribute_escape;
+
+    #[test]
+    fn xml_attribute_values_escape_markup_delimiters() {
+        assert_eq!(
+            xml_attribute_escape("https://search.localhost/?q=\"a&b'<x>"),
+            "https://search.localhost/?q=&quot;a&amp;b&apos;&lt;x&gt;"
+        );
+    }
 }

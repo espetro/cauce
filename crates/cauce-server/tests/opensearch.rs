@@ -33,6 +33,10 @@ use tower::ServiceExt;
 const XSD: &str = include_str!("fixtures/opensearch-1-1.xsd");
 
 fn app() -> (Router, tempfile::TempDir) {
+    app_with_config(Config::default())
+}
+
+fn app_with_config(config: Config) -> (Router, tempfile::TempDir) {
     let tmp = tempfile::tempdir().expect("tempdir");
     let store = Arc::new(
         SqliteStore::open(tmp.path().join("cauce.db"), StoreTuning::default()).expect("store"),
@@ -41,7 +45,7 @@ fn app() -> (Router, tempfile::TempDir) {
         store.clone(),
         vec![Arc::new(Replay::new(ReplayOpts::default()))],
     ));
-    let state = AppState::new(pipeline, store, Config::default());
+    let state = AppState::new(pipeline, store, config);
     (build_router(state), tmp)
 }
 
@@ -85,18 +89,19 @@ async fn opensearch_descriptor_validates_against_schema() {
     );
 }
 
-/// The contract details the schema cannot express: the search `Url`
-/// template points at `/search?q={searchTerms}` (absolute, host-derived)
-/// and a suggestions `Url` placeholder exists.
+/// The descriptor uses the configured HTTPS origin for both templates and
+/// ignores hostile request and forwarded host headers.
 #[tokio::test]
-async fn opensearch_descriptor_urls() {
-    let (router, _tmp) = app();
-    // The Host/Origin guard accepts loopback names (incl. `*.localhost`
-    // aliases); a non-loopback Host would 403 before reaching the handler.
+async fn opensearch_descriptor_uses_canonical_origin_not_request_host() {
+    let mut config = Config::default();
+    config.server.public_url = Some("https://search.localhost".to_string());
+    let (router, _tmp) = app_with_config(config);
     let request = Request::builder()
         .method(Method::GET)
         .uri("/opensearch.xml")
-        .header(header::HOST, "cauce.localhost:4479")
+        .header(header::HOST, "localhost\" x=\"bad.localhost")
+        .header("x-forwarded-host", "attacker.invalid")
+        .header("x-forwarded-proto", "http")
         .body(Body::empty())
         .unwrap();
     let resp = router.clone().oneshot(request).await.expect("response");
@@ -106,17 +111,20 @@ async fn opensearch_descriptor_urls() {
     assert_eq!(status, StatusCode::OK, "{body}");
 
     assert!(
-        body.contains(r#"type="text/html""#) && body.contains("/search?q={searchTerms}"),
-        "results Url must target /search?q={{searchTerms}}: {body}"
+        body.contains("https://search.localhost/search?q={searchTerms}"),
+        "results URL must use the configured HTTPS origin: {body}"
+    );
+    assert!(
+        body.contains("https://search.localhost/api/suggest?q={searchTerms}"),
+        "suggestions URL must use the configured HTTPS origin: {body}"
+    );
+    assert!(
+        !body.contains("bad.localhost") && !body.contains("attacker.invalid"),
+        "untrusted request headers must not reach the descriptor: {body}"
     );
     assert!(
         body.contains("application/x-suggestions+json"),
         "suggestions Url placeholder missing: {body}"
-    );
-    // Templates are absolute and carry the request Host.
-    assert!(
-        body.contains("http://cauce.localhost:4479/search?q={searchTerms}"),
-        "template should use the request host: {body}"
     );
 }
 

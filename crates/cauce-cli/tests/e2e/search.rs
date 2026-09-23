@@ -69,6 +69,18 @@ fn search_json_prints_search_response() {
     );
 }
 
+/// A positional query containing `=` remains intact after option parsing.
+#[test]
+fn search_query_with_equals_is_not_treated_as_inline_option() {
+    let (config_dir, data_dir) = dirs();
+    let out = search(config_dir.path(), data_dir.path(), &["--json", "x=y"]);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(out.status.success(), "exit {}: {stderr}", out.status);
+    let response: Value = serde_json::from_str(&stdout).expect("SearchResponse");
+    assert_eq!(response["query"], "x=y");
+}
+
 /// `--urls` prints bare URLs (script-friendly); `--table` prints aligned
 /// rows; the flags are mutually exclusive.
 #[test]
@@ -118,7 +130,7 @@ fn search_engines_pin() {
     let out = search(
         config_dir.path(),
         data_dir.path(),
-        &["--json", "--engines", "replay", "pinned"],
+        &["--json", "--engines=replay", "pinned"],
     );
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(out.status.success());

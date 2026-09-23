@@ -90,6 +90,8 @@ pub struct RouterOptions {
     /// The effective bind host (`--bind` or `server.host`); the Host/Origin
     /// guard (W1-13) accepts it on top of the loopback names.
     pub bind_host: String,
+    /// Effective listener port (`--port` or `server.port`) for safe URL fallback.
+    pub bind_port: u16,
 }
 
 impl Default for RouterOptions {
@@ -97,6 +99,7 @@ impl Default for RouterOptions {
         Self {
             ui: true,
             bind_host: "127.0.0.1".to_string(),
+            bind_port: 4479,
         }
     }
 }
@@ -203,6 +206,7 @@ pub fn build_router_opts(state: AppState, opts: RouterOptions) -> Router {
             host_origin_guard,
         ))
         .layer(middleware::from_fn(request_context))
+        .layer(Extension(opts))
         .with_state(state)
 }
 
