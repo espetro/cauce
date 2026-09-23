@@ -118,8 +118,8 @@ async fn dashboard_empty_populated_and_error_outcome() {
     assert!(body.contains(">ok<"), "outcome split:\n{body}");
     assert!(body.contains("p50"), "latency percentiles:\n{body}");
     assert!(
-        body.contains(">replay<") && body.contains("href=\"/engines#engine-replay\""),
-        "engine table links to /engines#engine-<id>:\n{body}"
+        body.contains(">replay<") && body.contains("href=\"/engines#engine-dreplay\""),
+        "engine table links to /engines#<encoded card id>:\n{body}"
     );
     assert!(
         body.contains("@media (width < 640px)")

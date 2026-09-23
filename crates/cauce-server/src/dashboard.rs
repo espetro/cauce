@@ -75,6 +75,10 @@ struct QueryRow {
 #[derive(Debug)]
 struct EngineRow {
     id: String,
+    /// `/engines#<anchor>` link target: the card's encoded element id
+    /// (`engine.<id>` through [`crate::settings::encode_id`]), so a
+    /// dotted engine id still lands on its card.
+    card_anchor: String,
     breaker: String,
     reliability: String,
     requests: u64,
@@ -257,6 +261,7 @@ impl Dashboard {
             .iter()
             .map(|e| EngineRow {
                 id: e.engine.to_string(),
+                card_anchor: crate::settings::encode_id(&format!("engine.{}", e.engine)),
                 breaker: breaker_label(e.breaker).to_string(),
                 reliability: format!("{:.0}%", e.reliability_pct),
                 requests: e.requests,

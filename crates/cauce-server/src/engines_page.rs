@@ -32,6 +32,15 @@ use crate::strings::{common, engines as copy};
 #[derive(Debug)]
 pub(crate) struct EngineCard {
     id: String,
+    /// The card's element id and `hx-target` selector:
+    /// `encode_id("engine.<id>")` (`a.b` -> `engine-da-db`). A raw
+    /// `engine-a.b` id would be fine for HTML but the matching
+    /// `hx-target="#engine-a.b"` parses `.b` as a class selector and the
+    /// swap silently misses, so both sides take the dot-free encoding.
+    sel: String,
+    /// Element id and `hx-target` of the card's inline test result slot
+    /// (`encode_id("test.<id>")` -> `test-da-db`).
+    test_sel: String,
     /// Header meta in the spec's short form (`exec · t2`); a missing half
     /// renders just the known piece, both missing render `-`.
     kind_tier: String,
@@ -213,6 +222,8 @@ fn card_view(
         } else {
             copy::ENABLED_NO
         },
+        sel: crate::settings::encode_id(&format!("engine.{id}")),
+        test_sel: crate::settings::encode_id(&format!("test.{id}")),
         id,
         kind_tier,
         configured: v.configured,

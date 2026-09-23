@@ -198,7 +198,7 @@
       <tbody>
         {% for e in engines %}
         <tr>
-          <td data-label="{{ crate::strings::dashboard::COL_ENGINE }}"><a href="/engines#engine-{{ e.id }}">{{ e.id }}</a></td>
+          <td data-label="{{ crate::strings::dashboard::COL_ENGINE }}"><a href="/engines#{{ e.card_anchor }}">{{ e.id }}</a></td>
           <td data-label="{{ crate::strings::dashboard::COL_BREAKER }}">{{ e.breaker }}</td>
           <td data-label="{{ crate::strings::dashboard::COL_RELIABILITY }}">{{ e.reliability }}</td>
           <td data-label="{{ crate::strings::dashboard::COL_CALLS }}">{{ e.requests }}</td>

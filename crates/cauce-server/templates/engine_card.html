@@ -1,4 +1,4 @@
-<article class="engine-card" id="engine-{{ card.id }}" data-request-id="{{ card.request_id }}">
+<article class="engine-card" id="{{ card.sel }}" data-request-id="{{ card.request_id }}">
   <!-- This Source Code Form is subject to the terms of the Mozilla Public
        License, v. 2.0. If a copy of the MPL was not distributed with this
        file, You can obtain one at https://mozilla.org/MPL/2.0/. -->
@@ -30,7 +30,7 @@
     {% if card.can_reset %}
     <button
       hx-post="{{ card.reset_url }}"
-      hx-target="#engine-{{ card.id }}"
+      hx-target="#{{ card.sel }}"
       hx-swap="outerHTML"
       hx-headers='{"X-Cauce-Client":"ui"}'
     >{{ crate::strings::engines::ACTION_RESET }}</button>
@@ -38,7 +38,7 @@
     {% if card.configured || card.live %}
     <button
       hx-post="{{ card.toggle_url }}"
-      hx-target="#engine-{{ card.id }}"
+      hx-target="#{{ card.sel }}"
       hx-swap="outerHTML"
       hx-headers='{"X-Cauce-Client":"ui"}'
       {% if card.pinned %}disabled title="{{ crate::strings::engines::TOGGLE_PINNED }}"{% endif %}
@@ -49,7 +49,7 @@
     {% endif %}
     <form
       hx-get="/api/search"
-      hx-target="#test-{{ card.id }}"
+      hx-target="#{{ card.test_sel }}"
       hx-swap="innerHTML"
       hx-headers='{"Accept":"text/html","X-Cauce-Client":"ui"}'
     >
@@ -61,5 +61,5 @@
   {% if !card.notice.is_empty() %}
   <p class="meta engine-notice">{{ card.notice }}</p>
   {% endif %}
-  <div id="test-{{ card.id }}" class="test-results"></div>
+  <div id="{{ card.test_sel }}" class="test-results"></div>
 </article>

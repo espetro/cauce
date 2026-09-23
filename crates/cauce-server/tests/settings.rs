@@ -283,10 +283,10 @@ async fn invalid_field_reports_inline_error() {
     assert!(body.contains("form-status error"), "{body}");
     assert!(body.contains("not saved: 1 error"), "{body}");
     assert!(
-        body.contains("id=\"fe-search-deadline_ms\""),
+        body.contains("id=\"fe-search-ddeadline_ms\""),
         "error line targets the deadline field: {body}"
     );
-    let pos = body.find("id=\"fe-search-deadline_ms\"").unwrap();
+    let pos = body.find("id=\"fe-search-ddeadline_ms\"").unwrap();
     assert!(
         body[pos..].contains("hx-swap-oob"),
         "error element swaps out of band: {body}"
@@ -339,11 +339,11 @@ async fn engine_field_errors_target_the_row() {
     assert_eq!(status, StatusCode::OK, "{body}");
     assert!(body.contains("not saved: 1 error"), "{body}");
     assert!(
-        body.contains("id=\"fe-engines-replay\""),
+        body.contains("id=\"fe-engines-dreplay\""),
         "the row error element must carry the message: {body}"
     );
     assert!(
-        !body.contains("fe-engines-replay-tier"),
+        !body.contains("fe-engines-dreplay-dtier"),
         "no per-field error element exists: {body}"
     );
 
@@ -357,13 +357,16 @@ async fn engine_field_errors_target_the_row() {
     .await;
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(
-        body.matches("id=\"fe-engines-replay\"").count(),
+        body.matches("id=\"fe-engines-dreplay\"").count(),
         1,
         "one OOB clear for the row: {body}"
     );
-    assert!(!body.contains("fe-engines-replay-tier"), "{body}");
-    assert!(!body.contains("fe-engines-replay-egress-proxy"), "{body}");
-    assert!(body.contains("id=\"fe-search-deadline_ms\""), "{body}");
+    assert!(!body.contains("fe-engines-dreplay-dtier"), "{body}");
+    assert!(
+        !body.contains("fe-engines-dreplay-degress-dproxy"),
+        "{body}"
+    );
+    assert!(body.contains("id=\"fe-search-ddeadline_ms\""), "{body}");
     clear_env();
 }
 
@@ -384,7 +387,7 @@ async fn oob_error_ids_are_dot_free_and_match_the_page() {
     let (status, page) = get_html(&app, "/settings").await;
     assert_eq!(status, StatusCode::OK, "{page}");
     assert!(
-        page.contains("id=\"fe-engines-dotted-id\""),
+        page.contains("id=\"fe-engines-ddotted-did\""),
         "the dotted-id row must render a dot-free error element: {page}"
     );
     for id in fe_ids(&page) {
@@ -396,12 +399,75 @@ async fn oob_error_ids_are_dot_free_and_match_the_page() {
     let (status, body) = put_form(&app, "engines.dotted.id.tier=9", true).await;
     assert_eq!(status, StatusCode::OK, "{body}");
     assert!(
-        body.contains("id=\"fe-engines-dotted-id\""),
+        body.contains("id=\"fe-engines-ddotted-did\""),
         "oob error must target the rendered row id: {body}"
     );
     for id in fe_ids(&body) {
         assert!(!id.contains('.'), "oob fe-* id holds a dot: {id:?}");
     }
+    clear_env();
+}
+
+/// `a.b` and `a-b` are both legal engine ids (`[A-Za-z0-9._-]+`). They
+/// used to share `fe-engines-a-b` — a duplicate element id that merged
+/// the rows' error lines. The injective encoding gives each row its own.
+#[tokio::test]
+async fn dotted_and_dashed_engine_ids_get_distinct_row_ids() {
+    let _guard = env_lock().await;
+    clear_env();
+    let tmp = config_env(
+        "[[engines]]\nid = \"a.b\"\nkind = \"replay\"\n\n[[engines]]\nid = \"a-b\"\nkind = \"replay\"\n",
+    );
+    let app = app(&tmp);
+    let (status, page) = get_html(&app, "/settings").await;
+    assert_eq!(status, StatusCode::OK, "{page}");
+    assert!(page.contains("id=\"fe-engines-da-db\""), "{page}");
+    assert!(page.contains("id=\"fe-engines-da--b\""), "{page}");
+    assert!(
+        !page.contains("id=\"fe-engines-a-b\""),
+        "the old colliding id must be gone: {page}"
+    );
+    // No `fe-*` id appears twice anywhere on the page.
+    let mut ids = fe_ids(&page);
+    ids.sort();
+    let unique: std::collections::BTreeSet<_> = ids.iter().collect();
+    assert_eq!(ids.len(), unique.len(), "duplicate fe-* ids: {ids:?}");
+    clear_env();
+}
+
+/// An id outside `[A-Za-z0-9._-]+` is rejected at config parse, so a TOML
+/// `PUT /api/config` carrying one fails in-memory validation (400, error
+/// naming the id and the allowed charset) and never reaches the file.
+#[tokio::test]
+async fn invalid_engine_id_charset_is_rejected() {
+    let _guard = env_lock().await;
+    clear_env();
+    let tmp = config_env("");
+    let app = app(&tmp);
+
+    let (status, body) = call(
+        &app,
+        Request::builder()
+            .method(Method::PUT)
+            .uri("/api/config")
+            .header("Content-Type", "application/toml")
+            .body(Body::from(
+                "[[engines]]\nid = \"a b\"\nkind = \"replay\"\n".to_string(),
+            ))
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    let json: Value = serde_json::from_str(&body).expect("json envelope");
+    assert_eq!(json["error"]["code"], "invalid_config");
+    let msg = json["error"]["message"].as_str().unwrap();
+    assert!(msg.contains("a b"), "{msg}");
+    assert!(msg.contains("[A-Za-z0-9._-]+"), "{msg}");
+    assert_eq!(
+        saved_config(&tmp),
+        "",
+        "a rejected config must never be written"
+    );
     clear_env();
 }
 
@@ -534,7 +600,7 @@ async fn multiple_invalid_fields_report_per_field_errors() {
     .await;
     assert_eq!(status, StatusCode::OK, "{body}");
     assert!(body.contains("not saved: 2 errors"), "{body}");
-    for id in ["fe-search-deadline_ms", "fe-admission-max_wait_ms"] {
+    for id in ["fe-search-ddeadline_ms", "fe-admission-dmax_wait_ms"] {
         assert!(body.contains(&format!("id=\"{id}\"")), "{body}");
     }
     // The file is untouched: values stay in the submitted form only.
