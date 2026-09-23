@@ -27,7 +27,7 @@
   {% if !spans.is_empty() %}
   <h2>{{ crate::strings::trace::SPANS_HEADING }}</h2>
   {% for span in spans %}
-  <details class="span"><summary>{{ span.summary }}</summary><pre tabindex="0" role="group" aria-label="{{ crate::strings::trace::SPAN_REGION }}">{{ span.fields_json }}</pre></details>
+  <details class="span"><summary>{{ span.name }} · {{ span.elapsed }}{% if !span.status.is_empty() %} · <span{% if !span.status_class.is_empty() %} class="{{ span.status_class }}"{% endif %}>{{ span.status }}</span>{% endif %}{% if !span.results.is_empty() %} · {{ span.results }}{% endif %}</summary><pre tabindex="0" role="group" aria-label="{{ crate::strings::trace::SPAN_REGION }}">{{ span.fields_json }}</pre></details>
   {% endfor %}
   {% endif %}
   {% endif %}

@@ -152,6 +152,15 @@ details.span pre {
     overflow-x: auto;
 }
 
+/* Span status color roles reuse the settings `.form-status` palette. */
+.span-status-ok {
+    color: #15803d;
+}
+
+.span-status-error {
+    color: #b91c1c;
+}
+
 @media (max-width: 768px) {
     .audit-table .col-target {
         display: none;
