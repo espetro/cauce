@@ -20,9 +20,9 @@ use axum::response::{
     sse::{Event, KeepAlive},
 };
 use cauce_core::{
-    AuditFilter, AuditRow, CacheKey, ClickRow, EngineHealthRow, EngineId, HistoryFilter,
-    HistoryItem, PipelineError, SafeSearch, SearchOpts, SearchRequest, SearchResponse,
-    SearchResult, StatsSnapshot, Store, StreamEvent, TimeRange,
+    AuditFilter, AuditRow, CacheKey, ClickRow, ClientKind, EngineHealthRow, EngineId,
+    HistoryFilter, HistoryItem, PipelineError, SafeSearch, SearchOpts, SearchRequest,
+    SearchResponse, SearchResult, StatsSnapshot, Store, StreamEvent, TimeRange,
     config::{Config, system_env},
 };
 use chrono::{DateTime, NaiveDate, Utc};
@@ -118,15 +118,29 @@ pub(crate) fn parse_search_request(
 ///
 /// Two pre-stream rejections answer with their real status instead of an
 /// SSE body: request-parameter errors (`parse_search_request`, 400
-/// `bad_request`) and a rejected engine pin (400 `unknown_engines`,
-/// mapped through [`search_error`] like `/api/search`). Failures past
-/// that point are terminal `error` events on the open stream.
+/// `bad_request`) and a rejected engine pin (400 `unknown_engines` /
+/// 503 `no_engines`, mapped through [`search_error`] like `/api/search`).
+/// Failures past that point (fan-out, admission, store) are terminal
+/// `error` events on the open stream.
+///
+/// `client=ui|api|mcp[:<name>]|cli` is accepted as a client-kind hint when
+/// the `X-Cauce-Client` header is absent: `EventSource` cannot set
+/// headers, so the page passes `client=ui` to keep the dashboard's
+/// ui/api split honest. Same trust level as the header (a caller-supplied
+/// hint), so invalid values are ignored, not rejected.
 pub async fn search_stream(
     State(state): State<AppState>,
     Extension(ctx): Extension<RequestCtx>,
+    headers: HeaderMap,
     uri: Uri,
 ) -> Result<Response, ApiError> {
-    let req = parse_search_request(&ctx, &uri, &[])?;
+    let params = QueryParams::parse(uri.query(), &ctx)?;
+    let mut req = parse_search_request(&ctx, &uri, &["client"])?;
+    if headers.get("x-cauce-client").is_none()
+        && let Some(client) = params.get("client").and_then(client_hint)
+    {
+        req.client = client;
+    }
     let receiver = state
         .pipeline()
         .search_stream(
@@ -168,6 +182,28 @@ pub async fn search_stream(
     Ok(Sse::new(events)
         .keep_alive(KeepAlive::default())
         .into_response())
+}
+
+/// A `client` query-param value parsed like the `X-Cauce-Client` header
+/// (`ui`, `api`, `cli`, `mcp` or `mcp:<name>`); anything else is `None`
+/// and ignored by the caller.
+fn client_hint(value: &str) -> Option<ClientKind> {
+    let lower = value.trim().to_ascii_lowercase();
+    match lower.as_str() {
+        "ui" | "web" => return Some(ClientKind::Ui),
+        "api" => return Some(ClientKind::Api),
+        "cli" => return Some(ClientKind::Cli),
+        "mcp" => return Some(ClientKind::Mcp("unknown".to_string())),
+        _ => {}
+    }
+    lower.strip_prefix("mcp:").map(|name| {
+        let name = name.trim();
+        ClientKind::Mcp(if name.is_empty() {
+            "unknown".to_string()
+        } else {
+            name.to_string()
+        })
+    })
 }
 
 /// A streamed result plus `key`, the server-side dedupe key

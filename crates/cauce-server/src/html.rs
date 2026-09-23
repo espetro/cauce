@@ -400,6 +400,9 @@ fn stream_url(params: &QueryParams, req: &SearchRequest) -> String {
             parts.push(format!("{key}={}", urlencoding::encode(value)));
         }
     }
+    // `EventSource` cannot set `X-Cauce-Client`; the query-param fallback
+    // keeps UI-originated streams out of the `api` dashboard bucket.
+    parts.push("client=ui".to_string());
     format!("/api/search/stream?{}", parts.join("&"))
 }
 

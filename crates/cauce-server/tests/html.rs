@@ -225,8 +225,11 @@ async fn streaming_search_page_returns_sse_shell_before_search_finishes() {
     let (status, body) = get_html(&app, "/search?q=streaming-shell&stream=1").await;
     assert_eq!(status, StatusCode::OK);
     assert!(body.contains(r#"hx-ext="sse""#), "SSE extension missing");
+    // `client=ui` stands in for the `X-Cauce-Client` header EventSource
+    // cannot send, so UI-originated streams log client=ui (the `&#38;`
+    // is askama's HTML escape of `&` in the attribute).
     assert!(
-        body.contains(r#"sse-connect="/api/search/stream?q=streaming-shell""#),
+        body.contains(r#"sse-connect="/api/search/stream?q=streaming-shell&#38;client=ui""#),
         "stream URL missing: {body}"
     );
     assert!(body.contains("new-results-above"));

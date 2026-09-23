@@ -664,6 +664,51 @@ async fn search_stream_results_carry_dedupe_keys_matching_meta_order() {
     assert_eq!(keys, order, "meta.order must list the emitted dedupe keys");
 }
 
+/// `client=ui|api|mcp` is a `X-Cauce-Client` fallback for clients that
+/// cannot set headers (EventSource): the log row takes the param's kind
+/// when the header is absent, an unknown value is ignored, and the header
+/// always wins.
+#[tokio::test]
+async fn search_stream_client_param_fills_client_kind_when_header_absent() {
+    let (router, state, _tmp) = app();
+    for uri in [
+        "/api/search/stream?q=client-ui&client=ui",
+        "/api/search/stream?q=client-bogus&client=bogus",
+    ] {
+        let request = Request::builder()
+            .method("GET")
+            .uri(uri)
+            .body(Body::empty())
+            .unwrap();
+        let response = router.clone().oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK, "{uri}");
+        to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    }
+    let request = Request::builder()
+        .method("GET")
+        .uri("/api/search/stream?q=client-header&client=ui")
+        .header("x-cauce-client", "cli")
+        .body(Body::empty())
+        .unwrap();
+    let response = router.oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    to_bytes(response.into_body(), usize::MAX).await.unwrap();
+
+    let filter = cauce_core::HistoryFilter::default();
+    let rows = state.store().list_history(&filter).await.unwrap();
+    let client_of = |q: &str| {
+        rows.iter()
+            .find_map(|row| match row {
+                cauce_core::HistoryItem::Search(s) if s.query == q => Some(s.client.label()),
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("no search_log row for {q}"))
+    };
+    assert_eq!(client_of("client-ui"), "ui");
+    assert_eq!(client_of("client-bogus"), "api");
+    assert_eq!(client_of("client-header"), "cli");
+}
+
 /// An inbound `X-Request-Id` that parses as a UUID is honoured end to end.
 #[tokio::test]
 async fn inbound_request_id_is_honoured() {
