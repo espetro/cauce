@@ -16,16 +16,17 @@
     <a href="/">{{ crate::strings::history::NAV_SEARCH }}</a>
     <a href="/history" aria-current="page">{{ crate::strings::history::NAV_HISTORY }}</a>
   </nav>
+  <main>
   <h1>{{ crate::strings::history::TITLE }}</h1>
   <p class="stats">{{ stats_line }}</p>
   <form action="/history" method="get" class="filters">
-    <select name="since">
+    <select name="since" aria-label="{{ crate::strings::history::SINCE_LABEL }}">
       <option value="all"{% if since == "all" %} selected{% endif %}>{{ crate::strings::history::WINDOW_ALL }}</option>
       <option value="24h"{% if since == "24h" %} selected{% endif %}>{{ crate::strings::history::WINDOW_24H }}</option>
       <option value="7d"{% if since == "7d" %} selected{% endif %}>{{ crate::strings::history::WINDOW_7D }}</option>
       <option value="30d"{% if since == "30d" %} selected{% endif %}>{{ crate::strings::history::WINDOW_30D }}</option>
     </select>
-    <input type="search" name="q" value="{{ q }}" placeholder="{{ crate::strings::history::QUERY_PLACEHOLDER }}">
+    <input type="search" name="q" value="{{ q }}" placeholder="{{ crate::strings::history::QUERY_PLACEHOLDER }}" aria-label="{{ crate::strings::history::QUERY_LABEL }}">
     <label class="cached-only">
       <input type="checkbox" name="cached" value="1"{% if cached %} checked{% endif %}>
       {{ crate::strings::history::CACHED_ONLY }}
@@ -116,6 +117,7 @@
     {% if !capped_line.is_empty() %}<span>{{ capped_line }}</span>{% endif %}
     <span>{{ crate::strings::history::REQUEST_LABEL }} <span class="request-id">{{ request_id }}</span></span>
   </div>
+  </main>
   <script>{{ htmx_js|safe }}</script>
   <script>
     // `copy json`: fetch the cached /api/search payload into the clipboard;

@@ -155,6 +155,12 @@ pub mod history {
     pub const WINDOW_7D: &str = "last 7d";
     pub const WINDOW_30D: &str = "last 30d";
     pub const WINDOW_ALL: &str = "all time";
+    /// `aria-label` for the `since` select; the control renders no
+    /// visible label, so the accessible name comes from the attribute.
+    pub const SINCE_LABEL: &str = "time window";
+    /// `aria-label` for the `q` input; the placeholder is not an
+    /// accessible name.
+    pub const QUERY_LABEL: &str = "filter by query text";
     pub const QUERY_PLACEHOLDER: &str = "filter query text...";
     pub const CACHED_ONLY: &str = "cached only";
     pub const CLEAR: &str = "clear";
