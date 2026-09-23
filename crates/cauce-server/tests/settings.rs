@@ -147,6 +147,7 @@ async fn settings_page_renders_sections_and_request_id() {
         "engines.ddgs.enabled",
         "engines.replay.egress.proxy",
         "list=\"ai-models\"",
+        "role=\"status\" aria-live=\"polite\"",
         "<code class=\"request-id\">",
         // The hedge threshold is a disabled placeholder until W3.
         "lands in wave 3",
@@ -159,6 +160,10 @@ async fn settings_page_renders_sections_and_request_id() {
     ] {
         assert!(body.contains(needle), "settings page missing {needle:?}");
     }
+    assert!(
+        !body.contains("hx-ext="),
+        "the form PUTs urlencoded fields; json-enc is not loaded here: {body}"
+    );
     clear_env();
 }
 
@@ -391,11 +396,11 @@ async fn model_picker_lists_provider_models() {
     let (status, body) = get_html(&app, "/settings").await;
     assert_eq!(status, StatusCode::OK, "{body}");
     assert!(
-        body.contains("<option value=\"alpha-1\">"),
+        body.contains("<option value=\"alpha-1\" />"),
         "datalist should carry the provider models: {body}"
     );
     assert!(
-        body.contains("<option value=\"beta-2\">"),
+        body.contains("<option value=\"beta-2\" />"),
         "datalist should carry the provider models: {body}"
     );
     assert!(
