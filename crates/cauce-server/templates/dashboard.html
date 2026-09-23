@@ -228,7 +228,7 @@
 
   </main>
   <footer class="meta">
-    <span class="request-id" title="{{ request_id }}">{{ short_request_id }}</span>
+    {{ crate::strings::common::REQUEST_LABEL }} <code class="request-id" title="{{ request_id }}">{{ request_id }}</code>
   </footer>
 </body>
 </html>
