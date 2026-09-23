@@ -141,7 +141,7 @@ normative here and are cited directly.
 | # | Assertion | Severity | Cites |
 |---|---|---|---|
 | 9.1 | Footer shows the full `request_id` of the render as selectable text; no abbreviation in visible text | P0 | wave-2 "Settled inputs" (request_id footer); `cache.md` / `history.md` / `engines.md` / `audit.md` / `settings.md` Behavior "Footer" |
-| 9.2 | The HTML page is the API handler under `Accept: text/html`: same params, same defaults, same row set as the JSON route | P0 | wave-2 "Settled inputs" (same handlers); each spec's Behavior "Data path" |
+| 9.2 | The page route and its `/api/*` twin share one handler (content negotiation on `Accept`): same params, same defaults, same row set | P0 | wave-2 "Settled inputs" (same handlers); each spec's Behavior "Data path" |
 | 9.3 | All visible copy is sourced from `strings.rs`; no literal English in templates | P1 | wave-2 "Settled inputs" (strings.rs); each spec's Behavior last bullet |
 | 9.4 | Filter forms are plain GET forms and work with JS disabled; `clear` appears only while a filter is active | P1 | `history.md` Behavior "Filters"; `cache.md` Behavior "Filter"; `audit.md` Behavior "Filters" |
 | 9.5 | Empty states are one sentence with an action, and filtered-empty copy names the active filter | P1 | `references/patterns-states.md` ## Empty state; each spec's "Empty state" mockup |
