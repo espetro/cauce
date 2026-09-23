@@ -313,16 +313,31 @@ pub fn error_target(name: &str, engine_ids: &[String]) -> String {
 /// two paths can collide on an element id.
 #[cfg(feature = "ui")]
 pub fn fe_id(path: &str) -> String {
+    format!("fe-{}", encode_id(path))
+}
+
+/// The injective dot-free encoding [`fe_id`] applies, without the `fe-`
+/// prefix: `-` -> `--`, `.` -> `-d`, and any other byte outside
+/// `[A-Za-z0-9_]` hex-escaped as `-xHH`. Every `-` in the output sits
+/// inside a `--`/`-d`/`-xHH` token, so no two paths share an encoding.
+/// The `/engines` cards reuse it under their own `engine-`/`test-`
+/// prefixes (`a.b` -> `engine-da-db`), which keeps `hx-target`
+/// selectors valid for every id the engine-id charset permits.
+#[cfg(feature = "ui")]
+pub(crate) fn encode_id(path: &str) -> String {
+    use std::fmt::Write as _;
     let mut out = String::with_capacity(path.len() + 3);
     for &b in path.as_bytes() {
         match b {
             b'-' => out.push_str("--"),
             b'.' => out.push_str("-d"),
             b'0'..=b'9' | b'A'..=b'Z' | b'a'..=b'z' | b'_' => out.push(b as char),
-            _ => out.push_str(&format!("-x{b:02x}")),
+            _ => {
+                let _ = write!(out, "-x{b:02x}");
+            }
         }
     }
-    format!("fe-{out}")
+    out
 }
 
 /// Write `value` at the dotted `path`, creating intermediate tables.

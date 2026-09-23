@@ -6,13 +6,14 @@
 //! License, v. 2.0. If a copy of the MPL was not distributed with this
 //! file, You can obtain one at <https://mozilla.org/MPL/2.0/>.
 
+use std::collections::BTreeMap;
 use std::sync::{Arc, OnceLock};
 
 use axum::Router;
 use axum::body::{Body, to_bytes};
 use axum::http::{Request, StatusCode};
 use cauce_core::config::Config;
-use cauce_core::{SearchPipeline, StoreTuning};
+use cauce_core::{EngineId, SearchPipeline, StoreTuning};
 use cauce_engines::{Replay, ReplayOpts};
 use cauce_server::{AppState, build_router};
 use cauce_store_sqlite::SqliteStore;
@@ -203,8 +204,8 @@ async fn engines_page_lists_cards() {
 
     // One card per configured engine, spec fields present.
     for needle in [
-        "id=\"engine-replay\"",
-        "id=\"engine-ddgs\"",
+        "id=\"engine-dreplay\"",
+        "id=\"engine-dddgs\"",
         "data-request-id",
         ">Closed<",
         "enabled",
@@ -307,7 +308,7 @@ async fn engines_page_open_breaker_resets_to_half_open() {
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{card}");
-    assert!(card.contains("id=\"engine-replay\""), "{card}");
+    assert!(card.contains("id=\"engine-dreplay\""), "{card}");
     assert!(card.contains(">HalfOpen<"), "{card}");
     assert!(card.contains("probing"), "{card}");
     assert!(card.contains("data-request-id"), "{card}");
@@ -522,7 +523,7 @@ async fn engine_toggle_hx_returns_card_with_saved_hint() {
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{card}");
-    assert!(card.contains("id=\"engine-ddgs\""), "{card}");
+    assert!(card.contains("id=\"engine-dddgs\""), "{card}");
     assert!(card.contains("saved; applies after restart"), "{card}");
     // The flipped card offers the reverse action.
     assert!(card.contains("/api/engines/ddgs/enable"), "{card}");
@@ -531,3 +532,77 @@ async fn engine_toggle_hx_returns_card_with_saved_hint() {
         std::env::remove_var("CAUCE_CONFIG_DIR");
     }
 }
+
+/// Dotted and dashed engine ids are both legal, so the card element ids
+/// and the `hx-target` selectors must be dot-free *and* injective: a raw
+/// `hx-target="#engine-a.b"` parses `.b` as a class selector and the
+/// reset/toggle/test actions are silently dead, and a naive `.` -> `-`
+/// swap would collapse `a.b` and `a-b` onto one element id. The cards
+/// take the shared `encode_id` (`a.b` -> `engine-da-db`, `a-b` ->
+/// `engine-da--b`); display text and the `engines` form value keep the
+/// raw id.
+#[tokio::test]
+async fn engine_card_selectors_are_dot_free_and_unique() {
+    let raw: toml::Value = toml::from_str(
+        "[[engines]]\n\
+         id = \"a.b\"\n\
+         kind = \"replay\"\n\n\
+         [[engines]]\n\
+         id = \"a-b\"\n\
+         kind = \"replay\"\n",
+    )
+    .expect("toml parses");
+    let cfg = Config::from_raw(&raw, &BTreeMap::new()).expect("config parses");
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let store = Arc::new(
+        SqliteStore::open(tmp.path().join("cauce.db"), StoreTuning::default()).expect("store"),
+    );
+    let pipeline = Arc::new(SearchPipeline::new(
+        store.clone(),
+        vec![Arc::new(Replay::new(ReplayOpts::default()))],
+    ));
+    // Registered ids are `tracked`, so the reset button (one of the three
+    // `hx-target` slots) renders on the dotted/dashed cards too.
+    pipeline.health().register(&EngineId::from("a.b"));
+    pipeline.health().register(&EngineId::from("a-b"));
+    let router = build_router(AppState::new(pipeline, store, cfg));
+
+    let (status, page, _) = fetch(&router, "GET", "/engines", &[("accept", "text/html")]).await;
+    assert_eq!(status, StatusCode::OK, "{page}");
+    for sel in [
+        "engine-da-db",
+        "engine-da--b",
+        "test-da-db",
+        "test-da--b",
+        "engine-dreplay",
+    ] {
+        assert!(
+            page.contains(&format!("id=\"{sel}\"")),
+            "missing id {sel}: {page}"
+        );
+        assert!(
+            page.contains(&format!("hx-target=\"#{sel}\"")),
+            "missing hx-target {sel}: {page}"
+        );
+    }
+    // The `engines` form value stays the raw id — it is an API param,
+    // not a selector.
+    assert!(page.contains("name=\"engines\" value=\"a.b\""), "{page}");
+    assert!(page.contains("name=\"engines\" value=\"a-b\""), "{page}");
+    // And the action URLs keep the raw (urlencoded) path id.
+    assert!(
+        page.contains("hx-post=\"/api/engines/a.b/reset\""),
+        "{page}"
+    );
+    // No two cards share an element id.
+    let mut ids: Vec<&str> = page
+        .split("id=\"engine-")
+        .skip(1)
+        .map(|s| s.split('"').next().unwrap_or(""))
+        .collect();
+    ids.sort_unstable();
+    let total = ids.len();
+    ids.dedup();
+    assert_eq!(ids.len(), total, "duplicate engine card ids: {ids:?}");
+}
+
