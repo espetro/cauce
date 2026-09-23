@@ -152,16 +152,17 @@ pub struct TraceSpan {
 }
 
 /// One-line summary of the traced request (kind, query, timestamp, total
-/// elapsed, outcome), derived from the root span and events.
+/// elapsed, outcome), derived from the root span, the work span and the
+/// events.
 #[derive(Debug)]
 pub struct TraceSummary {
-    /// Root span name minus a `pipeline.` prefix (`search`, `flight`, ...).
+    /// Focus span name minus a `pipeline.` prefix (`search`, `flight`, ...).
     pub kind: String,
     pub query: Option<String>,
     pub ts: Option<DateTime<Utc>>,
     pub total_ms: Option<f64>,
-    /// Root `status` field when present, else `error` if any ERROR-level
-    /// event was recorded, else `ok`.
+    /// Root `status` field when present, else `error` on any error-class
+    /// evidence in the trace, else `ok`.
     pub outcome: String,
 }
 
@@ -285,8 +286,13 @@ impl Trace {
         spans
     }
 
-    /// The request summary line: root span kind, query, timestamp, total
-    /// elapsed and outcome.
+    /// The request summary line. `ts`, `total_ms` and `outcome` describe
+    /// the whole request, so they come from the outermost root span (the
+    /// middleware `request` span on server requests). `kind` and `query`
+    /// describe the work done, so they come from the first span (open
+    /// order) carrying a `query` field or a `pipeline.*` name —
+    /// `pipeline.search` under that root — falling back to the root when
+    /// no such span exists.
     pub fn summary(&self) -> TraceSummary {
         let root = self
             .roots
@@ -296,56 +302,52 @@ impl Trace {
                 _ => None,
             })
             .find(|n| !n.name.is_empty() || n.open_ts.is_some());
-        let mut has_error = false;
-        for node in self.nodes.values() {
-            for child in &node.children {
-                if let TimelineItem::Event(r) = child
-                    && r.level == "ERROR"
-                {
-                    has_error = true;
-                }
-            }
-        }
-        for item in &self.roots {
-            if let TimelineItem::Event(r) = item
-                && r.level == "ERROR"
-            {
-                has_error = true;
-            }
-        }
-        match root {
-            Some(node) => {
-                let kind = node
-                    .name
+        let mut ordered: Vec<&SpanNode> = self
+            .nodes
+            .values()
+            .filter(|n| !(n.name.is_empty() && n.open_ts.is_none()))
+            .collect();
+        ordered.sort_by_key(|n| n.open_ts);
+        let focus = ordered
+            .iter()
+            .copied()
+            .find(|n| n.fields.contains_key("query") || n.name.starts_with("pipeline."))
+            .or(root);
+
+        // Outcome fallback when the root carries no `status`: any
+        // error-class evidence in the trace — a WARN/ERROR event or a span
+        // that closed `error`/`timeout` or recorded an `error` field.
+        let has_error = self
+            .roots
+            .iter()
+            .chain(self.nodes.values().flat_map(|n| n.children.iter()))
+            .any(|i| matches!(i, TimelineItem::Event(r) if matches!(r.level.as_str(), "WARN" | "ERROR")))
+            || self.nodes.values().any(|n| span_failed(&n.fields));
+
+        let outcome = root
+            .and_then(|n| n.fields.get("status"))
+            .and_then(|v| v.as_str())
+            .map(str::to_string)
+            .unwrap_or_else(|| if has_error { "error" } else { "ok" }.to_string());
+        let (kind, query) = match focus {
+            Some(node) => (
+                node.name
                     .strip_prefix("pipeline.")
                     .unwrap_or(&node.name)
-                    .to_string();
-                let query = node
-                    .fields
+                    .to_string(),
+                node.fields
                     .get("query")
                     .and_then(|v| v.as_str())
-                    .map(str::to_string);
-                let outcome = node
-                    .fields
-                    .get("status")
-                    .and_then(|v| v.as_str())
-                    .map(str::to_string)
-                    .unwrap_or_else(|| if has_error { "error" } else { "ok" }.to_string());
-                TraceSummary {
-                    kind,
-                    query,
-                    ts: node.open_ts,
-                    total_ms: node.busy_ms,
-                    outcome,
-                }
-            }
-            None => TraceSummary {
-                kind: String::new(),
-                query: None,
-                ts: None,
-                total_ms: None,
-                outcome: if has_error { "error" } else { "ok" }.to_string(),
-            },
+                    .map(str::to_string),
+            ),
+            None => (String::new(), None),
+        };
+        TraceSummary {
+            kind,
+            query,
+            ts: root.and_then(|n| n.open_ts),
+            total_ms: root.and_then(|n| n.busy_ms),
+            outcome,
         }
     }
 
@@ -385,6 +387,16 @@ impl Trace {
 /// ```
 pub fn render_trace(request_id: &str, records: &[LogRecord]) -> String {
     Trace::build(request_id, records).render()
+}
+
+/// Whether a span closed in a failure state: `status` of `error` or
+/// `timeout`, or — when no status was recorded — an `error` field. Same
+/// reading as `tail::status_of`.
+fn span_failed(fields: &Map<String, Value>) -> bool {
+    if let Some(status) = fields.get("status").and_then(Value::as_str) {
+        return matches!(status, "error" | "timeout");
+    }
+    fields.contains_key("error")
 }
 
 fn render_item(

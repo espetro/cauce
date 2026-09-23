@@ -325,14 +325,21 @@ async fn trace_page_lists_replay_span() {
     let (status, body) = get_html(&app, &format!("/trace/{request_id}")).await;
     assert_eq!(status, StatusCode::OK, "{body}");
     assert!(body.contains(&request_id), "traced id missing: {body}");
+    // The summary names the pipeline work, not the middleware root:
+    // `search "q" · ts · ms · outcome`, not `request · ts · ms · ok`.
     assert!(
-        body.contains("replay"),
-        "replay engine span missing from trace page:\n{body}"
+        body.contains("search \"trace-replay\""),
+        "summary should name the pipeline kind and query: {body}"
     );
-    // The HTML spans list is one <details> per span.
+    // The engine span itself appears in the timeline and heads one spans
+    // list entry — not just the string "replay" somewhere on the page.
     assert!(
-        body.contains("<details class=\"span\">"),
-        "spans list missing: {body}"
+        body.contains("engine=replay"),
+        "replay engine span missing from the timeline:\n{body}"
+    );
+    assert!(
+        body.contains("<details class=\"span\"><summary>replay"),
+        "spans list should open with the replay engine span: {body}"
     );
     // Footer carries the page render's own request id, distinct from the
     // traced id.
