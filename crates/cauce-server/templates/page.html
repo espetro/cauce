@@ -15,6 +15,7 @@
 <body>
   {% include "header.html" %}
   <main>
+  <h1 class="vh">{{ crate::strings::common::BRAND }}</h1>
   <form id="search-form" action="/search" method="get">
     <input type="search" name="q" value="{{ q }}" placeholder="{{ crate::strings::search::PLACEHOLDER }}" autofocus>
     <button type="submit">{{ crate::strings::search::SUBMIT }}</button>
