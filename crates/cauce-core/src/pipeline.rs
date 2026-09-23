@@ -486,7 +486,7 @@ impl SearchPipeline {
                 )
                 .await;
                 self.metrics
-                    .record_search(&req.client, "network", None, started.elapsed());
+                    .record_search(&req.client, "network", None, "error", started.elapsed());
                 return Err(err);
             }
         }

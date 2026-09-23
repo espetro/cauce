@@ -576,9 +576,9 @@ impl Metrics {
     /// `"network"`; `tier` is the serving cache tier for hits, `None` on the
     /// network path (labelled `"none"` so the set stays rectangular).
     /// `outcome` is `"ok"`, `"error"` or `"rejected"` (W2-03 amendment):
-    /// the pipeline records it in the `shared_response` arms — `rejected`
-    /// is the admission-rejected 429 (`PipelineError::RateLimited`), every
-    /// other failure is `error`.
+    /// the pipeline records it in the `shared_response` arms and before an
+    /// early validation return — `rejected` is the admission-rejected 429
+    /// (`PipelineError::RateLimited`), every other failure is `error`.
     pub fn record_search(
         &self,
         client: &ClientKind,
