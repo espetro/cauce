@@ -438,6 +438,12 @@ pub struct StatsSnapshot {
     /// `cauce_search_requests_total`'s `outcome` label (W2-03 amendment).
     /// Filled by `merge_metrics`; empty in store results.
     pub outcomes: std::collections::BTreeMap<String, u64>,
+    /// Searches in the window that hit the hard deadline
+    /// (`search_log.deadline_hit`). The windowed counterpart of the
+    /// lifetime `admission.deadline_hits` counter: the reliability panel
+    /// rates this against `searches`, never the lifetime counter, so
+    /// numerator and denominator share the window.
+    pub deadline_hits: u64,
     pub per_day: Vec<DayCount>,
     /// Engine table: one row per engine in `engine_health`, extended with
     /// the in-process request metrics by `merge_metrics` (W1-09).

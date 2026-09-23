@@ -489,12 +489,13 @@ impl Store for SqliteStore {
             };
             let now = rows::now_ms();
 
-            let (searches, cache_hits): (i64, i64) = conn
+            let (searches, cache_hits, deadline_hits): (i64, i64, i64) = conn
                 .query_row(
-                    "SELECT count(*), coalesce(sum(source = 'cache'), 0)
+                    "SELECT count(*), coalesce(sum(source = 'cache'), 0),
+                            coalesce(sum(deadline_hit), 0)
                        FROM search_log WHERE ts >= ?1",
                     params![since],
-                    |r| Ok((r.get(0)?, r.get(1)?)),
+                    |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
                 )
                 .map_err(sql_err)?;
 
@@ -694,6 +695,7 @@ impl Store for SqliteStore {
                 top_queries,
                 zero_result_queries,
                 hits_by_tier,
+                deadline_hits: deadline_hits as u64,
                 per_day,
                 engines,
                 cache_entries: cache_entries as u64,
