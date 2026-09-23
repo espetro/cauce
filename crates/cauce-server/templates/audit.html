@@ -14,7 +14,7 @@
 {% include "header.html" %}
 <main>
   <h1>{{ crate::strings::audit::PAGE_TITLE }}</h1>
-  <form action="/audit" method="get">
+  <form action="/audit" method="get" class="filters">
     <select name="actor" aria-label="{{ crate::strings::audit::ACTOR_LABEL }}">
       <option value="">{{ crate::strings::audit::ANY }}</option>
       {% for o in actor_options %}
