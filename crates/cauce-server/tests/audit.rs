@@ -149,7 +149,7 @@ async fn audit_page_lists_ui_cache_delete() {
         "rows should be newest first:\n{body}"
     );
     assert!(
-        body.contains("<details"),
+        body.contains("<details><summary>"),
         "details should be expandable: {body}"
     );
     assert!(

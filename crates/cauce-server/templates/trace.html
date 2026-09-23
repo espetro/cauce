@@ -10,8 +10,10 @@
   <style>{{ style_css|safe }}</style>
 </head>
 <body>
-  <p><a href="/">{{ crate::strings::common::NAV_SEARCH }}</a></p>
-  <main>
+<nav class="topnav">
+  <a href="/">{{ crate::strings::common::NAV_SEARCH }}</a>
+</nav>
+<main>
   <h1>{{ crate::strings::trace::PAGE_TITLE }}</h1>
   <div class="meta">
     <code class="request-id" id="traced-id">{{ traced_id }}</code>
