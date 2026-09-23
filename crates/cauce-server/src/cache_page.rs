@@ -1,9 +1,8 @@
 //! `/cache` HTMX page (W2-04): the cache admin surface.
 //!
 //! One page: a paginated `cache_entries` list (newest first, expired rows
-//! included and marked), a `q` filter that reads the tier-2 FTS index
-//! through `Store::get_lexical` (the same method `GET /api/cache?q=`
-//! uses), and deletes that call the audited `DELETE /api/cache*` JSON
+//! included and marked), a `q` filter through the shared `GET /api/cache`
+//! listing logic, and deletes that call the audited `DELETE /api/cache*` JSON
 //! handlers with `X-Cauce-Client: ui` so the audit actor is `ui`. Row
 //! bodies lazy-load the stored payload as pretty JSON from
 //! `GET /api/cache/{key}` under `Accept: text/html` — the same handler,
@@ -26,7 +25,6 @@ use rust_embed::Embed;
 
 use crate::app::AppState;
 use crate::error::ApiError;
-use crate::handlers::QueryParams;
 use crate::middleware::RequestCtx;
 
 /// Static assets vendored under `crates/cauce-server/assets` (embedded
@@ -46,11 +44,6 @@ static STYLE_CSS: LazyLock<String> = LazyLock::new(|| asset_string("style.css"))
 
 /// Default `/cache` page size.
 const PAGE_LIMIT: u32 = 50;
-/// Cap on caller-supplied `limit`.
-const MAX_LIMIT: u32 = 1_000;
-/// Cap for `q` (lexical) result sets: `Store::get_lexical` takes a `u8`.
-const FILTER_CAP: u32 = 200;
-
 /// One rendered `cache_entries` row (plain strings so Askama only needs
 /// `Display`).
 #[derive(Debug)]
@@ -82,7 +75,6 @@ struct CachePage {
     prev_url: String,
     next_url: String,
     request_id: String,
-    short_request_id: String,
     htmx_js: String,
     style_css: String,
 }
@@ -111,27 +103,14 @@ pub async fn cache(
             .map(IntoResponse::into_response);
     }
 
-    let params = QueryParams::parse(uri.query(), &ctx)?;
-    params.allow(&ctx, &["q", "limit", "offset"])?;
-    let limit = params.u32(&ctx, "limit", PAGE_LIMIT)?.clamp(1, MAX_LIMIT);
-    let offset = params.u32(&ctx, "offset", 0)?;
-    let q = params.get("q").filter(|v| !v.is_empty());
-
-    let mut entries = match q {
-        // Lexical filter: FTS over stored queries, titles and snippets;
-        // expired rows included, ranked, no offset (a bounded top-N).
-        Some(q) => state
-            .store()
-            .get_lexical(q, limit.min(FILTER_CAP) as u8)
-            .await
-            .map_err(|e| ctx.store(&e))?,
-        // One extra row detects a next page without a COUNT(*).
-        None => state
-            .store()
-            .list_cache(limit.saturating_add(1), offset)
-            .await
-            .map_err(|e| ctx.store(&e))?,
-    };
+    // Use the same parsing, filters, limits, and store selection as
+    // GET /api/cache. One extra unfiltered row detects a next page without
+    // a COUNT(*); filtered results keep the JSON handler's bounded limit.
+    let listing = crate::handlers::cache_list_data(&state, &ctx, &uri, true).await?;
+    let mut entries = listing.entries;
+    let limit = listing.limit;
+    let offset = listing.offset;
+    let q = listing.query;
     let searching = q.is_some();
     let has_next = !searching && entries.len() > limit as usize;
     entries.truncate(limit as usize);
@@ -154,7 +133,6 @@ pub async fn cache(
         shown,
         prev_url,
         next_url,
-        short_request_id: rid.chars().take(8).collect(),
         request_id: rid,
         htmx_js: HTMX_JS.clone(),
         style_css: STYLE_CSS.clone(),

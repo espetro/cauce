@@ -104,7 +104,18 @@ async fn cache_page_lists_entries_with_admin_controls() {
     let (app, _state, _tmp) = app();
     let key = seed_entry(&app, "cachelisttest").await;
 
-    let (status, body) = get_html(&app, "/cache").await;
+    let request_id = "01234567-89ab-cdef-0123-456789abcdef";
+    let (status, body) = call(
+        &app,
+        Request::builder()
+            .method(Method::GET)
+            .uri("/cache")
+            .header("Accept", "text/html")
+            .header("x-request-id", request_id)
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
     assert_eq!(status, StatusCode::OK, "{body}");
     assert!(body.contains("<!doctype html>"), "full page: {body}");
     assert!(body.contains("cachelisttest"), "row query shown: {body}");
@@ -137,8 +148,11 @@ async fn cache_page_lists_entries_with_admin_controls() {
         body.contains(&format!(r#"hx-get="/api/cache/{key}""#)),
         "row expander targets the payload endpoint: {body}"
     );
-    // The page shows the request id of the data it rendered.
-    assert!(body.contains("request-id"), "request id footer: {body}");
+    // The full rendered request id is visible and selectable in the footer.
+    assert!(
+        body.contains(&format!(r#"<code class="request-id">{request_id}</code>"#)),
+        "full request id footer: {body}"
+    );
 }
 
 #[tokio::test]
@@ -163,7 +177,7 @@ async fn cache_page_json_accept_delegates_to_api() {
 #[tokio::test]
 async fn cache_page_filter_uses_lexical_index() {
     let (app, _state, _tmp) = app();
-    seed_entry(&app, "alpha%20bravo").await;
+    let alpha_key = seed_entry(&app, "alpha%20bravo").await;
     seed_entry(&app, "charlie%20delta").await;
 
     let (status, body) = get_html(&app, "/cache?q=alpha").await;
@@ -174,12 +188,16 @@ async fn cache_page_filter_uses_lexical_index() {
         "non-matching row hidden: {body}"
     );
 
-    // Same filter on the shared JSON handler.
-    let (status, entries) = get_json(&app, "/api/cache?q=charlie").await;
+    // The HTML page and JSON endpoint use the same filter and cache rows.
+    let (status, entries) = get_json(&app, "/api/cache?q=alpha").await;
     assert_eq!(status, StatusCode::OK);
     let rows = entries.as_array().unwrap();
     assert_eq!(rows.len(), 1, "{entries}");
-    assert_eq!(rows[0]["query"], "charlie delta");
+    assert_eq!(rows[0]["key"], alpha_key);
+    assert!(
+        body.contains(&alpha_key),
+        "HTML renders the same JSON row: {body}"
+    );
 
     // A filter that matches nothing renders the filtered empty state.
     let (status, body) = get_html(&app, "/cache?q=zzznomatch").await;

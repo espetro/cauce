@@ -26,7 +26,6 @@
     {% if searching %}
     <span>{{ crate::strings::CACHE_FILTERED_CAP_NOTE }}</span>
     {% endif %}
-    <span class="request-id" title="{{ request_id }}">{{ short_request_id }}</span>
   </div>
 
   <div class="cache-actions">
@@ -92,6 +91,10 @@
     {% if !next_url.is_empty() %}<a href="{{ next_url }}">{{ crate::strings::CACHE_PAGE_NEXT }} &rarr;</a>{% endif %}
   </div>
   {% endif %}
+
+  <footer class="meta">
+    <code class="request-id">{{ request_id }}</code>
+  </footer>
 
   <script>{{ htmx_js|safe }}</script>
 </body>

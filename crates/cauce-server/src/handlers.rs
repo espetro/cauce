@@ -208,24 +208,55 @@ pub async fn cache_list(
     Extension(ctx): Extension<RequestCtx>,
     uri: Uri,
 ) -> Result<Json<Vec<cauce_core::CachedSearch>>, ApiError> {
-    let params = QueryParams::parse(uri.query(), &ctx)?;
-    params.allow(&ctx, &["limit", "offset", "q"])?;
-    let limit = params.u32(&ctx, "limit", 50)?.clamp(1, MAX_LIMIT);
-    let offset = params.u32(&ctx, "offset", 0)?;
-    if let Some(q) = params.get("q").filter(|v| !v.is_empty()) {
-        return state
+    cache_list_data(&state, &ctx, &uri, false)
+        .await
+        .map(|listing| Json(listing.entries))
+}
+
+/// Shared cache listing logic for the JSON API and `/cache` page. The page
+/// requests one additional unfiltered row to determine whether a next page
+/// exists; parsing, filter semantics, limits, and store selection remain
+/// authoritative here for both surfaces.
+pub(crate) struct CacheListing {
+    pub(crate) entries: Vec<cauce_core::CachedSearch>,
+    pub(crate) limit: u32,
+    pub(crate) offset: u32,
+    pub(crate) query: Option<String>,
+}
+
+pub(crate) async fn cache_list_data(
+    state: &AppState,
+    ctx: &RequestCtx,
+    uri: &Uri,
+    include_next: bool,
+) -> Result<CacheListing, ApiError> {
+    let params = QueryParams::parse(uri.query(), ctx)?;
+    params.allow(ctx, &["limit", "offset", "q"])?;
+    let limit = params.u32(ctx, "limit", 50)?.clamp(1, MAX_LIMIT);
+    let offset = params.u32(ctx, "offset", 0)?;
+    let query = params
+        .get("q")
+        .filter(|value| !value.is_empty())
+        .map(str::to_string);
+    let entries = if let Some(q) = &query {
+        state
             .store()
             .get_lexical(q, limit.min(u8::MAX as u32) as u8)
             .await
-            .map(Json)
-            .map_err(|e| ctx.store(&e));
-    }
-    state
-        .store()
-        .list_cache(limit, offset)
-        .await
-        .map(Json)
-        .map_err(|e| ctx.store(&e))
+            .map_err(|e| ctx.store(&e))?
+    } else {
+        state
+            .store()
+            .list_cache(limit.saturating_add(u32::from(include_next)), offset)
+            .await
+            .map_err(|e| ctx.store(&e))?
+    };
+    Ok(CacheListing {
+        entries,
+        limit,
+        offset,
+        query,
+    })
 }
 
 /// `GET /api/cache/{key}`: one entry by hex `CacheKey` (400 malformed,
