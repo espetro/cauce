@@ -558,6 +558,7 @@ pub(crate) fn settings_status(
     result: Result<Json<Value>, ApiError>,
     field_errors: Vec<(String, String)>,
     submitted: Vec<String>,
+    engine_ids: &[String],
 ) -> Response {
     use crate::strings::settings as s;
     let (kind, text) = match &result {
@@ -578,9 +579,30 @@ pub(crate) fn settings_status(
             }
         }
     };
+    // `engines.<id>.<field>` names land on the row's `fe-engines.<id>`
+    // element (there is no per-input error element); errors hitting the
+    // same row merge into one line.
+    let mut merged: std::collections::BTreeMap<String, String> = std::collections::BTreeMap::new();
+    for (name, msg) in field_errors {
+        let target = crate::settings::error_target(&name, engine_ids);
+        merged
+            .entry(target)
+            .and_modify(|m| {
+                m.push_str("; ");
+                m.push_str(&msg);
+            })
+            .or_insert(msg);
+    }
+    let field_errors: Vec<(String, String)> = merged.into_iter().collect();
     let errored: std::collections::BTreeSet<&String> =
         field_errors.iter().map(|(id, _)| id).collect();
-    let clear_ids = submitted
+    // Clears only name elements the page renders — the same row-level
+    // mapping applies, so `engines.<id>.tier` clears `fe-engines.<id>`,
+    // never a `fe-engines.<id>.tier` phantom.
+    let clear_ids: Vec<String> = submitted
+        .into_iter()
+        .map(|name| crate::settings::error_target(&name, engine_ids))
+        .collect::<std::collections::BTreeSet<_>>()
         .into_iter()
         .filter(|id| !errored.contains(id))
         .collect();

@@ -271,6 +271,30 @@ pub fn field_errors(current: &Config, pairs: &[(String, String)]) -> Vec<(String
     errors
 }
 
+/// The `<p class="field-error">` target a submitted field name maps to on
+/// the settings page: `engines.<id>.<field>` errors and clears land on the
+/// row's `fe-engines.<id>` element — the page renders one error line per
+/// engine row, not per input. The longest configured id matching `rest`
+/// (exact, or as a `id.` prefix) wins so a dotted id still resolves to its
+/// own row; an unknown id collapses to its first segment.
+#[cfg(feature = "ui")]
+pub fn error_target(name: &str, engine_ids: &[String]) -> String {
+    let Some(rest) = name.strip_prefix("engines.") else {
+        return name.to_string();
+    };
+    if let Some(id) = engine_ids
+        .iter()
+        .filter(|id| rest == id.as_str() || rest.starts_with(&format!("{id}.")))
+        .max_by_key(|id| id.len())
+    {
+        return format!("engines.{id}");
+    }
+    match rest.split_once('.') {
+        Some((id, _)) => format!("engines.{id}"),
+        None => name.to_string(),
+    }
+}
+
 /// Write `value` at the dotted `path`, creating intermediate tables.
 fn set_path(tree: &mut toml::Value, path: &str, value: toml::Value) -> Result<(), ConfigError> {
     let mut cur = tree;

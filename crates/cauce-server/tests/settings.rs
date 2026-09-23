@@ -312,6 +312,48 @@ async fn engine_fields_write_file_entries() {
     clear_env();
 }
 
+/// Engine field errors and clears target the row's `fe-engines.<id>`
+/// element — the page renders one error line per row, never a per-field
+/// `fe-engines.<id>.<field>` phantom.
+#[tokio::test]
+async fn engine_field_errors_target_the_row() {
+    let _guard = env_lock().await;
+    clear_env();
+    let tmp = config_env("");
+    let app = app(&tmp);
+
+    let (status, body) = put_form(&app, "engines.replay.tier=9", true).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert!(body.contains("not saved: 1 error"), "{body}");
+    assert!(
+        body.contains("id=\"fe-engines.replay\""),
+        "the row error element must carry the message: {body}"
+    );
+    assert!(
+        !body.contains("fe-engines.replay.tier"),
+        "no per-field error element exists: {body}"
+    );
+
+    // A clean save clears the row element exactly once even though several
+    // `engines.replay.*` fields were submitted.
+    let (status, body) = put_form(
+        &app,
+        "engines.replay.tier=2&engines.replay.egress.proxy=http%3A%2F%2F127.0.0.1%3A8888&search.deadline_ms=1234",
+        true,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(
+        body.matches("id=\"fe-engines.replay\"").count(),
+        1,
+        "one OOB clear for the row: {body}"
+    );
+    assert!(!body.contains("fe-engines.replay.tier"), "{body}");
+    assert!(!body.contains("fe-engines.replay.egress.proxy"), "{body}");
+    assert!(body.contains("id=\"fe-search.deadline_ms\""), "{body}");
+    clear_env();
+}
+
 #[tokio::test]
 async fn model_picker_lists_provider_models() {
     let _guard = env_lock().await;
