@@ -165,6 +165,7 @@ async fn mcp_http_tools_and_search() {
         .list_history(&HistoryFilter {
             since: None,
             q: None,
+            cached: false,
             limit: 10,
         })
         .await
