@@ -51,13 +51,14 @@ const PAGE_LIMIT: u32 = 50;
 struct Row {
     key: String,
     query: String,
-    /// Absolute creation time, `YYYY-MM-DD HH:MM:SSZ`.
+    /// Absolute creation time in local time, `YYYY-MM-DD HH:MM`.
     created: String,
-    /// `expires_at` rendered relative to render time: "in 42m" or
+    /// `expires_at` rendered relative to render time: "expires in 42m" or
     /// "expired 3m ago".
     expires: String,
     expired: bool,
-    hits: u64,
+    /// Hit count with singular/plural ("1 hit" / "3 hits").
+    hits_label: String,
     engines: String,
     /// Approximate stored `payload_json` size, human readable.
     size: String,
@@ -71,7 +72,14 @@ struct CachePage {
     q: String,
     searching: bool,
     rows: Vec<Row>,
-    shown: usize,
+    /// Count line under the filter form ("34 entries", or "3 matching
+    /// entries" while filtering).
+    count_line: String,
+    /// One-page cap note shown only while filtering ("showing the newest
+    /// 50 matches").
+    filtered_cap: String,
+    /// Empty-state line (filter-aware); empty string when rows exist.
+    empty_line: String,
     /// Empty when no page exists in that direction (or while filtering).
     prev_url: String,
     next_url: String,
@@ -120,12 +128,12 @@ pub async fn cache(
     let mut entries = listing.entries;
     let limit = listing.limit;
     let offset = listing.offset;
-    let q = listing.query;
-    let searching = q.is_some();
+    let q = listing.query.unwrap_or_default();
+    let searching = !q.is_empty();
     let has_next = !searching && entries.len() > limit as usize;
     entries.truncate(limit as usize);
     let shown = entries.len();
-    let rows = entries.iter().map(row).collect();
+    let rows: Vec<Row> = entries.iter().map(row).collect();
 
     let (prev_url, next_url) = if searching {
         (String::new(), String::new())
@@ -137,10 +145,24 @@ pub async fn cache(
 
     let rid = ctx.request_id.as_uuid().to_string();
     let page = CachePage {
-        q: q.unwrap_or_default().to_string(),
+        q: q.clone(),
         searching,
+        count_line: count_line(shown, searching),
+        filtered_cap: if searching {
+            copy::FILTERED_CAP.replace("{n}", &limit.to_string())
+        } else {
+            String::new()
+        },
+        empty_line: if rows.is_empty() {
+            if searching {
+                copy::EMPTY_FILTERED.replace("{q}", &q)
+            } else {
+                copy::EMPTY.to_string()
+            }
+        } else {
+            String::new()
+        },
         rows,
-        shown,
         prev_url,
         next_url,
         request_id: rid,
@@ -231,18 +253,32 @@ fn pager_url(offset: u32, limit: u32) -> String {
 
 fn row(e: &CachedSearch) -> Row {
     let now = Utc::now();
-    let expires_in = e.expires_at.signed_duration_since(now).num_seconds();
+    let expired = e.expires_at <= now;
+    let rel = human_seconds(
+        e.expires_at
+            .signed_duration_since(now)
+            .num_seconds()
+            .unsigned_abs(),
+    );
     Row {
         key: e.key.as_str().to_string(),
         query: e.query.clone(),
-        created: e.created_at.format("%Y-%m-%d %H:%M:%SZ").to_string(),
-        expires: if expires_in >= 0 {
-            format!("in {}", human_seconds(expires_in as u64))
+        created: e
+            .created_at
+            .with_timezone(&chrono::Local)
+            .format("%Y-%m-%d %H:%M")
+            .to_string(),
+        expires: if expired {
+            copy::EXPIRED_AGO.replace("{rel}", &rel)
         } else {
-            format!("expired {} ago", human_seconds(expires_in.unsigned_abs()))
+            copy::EXPIRES_IN.replace("{rel}", &rel)
         },
-        expired: expires_in < 0,
-        hits: e.hits,
+        expired,
+        hits_label: format!(
+            "{} {}",
+            e.hits,
+            plural(e.hits, copy::HIT_ONE, copy::HIT_MANY)
+        ),
         engines: e
             .engines
             .iter()
@@ -255,6 +291,21 @@ fn row(e: &CachedSearch) -> Row {
                 .unwrap_or(0),
         ),
     }
+}
+
+/// `34 entries` unfiltered, `3 matching entries` under an active `q`.
+fn count_line(shown: usize, searching: bool) -> String {
+    let word = plural(shown as u64, copy::ENTRY_ONE, copy::ENTRY_MANY);
+    if searching {
+        format!("{shown} {} {word}", copy::MATCHING)
+    } else {
+        format!("{shown} {word}")
+    }
+}
+
+/// Singular/plural word pick (`1 hit` / `3 hits`).
+fn plural<'a>(n: u64, one: &'a str, many: &'a str) -> &'a str {
+    if n == 1 { one } else { many }
 }
 
 /// Seconds -> "45s" / "12m" / "3h" / "2d".

@@ -33,27 +33,47 @@ pub mod cache {
     /// Bulk action: delete every row.
     pub const DELETE_ALL: &str = "Delete all";
     /// `hx-confirm` for the expired-rows bulk delete.
-    pub const CONFIRM_EXPIRED: &str = "Delete every expired cache entry?";
+    pub const CONFIRM_EXPIRED: &str = "Delete all expired entries?";
     /// `hx-confirm` for the full-table delete.
     pub const CONFIRM_ALL: &str =
-        "Delete ALL cache entries? Every next search will hit the network.";
+        "Delete every cached entry? Searches will hit the network until the cache refills.";
     /// `hx-confirm` for a single-row delete.
     pub const CONFIRM_ROW: &str = "Delete this cache entry?";
     /// Per-row delete button label.
     pub const DELETE_ROW: &str = "Delete";
     /// Empty state when the table has no rows at all.
-    pub const EMPTY: &str = "The cache is empty. Run a search first.";
-    /// Empty state when `q` matched nothing.
-    pub const EMPTY_FILTERED: &str = "No cache entries match this filter.";
+    pub const EMPTY: &str = "no cached queries yet. run a search and it lands here.";
+    /// Empty state when `q` matched nothing; `{q}` is the active filter.
+    pub const EMPTY_FILTERED: &str = "nothing cached matches \"{q}\".";
     /// Pagination: link to the previous (newer) page.
     pub const PAGE_PREV: &str = "Newer";
     /// Pagination: link to the next (older) page.
     pub const PAGE_NEXT: &str = "Older";
-    /// Note shown in filtered mode, which has no pagination.
-    pub const FILTERED_CAP_NOTE: &str = "top matches by rank";
+    /// Note shown in filtered mode, which is capped at one page; `{n}` is
+    /// the row cap.
+    pub const FILTERED_CAP: &str = "showing the newest {n} matches";
     /// Placeholder inside the payload slot before the lazy fragment loads.
     pub const PAYLOAD_LOADING: &str = "loading...";
     /// Inline error inside the payload slot when the lazy fetch fails;
     /// `{status}` is the HTTP status code.
     pub const PAYLOAD_ERROR: &str = "error: could not load payload ({status})";
+    /// `<noscript>` hint next to the delete controls: deletes go through
+    /// htmx, so they do nothing without JavaScript.
+    pub const NOSCRIPT_DELETES: &str = "the delete buttons need JavaScript.";
+    /// Count line, singular (`1 entry`).
+    pub const ENTRY_ONE: &str = "entry";
+    /// Count line, plural (`34 entries`).
+    pub const ENTRY_MANY: &str = "entries";
+    /// Count line qualifier while a `q` filter is active
+    /// (`3 matching entries`).
+    pub const MATCHING: &str = "matching";
+    /// Hit count, singular (`1 hit`).
+    pub const HIT_ONE: &str = "hit";
+    /// Hit count, plural (`3 hits`).
+    pub const HIT_MANY: &str = "hits";
+    /// Row expiry phrase while the entry is live; `{rel}` is a relative
+    /// duration like `41m`.
+    pub const EXPIRES_IN: &str = "expires in {rel}";
+    /// Row expiry phrase once `expires_at` has passed.
+    pub const EXPIRED_AGO: &str = "expired {rel} ago";
 }

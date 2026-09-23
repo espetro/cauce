@@ -22,12 +22,13 @@
   </form>
 
   <div class="meta">
-    <span>{{ shown }} entries</span>
+    <span>{{ count_line }}</span>
     {% if searching %}
-    <span>{{ crate::strings::cache::FILTERED_CAP_NOTE }}</span>
+    <span>{{ filtered_cap }}</span>
     {% endif %}
   </div>
 
+  {% if !rows.is_empty() %}
   <div class="cache-actions">
     <button
       hx-delete="/api/cache?expired=true"
@@ -44,10 +45,12 @@
       hx-swap="none"
       hx-on::after-request="if (event.detail.successful) window.location.reload()"
     >{{ crate::strings::cache::DELETE_ALL }}</button>
+    <noscript><span class="cache-noscript">{{ crate::strings::cache::NOSCRIPT_DELETES }}</span></noscript>
   </div>
+  {% endif %}
 
   {% if rows.is_empty() %}
-  <p>{% if searching %}{{ crate::strings::cache::EMPTY_FILTERED }}{% else %}{{ crate::strings::cache::EMPTY }}{% endif %}</p>
+  <p>{{ empty_line }}</p>
   {% endif %}
 
   {% for row in rows %}
@@ -68,7 +71,7 @@
           <span class="cache-meta">
             <span>{{ row.created }}</span>
             <span class="cache-expires">{{ row.expires }}</span>
-            <span>{{ row.hits }} hits</span>
+            <span>{{ row.hits_label }}</span>
             <span>{{ row.engines }}</span>
             <span>{{ row.size }}</span>
           </span>

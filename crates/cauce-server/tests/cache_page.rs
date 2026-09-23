@@ -11,12 +11,13 @@
 #![cfg(feature = "ui")]
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use axum::Router;
 use axum::body::{Body, to_bytes};
 use axum::http::{Method, Request, StatusCode};
 use cauce_core::config::Config;
-use cauce_core::{AuditFilter, SearchPipeline, StoreTuning};
+use cauce_core::{AuditFilter, CacheKey, SearchPipeline, StoreTuning};
 use cauce_engines::{Replay, ReplayOpts};
 use cauce_server::{AppState, build_router};
 use cauce_store_sqlite::SqliteStore;
@@ -99,6 +100,23 @@ async fn seed_entry(router: &Router, q: &str) -> String {
     entries[0]["key"].as_str().expect("cache key").to_string()
 }
 
+/// Write a `cache_entries` row straight through the test store, bypassing
+/// the pipeline. `ttl` of `Duration::ZERO` lands the row already expired
+/// (`expires_at <= now`), which is how the page's expired state is
+/// reached in tests — the spec's `ttl_s=1` recipe is not a supported
+/// `/api/search` param.
+async fn seed_store_entry(state: &AppState, q: &str, ttl: Duration) -> String {
+    let req = cauce_core::conformance::request(q);
+    let key = CacheKey::from(&req);
+    let resp = cauce_core::conformance::response(q, &[("T", "https://t.example.com/", "s")]);
+    state
+        .store()
+        .put(&key, &resp, ttl)
+        .await
+        .expect("seed cache entry");
+    key.as_str().to_string()
+}
+
 #[tokio::test]
 async fn cache_page_lists_entries_with_admin_controls() {
     let (app, _state, _tmp) = app();
@@ -120,7 +138,17 @@ async fn cache_page_lists_entries_with_admin_controls() {
     assert!(body.contains("<!doctype html>"), "full page: {body}");
     assert!(body.contains("cachelisttest"), "row query shown: {body}");
     assert!(body.contains("replay"), "row engines shown: {body}");
-    assert!(body.contains("hits"), "hits column shown: {body}");
+    assert!(body.contains("1 entry"), "count line singular: {body}");
+    assert!(body.contains("expires in"), "live expiry phrase: {body}");
+    assert!(
+        !body.contains("Z</span>"),
+        "created is local YYYY-MM-DD HH:MM, no UTC suffix: {body}"
+    );
+    // Deletes say so in a noscript hint next to the controls.
+    assert!(
+        body.contains("<noscript>") && body.contains("need JavaScript"),
+        "noscript hint for deletes: {body}"
+    );
     // Row delete wiring: the audited DELETE endpoint with client `ui`.
     assert!(
         body.contains(&format!(r#"hx-delete="/api/cache/{key}""#)),
@@ -160,7 +188,16 @@ async fn cache_page_empty_state() {
     let (app, _state, _tmp) = app();
     let (status, body) = get_html(&app, "/cache").await;
     assert_eq!(status, StatusCode::OK);
-    assert!(body.contains("cache is empty"), "empty state: {body}");
+    assert!(
+        body.contains("no cached queries yet"),
+        "empty state: {body}"
+    );
+    assert!(body.contains("0 entries"), "count line: {body}");
+    // Nothing to delete, so the bulk controls are hidden.
+    assert!(
+        !body.contains(r#"hx-delete="/api/cache?all=true""#),
+        "delete controls hidden when the list is empty: {body}"
+    );
 }
 
 #[tokio::test]
@@ -187,6 +224,14 @@ async fn cache_page_filter_uses_lexical_index() {
         !body.contains("charlie delta"),
         "non-matching row hidden: {body}"
     );
+    assert!(
+        body.contains("1 matching entry"),
+        "filtered count line: {body}"
+    );
+    assert!(
+        body.contains("showing the newest"),
+        "filtered one-page cap note: {body}"
+    );
 
     // The HTML page and JSON endpoint use the same filter and cache rows.
     let (status, entries) = get_json(&app, "/api/cache?q=alpha").await;
@@ -199,10 +244,14 @@ async fn cache_page_filter_uses_lexical_index() {
         "HTML renders the same JSON row: {body}"
     );
 
-    // A filter that matches nothing renders the filtered empty state.
+    // A filter that matches nothing names the filter in the empty state.
     let (status, body) = get_html(&app, "/cache?q=zzznomatch").await;
     assert_eq!(status, StatusCode::OK);
-    assert!(body.contains("No cache entries match"), "{body}");
+    assert!(
+        body.contains(r#"nothing cached matches "zzznomatch"."#)
+            || body.contains("nothing cached matches &#34;zzznomatch&#34;."),
+        "filtered empty state names the filter: {body}"
+    );
 }
 
 #[tokio::test]
@@ -354,6 +403,36 @@ async fn cache_page_expand_error_wiring() {
         body.contains("error: could not load payload ({status})"),
         "error copy is embedded for the handler: {body}"
     );
+}
+
+/// Expired rows are seeded through the test store (`Store::put` with a
+/// zero TTL lands `expires_at <= now`), then render muted with the
+/// `expired <rel> ago` phrase.
+#[tokio::test]
+async fn cache_page_expired_row_renders_muted() {
+    let (app, state, _tmp) = app();
+    seed_store_entry(&state, "stalerow", Duration::ZERO).await;
+
+    let (status, body) = get_html(&app, "/cache").await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(body.contains("stalerow"), "expired row is listed: {body}");
+    assert!(
+        body.contains("cache-entry expired"),
+        "expired row carries the muted class: {body}"
+    );
+    assert!(
+        body.contains("expired") && body.contains("ago"),
+        "expired <rel> ago phrase: {body}"
+    );
+    assert!(
+        !body.contains("expires in"),
+        "expired row must not read 'expires in': {body}"
+    );
+
+    // `evict_expired` semantics agree the seeded row is expired.
+    let (status, body) = page_delete(&app, "/api/cache?expired=true").await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["removed"], 1, "seeded row is expired: {body}");
 }
 
 /// W2-04 acceptance: delete via the page removes the row and writes an
