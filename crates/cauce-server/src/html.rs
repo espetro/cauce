@@ -10,15 +10,21 @@
 
 use std::borrow::Cow;
 use std::sync::LazyLock;
+use std::time::Duration;
 
 use askama::Template;
 use axum::Extension;
+use axum::Json;
 use axum::extract::State;
 use axum::http::{HeaderMap, Uri, header};
 use axum::response::{Html, IntoResponse, Response};
-use cauce_core::{CacheKey, EngineStatus, SearchRequest, SearchResponse, Source};
+use cauce_core::config::{AiConfig, EngineKind};
+use cauce_core::http::HttpClient;
+use cauce_core::{
+    CacheKey, EngineError, EngineId, EngineStatus, SearchRequest, SearchResponse, Source,
+};
 use rust_embed::Embed;
-use serde_json::json;
+use serde_json::{Value, json};
 
 use crate::app::AppState;
 use crate::error::ApiError;
@@ -253,6 +259,291 @@ fn more_url(resp: &SearchResponse, params: &QueryParams, req: &SearchRequest) ->
 
 fn short_id(request_id: &str) -> String {
     request_id.chars().take(8).collect()
+}
+
+// ---------------------------------------------------------------------------
+// /settings (W2-07)
+// ---------------------------------------------------------------------------
+
+/// Budget for the `/models` listing behind the model picker; the settings
+/// page must not hang on a dead provider.
+const MODELS_BUDGET: Duration = Duration::from_millis(1500);
+
+/// A settings field plus the `CAUCE_*` override pinning it, when set. A
+/// pinned input renders `disabled` — a save must never bake the env value
+/// into `config.toml`.
+struct Field {
+    value: String,
+    /// The `CAUCE_*` var pinning this field, `""` when unset.
+    env: String,
+}
+
+/// One `[[engines]]` row of the settings form.
+struct EngineSettings {
+    id: String,
+    kind: &'static str,
+    enabled: bool,
+    /// `""` for "no override", else `"1"`/`"2"`/`"3"`.
+    tier: String,
+    proxy: String,
+}
+
+#[derive(Template)]
+#[template(path = "settings.html")]
+struct SettingsPage {
+    config_path: String,
+    deadline: Field,
+    ttl: Field,
+    engines: Vec<EngineSettings>,
+    engines_pinned: bool,
+    max_wait: Field,
+    max_concurrent: Field,
+    retention: Field,
+    ai_base_url: Field,
+    ai_api_key: Field,
+    /// `"NAME: set"` / `"NAME: not set"` for a `${env:NAME}` api_key.
+    ai_key_status: String,
+    ai_model: Field,
+    ai_enabled: bool,
+    ai_models: Vec<String>,
+    ai_models_failed: bool,
+    request_id: String,
+    short_request_id: String,
+    htmx_js: String,
+    style_css: String,
+}
+
+/// The `PUT /api/config` status fragment swapped into `#settings-status`.
+/// Rendered at 200 even for validation errors — htmx only swaps 2xx, and
+/// the error text is the inline validation message.
+#[derive(Template)]
+#[template(
+    source = "<span class=\"form-status {{ kind }}\">{{ text }}</span>",
+    ext = "html"
+)]
+struct SettingsStatus {
+    kind: &'static str,
+    text: String,
+}
+
+/// `GET /settings`: the config file as a form (W2-07). Reads the redacted
+/// display tree — `${...}` templates verbatim, secrets as `<redacted>` —
+/// and saves through `PUT /api/config` (urlencoded merge, `crate::settings`),
+/// never a second write path.
+pub async fn settings(
+    State(state): State<AppState>,
+    Extension(ctx): Extension<RequestCtx>,
+    headers: HeaderMap,
+) -> Result<Response, ApiError> {
+    let accept = headers
+        .get("accept")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    if prefers_json(accept) {
+        return crate::handlers::config_get(State(state), Extension(ctx))
+            .await
+            .map(|j| j.into_response());
+    }
+
+    let rid = ctx.request_id.as_uuid();
+    let (tree, ai, engines, config_path) = state.with_config(|c| {
+        (
+            c.display_tree(),
+            c.ai.clone(),
+            c.engines.clone(),
+            c.config_path().display().to_string(),
+        )
+    });
+    let tree = tree.map_err(|e| {
+        ApiError::internal(format!("config display failed: {e}")).with_request_id(Some(rid))
+    })?;
+
+    let field = |path: &str| Field {
+        value: tree_display(&tree, path),
+        env: env_override(path).unwrap_or_default(),
+    };
+    let ai_key_status = env_status(&tree_display(&tree, "ai.api_key")).unwrap_or_default();
+    let engines_pinned = std::env::var("CAUCE_ENGINES")
+        .map(|v| !v.trim().is_empty())
+        .unwrap_or(false);
+    let engine_rows = engines
+        .iter()
+        .map(|e| EngineSettings {
+            id: e.id.to_string(),
+            kind: kind_label(e.kind),
+            enabled: e.enabled,
+            tier: e.tier.map(|t| t.as_u8().to_string()).unwrap_or_default(),
+            proxy: e
+                .egress
+                .as_ref()
+                .and_then(|g| g.proxy.clone())
+                .unwrap_or_default(),
+        })
+        .collect();
+
+    // The resolved key authenticates the listing; it is never rendered.
+    let (ai_models, ai_models_failed) = list_models(&ai).await;
+
+    let rid_str = rid.to_string();
+    let page = SettingsPage {
+        config_path,
+        deadline: field("search.deadline_ms"),
+        ttl: field("search.ttl_s"),
+        engines: engine_rows,
+        engines_pinned,
+        max_wait: field("admission.max_wait_ms"),
+        max_concurrent: field("admission.max_concurrent_per_engine"),
+        retention: field("logs.retention_days"),
+        ai_base_url: field("ai.base_url"),
+        ai_api_key: field("ai.api_key"),
+        ai_key_status,
+        ai_model: field("ai.model"),
+        ai_enabled: ai.enabled,
+        ai_models,
+        ai_models_failed,
+        short_request_id: short_id(&rid_str),
+        request_id: rid_str,
+        htmx_js: HTMX_JS.clone(),
+        style_css: STYLE_CSS.clone(),
+    };
+    Ok(Html(page.render().map_err(|e| render_err(e, rid))?).into_response())
+}
+
+/// The `PUT /api/config` response for an HTMX form submit (see
+/// `handlers::config_put`): a one-line status fragment.
+pub(crate) fn settings_status(result: Result<Json<Value>, ApiError>) -> Response {
+    let (kind, text) = match &result {
+        Ok(_) => ("ok", "Saved; applies after restart.".to_string()),
+        Err(e) => ("error", e.message().to_string()),
+    };
+    let html = SettingsStatus {
+        kind,
+        text: text.clone(),
+    }
+    .render()
+    .unwrap_or(text);
+    Html(html).into_response()
+}
+
+/// The display-tree value at `path` as a string (integers, floats and bools
+/// stringify); missing leaves are `""`.
+fn tree_display(tree: &toml::Value, path: &str) -> String {
+    let mut cur = tree;
+    for seg in path.split('.') {
+        cur = match cur {
+            toml::Value::Table(t) => match t.get(seg) {
+                Some(v) => v,
+                None => return String::new(),
+            },
+            toml::Value::Array(a) => match seg.parse::<usize>().ok().and_then(|i| a.get(i)) {
+                Some(v) => v,
+                None => return String::new(),
+            },
+            _ => return String::new(),
+        };
+    }
+    match cur {
+        toml::Value::String(s) => s.clone(),
+        toml::Value::Integer(i) => i.to_string(),
+        toml::Value::Float(f) => f.to_string(),
+        toml::Value::Boolean(b) => b.to_string(),
+        toml::Value::Datetime(d) => d.to_string(),
+        _ => String::new(),
+    }
+}
+
+/// The `CAUCE_*` var pinning `path`, when set. Mirrors `ENV_OVERRIDES` in
+/// `cauce-core::config` for the fields the form renders — keep in sync.
+fn env_override(path: &str) -> Option<String> {
+    let name = match path {
+        "search.deadline_ms" => "CAUCE_SEARCH_DEADLINE_MS",
+        "search.ttl_s" => "CAUCE_SEARCH_TTL_S",
+        "admission.max_wait_ms" => "CAUCE_ADMISSION_MAX_WAIT_MS",
+        "admission.max_concurrent_per_engine" => "CAUCE_ADMISSION_MAX_CONCURRENT_PER_ENGINE",
+        "logs.retention_days" => "CAUCE_LOGS_RETENTION_DAYS",
+        "ai.base_url" => "CAUCE_AI_BASE_URL",
+        "ai.api_key" => "CAUCE_AI_API_KEY",
+        "ai.model" => "CAUCE_AI_MODEL",
+        _ => return None,
+    };
+    std::env::var_os(name).map(|_| name.to_string())
+}
+
+/// `${env:NAME}`/`${env:NAME:...}` in a raw (unresolved) value ->
+/// `"NAME: set"` / `"NAME: not set"`. The `:`-suffixed forms count an empty
+/// variable as missing (POSIX), the plain form counts it as set.
+fn env_status(raw: &str) -> Option<String> {
+    let inner = raw.strip_prefix("${env:")?.strip_suffix('}')?;
+    let (name, colon_form) = match inner.find(':') {
+        Some(i) => (&inner[..i], true),
+        None => (inner, false),
+    };
+    if name.is_empty() {
+        return None;
+    }
+    let set = match std::env::var(name) {
+        Ok(v) => !colon_form || !v.is_empty(),
+        Err(_) => false,
+    };
+    Some(format!("{name}: {}", if set { "set" } else { "not set" }))
+}
+
+fn kind_label(kind: EngineKind) -> &'static str {
+    match kind {
+        EngineKind::Declarative => "declarative",
+        EngineKind::Exec => "exec",
+        EngineKind::Replay => "replay",
+    }
+}
+
+/// `GET {base_url}/models` for the model picker: `(ids, failed)`. An empty
+/// `base_url` is `([], false)`; any fetch/parse failure is `([], true)` and
+/// the input falls back to free text. W4-01 replaces this with the real
+/// provider client (60 s cache).
+async fn list_models(ai: &AiConfig) -> (Vec<String>, bool) {
+    let base = ai.base_url.trim();
+    if base.is_empty() {
+        return (Vec::new(), false);
+    }
+    match fetch_models(
+        &format!("{}/models", base.trim_end_matches('/')),
+        &ai.api_key,
+    )
+    .await
+    {
+        Ok(ids) => (ids, false),
+        Err(e) => {
+            tracing::debug!(error = %e, "settings: {base}/models listing failed");
+            (Vec::new(), true)
+        }
+    }
+}
+
+async fn fetch_models(url: &str, api_key: &str) -> Result<Vec<String>, EngineError> {
+    let client = HttpClient::from_egress_config(EngineId::new("ai"), None)?;
+    let mut headers = reqwest::header::HeaderMap::new();
+    if !api_key.is_empty() {
+        let value = reqwest::header::HeaderValue::from_str(&format!("Bearer {api_key}"))
+            .map_err(|e| EngineError::Transport(format!("invalid ai.api_key: {e}")))?;
+        headers.insert(reqwest::header::AUTHORIZATION, value);
+    }
+    let res = client.get_with_headers(url, MODELS_BUDGET, headers).await?;
+    if res.status != 200 {
+        return Err(EngineError::Transport(format!(
+            "/models answered HTTP {}",
+            res.status
+        )));
+    }
+    let body: Value =
+        serde_json::from_slice(&res.body).map_err(|e| EngineError::Parse(e.to_string()))?;
+    Ok(body["data"]
+        .as_array()
+        .map(|a| {
+            a.iter()
+                .filter_map(|m| m["id"].as_str().map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default())
 }
 
 fn render_err(e: askama::Error, request_id: uuid::Uuid) -> ApiError {

@@ -15,6 +15,7 @@ mod metrics;
 mod middleware;
 pub mod observability;
 mod routes;
+mod settings;
 
 pub use app::{
     AppState, CURRENT_WAVE, RouterOptions, build_router, build_router_opts, feature_enabled,

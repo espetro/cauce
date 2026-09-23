@@ -61,6 +61,12 @@ impl ApiError {
         Self::new(StatusCode::INTERNAL_SERVER_ERROR, "internal", message)
     }
 
+    /// The human-readable message (the `/settings` HTMX fragment renders it
+    /// inline instead of the JSON envelope).
+    pub fn message(&self) -> &str {
+        &self.message
+    }
+
     /// A `Store` failure. The store's message carries SQL/IO detail (never
     /// secrets), so it is passed through for the operator.
     pub fn store(e: &cauce_core::StoreError) -> Self {

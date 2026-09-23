@@ -415,7 +415,13 @@ pub async fn config_get(
         .map_err(|e| ctx.err(StatusCode::INTERNAL_SERVER_ERROR, "internal", e.to_string()))
 }
 
-/// `PUT /api/config`: replace the config file with the submitted TOML tree.
+/// `PUT /api/config`: replace the config file with the submitted tree.
+///
+/// Two body encodings are accepted: the canonical TOML document and, for
+/// the `/settings` page (W2-07), `application/x-www-form-urlencoded` fields
+/// named after dotted config paths that [`crate::settings`] merges onto the
+/// raw file tree. Both encodings share the rest of the pipeline below, so
+/// there is one write path.
 ///
 /// Validation runs in-memory against the current process environment *before*
 /// any write, so a crash or `kill -9` cannot leave `config.toml` in an
@@ -423,21 +429,59 @@ pub async fn config_get(
 /// `state.config` is swapped; the running pipeline/engines still use the
 /// values they were started with, so the response carries
 /// `effective_after_restart: true`.
+///
+/// A form submit marked `HX-Request` gets an HTML fragment back (200 on both
+/// success and validation failure, so htmx swaps it inline); everything else
+/// gets the JSON body / envelope.
 pub async fn config_put(
     State(state): State<AppState>,
     Extension(ctx): Extension<RequestCtx>,
     headers: HeaderMap,
     body: Bytes,
+) -> Result<Response, ApiError> {
+    let form = headers
+        .get(axum::http::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|v| v.starts_with("application/x-www-form-urlencoded"));
+    let result = config_put_inner(&state, &ctx, &headers, &body, form).await;
+    #[cfg(feature = "ui")]
+    if form && headers.get("hx-request").is_some() {
+        return Ok(crate::html::settings_status(result));
+    }
+    result.map(Json::into_response)
+}
+
+async fn config_put_inner(
+    state: &AppState,
+    ctx: &RequestCtx,
+    headers: &HeaderMap,
+    body: &Bytes,
+    form: bool,
 ) -> Result<Json<Value>, ApiError> {
-    let text = std::str::from_utf8(&body)
-        .map_err(|_| ctx.bad_request("PUT /api/config expects a UTF-8 TOML body"))?;
-    let mut tree = toml::from_str::<toml::Value>(text).map_err(|e| {
-        ctx.err(
-            StatusCode::BAD_REQUEST,
-            "invalid_config",
-            format!("TOML: {e}"),
-        )
-    })?;
+    let text = std::str::from_utf8(body)
+        .map_err(|_| ctx.bad_request("PUT /api/config expects a UTF-8 TOML or form body"))?;
+    let mut tree = if form {
+        let pairs: Vec<(String, String)> = url::form_urlencoded::parse(text.as_bytes())
+            .map(|(k, v)| (k.into_owned(), v.into_owned()))
+            .collect();
+        state
+            .with_config(|cfg| crate::settings::merge_form_config(cfg, &pairs))
+            .map_err(|e| {
+                ctx.err(
+                    StatusCode::BAD_REQUEST,
+                    "invalid_config",
+                    format!("invalid config: {e}"),
+                )
+            })?
+    } else {
+        toml::from_str::<toml::Value>(text).map_err(|e| {
+            ctx.err(
+                StatusCode::BAD_REQUEST,
+                "invalid_config",
+                format!("TOML: {e}"),
+            )
+        })?
+    };
 
     // `<redacted>` leaves from a `GET /api/config` roundtrip get their real
     // values back from the current config; a literal `<redacted>` with no
@@ -481,8 +525,8 @@ pub async fn config_put(
 
     write_audit(
         state.store(),
-        &ctx,
-        &headers,
+        ctx,
+        headers,
         "config.put",
         loaded.config_path().display().to_string(),
         json!({}),

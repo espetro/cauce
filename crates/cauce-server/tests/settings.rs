@@ -1,0 +1,399 @@
+//! `/settings` page and the urlencoded `PUT /api/config` form path (W2-07).
+//!
+//! Acceptance: a page test edits `search.deadline_ms`, saves, reloads and
+//! sees the value; the `${env:BIFROST_API_KEY}` template survives a save
+//! round-trip byte-for-byte.
+//!
+//! This Source Code Form is subject to the terms of the Mozilla Public
+//! License, v. 2.0. If a copy of the MPL was not distributed with this
+//! file, You can obtain one at <https://mozilla.org/MPL/2.0/>.
+
+// The HTMX pages exist only in `ui` builds (W1-12 feature gates).
+#![cfg(feature = "ui")]
+
+use std::sync::{Arc, OnceLock};
+
+use axum::Router;
+use axum::body::{Body, to_bytes};
+use axum::http::{Method, Request, StatusCode};
+use cauce_core::config::Config;
+use cauce_core::{SearchPipeline, StoreTuning};
+use cauce_engines::{Replay, ReplayOpts};
+use cauce_server::{AppState, build_router};
+use cauce_store_sqlite::SqliteStore;
+use serde_json::Value;
+use tower::ServiceExt;
+
+/// Serialises tests that mutate process env: `PUT /api/config` resolves the
+/// save path and `${...}` templates against `system_env()`, so the sandbox
+/// config dir must be a real env var, not an injected `EnvMap`.
+static ENV_LOCK: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
+
+async fn env_lock() -> tokio::sync::MutexGuard<'static, ()> {
+    ENV_LOCK
+        .get_or_init(|| tokio::sync::Mutex::new(()))
+        .lock()
+        .await
+}
+
+/// Write `toml_src` to `tmp/cfg/config.toml` and point the process env at
+/// the sandbox. Caller must hold `env_lock`.
+fn config_env(toml_src: &str) -> tempfile::TempDir {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let cfg_dir = tmp.path().join("cfg");
+    std::fs::create_dir_all(&cfg_dir).unwrap();
+    std::fs::write(cfg_dir.join("config.toml"), toml_src).unwrap();
+    // SAFETY: serialized by ENV_LOCK; nextest also isolates per process.
+    unsafe {
+        std::env::set_var("CAUCE_CONFIG_DIR", &cfg_dir);
+        std::env::set_var("CAUCE_DATA_DIR", tmp.path().join("data"));
+    }
+    tmp
+}
+
+/// Clear the vars `config_env`/`config_env_vars` may set. Caller holds the lock.
+fn clear_env() {
+    // SAFETY: serialized by ENV_LOCK; nextest also isolates per process.
+    unsafe {
+        std::env::remove_var("CAUCE_CONFIG_DIR");
+        std::env::remove_var("CAUCE_DATA_DIR");
+        std::env::remove_var("CAUCE_SEARCH_DEADLINE_MS");
+        std::env::remove_var("CAUCE_SEARCH_TTL_S");
+        std::env::remove_var("CAUCE_ADMISSION_MAX_WAIT_MS");
+        std::env::remove_var("CAUCE_ADMISSION_MAX_CONCURRENT_PER_ENGINE");
+        std::env::remove_var("CAUCE_LOGS_RETENTION_DAYS");
+        std::env::remove_var("CAUCE_AI_BASE_URL");
+        std::env::remove_var("CAUCE_AI_API_KEY");
+        std::env::remove_var("CAUCE_AI_MODEL");
+        std::env::remove_var("CAUCE_AI_ENABLED");
+        std::env::remove_var("CAUCE_ENGINES");
+        std::env::remove_var("BIFROST_API_KEY");
+    }
+}
+
+/// A replay-engine app whose `Config` was `load()`ed against the sandbox env.
+fn app(tmp: &tempfile::TempDir) -> Router {
+    let store = Arc::new(
+        SqliteStore::open(tmp.path().join("cauce.db"), StoreTuning::default()).expect("store"),
+    );
+    let pipeline = Arc::new(SearchPipeline::new(
+        store.clone(),
+        vec![Arc::new(Replay::new(ReplayOpts::default()))],
+    ));
+    let state = AppState::new(pipeline, store, Config::load().expect("config"));
+    build_router(state)
+}
+
+async fn call(router: &Router, request: Request<Body>) -> (StatusCode, String) {
+    let resp = router.clone().oneshot(request).await.expect("response");
+    let status = resp.status();
+    let bytes = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+    (status, String::from_utf8(bytes.to_vec()).unwrap())
+}
+
+async fn get_html(router: &Router, uri: &str) -> (StatusCode, String) {
+    call(
+        router,
+        Request::builder()
+            .method(Method::GET)
+            .uri(uri)
+            .header("Accept", "text/html")
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await
+}
+
+/// `PUT /api/config` with an urlencoded form body, as htmx sends it.
+async fn put_form(router: &Router, body: &str, hx: bool) -> (StatusCode, String) {
+    let mut req = Request::builder()
+        .method(Method::PUT)
+        .uri("/api/config")
+        .header("Content-Type", "application/x-www-form-urlencoded")
+        .header("X-Cauce-Client", "ui");
+    if hx {
+        req = req.header("HX-Request", "true");
+    }
+    call(router, req.body(Body::from(body.to_string())).unwrap()).await
+}
+
+fn saved_config(tmp: &tempfile::TempDir) -> String {
+    std::fs::read_to_string(tmp.path().join("cfg/config.toml")).expect("config file")
+}
+
+#[tokio::test]
+async fn settings_page_renders_sections_and_request_id() {
+    let _guard = env_lock().await;
+    clear_env();
+    let tmp = config_env("");
+    let app = app(&tmp);
+    let (status, body) = get_html(&app, "/settings").await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    for needle in [
+        "<legend>Search</legend>",
+        "<legend>Engines</legend>",
+        "<legend>Admission</legend>",
+        "<legend>Logging</legend>",
+        "AI answers",
+        "hx-put=\"/api/config\"",
+        "name=\"search.deadline_ms\"",
+        "name=\"search.ttl_s\"",
+        "name=\"admission.max_wait_ms\"",
+        "name=\"logs.retention_days\"",
+        "name=\"ai.base_url\"",
+        "name=\"ai.api_key\"",
+        "name=\"ai.model\"",
+        "engines.replay.enabled",
+        "engines.ddgs.enabled",
+        "engines.replay.egress.proxy",
+        "list=\"ai-models\"",
+        "class=\"request-id\"",
+        // The hedge threshold is a disabled placeholder until W3.
+        "lands in wave 3",
+    ] {
+        assert!(body.contains(needle), "settings page missing {needle:?}");
+    }
+    clear_env();
+}
+
+/// Acceptance: edit `search.deadline_ms` on the page, save, reload, see it.
+#[tokio::test]
+async fn deadline_edit_saves_and_reloads() {
+    let _guard = env_lock().await;
+    clear_env();
+    let tmp = config_env("[search]\ndeadline_ms = 3000\n");
+    let app = app(&tmp);
+
+    let (status, body) = put_form(&app, "search.deadline_ms=1234", false).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let json: Value = serde_json::from_str(&body).expect("json response");
+    assert_eq!(json["search"]["deadline_ms"], 1234);
+    assert_eq!(json["effective_after_restart"], true);
+
+    let on_disk = saved_config(&tmp);
+    assert!(
+        on_disk.contains("deadline_ms = 1234"),
+        "file should carry the new deadline: {on_disk}"
+    );
+
+    let (status, body) = get_html(&app, "/settings").await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(
+        body.contains("name=\"search.deadline_ms\" value=\"1234\""),
+        "reloaded page should show the saved deadline: {body}"
+    );
+    clear_env();
+}
+
+/// Acceptance: the `${env:BIFROST_API_KEY}` template is shown verbatim and
+/// survives a save round-trip byte-for-byte in `config.toml`.
+#[tokio::test]
+async fn api_key_template_survives_roundtrip() {
+    let _guard = env_lock().await;
+    clear_env();
+    // SAFETY: serialized by ENV_LOCK; PUT validation resolves `${env:...}`
+    // against the process env.
+    unsafe { std::env::set_var("BIFROST_API_KEY", "sk-test-key") };
+
+    let raw = "[ai]\nbase_url = \"\"\napi_key = \"${env:BIFROST_API_KEY}\"\n";
+    let tmp = config_env(raw);
+    let app = app(&tmp);
+
+    let (status, body) = get_html(&app, "/settings").await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert!(
+        body.contains("value=\"${env:BIFROST_API_KEY}\""),
+        "api_key input must show the template verbatim: {body}"
+    );
+    assert!(
+        body.contains("BIFROST_API_KEY: set"),
+        "env status should report the var as set: {body}"
+    );
+
+    // Save the whole form (the field value is the raw template text).
+    let (status, body) = put_form(
+        &app,
+        "search.deadline_ms=3000&ai.api_key=${env:BIFROST_API_KEY}",
+        false,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+
+    let on_disk = saved_config(&tmp);
+    assert!(
+        on_disk.contains("api_key = \"${env:BIFROST_API_KEY}\""),
+        "template must survive byte-for-byte: {on_disk}"
+    );
+    assert!(
+        !on_disk.contains("sk-test-key"),
+        "the resolved secret must never reach the file: {on_disk}"
+    );
+
+    let (status, body) = get_html(&app, "/settings").await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(
+        body.contains("value=\"${env:BIFROST_API_KEY}\""),
+        "reloaded page must still show the template: {body}"
+    );
+    clear_env();
+}
+
+#[tokio::test]
+async fn invalid_field_reports_inline_error() {
+    let _guard = env_lock().await;
+    clear_env();
+    let tmp = config_env("");
+    let app = app(&tmp);
+
+    // Plain form submit (no HX header): the JSON envelope still applies.
+    let (status, body) = put_form(&app, "search.deadline_ms=soon", false).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    let json: Value = serde_json::from_str(&body).expect("json envelope");
+    assert_eq!(json["error"]["code"], "invalid_config");
+    assert!(
+        json["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("deadline_ms")
+    );
+
+    // The htmx submit swaps the error fragment into the page (200 + inline).
+    let (status, body) = put_form(&app, "search.deadline_ms=soon", true).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert!(body.contains("form-status error"), "{body}");
+    assert!(body.contains("deadline_ms"), "{body}");
+    clear_env();
+}
+
+#[tokio::test]
+async fn engine_fields_write_file_entries() {
+    let _guard = env_lock().await;
+    clear_env();
+    let tmp = config_env("");
+    let app = app(&tmp);
+    let (status, body) = put_form(
+        &app,
+        "engines.replay.enabled=true&engines.replay.tier=2&engines.replay.egress.proxy=http%3A%2F%2F127.0.0.1%3A8888",
+        false,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+
+    let on_disk = saved_config(&tmp);
+    let tree = toml::from_str::<toml::Value>(&on_disk).expect("saved TOML parses");
+    let replay = tree["engines"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|e| e["id"].as_str() == Some("replay"))
+        .expect("replay entry written");
+    assert_eq!(replay["enabled"].as_bool(), Some(true));
+    assert_eq!(replay["tier"].as_integer(), Some(2));
+    assert_eq!(
+        replay["egress"]["proxy"].as_str(),
+        Some("http://127.0.0.1:8888")
+    );
+    clear_env();
+}
+
+#[tokio::test]
+async fn model_picker_lists_provider_models() {
+    let _guard = env_lock().await;
+    clear_env();
+    // Stand-in for `GET {base_url}/models` (OpenAI listing shape).
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(
+            listener,
+            Router::new().route(
+                "/v1/models",
+                axum::routing::get(|headers: axum::http::HeaderMap| async move {
+                    assert_eq!(
+                        headers.get(axum::http::header::AUTHORIZATION),
+                        Some(&axum::http::HeaderValue::from_static(
+                            "Bearer settings-test-token"
+                        ))
+                    );
+                    axum::Json(serde_json::json!({
+                        "data": [{"id": "alpha-1"}, {"id": "beta-2"}]
+                    }))
+                }),
+            ),
+        )
+        .await
+        .unwrap();
+    });
+
+    let raw = format!(
+        "[ai]\nbase_url = \"http://{addr}/v1\"\napi_key = \"settings-test-token\"\nmodel = \"alpha-1\"\n"
+    );
+    let tmp = config_env(&raw);
+    let app = app(&tmp);
+    let (status, body) = get_html(&app, "/settings").await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert!(
+        body.contains("<option value=\"alpha-1\">"),
+        "datalist should carry the provider models: {body}"
+    );
+    assert!(
+        body.contains("<option value=\"beta-2\">"),
+        "datalist should carry the provider models: {body}"
+    );
+    assert!(
+        body.contains("name=\"ai.model\" value=\"alpha-1\""),
+        "current model should prefill the picker: {body}"
+    );
+    clear_env();
+}
+
+#[tokio::test]
+async fn model_picker_falls_back_to_free_text() {
+    let _guard = env_lock().await;
+    clear_env();
+    // Nothing listens on this port: the listing fails and the input degrades
+    // to free text.
+    let tmp = config_env("[ai]\nbase_url = \"http://127.0.0.1:1/v1\"\n");
+    let app = app(&tmp);
+    let (status, body) = get_html(&app, "/settings").await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert!(
+        body.contains("name=\"ai.model\""),
+        "free-text model input must still render: {body}"
+    );
+    assert!(body.contains("model list unreachable"), "{body}");
+    clear_env();
+}
+
+/// A `CAUCE_*`-pinned field renders disabled, so a save cannot bake the env
+/// value into the file.
+#[tokio::test]
+async fn env_overridden_field_is_disabled() {
+    let _guard = env_lock().await;
+    clear_env();
+    // SAFETY: serialized by ENV_LOCK; nextest also isolates per process.
+    unsafe { std::env::set_var("CAUCE_SEARCH_DEADLINE_MS", "9999") };
+    let tmp = config_env("[search]\ndeadline_ms = 3000\n");
+    let app = app(&tmp);
+
+    let (status, body) = get_html(&app, "/settings").await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let pos = body
+        .find("name=\"search.deadline_ms\"")
+        .expect("deadline input");
+    assert!(
+        body[..pos + 200].contains("disabled"),
+        "env-overridden input must be disabled"
+    );
+    assert!(body.contains("set by CAUCE_SEARCH_DEADLINE_MS"), "{body}");
+
+    // A save of another field leaves the file's deadline untouched.
+    let (status, body) = put_form(&app, "search.ttl_s=10", false).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let on_disk = saved_config(&tmp);
+    assert!(
+        on_disk.contains("deadline_ms = 3000"),
+        "env override must not be baked into the file: {on_disk}"
+    );
+    clear_env();
+}

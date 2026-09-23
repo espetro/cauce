@@ -48,6 +48,9 @@ const EXPECTED_WAVE0_JSON: &[(&str, &str)] = &[
 /// `ui` cargo feature is compiled in and `--headless` is not passed.
 const EXPECTED_WAVE0_UI: &[(&str, &str)] = &[("GET", "/"), ("GET", "/search")];
 
+/// Wave-2 HTMX pages mounted so far.
+const EXPECTED_WAVE2_UI: &[(&str, &str)] = &[("GET", "/settings")];
+
 /// Wave-1 rows mounted so far (W1-06 engine health, W1-09 metrics).
 /// `/mcp` (W1-08) is added under `cfg!(feature = "mcp")` because its
 /// method is `*` and the row compiles out without the feature.
@@ -309,6 +312,7 @@ fn mounted_routes_match_declaration() {
         expected.extend(
             EXPECTED_WAVE0_UI
                 .iter()
+                .chain(EXPECTED_WAVE2_UI)
                 .chain(EXPECTED_WAVE2_UI_MOUNTED)
                 .map(|(m, p)| (m.to_string(), p.to_string())),
         );
@@ -347,7 +351,11 @@ async fn headless_drops_ui_routes_keeps_api() {
     let headless: BTreeSet<(String, String)> = mounted_routes(&state, &RouterOptions::headless())
         .map(|r| (r.method.to_string(), r.path.to_string()))
         .collect();
-    for ui_row in EXPECTED_WAVE0_UI.iter().chain(EXPECTED_WAVE2_UI_MOUNTED) {
+    for ui_row in EXPECTED_WAVE0_UI
+        .iter()
+        .chain(EXPECTED_WAVE2_UI)
+        .chain(EXPECTED_WAVE2_UI_MOUNTED)
+    {
         assert!(
             !headless.contains(&(ui_row.0.to_string(), ui_row.1.to_string())),
             "{ui_row:?} must not mount under --headless"

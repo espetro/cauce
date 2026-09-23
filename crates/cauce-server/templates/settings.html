@@ -1,0 +1,128 @@
+<!doctype html>
+<!-- This Source Code Form is subject to the terms of the Mozilla Public
+     License, v. 2.0. If a copy of the MPL was not distributed with this
+     file, You can obtain one at https://mozilla.org/MPL/2.0/. -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>settings · cauce</title>
+  <style>{{ style_css|safe }}</style>
+</head>
+<body>
+  <nav class="topnav"><a href="/">cauce</a> · <a href="/settings">settings</a></nav>
+  <h1>Settings</h1>
+  <p class="hint">Editing <code>{{ config_path }}</code> through <code>PUT /api/config</code>.
+  ${...} templates are stored verbatim and never resolved here; changes apply after restart.</p>
+
+  <form hx-put="/api/config" hx-target="#settings-status" hx-swap="innerHTML"
+        hx-headers='{"X-Cauce-Client":"ui"}'>
+    <fieldset>
+      <legend>Search</legend>
+      <label>Deadline (ms)
+        <input type="number" min="0" name="search.deadline_ms" value="{{ deadline.value }}"
+               {% if !deadline.env.is_empty() %}disabled{% endif %}>
+      </label>
+      {% if !deadline.env.is_empty() %}<p class="hint">set by {{ deadline.env }}</p>{% endif %}
+      <label>Cache TTL (s)
+        <input type="number" min="0" name="search.ttl_s" value="{{ ttl.value }}"
+               {% if !ttl.env.is_empty() %}disabled{% endif %}>
+      </label>
+      {% if !ttl.env.is_empty() %}<p class="hint">set by {{ ttl.env }}</p>{% endif %}
+      <label>Hedge threshold (ms)
+        <input type="number" placeholder="lands in wave 3" disabled>
+      </label>
+    </fieldset>
+
+    <fieldset>
+      <legend>Engines</legend>
+      {% if engines_pinned %}<p class="hint">enabled flags are pinned by CAUCE_ENGINES</p>{% endif %}
+      {% for e in engines %}
+      <div class="engine-row">
+        <span class="engine-id">{{ e.id }}</span>
+        <span class="hint">{{ e.kind }}</span>
+        {% if engines_pinned %}
+        <span class="hint">{% if e.enabled %}enabled{% else %}disabled{% endif %}</span>
+        {% else %}
+        <input type="hidden" name="engines.{{ e.id }}.enabled" value="false">
+        <label><input type="checkbox" name="engines.{{ e.id }}.enabled" value="true"
+               {% if e.enabled %}checked{% endif %}> enabled</label>
+        {% endif %}
+        <label>tier
+          <select name="engines.{{ e.id }}.tier">
+            <option value=""{% if e.tier.is_empty() %} selected{% endif %}>default</option>
+            <option value="1"{% if e.tier == "1" %} selected{% endif %}>1</option>
+            <option value="2"{% if e.tier == "2" %} selected{% endif %}>2</option>
+            <option value="3"{% if e.tier == "3" %} selected{% endif %}>3</option>
+          </select>
+        </label>
+        <label>egress proxy
+          <input type="text" name="engines.{{ e.id }}.egress.proxy" value="{{ e.proxy }}"
+                 placeholder="direct" autocomplete="off">
+        </label>
+      </div>
+      {% endfor %}
+    </fieldset>
+
+    <fieldset>
+      <legend>Admission</legend>
+      <label>Max queue wait (ms)
+        <input type="number" min="0" name="admission.max_wait_ms" value="{{ max_wait.value }}"
+               {% if !max_wait.env.is_empty() %}disabled{% endif %}>
+      </label>
+      {% if !max_wait.env.is_empty() %}<p class="hint">set by {{ max_wait.env }}</p>{% endif %}
+      <label>Max concurrent per engine
+        <input type="number" min="0" name="admission.max_concurrent_per_engine"
+               value="{{ max_concurrent.value }}" {% if !max_concurrent.env.is_empty() %}disabled{% endif %}>
+      </label>
+      {% if !max_concurrent.env.is_empty() %}<p class="hint">set by {{ max_concurrent.env }}</p>{% endif %}
+    </fieldset>
+
+    <fieldset>
+      <legend>Logging</legend>
+      <label>JSONL retention (days)
+        <input type="number" min="0" name="logs.retention_days" value="{{ retention.value }}"
+               {% if !retention.env.is_empty() %}disabled{% endif %}>
+      </label>
+      {% if !retention.env.is_empty() %}<p class="hint">set by {{ retention.env }}</p>{% endif %}
+    </fieldset>
+
+    <fieldset class="greyed">
+      <legend>AI answers <span class="hint">lands in wave 4</span></legend>
+      <label>Base URL
+        <input type="text" name="ai.base_url" value="{{ ai_base_url.value }}"
+               placeholder="http://localhost:8317/v1" autocomplete="off"
+               {% if !ai_base_url.env.is_empty() %}disabled{% endif %}>
+      </label>
+      {% if !ai_base_url.env.is_empty() %}<p class="hint">set by {{ ai_base_url.env }}</p>{% endif %}
+      <label>API key
+        <input type="text" name="ai.api_key" value="{{ ai_api_key.value }}"
+               placeholder="${env:BIFROST_API_KEY}" autocomplete="off" spellcheck="false"
+               {% if !ai_api_key.env.is_empty() %}disabled{% endif %}>
+      </label>
+      {% if !ai_key_status.is_empty() %}<p class="hint">{{ ai_key_status }}</p>{% endif %}
+      {% if !ai_api_key.env.is_empty() %}<p class="hint">set by {{ ai_api_key.env }}</p>{% endif %}
+      <label>Model
+        <input type="text" name="ai.model" value="{{ ai_model.value }}" list="ai-models"
+               placeholder="model name" autocomplete="off" {% if !ai_model.env.is_empty() %}disabled{% endif %}>
+        <datalist id="ai-models">
+          {% for m in ai_models %}<option value="{{ m }}"></option>{% endfor %}
+        </datalist>
+      </label>
+      {% if ai_models_failed %}<p class="hint">model list unreachable; type a model name</p>{% endif %}
+      {% if !ai_model.env.is_empty() %}<p class="hint">set by {{ ai_model.env }}</p>{% endif %}
+      <label><input type="checkbox" {% if ai_enabled %}checked{% endif %} disabled> enabled
+        <span class="hint">(the answer pipeline arrives in wave 4)</span></label>
+    </fieldset>
+
+    <button type="submit">Save</button>
+    <span id="settings-status" role="status" aria-live="polite"></span>
+    <noscript><p class="hint">Saving needs JavaScript (the form issues PUT /api/config via htmx).</p></noscript>
+  </form>
+
+  <footer class="meta">
+    <span class="request-id" title="{{ request_id }}">{{ short_request_id }}</span>
+  </footer>
+  <script>{{ htmx_js|safe }}</script>
+</body>
+</html>

@@ -66,6 +66,7 @@ const ENV_OVERRIDES: &[(&str, &[&str], bool)] = &[
     ),
     ("CAUCE_AI_BASE_URL", &["ai", "base_url"], false),
     ("CAUCE_AI_API_KEY", &["ai", "api_key"], false),
+    ("CAUCE_AI_MODEL", &["ai", "model"], false),
     ("CAUCE_AI_ENABLED", &["ai", "enabled"], true),
     (
         "CAUCE_CONFIG_INTERPOLATION",
@@ -440,6 +441,9 @@ pub struct AiConfig {
     /// API key or a `${env:...}`/`${file:...}` template.
     #[serde(default)]
     pub api_key: String,
+    /// Provider model name (W4 settled inputs); empty until one is chosen.
+    #[serde(default)]
+    pub model: String,
     /// Master switch; `false` until W4.
     #[serde(default)]
     pub enabled: bool,
