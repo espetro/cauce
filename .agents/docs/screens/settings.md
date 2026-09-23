@@ -21,7 +21,7 @@ page; v3 gives settings a route.
 |                                                                  |
 | Search                                                           |
 |   Deadline (ms)          [ 2500      ]                           |
-|   Cache TTL (s)          [ 3600      ]   set by CAUCE_TTL_S      |
+|   Cache TTL (s)          [ 3600      ]   set by CAUCE_SEARCH_TTL_S      |
 |   Hedge threshold (ms)   [           ]   lands in wave 3         |
 |                                                                  |
 | Engines                                                          |
@@ -66,7 +66,7 @@ Validation error (inline, next to the field, form stays filled):
 - Data path: `/settings` and `GET /api/config` share one handler (content
   negotiation on `Accept`), rendering from the same parsed config; `PUT /api/config`
   with the form body (HTMX, `X-Cauce-Client: ui`) writes it, audited as
-  `config.save` with actor `ui` and the changed keys in details.
+  `config.put` with actor `ui` and the changed keys in details.
 - Sections, in order: Search, Engines, Admission, Logging, Cache, AI
   answers. Each
   is a `<fieldset>` with a `<legend>`; field labels are the human name, the
@@ -78,7 +78,7 @@ Validation error (inline, next to the field, form stays filled):
   unchanged; editing `search.deadline_ms`, saving and reloading shows the
   new value.
 - Environment overrides: a field whose value is pinned by an env var
-  (`CAUCE_*`) renders disabled with the hint `set by CAUCE_TTL_S` beside it
+  (`CAUCE_*`) renders disabled with the hint `set by CAUCE_SEARCH_TTL_S` beside it
   and is excluded from the PUT body. When `CAUCE_ENGINES` pins the engine
   set, the enabled checkboxes render as text (`enabled` / `disabled`) with
   one hint above the list.
@@ -115,7 +115,7 @@ Validation error (inline, next to the field, form stays filled):
 
 ## Reachable states (replay engine)
 
-Default: fresh config. Env-pinned: start with `CAUCE_TTL_S=60`. Engines
+Default: fresh config. Env-pinned: start with `CAUCE_SEARCH_TTL_S=60`. Engines
 pinned: `CAUCE_ENGINES=replay`. Validation error: submit a negative
 deadline. Model list unreachable: point `ai.base_url` at a closed port.
 No state needs a live AI provider.

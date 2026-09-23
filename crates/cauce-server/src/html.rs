@@ -51,6 +51,7 @@ static FAVICON_SVG: LazyLock<Cow<'static, [u8]>> = LazyLock::new(|| {
         .map(|f| f.data)
         .unwrap_or_default()
 });
+static SSE_JS: LazyLock<String> = LazyLock::new(|| asset_string("sse.js"));
 
 /// One rendered result row (plain strings so Askama only needs `Display`).
 #[derive(Debug)]
@@ -69,6 +70,8 @@ struct Row {
 struct Page {
     q: String,
     has_results: bool,
+    show_empty: bool,
+    empty_status: String,
     result_count: usize,
     badge: String,
     request_id: String,
@@ -78,6 +81,12 @@ struct Page {
     htmx_js: String,
     json_enc_js: String,
     style_css: String,
+    is_streaming: bool,
+    stream_url: String,
+    query_hash: String,
+    sse_js: String,
+    /// `crate::strings::search` copy the inline JS uses, as a JSON literal.
+    stream_strings: String,
 }
 
 /// Results partial swapped in by HTMX `hx-get` on the more button.
@@ -86,6 +95,8 @@ struct Page {
 struct Results {
     results: Vec<Row>,
     more_url: String,
+    show_empty: bool,
+    empty_status: String,
 }
 
 /// `GET /` landing page with the search form.
@@ -97,6 +108,8 @@ pub async fn index(
     let page = Page {
         q: String::new(),
         has_results: false,
+        show_empty: false,
+        empty_status: String::new(),
         result_count: 0,
         badge: String::new(),
         request_id: rid.clone(),
@@ -106,6 +119,11 @@ pub async fn index(
         htmx_js: HTMX_JS.clone(),
         json_enc_js: JSON_ENC_JS.clone(),
         style_css: STYLE_CSS.clone(),
+        is_streaming: false,
+        stream_url: String::new(),
+        query_hash: String::new(),
+        sse_js: SSE_JS.clone(),
+        stream_strings: stream_strings(),
     };
     render_html(page, ctx.request_id.as_uuid())
 }
@@ -128,19 +146,64 @@ pub async fn search(
             .map(|j| j.into_response());
     }
 
-    let (req, resp) = search_inner(&state, &ctx, &uri).await?;
     let params = QueryParams::parse(uri.query(), &ctx)?;
-    let is_hx = headers.get("hx-request").is_some();
+    let q = params.required(&ctx, "q")?.to_string();
+    let is_streaming = match params.get("stream") {
+        None => false,
+        Some("1") => true,
+        Some(_) => return Err(ctx.bad_request("stream must be 1 when present")),
+    };
 
+    if is_streaming {
+        let req = crate::handlers::parse_search_request(&ctx, &uri, &["stream"])?;
+        // A rejected pin answers with its real status (400
+        // `unknown_engines`, like `/api/search/stream` and `/api/search`)
+        // rather than a streaming shell that opens into an error frame.
+        state
+            .pipeline()
+            .validate_pin(&req)
+            .await
+            .map_err(|e| crate::handlers::search_error(&ctx, &req, e))?;
+        let rid = ctx.request_id.as_uuid().to_string();
+        let page = Page {
+            q,
+            has_results: true,
+            show_empty: false,
+            empty_status: String::new(),
+            result_count: 0,
+            badge: crate::strings::search::SEARCHING.to_string(),
+            request_id: rid.clone(),
+            short_request_id: short_id(&rid),
+            results: Vec::new(),
+            more_url: String::new(),
+            htmx_js: HTMX_JS.clone(),
+            json_enc_js: JSON_ENC_JS.clone(),
+            style_css: STYLE_CSS.clone(),
+            is_streaming: true,
+            stream_url: stream_url(&params, &req),
+            query_hash: CacheKey::from(&req).as_str().to_string(),
+            sse_js: SSE_JS.clone(),
+            stream_strings: stream_strings(),
+        };
+        return Ok(Html(
+            page.render()
+                .map_err(|e| render_err(e, ctx.request_id.as_uuid()))?,
+        )
+        .into_response());
+    }
+
+    let (req, resp) = search_inner(&state, &ctx, &uri).await?;
     let rid = resp.meta.request_id.to_string();
     let rows = result_rows(&req, &resp);
     let more_url = more_url(&resp, &params, &req);
-    let q = params.required(&ctx, "q")?.to_string();
+    let is_hx = headers.get("hx-request").is_some();
 
     if is_hx {
         let partial = Results {
             results: rows,
             more_url,
+            show_empty: true,
+            empty_status: engine_statuses(&resp).join(" · "),
         };
         Ok(Html(
             partial
@@ -152,6 +215,8 @@ pub async fn search(
         let page = Page {
             q,
             has_results: true,
+            show_empty: true,
+            empty_status: engine_statuses(&resp).join(" · "),
             result_count: resp.results.len(),
             badge: badge(&resp),
             request_id: rid.clone(),
@@ -161,6 +226,11 @@ pub async fn search(
             htmx_js: HTMX_JS.clone(),
             json_enc_js: JSON_ENC_JS.clone(),
             style_css: STYLE_CSS.clone(),
+            is_streaming: false,
+            stream_url: String::new(),
+            query_hash: CacheKey::from(&req).as_str().to_string(),
+            sse_js: SSE_JS.clone(),
+            stream_strings: stream_strings(),
         };
         Ok(Html(
             page.render()
@@ -248,20 +318,94 @@ pub(crate) fn prefers_json(accept: &str) -> bool {
 }
 
 fn badge(resp: &SearchResponse) -> String {
-    match &resp.meta.source {
-        Source::Cache { age_s, ttl_s, .. } => format!("cached · {age_s} s ago · ttl {ttl_s} s"),
-        Source::Network => {
-            let engines = resp
-                .meta
-                .engines_used
-                .iter()
-                .filter(|r| matches!(r.status, EngineStatus::Ok))
-                .map(|r| r.engine.to_string())
-                .collect::<Vec<_>>()
-                .join(", ");
-            format!("live · {} ms · {engines}", resp.meta.elapsed_ms)
+    use crate::strings::search as s;
+    let base = match &resp.meta.source {
+        Source::Cache { age_s, ttl_s, .. } => s::CACHED_BADGE
+            .replace("{age}", &age_s.to_string())
+            .replace("{ttl}", &ttl_s.to_string()),
+        Source::Network => s::LIVE_BADGE.replace("{ms}", &resp.meta.elapsed_ms.to_string()),
+    };
+    let statuses = engine_statuses(resp);
+    if statuses.is_empty() {
+        base
+    } else {
+        format!("{base} · {}", statuses.join(" · "))
+    }
+}
+
+fn engine_statuses(resp: &SearchResponse) -> Vec<String> {
+    use crate::strings::search as s;
+    let mut statuses = Vec::new();
+    for report in &resp.meta.engines_used {
+        statuses.push(match &report.status {
+            EngineStatus::Ok => report.engine.to_string(),
+            EngineStatus::Failed(error) => s::ENGINE_FAILED
+                .replace("{engine}", report.engine.as_str())
+                .replace("{kind}", engine_error_kind(error)),
+        });
+    }
+    statuses.extend(
+        resp.meta
+            .engines_skipped
+            .iter()
+            .map(|engine| s::ENGINE_SKIPPED.replace("{engine}", engine.as_str())),
+    );
+    statuses
+}
+
+fn engine_error_kind(error: &EngineError) -> &'static str {
+    use crate::strings::search as s;
+    match error {
+        EngineError::RateLimited => s::ERR_RATE_LIMITED,
+        EngineError::Blocked => s::ERR_BLOCKED,
+        EngineError::Timeout => s::ERR_TIMEOUT,
+        EngineError::Parse(_) => s::ERR_PARSE,
+        EngineError::Transport(_) => s::ERR_TRANSPORT,
+        EngineError::NoResults => s::ERR_NO_RESULTS,
+    }
+}
+
+/// The `strings::search` copy the streaming page's inline JS interpolates,
+/// serialized once into the page as `var S = {...}` so every user-visible
+/// string lives in `crate::strings` (the i18n seam), not in the script.
+fn stream_strings() -> String {
+    use crate::strings::search as s;
+    serde_json::to_string(&json!({
+        "results": s::RESULTS,
+        "no_results": s::NO_RESULTS,
+        "waiting": s::WAITING,
+        "complete": s::COMPLETE,
+        "invalid_stream": s::INVALID_STREAM,
+        "new_above": s::NEW_ABOVE,
+        "live_badge": s::LIVE_BADGE,
+        "cached": s::CACHED,
+        "engine_failed": s::ENGINE_FAILED,
+        "engine_skipped": s::ENGINE_SKIPPED,
+        "err_rate_limited": s::ERR_RATE_LIMITED,
+        "err_blocked": s::ERR_BLOCKED,
+        "err_timeout": s::ERR_TIMEOUT,
+        "err_parse": s::ERR_PARSE,
+        "err_transport": s::ERR_TRANSPORT,
+        "err_no_results": s::ERR_NO_RESULTS,
+        "err_unknown": s::ERR_UNKNOWN,
+    }))
+    .expect("search strings serialize")
+}
+
+fn stream_url(params: &QueryParams, req: &SearchRequest) -> String {
+    let mut parts = vec![format!("q={}", urlencoding::encode(&req.q))];
+    if req.page != 1 {
+        parts.push(format!("page={}", req.page));
+    }
+    for key in ["lang", "time_range", "safesearch", "engines"] {
+        if let Some(value) = params.get(key) {
+            parts.push(format!("{key}={}", urlencoding::encode(value)));
         }
     }
+    // `EventSource` cannot set `X-Cauce-Client`; the query-param fallback
+    // keeps UI-originated streams out of the `api` dashboard bucket.
+    parts.push("client=ui".to_string());
+    format!("/api/search/stream?{}", parts.join("&"))
 }
 
 fn result_rows(req: &SearchRequest, resp: &SearchResponse) -> Vec<Row> {

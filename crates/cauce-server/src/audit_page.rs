@@ -74,11 +74,22 @@ struct AuditPage {
     style_css: String,
 }
 
-/// One span in the `/trace/{id}` HTML list.
+/// One span in the `/trace/{id}` HTML list, summary split into segments so
+/// the template can give the status word a color role (`span-status-ok` /
+/// `span-status-error`).
 #[derive(Debug)]
 struct SpanView {
-    /// `engine · elapsed · status · N results`.
-    summary: String,
+    /// Engine id, or the span name when no `engine` field was recorded.
+    name: String,
+    /// Busy time (`820 ms`), `-` when the span never closed.
+    elapsed: String,
+    /// The recorded `status` field; empty when the span carries none.
+    status: String,
+    /// `span-status-ok`/`span-status-error`; empty for other statuses
+    /// (they render with the neutral body color).
+    status_class: String,
+    /// `N results`; empty when the span recorded no `results` field.
+    results: String,
     /// The span's merged raw fields, pretty-printed.
     fields_json: String,
 }
@@ -222,14 +233,7 @@ pub async fn trace(
     let t = trace::Trace::build(&traced, &records);
     let summary = t.summary();
     let timeline = t.render();
-    let spans = t
-        .spans()
-        .iter()
-        .map(|s| SpanView {
-            summary: span_summary(s),
-            fields_json: serde_json::to_string_pretty(&s.fields).unwrap_or_default(),
-        })
-        .collect();
+    let spans = t.spans().iter().map(span_view).collect();
 
     let rid = ctx.request_id.as_uuid().to_string();
     let page = TracePage {
@@ -315,27 +319,44 @@ fn details_empty(v: &Value) -> bool {
     }
 }
 
-/// `engine · elapsed · status · N results` for one span; fields the span
-/// does not carry are skipped.
-fn span_summary(span: &trace::TraceSpan) -> String {
-    let name = span
+/// `engine · elapsed · status · N results` for one span, kept as separate
+/// fields so the template composes the separators and can hang a color
+/// class on the status word. Fields the span does not carry come back
+/// empty and the template skips their segment.
+fn span_view(span: &trace::TraceSpan) -> SpanView {
+    let status = span
         .fields
-        .get("engine")
+        .get("status")
         .and_then(|v| v.as_str())
-        .unwrap_or(&span.name);
-    let mut parts = vec![name.to_string()];
-    parts.push(
-        span.busy_ms
+        .unwrap_or("");
+    SpanView {
+        name: span
+            .fields
+            .get("engine")
+            .and_then(|v| v.as_str())
+            .unwrap_or(&span.name)
+            .to_string(),
+        elapsed: span
+            .busy_ms
             .map(|ms| format!("{ms:.0} {}", strings::trace::MS))
             .unwrap_or_else(|| strings::common::DASH.to_string()),
-    );
-    if let Some(status) = span.fields.get("status").and_then(|v| v.as_str()) {
-        parts.push(status.to_string());
+        status: status.to_string(),
+        // Same success/error reading as the tail renderer (`ok` green,
+        // `error`/`timeout` red, anything else neutral).
+        status_class: match status {
+            "ok" => "span-status-ok",
+            "error" | "timeout" => "span-status-error",
+            _ => "",
+        }
+        .to_string(),
+        results: span
+            .fields
+            .get("results")
+            .and_then(|v| v.as_u64())
+            .map(|n| format!("{n} {}", strings::trace::RESULTS))
+            .unwrap_or_default(),
+        fields_json: serde_json::to_string_pretty(&span.fields).unwrap_or_default(),
     }
-    if let Some(results) = span.fields.get("results").and_then(|v| v.as_u64()) {
-        parts.push(format!("{results} {}", strings::trace::RESULTS));
-    }
-    parts.join(" · ")
 }
 
 /// Local `YYYY-MM-DD HH:MM(:SS)` for the summary line; empty when the root

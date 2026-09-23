@@ -26,7 +26,7 @@ step W2-06 (issue #38) and the wave's "Settled inputs".
 |   > details                                                      |
 | 2026-09-23 00:58  api    cache.delete    expired     01J8Z4N1K4.. |
 |   > details  {"deleted":12}                                      |
-| 2026-09-22 23:40  cli    config.save     search      -            |
+| 2026-09-22 23:40  cli    config.put     search      -            |
 |   > details                                                      |
 |                                                                  |
 | showing the newest 50 · raise `limit` (max 1000) for more          |
