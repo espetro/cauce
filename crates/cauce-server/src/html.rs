@@ -44,6 +44,7 @@ fn asset_string(name: &str) -> String {
 
 static HTMX_JS: LazyLock<String> = LazyLock::new(|| asset_string("htmx.min.js"));
 static JSON_ENC_JS: LazyLock<String> = LazyLock::new(|| asset_string("json-enc.js"));
+/// Shared page stylesheet; the other `ui` pages (W2) inject it too.
 pub(crate) static STYLE_CSS: LazyLock<String> = LazyLock::new(|| asset_string("style.css"));
 static FAVICON_SVG: LazyLock<Cow<'static, [u8]>> = LazyLock::new(|| {
     Assets::get("favicon.svg")
@@ -311,6 +312,7 @@ fn xml_attribute_escape(value: &str) -> String {
         .collect()
 }
 
+/// `Accept` prefers JSON (shared by every `ui` page's content negotiation).
 pub(crate) fn prefers_json(accept: &str) -> bool {
     accept.contains("application/json") && !accept.contains("text/html")
 }
@@ -460,6 +462,7 @@ fn more_url(resp: &SearchResponse, params: &QueryParams, req: &SearchRequest) ->
     format!("/search?{}", parts.join("&"))
 }
 
+/// The footer id every page renders (settled input: copyable request id).
 pub(crate) fn short_id(request_id: &str) -> String {
     request_id.chars().take(8).collect()
 }
@@ -887,6 +890,7 @@ async fn fetch_models(url: &str, api_key: &str) -> Result<Vec<String>, EngineErr
         .unwrap_or_default())
 }
 
+/// Askama render failure -> 500 envelope (shared by the `ui` pages).
 pub(crate) fn render_err(e: askama::Error, request_id: uuid::Uuid) -> ApiError {
     ApiError::internal(format!("template render failed: {e}")).with_request_id(Some(request_id))
 }
