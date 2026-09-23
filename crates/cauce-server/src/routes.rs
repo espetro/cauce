@@ -115,6 +115,7 @@ pub const ROUTES: &[RouteSpec] = &[
     sse("GET", "/api/search/stream", 2),
     json("POST", "/api/engines/{id}/enable", 2),
     json("POST", "/api/engines/{id}/disable", 2),
+    json("DELETE", "/api/history/{id}", 2),
     html("/history", 2),
     html("/dashboard", 2),
     html("/cache", 2),

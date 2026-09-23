@@ -13,6 +13,8 @@
     --border: #d1d5db;
     --accent: #2563eb;
     --radius: 0.5rem;
+    --greyed-bg: #f4f4f5;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -22,6 +24,7 @@
         --muted: #a3a3a3;
         --border: #3f3f46;
         --accent: #60a5fa;
+        --greyed-bg: #17171a;
     }
 }
 
@@ -76,7 +79,7 @@ button {
 }
 
 .request-id {
-    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-family: var(--mono);
     cursor: pointer;
 }
 
@@ -242,9 +245,17 @@ fieldset.greyed input:disabled {
     opacity: 0.55;
 }
 
+/* "greyed" is muted chrome (tokens.md `neutral`), not lowered opacity: a
+   fieldset-wide opacity drags `.hint` text under the 4.5:1 contrast floor
+   while still reading as disabled to the eye. Muted text + dashed border +
+   a tinted background keep the dormant look at full contrast. */
+.greyed {
+    color: var(--muted);
+}
+
 fieldset.greyed {
-    opacity: 0.85;
     border-style: dashed;
+    background: var(--greyed-bg);
 }
 
 .hint {
@@ -279,8 +290,12 @@ fieldset.greyed {
     width: auto;
 }
 
-.engine-id {
+.mono {
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.engine-id {
+    font-family: var(--mono);
     font-weight: 600;
 }
 
@@ -422,9 +437,12 @@ article.cache-entry + article.cache-entry {
         flex-direction: column;
     }
 
-    /* `<details>` does not shrink below its expanded content under
+    /* The details block does not shrink below its expanded content under
        cross-axis stretch; pin it to the row width so the payload block
-       scrolls inside itself instead of widening the page. */
+       scrolls inside itself instead of widening the page. (The literal
+       element name must stay out of this comment: every page inlines this
+       stylesheet, so the test asserting no rendered details element would
+       match the comment itself.) */
     .cache-details {
         width: 100%;
     }
@@ -439,7 +457,8 @@ article.cache-entry + article.cache-entry {
     }
 }
 
-.new-results-above {
+/* --- W2-02 /history ------------------------------------------------------- */
+new-results-above {
     display: inline-block;
     margin: 0.5rem 0;
     padding: 0.25rem 0.75rem;
@@ -449,7 +468,290 @@ article.cache-entry + article.cache-entry {
     font-size: 0.875rem;
 }
 
-.new-results-above[hidden] {
+nav.top {
+    display: flex;
+    gap: 1rem;
+    margin-bottom: 1rem;
+    font-size: 0.9375rem;
+}
+
+nav.top a {
+    color: var(--fg);
+    text-decoration: none;
+}
+
+nav.top a.brand {
+    font-weight: 700;
+}
+
+nav.top a[aria-current] {
+    color: var(--accent);
+}
+
+h1 {
+    font-size: 1.25rem;
+    margin: 0 0 0.25rem;
+}
+
+p.stats {
+    color: var(--muted);
+    font-size: 0.875rem;
+    margin: 0 0 1rem;
+}
+
+form.filters {
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+form.filters select {
+    padding: 0.5rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    font-size: 1rem;
+    background: var(--bg);
+    color: var(--fg);
+}
+
+form.filters label.cached-only {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    font-size: 0.9375rem;
+    white-space: nowrap;
+}
+
+form.filters a.clear {
+    color: var(--muted);
+    font-size: 0.9375rem;
+}
+
+table.history {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.875rem;
+}
+
+table.history th,
+table.history td {
+    text-align: left;
+    padding: 0.4rem 0.5rem;
+    vertical-align: top;
+}
+
+table.history thead th {
+    color: var(--muted);
+    font-weight: 600;
+    white-space: nowrap;
+    border-bottom: 1px solid var(--border);
+}
+
+table.history tr.day td {
+    color: var(--muted);
+    font-weight: 600;
+    padding-top: 0.9rem;
+}
+
+table.history tr.search td,
+table.history tr.click td {
+    border-bottom: none;
+    padding-bottom: 0.1rem;
+    word-break: break-word;
+}
+
+table.history tr.detail td {
+    border-bottom: 1px solid var(--border);
+    padding-top: 0;
+    padding-bottom: 0.5rem;
+}
+
+table.history td.c-when,
+table.history td.c-n,
+table.history td.c-ms,
+table.history td.c-by {
+    white-space: nowrap;
+}
+
+/* "Domain / mono meta" (references/tokens.md): engine ids, the client
+   column, click domains and positions render in the mono stack. */
+table.history td.c-engines,
+table.history td.c-by,
+.click-line .cdom,
+.click-line .cpos {
+    font-family: var(--mono);
+}
+
+table.history td.c-query a {
+    display: inline-block;
+    max-width: 20rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    vertical-align: bottom;
+}
+
+table.history tr.click td.c-query {
+    color: var(--muted);
+}
+
+table.history td.c-source a {
+    color: inherit;
+}
+
+table.history details {
+    display: inline;
+}
+
+table.history details summary {
+    cursor: pointer;
+    display: inline;
+    color: var(--muted);
+}
+
+table.history details[open] {
+    display: block;
+}
+
+table.history details[open] summary {
+    display: list-item;
+}
+
+.click-line {
+    padding: 0.15rem 0 0.15rem 1.25rem;
+}
+
+.click-line .cdom {
+    color: var(--muted);
+    display: inline-block;
+    min-width: 9rem;
+    margin-right: 0.5rem;
+}
+
+.click-line .cpos {
+    color: var(--muted);
+    margin-left: 0.5rem;
+}
+
+.row-actions {
+    margin-left: 1rem;
+    white-space: nowrap;
+}
+
+.row-actions > * + * {
+    margin-left: 0.6rem;
+}
+
+.row-actions button {
+    background: none;
+    border: none;
+    color: var(--accent);
+    padding: 0;
+    font-size: inherit;
+    cursor: pointer;
+}
+
+/* Inline notice a failed row delete writes into (same error red the
+   settings `.form-status.error` uses). */
+.row-error {
+    color: #b91c1c;
+}
+
+/* `:not([hidden])` keeps `display: block` from overriding the `hidden`
+   attribute, which would render an empty code block under every row. */
+.copy-fallback:not([hidden]) {
+    display: block;
+    margin-top: 0.4rem;
+    font-size: 0.8rem;
+    color: var(--muted);
+    user-select: all;
+}
+
+/* second line of the <640px card layout: `n · by · when` */
+.meta2 {
+    display: none;
+}
+
+@media (max-width: 768px) {
+    /* engines and ms hide below 768 px */
+    table.history .h-md {
+        display: none;
+    }
+}
+
+@media (max-width: 640px) {
+    table.history thead {
+        display: none;
+    }
+
+    /* first line: query and source flow inline. Scoped to those two cells
+       only — a blanket `td { display: inline }` (specificity 0,2,3) would
+       beat the `.c-when`/`.c-n`/`.c-by` and `.h-md` hide rules and the card
+       layout never forms. */
+    table.history tr.search td.c-query,
+    table.history tr.search td.c-source,
+    table.history tr.click td.c-query,
+    table.history tr.click td.c-source {
+        display: inline;
+        padding: 0.1rem 0.5rem 0.1rem 0;
+        border: none;
+    }
+
+    table.history td.c-query a {
+        max-width: 60vw;
+    }
+
+    /* n · by · when move to the card's second line (.meta2, emitted first
+       in the detail cell) */
+    table.history td.c-when,
+    table.history td.c-n,
+    table.history td.c-by {
+        display: none;
+    }
+
+    .meta2 {
+        display: block;
+        color: var(--muted);
+        margin-top: 0.15rem;
+    }
+
+    /* click lines keep domain and title only, on one line; long titles
+       truncate with an ellipsis (the nowrap + hidden container clips the
+       inline link). `max-width` pins the line under the viewport; the
+       nowrap content would otherwise inflate the auto-layout table's
+       min-content width and scroll the whole page horizontally. */
+    .click-line {
+        padding-left: 0.75rem;
+        max-width: calc(100vw - 4rem);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .click-line a {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .click-line .cdom {
+        min-width: 0;
+    }
+
+    .click-line .cpos {
+        display: none;
+    }
+
+    .row-actions {
+        display: inline-block;
+        margin-left: 0;
+        margin-top: 0.25rem;
+    }
+}
+
+p.empty {
+    color: var(--muted);
+}
+new-results-above[hidden] {
     display: none;
 }
 

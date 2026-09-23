@@ -49,7 +49,7 @@ const EXPECTED_WAVE0_JSON: &[(&str, &str)] = &[
 const EXPECTED_WAVE0_UI: &[(&str, &str)] = &[("GET", "/"), ("GET", "/search")];
 
 /// Wave-2 HTMX pages mounted so far.
-const EXPECTED_WAVE2_UI: &[(&str, &str)] = &[("GET", "/settings")];
+const EXPECTED_WAVE2_UI: &[(&str, &str)] = &[("GET", "/settings"), ("GET", "/history")];
 
 /// Wave-1 rows mounted so far (W1-06 engine health, W1-09 metrics).
 /// `/mcp` (W1-08) is added under `cfg!(feature = "mcp")` because its
@@ -58,6 +58,16 @@ const EXPECTED_WAVE1_MOUNTED: &[(&str, &str)] = &[
     ("GET", "/api/engines"),
     ("POST", "/api/engines/{id}/reset"),
     ("GET", "/metrics"),
+];
+
+/// Wave-2 API rows mounted so far: the SSE stream endpoint (W2-01),
+/// W2-02's audited history-row delete, and W2-05's enable/disable posts.
+/// They mount in every build including headless.
+const EXPECTED_WAVE2_MOUNTED: &[(&str, &str)] = &[
+    ("DELETE", "/api/history/{id}"),
+    ("GET", "/api/search/stream"),
+    ("POST", "/api/engines/{id}/enable"),
+    ("POST", "/api/engines/{id}/disable"),
 ];
 
 /// Wave-2 `requires: "ui"` rows mounted so far: the cache page (W2-04),
@@ -73,15 +83,6 @@ const EXPECTED_WAVE2_UI_MOUNTED: &[(&str, &str)] = &[
     ("GET", "/audit"),
     ("GET", "/trace/{id}"),
     ("GET", "/engines"),
-];
-
-/// Wave-2 API rows mounted so far: the SSE stream endpoint (W2-01) and
-/// W2-05's enable/disable posts. They mount in every build including
-/// headless.
-const EXPECTED_WAVE2_MOUNTED: &[(&str, &str)] = &[
-    ("GET", "/api/search/stream"),
-    ("POST", "/api/engines/{id}/enable"),
-    ("POST", "/api/engines/{id}/disable"),
 ];
 
 /// Serialises tests that mutate process env (`CAUCE_CONFIG_DIR` and friends).
@@ -314,9 +315,9 @@ fn wave0_routes_match_plan_filter() {
 
 /// `mounted_routes` (the builder's own view) equals the wave-0 set plus
 /// every wave-1 row implemented so far (`* /mcp` from W1-08, the engine
-/// health pair from W1-06, `/metrics` from W1-09), the wave-2 favicon
-/// (#87) and W2-05's enable/disable route plus `/engines` page, filtered
-/// to the compiled cargo features.
+/// health pair from W1-06, `/metrics` from W1-09), W2-02's history
+/// routes, W2-05's enable/disable route plus `/engines` page, and the
+/// wave-2 favicon (#87), filtered to the compiled cargo features.
 #[test]
 fn mounted_routes_match_declaration() {
     let (state, _tmp) = test_state();
@@ -392,6 +393,7 @@ async fn headless_drops_ui_routes_keeps_api() {
         "/opensearch.xml",
         "/favicon.ico",
         "/settings",
+        "/history",
         "/dashboard",
         "/audit",
     ] {
