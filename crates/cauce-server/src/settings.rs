@@ -258,13 +258,12 @@ pub fn field_errors(current: &Config, pairs: &[(String, String)]) -> Vec<(String
     if errors.is_empty()
         && let Err(e) = Config::from_raw(&tree, &system_env())
     {
-            let path = match &e {
-                ConfigError::InvalidValue { path, .. } => path.clone(),
-                ConfigError::InvalidEngine { id, .. } => format!("engines.{id}"),
-                _ => String::new(),
-            };
-            errors.push((path, e.to_string()));
-        }
+        let path = match &e {
+            ConfigError::InvalidValue { path, .. } => path.clone(),
+            ConfigError::InvalidEngine { id, .. } => format!("engines.{id}"),
+            _ => String::new(),
+        };
+        errors.push((path, e.to_string()));
     }
     errors
 }
