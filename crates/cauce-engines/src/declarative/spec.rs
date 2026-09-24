@@ -30,7 +30,9 @@
 //! encoded query), `{page}` (1-based), `{page0}`, `{offset}` =
 //! `(page-1) * page_size`, `{lang}` (request lang or `en`), plus `{name+N}`/
 //! `{name-N}` arithmetic on the numeric names (Bing's `first={offset+1}`).
-//! `{{`/`}}` are literal braces. Header values may additionally carry
+//! `{market}` resolves through the spec's optional `request.market`
+//! lang->market map (see [`RequestSpec::market`]). `{{`/`}}` are literal
+//! braces. Header values may additionally carry
 //! `${env:NAME}`/`${file:PATH}` config interpolation, resolved at compile
 //! time — before `{...}` templating — so secrets never sit in the spec.
 //!
@@ -151,6 +153,15 @@ pub struct RequestSpec {
     /// Per-request timeout cap; `search` uses `min(budget, timeout_ms)`.
     #[serde(default)]
     pub timeout_ms: Option<u64>,
+    /// Optional `lang -> market` map feeding the `{market}` token
+    /// (`mkt={market}` on Bing). Keys are request-lang values (`en`,
+    /// `en-GB`); the reserved `default` key is the fallback. Resolution
+    /// order: exact lang, then `-x` subtags stripped (`en-GB` -> `en`),
+    /// then a key the lang is a prefix of (`pt` -> `pt-BR`), then
+    /// `default`, else the first map entry. A template using `{market}`
+    /// without a `market:` map fails compilation.
+    #[serde(default)]
+    pub market: Option<BTreeMap<String, String>>,
 }
 
 /// `parse.kind`.
@@ -318,7 +329,16 @@ impl CompiledSpec {
             return Err(invalid("page_size must be >= 1".to_string()));
         }
 
-        validate_template(&spec.request.url, "request.url").map_err(invalid)?;
+        if spec.request.market.as_ref().is_some_and(BTreeMap::is_empty) {
+            return Err(invalid("request.market has no entries".to_string()));
+        }
+        let probe_market = spec
+            .request
+            .market
+            .as_ref()
+            .and_then(|m| resolve_market(m, "en"));
+
+        validate_template(&spec.request.url, "request.url", probe_market).map_err(invalid)?;
         // The URL must render to an absolute URL for a plausible request.
         let probe = render_template(
             &spec.request.url,
@@ -327,6 +347,7 @@ impl CompiledSpec {
                 page: 1,
                 page_size: spec.page_size,
                 lang: "en",
+                market: probe_market,
             },
         )
         .map_err(|e| invalid(e.to_string()))?;
@@ -342,8 +363,12 @@ impl CompiledSpec {
                 .map_err(|e| invalid(format!("request.headers.{name:?}: bad name: {e}")))?;
             let interpolated =
                 interpolate_str(value, env, &format!("request.headers.{}", name.as_str()))?;
-            validate_template(&interpolated, &format!("request.headers.{name}"))
-                .map_err(invalid)?;
+            validate_template(
+                &interpolated,
+                &format!("request.headers.{name}"),
+                probe_market,
+            )
+            .map_err(invalid)?;
             headers.push((name, interpolated));
         }
 
@@ -446,12 +471,19 @@ impl CompiledSpec {
         Ok(map)
     }
 
-    fn vars<'a>(&self, req: &'a SearchRequest) -> TemplateVars<'a> {
+    fn vars<'a>(&'a self, req: &'a SearchRequest) -> TemplateVars<'a> {
+        let lang = req.lang.as_deref().unwrap_or("en");
         TemplateVars {
             q: &req.q,
             page: req.page,
             page_size: self.spec.page_size,
-            lang: req.lang.as_deref().unwrap_or("en"),
+            lang,
+            market: self
+                .spec
+                .request
+                .market
+                .as_ref()
+                .and_then(|m| resolve_market(m, lang)),
         }
     }
 
@@ -560,6 +592,9 @@ pub(crate) struct TemplateVars<'a> {
     pub page_size: u8,
     /// Effective language (`req.lang` or `en`).
     pub lang: &'a str,
+    /// Market code `lang` resolves to through `request.market`; `None`
+    /// when the spec has no map (`{market}` then fails to render).
+    pub market: Option<&'a str>,
 }
 
 /// `{q}` encodes with the form-urlencoding byte serializer (space ->
@@ -619,6 +654,11 @@ fn resolve_token(token: &str, vars: &TemplateVars<'_>) -> Result<String, EngineE
     match name {
         "q" if delta == 0 => Ok(url::form_urlencoded::byte_serialize(vars.q.as_bytes()).collect()),
         "lang" if delta == 0 => Ok(vars.lang.to_string()),
+        "market" if delta == 0 => vars.market.map(str::to_string).ok_or_else(|| {
+            EngineError::Transport(
+                "`{market}` used but the spec has no `request.market` map".to_string(),
+            )
+        }),
         "page" => numeric(i64::from(vars.page)),
         "page0" => numeric(i64::from(vars.page.saturating_sub(1))),
         "offset" => numeric(i64::from(vars.page.saturating_sub(1)) * i64::from(vars.page_size)),
@@ -628,14 +668,56 @@ fn resolve_token(token: &str, vars: &TemplateVars<'_>) -> Result<String, EngineE
     }
 }
 
+/// `{market}` resolution through a `request.market` map: exact lang,
+/// then `-x` subtags stripped one at a time (`en-GB` -> `en`), then the
+/// first key (sorted order) the lang is a prefix of (`pt` -> `pt-BR`),
+/// then the reserved `default` key, else the first map entry. `None`
+/// only for an empty map (rejected at compile time).
+fn resolve_market<'a>(market: &'a BTreeMap<String, String>, lang: &str) -> Option<&'a str> {
+    let mut l = lang;
+    loop {
+        if let Some(m) = market.get(l) {
+            return Some(m);
+        }
+        match l.rsplit_once('-') {
+            Some((head, _)) => l = head,
+            None => break,
+        }
+    }
+    if let Some(m) = market
+        .iter()
+        .find(|(k, _)| {
+            k.as_str() != "default"
+                && k.len() > lang.len()
+                && k.starts_with(lang)
+                && k.as_bytes()[lang.len()] == b'-'
+        })
+        .map(|(_, v)| v)
+    {
+        return Some(m);
+    }
+    market
+        .get("default")
+        .or_else(|| {
+            market
+                .iter()
+                .find(|(k, _)| k.as_str() != "default")
+                .map(|(_, v)| v)
+        })
+        .map(String::as_str)
+}
+
 /// Compile-time twin of [`render_template`]: catches unknown tokens and
 /// unterminated braces when the spec loads instead of at search time.
-fn validate_template(template: &str, where_: &str) -> Result<(), String> {
+/// `market` is the spec's probe value so `{market}` without a
+/// `request.market` map fails here.
+fn validate_template(template: &str, where_: &str, market: Option<&str>) -> Result<(), String> {
     let vars = TemplateVars {
         q: "x",
         page: 1,
         page_size: 10,
         lang: "en",
+        market,
     };
     render_template(template, &vars).map_err(|e| format!("{where_}: {e}"))?;
     Ok(())
