@@ -1,0 +1,5 @@
+{"query": "serde rust documentation", "expect_domains_top5": ["serde.rs", "docs.rs"], "engines": ["brave"]}
+{"query": "tokio tutorial async rust", "expect_domains_top5": ["tokio.rs"], "engines": ["brave"]}
+{"query": "rust cargo book workspaces", "expect_domains_top5": ["doc.rust-lang.org"], "engines": ["brave"]}
+{"query": "rustlings github exercises", "expect_domains_top5": ["github.com"], "engines": ["brave"]}
+{"query": "rust by example iterators", "expect_domains_top5": ["doc.rust-lang.org", "rust-lang.org"], "engines": ["brave"]}
