@@ -5,10 +5,12 @@
 //! Order of checks (a captcha page usually arrives with status 200):
 //!
 //! 1. `status` in `detect.rate_limited_status` -> `EngineError::RateLimited`
-//! 2. body contains a `detect.blocked` substring -> `EngineError::Blocked`
-//!    (case-insensitive)
+//! 2. extraction; when `parse.results` matches nothing and the body contains
+//!    a `detect.blocked` substring -> `EngineError::Blocked`
+//!    (case-insensitive). Engines echo the query into the body, so a marker
+//!    only means "blocked" on a page that serves no results (#109).
 //! 3. non-2xx status -> `EngineError::Transport("http <status>")`
-//! 4. extraction; zero matched results -> `EngineError::Parse("0 results,
+//! 4. zero matched results -> `EngineError::Parse("0 results,
 //!    selector ...")` — an empty page means the layout drifted, not that
 //!    the query has no answers (settled acceptance shape).
 //!
@@ -39,7 +41,13 @@ pub(crate) fn parse_response(
         return Err(EngineError::RateLimited);
     }
     let text = String::from_utf8_lossy(body);
-    if !spec.blocked_substrings().is_empty() {
+
+    let results = match spec.compiled_results() {
+        CompiledResults::Html(sel) => Ok(parse_html(spec, sel, &text, base)),
+        CompiledResults::Json(path) => parse_json(spec, path, &text, base),
+    };
+    let has_results = matches!(&results, Ok(r) if !r.is_empty());
+    if !has_results && !spec.blocked_substrings().is_empty() {
         let lower = text.to_lowercase();
         if spec
             .blocked_substrings()
@@ -53,10 +61,7 @@ pub(crate) fn parse_response(
         return Err(EngineError::Transport(format!("http {status}")));
     }
 
-    let mut results = match spec.compiled_results() {
-        CompiledResults::Html(sel) => parse_html(spec, sel, &text, base),
-        CompiledResults::Json(path) => parse_json(spec, path, &text, base)?,
-    };
+    let mut results = results?;
     if results.is_empty() {
         return Err(EngineError::Parse(format!(
             "0 results, selector {:?} matched nothing",
