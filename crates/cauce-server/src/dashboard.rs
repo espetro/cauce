@@ -71,6 +71,14 @@ struct QueryRow {
     searches: u64,
 }
 
+/// One `engine_eval.engines[]` row: `bing · 4/5 · 80%`.
+#[derive(Debug)]
+struct EvalRow {
+    engine: String,
+    /// `hits/cases · pct` — the per-engine domain-hit@5 the panel shows.
+    score: String,
+}
+
 /// One `engines[]` table row; every cell preformatted.
 #[derive(Debug)]
 struct EngineRow {
@@ -115,6 +123,11 @@ struct Dashboard {
     stale_served: u64,
     admission_rejected: u64,
     engines: Vec<EngineRow>,
+    /// W3-05: whether a `evals/results/*-engines.json` run exists.
+    has_engine_eval: bool,
+    /// `2026-09-24 · live` line under the panel heading.
+    eval_meta: String,
+    eval_rows: Vec<EvalRow>,
     cache_rows: u64,
     cache_unexpired: u64,
     cache_expired: u64,
@@ -278,6 +291,26 @@ impl Dashboard {
             })
             .collect();
 
+        let (has_engine_eval, eval_meta, eval_rows) = match &snap.engine_eval {
+            Some(report) => (
+                true,
+                format!(
+                    "{} · {}",
+                    report.date,
+                    if report.live { "live" } else { "replay" }
+                ),
+                report
+                    .engines
+                    .iter()
+                    .map(|e| EvalRow {
+                        engine: e.engine.to_string(),
+                        score: format!("{}/{} · {:.0}%", e.hits, e.cases, e.domain_hit_at5 * 100.0),
+                    })
+                    .collect(),
+            ),
+            None => (false, String::new(), Vec::new()),
+        };
+
         Self {
             nav_active: "dashboard",
             days: snap.window_days,
@@ -309,6 +342,9 @@ impl Dashboard {
             stale_served: snap.admission.stale_served,
             admission_rejected: snap.admission.rejected,
             engines,
+            has_engine_eval,
+            eval_meta,
+            eval_rows,
             cache_rows: snap.cache_entries + snap.cache_entries_expired,
             cache_unexpired: snap.cache_entries,
             cache_expired: snap.cache_entries_expired,

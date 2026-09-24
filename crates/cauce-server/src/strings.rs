@@ -340,6 +340,10 @@ pub mod dashboard {
     pub const ADMISSION_REJECTED: &str = "admission-rejected";
     pub const ENGINES: &str = "engines";
     pub const CACHE: &str = "cache";
+    /// W3-05 nightly engine relevance evals panel.
+    pub const ENGINE_EVAL: &str = "engine relevance (nightly)";
+    /// Empty state when no `evals/results/*-engines.json` exists.
+    pub const EVAL_NO_RUN: &str = "no eval run yet";
 
     pub const COL_ENGINE: &str = "engine";
     pub const COL_BREAKER: &str = "breaker";

@@ -35,3 +35,6 @@ node_modules/
 
 # per-worktree cargo dirs
 target-local/
+
+# W3-05 nightly eval artifacts — uploaded by the workflow, never committed
+evals/results/
