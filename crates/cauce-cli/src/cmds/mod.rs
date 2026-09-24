@@ -6,6 +6,7 @@
 
 pub mod config;
 pub mod engine;
+pub mod eval;
 #[cfg(feature = "mcp")]
 pub mod mcp;
 pub mod record;
