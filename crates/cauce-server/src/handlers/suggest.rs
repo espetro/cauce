@@ -22,8 +22,10 @@ const SUGGEST_LIMIT: u32 = 10;
 /// `GET /api/suggest?q=<term>`: the OpenSearch 1.1 suggestions shape
 /// `[term, [completions...]]`, completions sourced from `search_log` by
 /// `Store::suggest` — prefix-matched, frecency-ranked, capped at
-/// [`SUGGEST_LIMIT`]. An absent or blank `q` answers `["", []]`; the wire
-/// shape is always the two-element array.
+/// [`SUGGEST_LIMIT`]. The store normalises the prefix the same way
+/// `search_log.query` was written (`normalize_query`); the raw term
+/// echoes back untouched. An absent or blank `q` answers `["", []]`;
+/// the wire shape is always the two-element array.
 pub async fn suggest(
     State(state): State<AppState>,
     Extension(ctx): Extension<RequestCtx>,

@@ -260,6 +260,7 @@ pub async fn suggest(store: &impl Store) {
         ("suggest-check alpha", 0),
         ("suggest-check gamma", -1),
         ("suggest-check echo", -2),
+        ("suggest éclair unicode", -3),
         ("suggest-zed", 0),
     ] {
         let mut row = log_row(
@@ -286,6 +287,19 @@ pub async fn suggest(store: &impl Store) {
         let got = store.suggest(prefix, 10).await.expect("suggest failed");
         assert_eq!(got, expected, "suggest({prefix:?})");
     }
+
+    // `prefix` is normalised the same way stored queries were written:
+    // unicode case and whitespace runs fold before the prefix match.
+    let got = store
+        .suggest("  SUGGEST  ÉCLAIR  ", 10)
+        .await
+        .expect("suggest normalised");
+    assert_eq!(got, vec!["suggest éclair unicode"], "suggest unicode");
+    let got = store
+        .suggest("suggest-check  beta", 10)
+        .await
+        .expect("suggest whitespace");
+    assert_eq!(got, vec!["suggest-check beta"], "suggest whitespace");
 
     let capped = store
         .suggest("suggest-check", 2)

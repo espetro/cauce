@@ -99,6 +99,24 @@ async fn suggest_matches_case_insensitively() {
     assert_eq!(body, json!(["SUG-B", ["sug-beta"]]));
 }
 
+/// `q` is normalised like stored queries before matching (Devin Review on
+/// #176): unicode case and whitespace runs fold, so `Éclair  ` still
+/// reaches `éclair recipes`; the raw term echoes back untouched.
+#[tokio::test]
+async fn suggest_normalizes_prefix_before_matching() {
+    let (router, state, _tmp) = app();
+    state
+        .store()
+        .log_search(log_row(Utc::now(), "café éclair recipes"))
+        .await
+        .expect("log_search");
+
+    // `%20%20CAF%C3%89` decodes to `  CAFÉ` — stored as `café ...`.
+    let (status, _, body) = get(&router, "/api/suggest?q=%20%20CAF%C3%89").await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body, json!(["  CAFÉ", ["café éclair recipes"]]));
+}
+
 /// A prefix nothing in history starts with yields the term with an empty
 /// completions array.
 #[tokio::test]

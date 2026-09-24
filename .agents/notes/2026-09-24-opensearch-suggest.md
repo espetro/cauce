@@ -13,13 +13,19 @@ ranks queries. The trait got a minimal extension instead —
 use the tiebreak) — worth knowing if a real frecency scorer lands later;
 the conformance check pins the ordering semantics, not the formula.
 
-## Prefix matching is SQLite `LIKE` + escaping
+## Prefix matching is `normalize_query` + SQLite `LIKE` + escaping
 
-`LIKE` is ASCII case-insensitive by default, which is exactly what the
-endpoint wants — no `LOWER()` needed. `like_prefix` sits next to
-`like_pattern` in `store/mod.rs` and does the same `%`/`_`/`\` escaping
-plus one trailing wildcard; keep using `ESCAPE '\'` in the SQL or the
-escapes mean nothing.
+`LIKE` is ASCII case-insensitive by default — not enough on its own,
+since `search_log.query` is written via `normalize_query` (unicode
+lowercase + whitespace collapse). Devin Review caught the gap:
+`?q=Éclair` or `?q=éclair  ` missed `éclair recipes`. `SqliteStore::
+suggest` now runs the prefix through `normalize_query` first — the
+trait doc makes that part of the contract so every impl folds user
+input the same way stored queries were written; the raw term still
+echoes back in the response. `like_prefix` sits next to `like_pattern`
+in `store/mod.rs` and does the same `%`/`_`/`\` escaping plus one
+trailing wildcard; keep using `ESCAPE '\'` in the SQL or the escapes
+mean nothing.
 
 ## Wire-shape details the tests pin
 

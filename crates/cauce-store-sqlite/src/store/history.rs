@@ -7,6 +7,7 @@
 
 use cauce_core::{
     ClickRow, DeleteSearchLog, HistoryFilter, HistoryItem, HistoryStats, SearchLogRow, StoreError,
+    normalize_query,
 };
 use rusqlite::{OptionalExtension, params};
 
@@ -191,17 +192,21 @@ impl SqliteStore {
     }
 
     /// `Store::suggest` (#150): distinct normalized queries starting with
-    /// `prefix` (`LIKE` is ASCII case-insensitive), ranked by frecency —
-    /// use count first, most recent use breaking ties — capped at `limit`.
+    /// `prefix`, ranked by frecency — use count first, most recent use
+    /// breaking ties — capped at `limit`. `prefix` goes through
+    /// `normalize_query` first, so callers pass user text verbatim and
+    /// unicode case/whitespace fold the same way `query` was written;
+    /// `LIKE` covers the remaining ASCII case.
     pub(super) async fn suggest(
         &self,
         prefix: &str,
         limit: u32,
     ) -> Result<Vec<String>, StoreError> {
-        if prefix.trim().is_empty() || limit == 0 {
+        let prefix = normalize_query(prefix);
+        if prefix.is_empty() || limit == 0 {
             return Ok(Vec::new());
         }
-        let pattern = like_prefix(prefix);
+        let pattern = like_prefix(&prefix);
         let limit = i64::from(limit);
         self.with_reader(move |conn| {
             conn.prepare(

@@ -624,8 +624,10 @@ pub trait Store: Send + Sync {
     /// document the W2-11 descriptor advertises, #150): distinct stored
     /// `search_log.query` values starting with `prefix`, matched
     /// case-insensitively, ranked by frecency — most-used first, most
-    /// recent use breaking ties — capped at `limit`. An empty `prefix`
-    /// yields `[]`.
+    /// recent use breaking ties — capped at `limit`. Implementations run
+    /// `prefix` through `normalize_query` so callers pass user text
+    /// verbatim: unicode case and stray whitespace fold the same way the
+    /// stored `query` was written. An empty `prefix` yields `[]`.
     async fn suggest(&self, prefix: &str, limit: u32) -> Result<Vec<String>, StoreError>;
 
     /// `DELETE /api/history/{id}` (W2-02): remove one `search_log` row, plus
