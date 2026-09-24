@@ -1,4 +1,5 @@
 mod budget;
+mod canary;
 mod common;
 mod evals;
 mod golden_path;
