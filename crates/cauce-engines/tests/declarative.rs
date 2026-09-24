@@ -198,6 +198,110 @@ fn request_templating_renders_all_tokens() {
     assert_eq!(headers["x-key"], "no-key");
 }
 
+/// `request.market` spec for the `{market}` tests (issue #110).
+const MARKET_SPEC_YAML: &str = r#"
+id: mkt
+request:
+  url: "https://example.test/s?q={q}&mkt={market}"
+  market:
+    en: en-US
+    en-GB: en-GB
+    fr: fr-FR
+    pt-BR: pt-BR
+    zh: zh-CN
+    zh-Hant: zh-TW
+    zh-Hant-HK: zh-HK
+    zh-TW: zh-TW
+    default: en-US
+parse:
+  kind: html
+  results: "div.result"
+  fields:
+    url: { css: "a.u", attr: href }
+"#;
+
+/// Rendered `mkt` query param for a request lang.
+fn mkt_for(spec: &CompiledSpec, lang: Option<&str>) -> String {
+    let mut r = req("q");
+    r.lang = lang.map(str::to_string);
+    let url = spec.render_url(&r).unwrap();
+    url.query_pairs()
+        .find(|(k, _)| k == "mkt")
+        .map(|(_, v)| v.into_owned())
+        .expect("mkt param")
+}
+
+#[test]
+fn market_token_resolves_lang_to_market_map() {
+    let spec = CompiledSpec::from_yaml(MARKET_SPEC_YAML, &env()).unwrap();
+    for (lang, want) in [
+        (Some("fr"), "fr-FR"),         // exact key
+        (Some("en"), "en-US"),         // exact key
+        (Some("en-GB"), "en-GB"),      // exact key beats subtag strip
+        (Some("fr-CA"), "fr-FR"),      // `-x` subtag stripped
+        (Some("pt"), "pt-BR"),         // lang is a prefix of a map key
+        (Some("zh-Hant-TW"), "zh-TW"), // script subtag keeps Traditional market
+        (Some("zh-Hant-HK"), "zh-HK"), // exact script+region key
+        (Some("zh-TW"), "zh-TW"),      // exact region-only key
+        (Some("zh"), "zh-CN"),         // generic `zh` -> mainland
+        (Some("FR-ca"), "fr-FR"),      // BCP-47 tags are case-insensitive
+        (Some("ZH-TW"), "zh-TW"),      // ...on exact and stripped matches
+        (Some("ja"), "en-US"),         // unmapped -> `default` key
+        (None, "en-US"),               // no lang -> `en`
+    ] {
+        assert_eq!(mkt_for(&spec, lang), want, "lang {lang:?}");
+    }
+}
+
+#[test]
+fn market_fallback_without_default_key_is_deterministic() {
+    // No `default` key: the first map entry (sorted order) is the
+    // fallback — `de` sorts before `fr`, so `ja` -> `de-DE`.
+    let yaml = MARKET_SPEC_YAML
+        .replace("    en-GB: en-GB\n", "")
+        .replace("    fr: fr-FR\n", "    de: de-DE\n    fr: fr-FR\n")
+        .replace("    pt-BR: pt-BR\n", "")
+        .replace("    default: en-US\n", "");
+    let spec = CompiledSpec::from_yaml(&yaml, &env()).unwrap();
+    assert_eq!(mkt_for(&spec, Some("ja")), "de-DE");
+    assert_eq!(mkt_for(&spec, Some("fr")), "fr-FR");
+}
+
+#[test]
+fn market_token_without_map_fails_compile() {
+    let yaml = MARKET_SPEC_YAML.replace(
+        "  market:\n    en: en-US\n    en-GB: en-GB\n    fr: fr-FR\n    pt-BR: pt-BR\n    zh: zh-CN\n    zh-Hant: zh-TW\n    zh-Hant-HK: zh-HK\n    zh-TW: zh-TW\n    default: en-US\n",
+        "",
+    );
+    let err = CompiledSpec::from_yaml(&yaml, &env()).unwrap_err();
+    match err {
+        SpecError::Invalid { msg, .. } => assert!(msg.contains("{market}"), "{msg}"),
+        other => panic!("expected SpecError::Invalid, got {other:?}"),
+    }
+    // An empty `market:` map is rejected too.
+    let yaml = yaml.replace(
+        "  url: \"https://example.test",
+        "  market: {}\n  url: \"https://example.test",
+    );
+    assert!(CompiledSpec::from_yaml(&yaml, &env()).is_err());
+}
+
+#[test]
+fn embedded_bing_spec_maps_lang_to_market() {
+    // The shipped spec (issue #110): `mkt={market}` must resolve through
+    // `request.market` — `lang=fr` must not hit the en-US market, and an
+    // unmapped lang still sends a market (never Bing IP geolocation).
+    let tmp = tempfile::tempdir().unwrap();
+    let specs = load_specs(tmp.path(), &env());
+    let bing = specs
+        .iter()
+        .find(|s| s.id().as_str() == "bing")
+        .expect("embedded bing spec");
+    assert_eq!(mkt_for(bing, Some("fr")), "fr-FR");
+    assert_eq!(mkt_for(bing, Some("en")), "en-US");
+    assert_eq!(mkt_for(bing, Some("haw")), "en-US");
+}
+
 #[test]
 fn header_env_interpolation_uses_env() {
     let env: EnvMap = BTreeMap::from([("CAUCE_TEST_SPEC_KEY".to_string(), "s3cret".to_string())]);
