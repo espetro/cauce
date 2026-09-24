@@ -98,6 +98,9 @@ cauce-engines = { path = "../cauce-engines" }
 cauce-store-sqlite = { path = "../cauce-store-sqlite" }
 # W1-09 acceptance: parse `/metrics` output with a real text parser.
 prometheus-parse = "0.2"
+# Boundary proptests for the pure Exa helpers (mcp/exa.rs); same pin as
+# cauce-core.
+proptest = "1"
 tempfile = "3"
 tokio = { version = "1", features = ["macros"] }
 tower = { version = "0.5", features = ["util"] }

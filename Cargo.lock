@@ -378,6 +378,7 @@ dependencies = [
  "opentelemetry_sdk",
  "oxixml-schema",
  "prometheus-parse",
+ "proptest",
  "reqwest",
  "rmcp",
  "rust-embed",
