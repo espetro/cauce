@@ -177,3 +177,35 @@ global store, and is never shared with or copied into another project.
 - Case-table pattern that worked: `CfgCase`/`InterpCase`-style
   `{env, file, want}` rows in config tests; `FieldCase {name, form_body, want_status,
   want_error_substr}` for per-field form errors.
+
+## 2026-09-24 — W3-02 stale-while-revalidate
+
+- SWR lives pre-admission in `run`/`run_stream` (after `runnable`+`ttl`,
+  before `admission.enter`): `stale_lookup` (`store.get_cache` +
+  `expires_at <= now <= expires_at + stale_grace`) serves
+  `Source::Cache{stale:true}` then `spawn_refresh` dedupes the refetch
+  via the same singleflight the W1-07 overflow path uses. Serving before
+  `enter` means a stale-served request never joins the watch channel —
+  and W1-07's overflow serve is untouched (it keeps its own `admission`
+  reason).
+- `cauce_stale_served_total` is now `{reason}`-labeled
+  (`grace|admission|engines_unhealthy`); the scalar
+  `AdmissionStats.stale_served` aggregate still feeds `/api/stats`.
+- `HealthTracker::peek` (read-only `admission`) is what the
+  `engines_unhealthy` check needs: calling `admission` there would claim
+  a `HalfOpen` probe that is never followed by a call, leaking the slot.
+- `Store::evict_expired(grace)` takes the window as a param; every caller
+  (periodic task, `DELETE /api/cache?expired=true`, MCP `cache_invalidate`)
+  passes `cache.stale_grace_s` — expired-but-servable rows are never
+  garbage. The `cache_page` expired-delete test now asserts `removed: 0`
+  for an in-grace row.
+- Hygiene in `finish_fetch`: `resp.results.is_empty()` short-circuits
+  `put` (two pre-W3-02 tests asserting "empty is cached" were updated);
+  `Failed`/`deadline_hit` fan-outs cap the stored TTL at
+  `cache.degraded_ttl_s` (`ctx.ttl.min(degraded)`).
+- `CacheConfig` needed a manual `Default` impl once nonzero defaults
+  (`stale_grace_s` 6 h, `degraded_ttl_s` 60) landed; new keys get
+  `CAUCE_CACHE_STALE_GRACE_S`/`CAUCE_CACHE_DEGRADED_TTL_S` env overrides.
+- UI: `strings::search::STALE_BADGE` ("stale · refreshing") is shared by
+  the SSR badge arm and the streaming page's `S` bundle (JS checks
+  `meta.source.cache.stale` before falling back to `S.cached`).

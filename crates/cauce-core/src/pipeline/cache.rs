@@ -14,6 +14,7 @@ use uuid::Uuid;
 
 use crate::cache::{CacheKey, CachedSearch, lexical_tokens, token_jaccard};
 use crate::engine::{Engine, EngineId, Tier};
+use crate::health::Gate;
 use crate::normalize::normalize_url;
 use crate::request::SearchRequest;
 use crate::response::{
@@ -158,6 +159,80 @@ impl SearchPipeline {
                 warn!(key = %key, error = %e, "admission: stale lookup failed");
                 Err(self.rate_limited())
             }
+        }
+    }
+
+    /// Tier-1 `get_cache` for the W3-02 stale-while-revalidate arm: a row
+    /// past `expires_at` but inside `self.cache.stale_grace` is servable
+    /// stale (the caller enqueues the deduped refresh). A fresh row never
+    /// reaches here — `cache_lookup` already served it — and a store
+    /// failure degrades to a miss, same as tier 1.
+    pub(super) async fn stale_lookup(
+        &self,
+        key: &CacheKey,
+        request_id: Uuid,
+    ) -> Option<CachedSearch> {
+        let span = info_span!(
+            "cache_lookup",
+            request_id = %request_id,
+            tier = 1u8,
+            stale = true,
+            hit = tracing::field::Empty,
+        );
+        // Instrument the awaited future; an `Entered` guard held across
+        // `.await` would leak the span onto unrelated tasks under a
+        // multi-threaded runtime.
+        let result = self.store.get_cache(key).instrument(span.clone()).await;
+        span.in_scope(|| match result {
+            Ok(Some(row)) => {
+                let now = Utc::now();
+                let grace = chrono::Duration::from_std(self.cache.stale_grace)
+                    .unwrap_or(chrono::Duration::MAX);
+                let servable = row.expires_at <= now && now <= row.expires_at + grace;
+                span.record("hit", servable);
+                if servable {
+                    debug!(key = %key, "stale row inside the grace window");
+                    Some(row)
+                } else {
+                    debug!(key = %key, "no stale row inside the grace window");
+                    None
+                }
+            }
+            Ok(None) => {
+                span.record("hit", false);
+                None
+            }
+            Err(e) => {
+                span.record("hit", false);
+                warn!(key = %key, error = %e, "stale lookup failed; treating as miss");
+                None
+            }
+        })
+    }
+
+    /// The `cauce_stale_served_total{reason}` label for a stale serve:
+    /// the caller's serve-path reason, unless every pinned engine is
+    /// unhealthy — a stale serve in an all-breaker outage is the outage
+    /// signal (W3-02 rule c) and is labelled `engines_unhealthy` plus a
+    /// warn event. The health read is `peek`, not `admission`: this check
+    /// must not claim a half-open probe slot a fan-out could have used.
+    pub(super) fn stale_reason(
+        &self,
+        runnable: &[Arc<dyn Engine>],
+        reason: &'static str,
+    ) -> &'static str {
+        if !runnable.is_empty()
+            && runnable
+                .iter()
+                .all(|e| matches!(self.health.peek(&e.id()), Gate::Skip))
+        {
+            warn!(
+                engines = %render_ids(&runnable.iter().map(|e| e.id()).collect::<Vec<_>>()),
+                "serving stale row: every pinned engine is unhealthy"
+            );
+            "engines_unhealthy"
+        } else {
+            reason
         }
     }
 

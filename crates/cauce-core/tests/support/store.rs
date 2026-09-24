@@ -123,8 +123,16 @@ impl Store for StubStore {
         Ok(())
     }
 
-    async fn evict_expired(&self) -> Result<u64, StoreError> {
-        unimplemented!()
+    /// Honour the W3-02 grace window: an expired row only leaves once it
+    /// is `grace` past expiry (the pipeline still serves it stale until
+    /// then).
+    async fn evict_expired(&self, grace: Duration) -> Result<u64, StoreError> {
+        let cutoff =
+            Utc::now() - chrono::Duration::from_std(grace).unwrap_or(chrono::Duration::MAX);
+        let mut entries = self.entries.lock().unwrap();
+        let before = entries.len();
+        entries.retain(|key, entry| to_cached(key, entry).expires_at > cutoff);
+        Ok((before - entries.len()) as u64)
     }
     async fn list_cache(&self, _: u32, _: u32) -> Result<Vec<CachedSearch>, StoreError> {
         unimplemented!()

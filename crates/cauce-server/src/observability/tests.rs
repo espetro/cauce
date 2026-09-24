@@ -214,7 +214,7 @@ fn audit_writes_event_and_row() {
         ) -> Result<(), StoreError> {
             unimplemented!()
         }
-        async fn evict_expired(&self) -> Result<u64, StoreError> {
+        async fn evict_expired(&self, _: Duration) -> Result<u64, StoreError> {
             unimplemented!()
         }
         async fn list_cache(&self, _: u32, _: u32) -> Result<Vec<CachedSearch>, StoreError> {

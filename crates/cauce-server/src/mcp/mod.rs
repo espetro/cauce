@@ -368,7 +368,9 @@ impl CauceMcp {
                     json!({
                         "removed": self
                             .store()
-                            .evict_expired()
+                            .evict_expired(self.state.with_config(|c| {
+                                Duration::from_secs(c.cache.stale_grace_s)
+                            }))
                             .await
                             .map_err(|e| store_error(&e, request_id))?
                     }),
