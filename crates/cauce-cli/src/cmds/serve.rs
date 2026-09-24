@@ -15,7 +15,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use cauce_core::config::{Config, Resources, is_loopback_host};
-use cauce_core::{Admission, AdmissionLimits, HedgePolicy, MergePolicy, SearchPipeline};
+use cauce_core::{
+    Admission, AdmissionLimits, CachePolicy, HedgePolicy, MergePolicy, SearchPipeline,
+};
 use cauce_engines::factory::build_engines;
 use cauce_server::{AppState, RouterOptions, observability};
 use cauce_store_sqlite::{SqliteStore, spawn_eviction_task};
@@ -136,6 +138,10 @@ async fn serve_async(opts: ServeOpts, cfg: Config, host: String) -> i32 {
             .with_merge(MergePolicy {
                 rrf_k: cfg.merge.rrf_k as f32,
                 collapse_same_host_after: cfg.merge.collapse_same_host_after as usize,
+            })
+            .with_cache_policy(CachePolicy {
+                stale_grace: Duration::from_secs(cfg.cache.stale_grace_s),
+                degraded_ttl: Duration::from_secs(cfg.cache.degraded_ttl_s),
             }),
     );
     // Restore persisted breakers before serving (plan 4.4.6: a restart
@@ -148,7 +154,7 @@ async fn serve_async(opts: ServeOpts, cfg: Config, host: String) -> i32 {
             tracing::warn!(error = %e, "engine health load failed; starting with closed breakers")
         }
     }
-    let evict = spawn_eviction_task(store.clone());
+    let evict = spawn_eviction_task(store.clone(), Duration::from_secs(cfg.cache.stale_grace_s));
 
     let port = opts.port.unwrap_or(cfg.server.port);
     if !opts.headless && !cfg!(feature = "ui") {

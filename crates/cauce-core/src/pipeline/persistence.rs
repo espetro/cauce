@@ -124,7 +124,8 @@ impl SearchPipeline {
                 self.metrics
                     .record_search(&req.client, label, tier, "ok", started.elapsed());
                 if matches!(resp.meta.source, Source::Cache { stale: true, .. }) {
-                    self.metrics.record_stale_served();
+                    self.metrics
+                        .record_stale_served(self.stale_reason(runnable, "admission"));
                 }
                 Ok(resp)
             }
@@ -229,24 +230,45 @@ impl SearchPipeline {
         };
 
         // ---- persist -------------------------------------------------------
-        let persist = info_span!(
-            "persist",
-            request_id = %ctx.request_id,
-            key = %ctx.key,
-            ttl_s = ctx.ttl.as_secs(),
-        );
-        // Instrument the awaited future; an `Entered` guard held across
-        // `.await` would leak the span onto unrelated tasks under a
-        // multi-threaded runtime.
-        let put = self
-            .store
-            .put(ctx.key, &resp, ctx.ttl)
-            .instrument(persist.clone())
-            .await;
-        persist.in_scope(|| match put {
-            Ok(()) => debug!("response cached"),
-            Err(e) => warn!(error = %e, "cache write failed; serving response anyway"),
-        });
+        // W3-02 rule a: an all-NoResults fan-out is never `put` — a wedged
+        // exec engine answering `[]` would otherwise poison the cache for
+        // the full TTL.
+        if resp.results.is_empty() {
+            debug!(key = %ctx.key, "empty response; not cached");
+        } else {
+            // W3-02 rule b: a degraded fan-out (any engine `Failed` or the
+            // deadline hit) earns `cache.degraded_ttl_s`, not the full
+            // configured TTL — a partial answer is re-fetched sooner.
+            let store_ttl = if fan.deadline_hit
+                || resp
+                    .meta
+                    .engines_used
+                    .iter()
+                    .any(|r| matches!(r.status, EngineStatus::Failed(_)))
+            {
+                ctx.ttl.min(self.cache.degraded_ttl)
+            } else {
+                ctx.ttl
+            };
+            let persist = info_span!(
+                "persist",
+                request_id = %ctx.request_id,
+                key = %ctx.key,
+                ttl_s = store_ttl.as_secs(),
+            );
+            // Instrument the awaited future; an `Entered` guard held across
+            // `.await` would leak the span onto unrelated tasks under a
+            // multi-threaded runtime.
+            let put = self
+                .store
+                .put(ctx.key, &resp, store_ttl)
+                .instrument(persist.clone())
+                .await;
+            persist.in_scope(|| match put {
+                Ok(()) => debug!("response cached"),
+                Err(e) => warn!(error = %e, "cache write failed; serving response anyway"),
+            });
+        }
         Ok(resp)
     }
 

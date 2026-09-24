@@ -260,6 +260,7 @@ pub(crate) async fn search_fragment(
 fn badge(resp: &SearchResponse) -> String {
     use crate::strings::search as s;
     let base = match &resp.meta.source {
+        Source::Cache { stale: true, .. } => s::STALE_BADGE.to_string(),
         Source::Cache { age_s, ttl_s, .. } => s::CACHED_BADGE
             .replace("{age}", &age_s.to_string())
             .replace("{ttl}", &ttl_s.to_string()),
@@ -319,6 +320,7 @@ fn stream_strings() -> String {
         "new_above": s::NEW_ABOVE,
         "live_badge": s::LIVE_BADGE,
         "cached": s::CACHED,
+        "stale_badge": s::STALE_BADGE,
         "engine_failed": s::ENGINE_FAILED,
         "engine_skipped": s::ENGINE_SKIPPED,
         "err_rate_limited": s::ERR_RATE_LIMITED,

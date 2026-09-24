@@ -87,7 +87,9 @@ async fn eviction_task_removes_expired_rows() {
     store.put(&key, &resp, Duration::ZERO).await.unwrap();
     assert!(store.get_cache(&key).await.unwrap().is_some());
 
-    let task = spawn_eviction_task_every(store.clone(), Duration::from_millis(25));
+    // ZERO grace: the task hard-deletes expired rows (the W3-02 stale-serve
+    // window is asserted inside `cache_expiry_and_eviction`).
+    let task = spawn_eviction_task_every(store.clone(), Duration::from_millis(25), Duration::ZERO);
 
     let mut gone = false;
     for _ in 0..100 {

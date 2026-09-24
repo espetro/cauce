@@ -126,11 +126,15 @@ impl SqliteStore {
         .await
     }
 
-    pub(super) async fn evict_expired(&self) -> Result<u64, StoreError> {
-        self.with_writer(|conn| {
+    /// Rows are only collected once they are `grace` past expiry: inside
+    /// the W3-02 stale-serve window an expired row can still answer.
+    pub(super) async fn evict_expired(&self, grace: Duration) -> Result<u64, StoreError> {
+        let cutoff =
+            rows::now_ms().saturating_sub(i64::try_from(grace.as_millis()).unwrap_or(i64::MAX));
+        self.with_writer(move |conn| {
             conn.execute(
                 "DELETE FROM cache_entries WHERE expires_at <= ?1",
-                params![rows::now_ms()],
+                params![cutoff],
             )
             .map(|n| n as u64)
             .map_err(sql_err)

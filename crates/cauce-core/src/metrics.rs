@@ -190,6 +190,9 @@ struct RegistryInner {
     admission_rejected_series: BTreeMap<Labels, u64>,
     /// `cauce_hedge_total{reason}`.
     hedge: BTreeMap<Labels, u64>,
+    /// `cauce_stale_served_total{reason}` (W3-02: `grace` |
+    /// `admission` | `engines_unhealthy`).
+    stale_served_series: BTreeMap<Labels, u64>,
 }
 
 impl Default for RegistryInner {
@@ -212,6 +215,7 @@ impl Default for RegistryInner {
             admission_wait: Hist::new(MS_BUCKETS),
             admission_rejected_series: BTreeMap::new(),
             hedge: BTreeMap::new(),
+            stale_served_series: BTreeMap::new(),
         }
     }
 }
@@ -560,12 +564,12 @@ pub fn render_prometheus() -> String {
     );
     let _ = writeln!(out, "# TYPE cauce_deadline_hit_total counter");
     let _ = writeln!(out, "cauce_deadline_hit_total {}", reg.deadline_hits);
-    let _ = writeln!(
-        out,
-        "# HELP cauce_stale_served_total Responses served from an expired cache row"
+    render_counter(
+        &mut out,
+        "cauce_stale_served_total",
+        "Responses served from an expired cache row",
+        &reg.stale_served_series,
     );
-    let _ = writeln!(out, "# TYPE cauce_stale_served_total counter");
-    let _ = writeln!(out, "cauce_stale_served_total {}", reg.stale_served);
     out
 }
 
@@ -714,10 +718,17 @@ impl Metrics {
         registry().deadline_hits += 1;
     }
 
-    /// `cauce_stale_served_total` — one per response served from an expired
-    /// cache row (the W1-07 overflow path).
-    pub fn record_stale_served(&self) {
-        registry().stale_served += 1;
+    /// `cauce_stale_served_total{reason}` — one per response served from
+    /// an expired cache row. `reason` is `"grace"` (the W3-02
+    /// stale-while-revalidate serve), `"admission"` (the W1-07 overflow
+    /// serve) or `"engines_unhealthy"` (a stale serve while every pinned
+    /// engine's breaker is open or skipped, W3-02 rule c).
+    pub fn record_stale_served(&self, reason: &'static str) {
+        let mut reg = registry();
+        *reg.stale_served_series
+            .entry(labels(&[("reason", reason.to_string())]))
+            .or_insert(0) += 1;
+        reg.stale_served += 1;
     }
 
     /// `cauce_hedge_total{reason}` — one per W3-01 hedge fire. `reason` is

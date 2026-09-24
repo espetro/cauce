@@ -217,8 +217,8 @@ impl Store for SqliteStore {
         self.put(key, resp, ttl).await
     }
 
-    async fn evict_expired(&self) -> Result<u64, StoreError> {
-        self.evict_expired().await
+    async fn evict_expired(&self, grace: Duration) -> Result<u64, StoreError> {
+        self.evict_expired(grace).await
     }
 
     // ---- cache admin --------------------------------------------------------

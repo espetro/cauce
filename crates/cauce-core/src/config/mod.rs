@@ -84,6 +84,16 @@ const ENV_OVERRIDES: &[(&str, &[&str], bool)] = &[
     ("CAUCE_SEARCH_TTL_S", &["search", "ttl_s"], true),
     ("CAUCE_SEARCH_TTL_CAP_S", &["search", "ttl_cap_s"], true),
     (
+        "CAUCE_CACHE_STALE_GRACE_S",
+        &["cache", "stale_grace_s"],
+        true,
+    ),
+    (
+        "CAUCE_CACHE_DEGRADED_TTL_S",
+        &["cache", "degraded_ttl_s"],
+        true,
+    ),
+    (
         "CAUCE_ADMISSION_MAX_WAIT_MS",
         &["admission", "max_wait_ms"],
         true,
@@ -478,12 +488,41 @@ fn default_max_concurrent_per_engine() -> u32 {
 }
 
 /// `[cache]`: cache-tier behaviour beyond TTLs (those live in `[search]`).
-#[derive(Debug, Default, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CacheConfig {
     /// `[cache.lexical]`: the tier-2 FTS lookup (W1-10).
     #[serde(default)]
     pub lexical: LexicalConfig,
+    /// Seconds past `expires_at` a tier-1 row may still be served stale
+    /// while a deduped background refresh re-fetches it (W3-02).
+    /// `0` disables the stale serve; expired rows are only evicted once
+    /// they are older than this window.
+    #[serde(default = "default_stale_grace_s")]
+    pub stale_grace_s: u64,
+    /// TTL (seconds) applied to a response whose fan-out was partial —
+    /// any engine `Failed` or the deadline hit (W3-02): a degraded
+    /// answer never earns the full `search.ttl_s`.
+    #[serde(default = "default_degraded_ttl_s")]
+    pub degraded_ttl_s: u64,
+}
+
+impl Default for CacheConfig {
+    fn default() -> Self {
+        Self {
+            lexical: LexicalConfig::default(),
+            stale_grace_s: default_stale_grace_s(),
+            degraded_ttl_s: default_degraded_ttl_s(),
+        }
+    }
+}
+
+fn default_stale_grace_s() -> u64 {
+    6 * 3600
+}
+
+fn default_degraded_ttl_s() -> u64 {
+    60
 }
 
 /// `[cache.lexical]`: tier-2 acceptance gate (W1-10). On a tier-1 miss the

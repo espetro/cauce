@@ -344,6 +344,36 @@ impl HealthTracker {
         decision
     }
 
+    /// The decision [`admission`](Self::admission) would return right now,
+    /// read-only: no probe claim, no lazy `Open` -> `HalfOpen` transition.
+    /// Used where the pipeline must know whether an engine is unhealthy
+    /// *without* consuming the single half-open probe slot (the W3-02
+    /// stale-serve `engines_unhealthy` check — a claimed probe here would
+    /// never be followed by its call).
+    pub fn peek(&self, id: &EngineId) -> Gate {
+        let inner = self.lock();
+        let Some(health) = inner.map.get(id) else {
+            return Gate::Call;
+        };
+        match health.breaker {
+            BreakerState::Closed => Gate::Call,
+            BreakerState::Open => {
+                let elapsed = health
+                    .breaker_until
+                    .map(|until| Utc::now() >= until)
+                    .unwrap_or(true);
+                if elapsed { Gate::Probe } else { Gate::Skip }
+            }
+            BreakerState::HalfOpen => {
+                if health.probe_in_flight {
+                    Gate::Skip
+                } else {
+                    Gate::Probe
+                }
+            }
+        }
+    }
+
     /// Record an answered call (`Ok` — including `NoResults`, which the
     /// engine answered healthily): EWMA update, failure counter reset, and
     /// a `HalfOpen` -> `Closed` transition when the call was a probe.

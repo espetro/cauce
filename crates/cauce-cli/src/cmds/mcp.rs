@@ -15,7 +15,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use cauce_core::config::{Config, Resources};
-use cauce_core::{Admission, AdmissionLimits, HedgePolicy, MergePolicy, SearchPipeline};
+use cauce_core::{
+    Admission, AdmissionLimits, CachePolicy, HedgePolicy, MergePolicy, SearchPipeline,
+};
 use cauce_engines::factory::build_engines;
 use cauce_server::{AppState, observability};
 use cauce_store_sqlite::{SqliteStore, spawn_eviction_task};
@@ -114,6 +116,10 @@ async fn mcp_async(cfg: Config) -> i32 {
             .with_merge(MergePolicy {
                 rrf_k: cfg.merge.rrf_k as f32,
                 collapse_same_host_after: cfg.merge.collapse_same_host_after as usize,
+            })
+            .with_cache_policy(CachePolicy {
+                stale_grace: Duration::from_secs(cfg.cache.stale_grace_s),
+                degraded_ttl: Duration::from_secs(cfg.cache.degraded_ttl_s),
             }),
     );
     // Restore persisted breakers, same as `cauce serve`: a stdio process
@@ -127,7 +133,7 @@ async fn mcp_async(cfg: Config) -> i32 {
             tracing::warn!(error = %e, "engine health load failed; starting with closed breakers")
         }
     }
-    let evict = spawn_eviction_task(store.clone());
+    let evict = spawn_eviction_task(store.clone(), Duration::from_secs(cfg.cache.stale_grace_s));
     let state = AppState::new(pipeline.clone(), store, cfg);
     tracing::info!("cauce mcp serving stdio");
     let result = cauce_server::mcp::serve_stdio(state).await;

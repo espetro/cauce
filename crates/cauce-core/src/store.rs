@@ -564,9 +564,12 @@ pub trait Store: Send + Sync {
         ttl: Duration,
     ) -> Result<(), StoreError>;
 
-    /// Delete all rows past `expires_at`; returns rows removed. Also the
-    /// `DELETE /api/cache?expired=true` path (audited by the caller).
-    async fn evict_expired(&self) -> Result<u64, StoreError>;
+    /// Delete all rows past `expires_at + grace`; returns rows removed.
+    /// `grace` keeps an expired row alive for its stale-serve window
+    /// (W3-02, `cache.stale_grace_s`): a row that can still answer a
+    /// request is not garbage. Also the `DELETE /api/cache?expired=true`
+    /// path (audited by the caller).
+    async fn evict_expired(&self, grace: Duration) -> Result<u64, StoreError>;
 
     // ---- cache admin (`/api/cache` routes, W0-09) ---------------------------
 

@@ -96,6 +96,8 @@ pub mod search {
     pub const CACHED_BADGE: &str = "cached · {age} s ago · ttl {ttl} s";
     /// JS-side cache lead-in (the stream only knows `source != network`).
     pub const CACHED: &str = "cached";
+    /// Stale-serve badge, server-rendered and streamed (W3-02).
+    pub const STALE_BADGE: &str = "stale · refreshing";
 
     /// Engine status phrase (`{kind}` is an `ERR_*` word).
     pub const ENGINE_FAILED: &str = "{engine} failed ({kind})";

@@ -175,7 +175,9 @@ pub async fn cache_bulk_delete(
             "cache.evict_expired",
             state
                 .store()
-                .evict_expired()
+                .evict_expired(
+                    state.with_config(|c| std::time::Duration::from_secs(c.cache.stale_grace_s)),
+                )
                 .await
                 .map_err(|e| ctx.store(&e))?,
         ),

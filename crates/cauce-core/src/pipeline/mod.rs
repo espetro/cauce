@@ -1,7 +1,7 @@
 //! `SearchPipeline` v0 (W0-08, parent plan section 4.4 minus the tier-3
 //! lookup, which lands in W3) plus the W1-06 breaker gate, W1-07
-//! admission control, the W1-10 tier-2 lexical lookup and the W3-01
-//! P90 hedge to tier 2.
+//! admission control, the W1-10 tier-2 lexical lookup, the W3-01
+//! P90 hedge to tier 2 and the W3-02 stale-while-revalidate serve.
 //!
 //! Module map (W3-08): `mod.rs` is the public API plus the request
 //! lifecycle (admission, singleflight, leader/follower). The stages a
@@ -22,6 +22,10 @@
 //!    stale: false }` and *still* appends a `search_log` row
 //!    (`LogSource::Cache`): the unconditional write is the whole point of
 //!    the design (v2 skipped it and its hit-rate stats were fiction).
+//!    An *expired* hit inside `cache.stale_grace_s` (W3-02) is served the
+//!    same way but `stale: true`, while a deduped background refresh
+//!    re-fetches the key — and a stale serve during an all-breaker outage
+//!    warns and counts `cauce_stale_served_total{reason=engines_unhealthy}`.
 //! 3. On a miss, admission (see [`crate::admission`]): singleflight on
 //!    `CacheKey` elects one leader per key and followers await the shared
 //!    outcome. The leader's detached flight task first runs the tier-2
@@ -167,6 +171,30 @@ impl Default for MergePolicy {
         Self {
             rrf_k: DEFAULT_RRF_K,
             collapse_same_host_after: DEFAULT_COLLAPSE_SAME_HOST_AFTER,
+        }
+    }
+}
+
+/// W3-02 cache-hygiene knobs (`cache.stale_grace_s`,
+/// `cache.degraded_ttl_s`); see [`SearchPipeline::with_cache_policy`].
+#[derive(Debug, Clone, Copy)]
+pub struct CachePolicy {
+    /// How long past `expires_at` a tier-1 row may still be served stale
+    /// while a deduped background refresh re-fetches it (default 6 h).
+    /// `Duration::ZERO` disables the stale serve.
+    pub stale_grace: Duration,
+    /// TTL applied to a response whose fan-out was partial — any engine
+    /// `Failed` or the deadline hit (default 60 s). A degraded answer
+    /// never earns the full `default_ttl`.
+    pub degraded_ttl: Duration,
+}
+
+impl Default for CachePolicy {
+    /// The wave-3 settled defaults: 6 h stale grace, 60 s degraded TTL.
+    fn default() -> Self {
+        Self {
+            stale_grace: Duration::from_secs(6 * 3_600),
+            degraded_ttl: Duration::from_secs(60),
         }
     }
 }
@@ -387,6 +415,9 @@ pub struct SearchPipeline {
     hedge: HedgePolicy,
     /// W3-03 merge shaping (`merge.rrf_k`, `merge.collapse_same_host_after`).
     merge: MergePolicy,
+
+    /// W3-02 cache-hygiene knobs (stale-serve grace, degraded TTL).
+    cache: CachePolicy,
     /// W1-09 metrics handle. A unit struct: every `record_*` writes into
     /// the process-global registry, so pipelines share one set of series.
     metrics: Metrics,
@@ -415,6 +446,8 @@ impl SearchPipeline {
             admission: Admission::default(),
             hedge: HedgePolicy::default(),
             merge: MergePolicy::default(),
+
+            cache: CachePolicy::default(),
             metrics: Metrics,
         }
     }
@@ -466,6 +499,14 @@ impl SearchPipeline {
     /// Default: [`MergePolicy::default`] (k = 60, 3 per host).
     pub fn with_merge(mut self, merge: MergePolicy) -> Self {
         self.merge = merge;
+        self
+    }
+
+    /// Override the cache-hygiene policy (`cache.stale_grace_s`,
+    /// `cache.degraded_ttl_s`, W3-02). Default: [`CachePolicy::default`]
+    /// (6 h stale-serve grace, 60 s TTL on degraded fan-outs).
+    pub fn with_cache_policy(mut self, policy: CachePolicy) -> Self {
+        self.cache = policy;
         self
     }
 
@@ -725,12 +766,54 @@ impl SearchPipeline {
         let runnable = self.runnable(req);
         // `pipeline.search` is the current span here (via `instrument`).
         tracing::Span::current().record("engines", runnable.len() as u64);
+        let ttl = ttl_override.unwrap_or(self.default_ttl).min(self.ttl_cap);
+
+        // ---- stale-while-revalidate (W3-02) -------------------------------
+        // An expired tier-1 row inside `cache.stale_grace_s` goes out
+        // immediately `stale` while a deduped background refresh re-fetches
+        // the key; same serve contract as `run`'s arm.
+        if let Some(row) = self.stale_lookup(&key, request_id).await {
+            let engines = row.engines.clone();
+            let resp = self.cache_hit_response(row, Tier::T1, request_id, started, true);
+            self.emit_response(&tx, &resp, started);
+            self.write_log(
+                req,
+                &key,
+                &query,
+                LogRow {
+                    source: LogSource::Cache,
+                    tier: Some(Tier::T1),
+                    result_count: resp.results.len() as u32,
+                    engines,
+                    deadline_hit: false,
+                },
+                started,
+            )
+            .await;
+            info!(
+                source = "cache",
+                stale = true,
+                results = resp.results.len(),
+                elapsed_ms = resp.meta.elapsed_ms,
+                "search complete"
+            );
+            self.metrics.record_search(
+                &req.client,
+                "cache",
+                Some(Tier::T1),
+                "ok",
+                started.elapsed(),
+            );
+            self.metrics
+                .record_stale_served(self.stale_reason(&runnable, "grace"));
+            self.spawn_refresh(req.clone(), key.clone(), runnable.clone(), ttl);
+            return;
+        }
 
         // ---- admission: singleflight + bounded per-engine queue ----------
         // Same election contract as `run`: one leader per key does the
         // work, followers await the shared outcome. The leader emits its
         // own events inside `lead_stream`; a follower emits once, below.
-        let ttl = ttl_override.unwrap_or(self.default_ttl).min(self.ttl_cap);
         let stream = StreamCtx {
             req,
             key: &key,
@@ -939,6 +1022,51 @@ impl SearchPipeline {
         let runnable = self.runnable(req);
         // `pipeline.search` is the current span here (via `instrument`).
         tracing::Span::current().record("engines", runnable.len() as u64);
+        let ttl = ttl_override.unwrap_or(self.default_ttl).min(self.ttl_cap);
+
+        // ---- stale-while-revalidate (W3-02) -------------------------------
+        // An expired tier-1 row inside `cache.stale_grace_s` is served
+        // immediately as `Source::Cache{stale:true}` while a background
+        // refresh re-fetches the key — deduped by the singleflight inside
+        // `spawn_refresh`, so concurrent stale seekers collapse to one
+        // refresh. Runs before admission: the stale serve needs no flight
+        // slot, and a request served here never joins the watch channel.
+        if let Some(row) = self.stale_lookup(&key, request_id).await {
+            let engines = row.engines.clone();
+            let resp = self.cache_hit_response(row, Tier::T1, request_id, started, true);
+            self.write_log(
+                req,
+                &key,
+                &query,
+                LogRow {
+                    source: LogSource::Cache,
+                    tier: Some(Tier::T1),
+                    result_count: resp.results.len() as u32,
+                    engines,
+                    deadline_hit: false,
+                },
+                started,
+            )
+            .await;
+            info!(
+                source = "cache",
+                stale = true,
+                results = resp.results.len(),
+                elapsed_ms = resp.meta.elapsed_ms,
+                "search complete"
+            );
+            self.metrics.record_search(
+                &req.client,
+                "cache",
+                Some(Tier::T1),
+                "ok",
+                started.elapsed(),
+            );
+            self.metrics
+                .record_stale_served(self.stale_reason(&runnable, "grace"));
+            self.spawn_refresh(req.clone(), key.clone(), runnable, ttl);
+            return Ok(resp);
+        }
 
         // ---- admission: singleflight + bounded per-engine queue (W1-07) ----
         //
@@ -946,7 +1074,6 @@ impl SearchPipeline {
         // does the work below and publishes a `FlightResult`. Followers (and
         // the leader's own request) all wait on the same watch channel, so a
         // cancelled request can never strand work its twins are waiting on.
-        let ttl = ttl_override.unwrap_or(self.default_ttl).min(self.ttl_cap);
         let mut re_elected = false;
         let shared: FlightResult = loop {
             let (lead, mut rx) = self.admission.enter(&key);
