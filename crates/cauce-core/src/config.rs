@@ -48,6 +48,16 @@ const ENV_OVERRIDES: &[(&str, &[&str], bool)] = &[
     ("CAUCE_SERVER_PUBLIC_URL", &["server", "public_url"], false),
     ("CAUCE_SEARCH_DEADLINE_MS", &["search", "deadline_ms"], true),
     ("CAUCE_SEARCH_MIN_RESULTS", &["search", "min_results"], true),
+    (
+        "CAUCE_SEARCH_HEDGE_FLOOR_MS",
+        &["search", "hedge_floor_ms"],
+        true,
+    ),
+    (
+        "CAUCE_SEARCH_HEDGE_CEILING_MS",
+        &["search", "hedge_ceiling_ms"],
+        true,
+    ),
     ("CAUCE_SEARCH_TTL_S", &["search", "ttl_s"], true),
     ("CAUCE_SEARCH_TTL_CAP_S", &["search", "ttl_cap_s"], true),
     (
@@ -364,6 +374,14 @@ pub struct SearchConfig {
     /// Results wanted before the hedge point is considered satisfied.
     #[serde(default = "default_min_results")]
     pub min_results: u32,
+    /// Earliest tier-2 hedge point in ms (W3-01): tier-1 gets at least
+    /// this long to answer before the hedge can fire.
+    #[serde(default = "default_hedge_floor_ms")]
+    pub hedge_floor_ms: u64,
+    /// Latest tier-2 hedge point in ms (W3-01): a slow tier-1 history
+    /// never delays the hedge past this.
+    #[serde(default = "default_hedge_ceiling_ms")]
+    pub hedge_ceiling_ms: u64,
     /// Default cache TTL in seconds.
     #[serde(default = "default_ttl_s")]
     pub ttl_s: u64,
@@ -377,6 +395,8 @@ impl Default for SearchConfig {
         Self {
             deadline_ms: default_deadline_ms(),
             min_results: default_min_results(),
+            hedge_floor_ms: default_hedge_floor_ms(),
+            hedge_ceiling_ms: default_hedge_ceiling_ms(),
             ttl_s: default_ttl_s(),
             ttl_cap_s: default_ttl_cap_s(),
         }
@@ -389,6 +409,14 @@ fn default_deadline_ms() -> u64 {
 
 fn default_min_results() -> u32 {
     5
+}
+
+fn default_hedge_floor_ms() -> u64 {
+    300
+}
+
+fn default_hedge_ceiling_ms() -> u64 {
+    1500
 }
 
 fn default_ttl_s() -> u64 {
@@ -895,6 +923,19 @@ impl Config {
             return Err(ConfigError::InvalidValue {
                 path: "cache.lexical.threshold".to_string(),
                 msg: format!("expected a finite value in (0.0, 1.0], got {threshold}"),
+            });
+        }
+
+        // The pair bounds the hedge point; an inverted window would fire
+        // `Duration::clamp` outside its contract, so reject rather than
+        // reorder silently.
+        if cfg.search.hedge_floor_ms > cfg.search.hedge_ceiling_ms {
+            return Err(ConfigError::InvalidValue {
+                path: "search.hedge_floor_ms".to_string(),
+                msg: format!(
+                    "hedge_floor_ms ({}) must be <= hedge_ceiling_ms ({})",
+                    cfg.search.hedge_floor_ms, cfg.search.hedge_ceiling_ms
+                ),
             });
         }
 
@@ -1753,6 +1794,35 @@ mod tests {
             Config::load_with(&env).unwrap().cache.lexical.threshold,
             1.0
         );
+    }
+
+    /// An inverted hedge window (floor > ceiling) violates
+    /// `Duration::clamp`'s contract at the hedge point; reject it from
+    /// either source rather than panicking per engine task at runtime.
+    #[test]
+    fn hedge_floor_above_ceiling_is_rejected() {
+        let (tmp, env) = sandbox(&[]);
+        write_config(
+            &tmp.path().join("cfg"),
+            "[search]\nhedge_floor_ms = 2500\nhedge_ceiling_ms = 1500\n",
+        );
+        assert!(matches!(
+            Config::load_with(&env),
+            Err(ConfigError::InvalidValue { ref path, .. }) if path == "search.hedge_floor_ms"
+        ));
+
+        let (_tmp2, env_override) = sandbox(&[("CAUCE_SEARCH_HEDGE_FLOOR_MS", "2500")]);
+        assert!(matches!(
+            Config::load_with(&env_override),
+            Err(ConfigError::InvalidValue { ref path, .. }) if path == "search.hedge_floor_ms"
+        ));
+
+        // Equal bounds are a legal (degenerate) fixed hedge point.
+        write_config(
+            &tmp.path().join("cfg"),
+            "[search]\nhedge_floor_ms = 500\nhedge_ceiling_ms = 500\n",
+        );
+        assert!(Config::load_with(&env).is_ok());
     }
 
     #[test]

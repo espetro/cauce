@@ -56,3 +56,75 @@ global store, and is never shared with or copied into another project.
 - #90: decided strict 400 naming unknown ids (reversed the earlier won't-fix recommendation after UX research — SearXNG silently widens on fully-unknown pins, industry norm is fail-loud-with-names). Issue commented with acceptance.
 - SearXNG UX-complaint research (`/tmp/oxe-searxng-ux-research.md`) applied to the v3 plans: W3-02 cache hygiene, W2-01 engines_skipped/failed rendering, W2-03 outcome label, W3-06 page-2 canary checks, new W3-07 degraded breaker (#119), empty→NoResults bug (#120); compat shim + param forwarding deferred to later/ (#121, #122).
 - Rename decided: project oxe → cauce, CLI `cauce`; rename step #123 scheduled in It 3 before W2 Batch I dispatch.
+
+## 2026-09-23 — W3-01 hedge landed (PR #148)
+
+- Hedge design settled: tier-1 + tier-3 are the t=0 wave; tier-2 is deferred and
+  breaker-gated only at fire time (gating at t=0 would leak `probe_in_flight` claims
+  for probes that never run). All-primary-empty promotes the deferred set to t=0
+  instead of `BreakerOpen`.
+- `gate_waves` returns the hedge point as `clamp(p90 pooled over runnable tier-1
+  rolling windows, hedge_floor_ms, hedge_ceiling_ms)`; empty history → P90=0 →
+  floor (300 ms). Both `fetch` and `fetch_stream` share `drive_fan_out`: fold each
+  outcome inline as it joins, incremental `RrfMerge`, fire when merged <
+  `min_results`, early-fire (`reason=few`) once all primaries answered short,
+  cancel permanently once merged ≥ min_results.
+- Bonus from the inline fold: `record_ttfr` on the collect path now measures the
+  real first answer instead of the join barrier.
+- `meta.hedged`/`meta.hedge_at_ms` are per-request like `engines_skipped`: set
+  only when ≥1 tier-2 actually spawns (all-skipped at fire time = no hedge), and
+  reset on cache-hit rebuilds.
+- Replay now honours `[[engines]]` `id`/`tier` (was hardcoded `replay`/T1 with a
+  warning) — needed to run a tier-2 replay beside the tier-1 one for hedge tests
+  and future hedge e2e.
+- Tooling: no mise on the box (`mise run validate` unavailable); system rustc
+  1.97.1 + rustfmt + clippy work; cargo-deny/cargo-nextest absent — CI covers
+  them. `git config` is blocked in this environment so `.githooks` can't be
+  installed; run `cargo fmt`, `cargo clippy --all-targets -D warnings`,
+  `cargo test --workspace` manually.
+- Project board: token still lacks Projects write; WIP note went on the issue
+  as a comment instead (#44).
+
+## 2026-09-23 — W3-01 review fixes (PR #148, 9d4f0b5)
+
+- Devin Review on the hedge PR found 4 real bugs; all fixed + threads resolved,
+  flags got assessment replies (kept raw-sample P90 — the settled "EWMA history"
+  means the rolling window, not re-percentiled averages; no `promoted` reason —
+  `hedged:false` + `engines_used` already distinguishes it).
+- Admission permits now match what actually spawns: callers acquire only the
+  t=0 (non-T2) wave; promoted tier-2 acquires inside `fetch`/`fetch_stream`
+  (`promoted_permits`, `min(remaining, max_wait)`); a triggered hedge acquires
+  inside `drive_fan_out` via a spawned `acquire_within` task raced against
+  outcomes. `RateLimited` from fetch falls back to `overflow` like an
+  exhausted primary queue.
+- Hedge clock moved to `fan_started` (drive_fan_out entry): pre-fan-out work
+  (lexical, permit wait) no longer eats the floor; `hedge_at_ms` measures
+  from fan-out too. `ctx.started` still anchors the hard deadline.
+- Late hedges are cancelled: wake capped at `min(fan_started+at, hard_deadline)`,
+  and `queue_hedge` returns early on zero remaining budget BEFORE `breaker_gate`
+  (a claimed probe must always precede a spawn).
+- P90 pools `waves.gated`, not `runnable` — a skipped engine's history can't
+  delay the hedge.
+- Gotcha worth remembering: `tokio::select!` evaluates EVERY branch's async
+  expression even for `if`-disabled branches — `.as_mut().unwrap()` in a
+  select expr panics on `None`; use a match that returns `pending()`.
+- Test support: `DialEngine` (dialable latency so history ≠ current behaviour)
+  and `StubStore.lexical_delay_ms` added in tests/support/mod.rs.
+
+## 2026-09-24 — W3-01 review round 2 (PR #148, e85f6a3)
+
+- Second Devin Review round found the deferred gate-before-wait leaked
+  `probe_in_flight`: `admission` claims the HalfOpen probe at gate time and only
+  a spawned task releases it (`probe_guard`/`record_*`), so a timed-out or
+  aborted permit wait left the engine permanently unprobeable.
+- Fix direction (the reviewer's alternative): acquire BEFORE gating.
+  `gate_waves` now gates only the t=0 wave; `promote_deferred` acquires then
+  gates (RateLimited never claims); `queue_hedge` only spawns the acquire and
+  `finish_hedge` gates at fire time after a `remaining.is_zero()` recheck
+  (also fixes expired hedges spawning zero-budget calls).
+- Regression-test trick: `pipe.health().record_err(id, .., EngineError::Blocked,
+  request_id)` opens a breaker directly — the only way to have Open + all
+  permits held, since every permit-holding call also gates (a held permit can
+  never coexist with an Open breaker through engine calls alone).
+- Singleflight gotcha: pinned occupier searches with the SAME query dedupe
+  into followers — only one holds the permit. Distinct queries per holder.
