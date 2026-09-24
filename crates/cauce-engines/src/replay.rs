@@ -36,6 +36,13 @@ use crate::cassette::{Cassette, cassette_key};
 /// subdirectory of `fixtures_root`.
 #[derive(Debug, Clone)]
 pub struct ReplayOpts {
+    /// Engine id reported to the pipeline (`"replay"` unless an
+    /// `[[engines]]` entry overrides it — W3-01 lets several replay
+    /// instances run at once in different tiers).
+    pub id: EngineId,
+    /// Tier the engine reports (default `T1`; a `[[engines]]` entry can
+    /// pin it to `T2` so it only runs via the W3-01 hedge).
+    pub tier: Tier,
     /// Root of the cassette tree (`engines/fixtures` in the repo).
     pub fixtures_root: PathBuf,
     /// Restrict cassette lookup to this engine's directory.
@@ -55,6 +62,8 @@ pub struct ReplayOpts {
 impl Default for ReplayOpts {
     fn default() -> Self {
         Self {
+            id: EngineId::from("replay"),
+            tier: Tier::T1,
             fixtures_root: PathBuf::from("engines/fixtures"),
             cassette_engine: None,
             latency_ms: 0,
@@ -66,8 +75,9 @@ impl Default for ReplayOpts {
     }
 }
 
-/// Deterministic replay/synthetic engine. `id = "replay"`, tier 1,
-/// `page_size = 10`. Call counting for `fail_every` is per instance and
+/// Deterministic replay/synthetic engine. Defaults to `id = "replay"`,
+/// tier 1, `page_size = 10`; an `[[engines]]` entry can override id and
+/// tier (W3-01). Call counting for `fail_every` is per instance and
 /// thread-safe (`AtomicU64`).
 pub struct Replay {
     opts: ReplayOpts,
@@ -160,11 +170,11 @@ fn env_truthy(v: &str) -> bool {
 #[async_trait]
 impl Engine for Replay {
     fn id(&self) -> EngineId {
-        EngineId::from("replay")
+        self.opts.id.clone()
     }
 
     fn tier(&self) -> Tier {
-        Tier::T1
+        self.opts.tier
     }
 
     fn page_size(&self) -> u8 {

@@ -39,7 +39,8 @@ pub use health::{
 pub use metrics::{EngineMetricStats, EnginePhase, Metrics};
 pub use normalize::normalize_url;
 pub use pipeline::{
-    DEFAULT_DEADLINE, DEFAULT_TTL, DEFAULT_TTL_CAP, PipelineError, SearchOpts, SearchPipeline,
+    DEFAULT_DEADLINE, DEFAULT_TTL, DEFAULT_TTL_CAP, HedgePolicy, PipelineError, SearchOpts,
+    SearchPipeline,
 };
 pub use request::{ClientKind, SafeSearch, SearchRequest, TimeRange};
 pub use response::{

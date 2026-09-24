@@ -73,6 +73,8 @@ pub fn response(q: &str, results: &[(&str, &str, &str)]) -> SearchResponse {
             }],
             engines_skipped: Vec::new(),
             deadline_hit: false,
+            hedged: false,
+            hedge_at_ms: None,
             elapsed_ms: 12,
             request_id: Uuid::now_v7(),
         },

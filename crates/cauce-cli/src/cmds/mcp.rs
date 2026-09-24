@@ -15,7 +15,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use cauce_core::config::{Config, Resources};
-use cauce_core::{Admission, AdmissionLimits, SearchPipeline};
+use cauce_core::{Admission, AdmissionLimits, HedgePolicy, SearchPipeline};
 use cauce_engines::factory::build_engines;
 use cauce_server::{AppState, observability};
 use cauce_store_sqlite::{SqliteStore, spawn_eviction_task};
@@ -105,7 +105,12 @@ async fn mcp_async(cfg: Config) -> i32 {
             .with_admission(Admission::new(AdmissionLimits {
                 max_wait: Duration::from_millis(cfg.admission.max_wait_ms),
                 max_concurrent_per_engine: cfg.admission.max_concurrent_per_engine.max(1) as usize,
-            })),
+            }))
+            .with_hedge(HedgePolicy {
+                floor: Duration::from_millis(cfg.search.hedge_floor_ms),
+                ceiling: Duration::from_millis(cfg.search.hedge_ceiling_ms),
+                min_results: cfg.search.min_results as usize,
+            }),
     );
     // Restore persisted breakers, same as `cauce serve`: a stdio process
     // must respect a breaker `serve` opened (parallel agents share the

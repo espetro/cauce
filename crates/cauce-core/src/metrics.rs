@@ -188,6 +188,8 @@ struct RegistryInner {
     admission_wait: Hist,
     /// `cauce_admission_rejected_total{reason}`.
     admission_rejected_series: BTreeMap<Labels, u64>,
+    /// `cauce_hedge_total{reason}`.
+    hedge: BTreeMap<Labels, u64>,
 }
 
 impl Default for RegistryInner {
@@ -209,6 +211,7 @@ impl Default for RegistryInner {
             breaker_state: BTreeMap::new(),
             admission_wait: Hist::new(MS_BUCKETS),
             admission_rejected_series: BTreeMap::new(),
+            hedge: BTreeMap::new(),
         }
     }
 }
@@ -545,6 +548,12 @@ pub fn render_prometheus() -> String {
         "Requests rejected by admission control",
         &reg.admission_rejected_series,
     );
+    render_counter(
+        &mut out,
+        "cauce_hedge_total",
+        "Tier-2 hedge fires",
+        &reg.hedge,
+    );
     let _ = writeln!(
         out,
         "# HELP cauce_deadline_hit_total Searches cut by the hard deadline"
@@ -709,5 +718,16 @@ impl Metrics {
     /// cache row (the W1-07 overflow path).
     pub fn record_stale_served(&self) {
         registry().stale_served += 1;
+    }
+
+    /// `cauce_hedge_total{reason}` — one per W3-01 hedge fire. `reason` is
+    /// `"slow"` while a tier-1 call is still in flight at the hedge point,
+    /// `"few"` once every tier-1 answered but the merged page stayed under
+    /// `search.min_results`.
+    pub fn record_hedge(&self, reason: &'static str) {
+        let mut reg = registry();
+        *reg.hedge
+            .entry(labels(&[("reason", reason.to_string())]))
+            .or_insert(0) += 1;
     }
 }
