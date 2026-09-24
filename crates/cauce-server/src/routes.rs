@@ -116,6 +116,9 @@ pub const ROUTES: &[RouteSpec] = &[
     json("POST", "/api/engines/{id}/enable", 2),
     json("POST", "/api/engines/{id}/disable", 2),
     json("DELETE", "/api/history/{id}", 2),
+    // The suggestions Url the W2-11 descriptor advertises; a wave-2
+    // omission like the favicon (#150).
+    json("GET", "/api/suggest", 2),
     html("/history", 2),
     html("/dashboard", 2),
     html("/cache", 2),

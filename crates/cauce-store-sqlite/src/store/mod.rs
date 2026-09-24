@@ -65,6 +65,22 @@ fn sql_err(e: rusqlite::Error) -> StoreError {
     rows::as_store(e)
 }
 
+/// Escape a `LIKE ... ESCAPE '\'` prefix pattern: `s` must match from
+/// position 0, with one trailing wildcard. Same metacharacter escaping
+/// as [`like_pattern`]; SQLite `LIKE` gives the ASCII case-insensitive
+/// match `suggest` wants.
+fn like_prefix(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() + 1);
+    for c in s.chars() {
+        if matches!(c, '%' | '_' | '\\') {
+            out.push('\\');
+        }
+        out.push(c);
+    }
+    out.push('%');
+    out
+}
+
 /// Escape a free-text filter for `LIKE ... ESCAPE '\'` substring matching.
 fn like_pattern(s: &str) -> String {
     let mut out = String::with_capacity(s.len() + 2);
@@ -263,6 +279,10 @@ impl Store for SqliteStore {
 
     async fn history_stats(&self, filter: &HistoryFilter) -> Result<HistoryStats, StoreError> {
         self.history_stats(filter).await
+    }
+
+    async fn suggest(&self, prefix: &str, limit: u32) -> Result<Vec<String>, StoreError> {
+        self.suggest(prefix, limit).await
     }
 
     async fn delete_search_log(&self, id: i64) -> Result<Option<DeleteSearchLog>, StoreError> {
