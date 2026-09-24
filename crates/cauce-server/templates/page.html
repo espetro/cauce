@@ -147,7 +147,7 @@
         (meta.engines_skipped || []).forEach(function (engine) {
           statuses.push(fmt(S.engine_skipped, { engine: engine }));
         });
-        var base = meta.source === "network" ? fmt(S.live_badge, { ms: meta.elapsed_ms }) : S.cached;
+        var base = meta.source === "network" ? fmt(S.live_badge, { ms: meta.elapsed_ms }) : (meta.source.cache && meta.source.cache.stale ? S.stale_badge : S.cached);
         metaLine.textContent = statuses.length ? base + " · " + statuses.join(" · ") : base;
         requestId.title = meta.request_id;
         requestId.textContent = meta.request_id.slice(0, 8);

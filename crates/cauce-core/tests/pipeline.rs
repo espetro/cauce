@@ -312,11 +312,12 @@ async fn all_engines_failed_returns_errors_logs_and_skips_cache() {
     assert_eq!(logs[0].engines.len(), 2);
 }
 
-/// Zero results with a healthy engine is a valid, cacheable response, but
-/// the engine report is honest: an `Ok` empty page normalizes to
+/// Zero results with a healthy engine is a valid response but is never
+/// cached (W3-02 rule a: an all-`[]` fan-out must not poison the cache),
+/// and the engine report is honest: an `Ok` empty page normalizes to
 /// `Failed(NoResults)` so a wedged engine does not read as `Ok` (#120).
 #[tokio::test]
-async fn empty_results_are_valid_and_cached() {
+async fn empty_results_are_valid_but_not_cached() {
     let dir = tempfile::tempdir().unwrap();
     let engine = replay_at(dir.path(), |o| o.empty = true);
     let store = Arc::new(StubStore::default());
@@ -330,7 +331,10 @@ async fn empty_results_are_valid_and_cached() {
         EngineStatus::Failed(EngineError::NoResults),
         "Ok(vec![]) normalizes to Failed(NoResults)"
     );
-    assert_eq!(store.puts.lock().unwrap().len(), 1, "cached normally");
+    assert!(
+        store.puts.lock().unwrap().is_empty(),
+        "an empty response is never cached"
+    );
     assert_eq!(store.logs.lock().unwrap()[0].result_count, 0);
 }
 
@@ -429,8 +433,9 @@ async fn request_id_ttl_override_and_engine_pin() {
 }
 
 /// `NoResults` is an answer, not a failure: an all-`NoResults` fan-out
-/// (replay `page_limit` exceeded) is a 200-shaped empty response that is
-/// persisted and logged like any network result, not `AllEnginesFailed`.
+/// (replay `page_limit` exceeded) is a 200-shaped empty response, logged
+/// like any network result, not `AllEnginesFailed` — and never `put`
+/// (W3-02 rule a).
 #[tokio::test]
 async fn all_no_results_is_empty_ok_response() {
     let dir = tempfile::tempdir().unwrap();
@@ -451,7 +456,10 @@ async fn all_no_results_is_empty_ok_response() {
             .all(|r| r.status == EngineStatus::Failed(EngineError::NoResults))
     );
 
-    assert_eq!(store.puts.lock().unwrap().len(), 1, "empty 200 is cached");
+    assert!(
+        store.puts.lock().unwrap().is_empty(),
+        "an empty response is never cached"
+    );
     let logs = store.logs.lock().unwrap();
     assert_eq!(logs.len(), 1);
     assert_eq!(logs[0].source, LogSource::Network);
