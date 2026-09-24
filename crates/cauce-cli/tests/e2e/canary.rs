@@ -211,6 +211,27 @@ async fn live_canary_fails_without_a_baseline_fixture() {
     );
 }
 
+/// A malformed `.expected.json` is a per-spec `FAIL`, not a run abort:
+/// the canary reports it and still exits non-zero without dying early.
+#[tokio::test]
+async fn live_canary_fails_on_corrupt_baseline_fixture() {
+    let tmp = tempfile::tempdir().unwrap();
+    let spec_path = tmp.path().join("spec.yaml");
+    std::fs::write(&spec_path, spec_yaml("http://127.0.0.1:1")).unwrap();
+    let dir = tmp.path().join("fixtures").join(SPEC_ID);
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("broken-00000000.html"), "<html></html>").unwrap();
+    std::fs::write(dir.join("broken-00000000.expected.json"), "{ not json").unwrap();
+
+    let output = run_canary(&spec_path, tmp.path().join("fixtures").as_path()).await;
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(!output.status.success());
+    assert!(
+        stdout.contains("cannot read baseline fixture"),
+        "stdout:\n{stdout}"
+    );
+}
+
 /// W3-06: the nightly canary workflow exists and triggers on `cron`
 /// only — it can never gate merges, and the failed run is the report.
 #[test]

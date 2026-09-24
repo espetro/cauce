@@ -22,7 +22,8 @@ use cauce_engines::declarative::canary::{self, CanaryReport};
 use cauce_engines::declarative::fixtures::{
     FixtureError, FixtureReport, compile_spec_source, fixture_pairs, run_pair, write_pair,
 };
-use cauce_engines::declarative::{CompiledSpec, DeclarativeEngine, load_specs};
+use cauce_engines::declarative::loading::{SpecSource, load_specs_report};
+use cauce_engines::declarative::{CompiledSpec, DeclarativeEngine};
 
 const USAGE: &str = "usage: cauce engine test [<spec.yaml>] [--live [\"<query>\"]] [--record] \
                      [--fixtures-dir <engines/fixtures>]\n  bare `--live` runs the drift canary \
@@ -171,43 +172,72 @@ fn live_engine(spec: CompiledSpec) -> Result<(DeclarativeEngine, tokio::runtime:
     Ok((DeclarativeEngine::new(spec, http), rt))
 }
 
-/// Bare `--live` (W3-06): the drift canary. `specs` is `None` when no
+/// Bare `--live` (W3-06): the drift canary. `spec` is `None` when no
 /// `<spec.yaml>` positional was given — then every embedded spec plus any
-/// `$config_dir/engines/` override is canaried. Each spec re-fetches its
-/// baseline fixture's recorded query on page 1 (and page 2 when the spec
-/// paginates); a failed check prints `FAIL <id>: <reason>` and the run
-/// exits 1 — the failed nightly run itself is the report.
+/// `$config_dir/engines/` override is canaried via [`load_specs_report`],
+/// the strict loader: a spec that cannot even compile is itself drift and
+/// reports as a failure rather than `load_specs`' silent skip. Each spec
+/// re-fetches its baseline fixture's recorded query on page 1 (and page 2
+/// when the spec paginates); every per-spec problem — load error,
+/// unreadable/missing fixture, engine setup — prints `FAIL <id>` and the
+/// loop continues, so one bad spec can never hide the others' results.
+/// The run exits 1 when anything failed — the failed nightly run itself
+/// is the report.
 fn run_canary(
     spec: Option<CompiledSpec>,
     opts: &EngineArgs,
     config_dir: &Path,
     env: &cauce_core::config::EnvMap,
 ) -> Result<i32, String> {
-    let specs = match spec {
-        Some(s) => vec![s],
-        None => load_specs(config_dir, env),
+    let sources = match spec {
+        Some(spec) => vec![SpecSource {
+            name: spec.id().to_string(),
+            spec: Ok(spec),
+        }],
+        None => load_specs_report(config_dir, env),
     };
-    if specs.is_empty() {
+    if sources.is_empty() {
         return Err(format!(
             "no specs to canary (none embedded, none under {})",
             config_dir.join("engines").display()
         ));
     }
-    let count = specs.len();
+    let count = sources.len();
     let mut failures = 0;
-    for spec in specs {
-        let id = spec.id().clone();
-        let Some((fixture_name, baseline)) =
-            canary::baseline(&opts.fixtures_dir, id.as_str()).map_err(|e| e.to_string())?
-        else {
-            failures += 1;
-            println!(
-                "FAIL {id}: no committed page-1 fixture under {}",
-                opts.fixtures_dir.join(id.as_str()).display()
-            );
-            continue;
+    for source in sources {
+        let spec = match source.spec {
+            Ok(spec) => spec,
+            Err(e) => {
+                failures += 1;
+                println!("FAIL {}: {e}", source.name);
+                continue;
+            }
         };
-        let (engine, rt) = live_engine(spec)?;
+        let id = spec.id().clone();
+        let (fixture_name, baseline) = match canary::baseline(&opts.fixtures_dir, id.as_str()) {
+            Ok(Some(pair)) => pair,
+            Ok(None) => {
+                failures += 1;
+                println!(
+                    "FAIL {id}: no committed page-1 fixture under {}",
+                    opts.fixtures_dir.join(id.as_str()).display()
+                );
+                continue;
+            }
+            Err(e) => {
+                failures += 1;
+                println!("FAIL {id}: cannot read baseline fixture: {e}");
+                continue;
+            }
+        };
+        let (engine, rt) = match live_engine(spec) {
+            Ok(pair) => pair,
+            Err(e) => {
+                failures += 1;
+                println!("FAIL {id}: {e}");
+                continue;
+            }
+        };
         let fetch = |req: &SearchRequest| rt.block_on(engine.fetch(req, LIVE_BUDGET));
         let report = canary::run(engine.compiled(), &baseline, &fetch);
         print_report(&id, &fixture_name, &report);
