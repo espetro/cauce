@@ -391,10 +391,23 @@ async fn cache_page_expired_row_renders_muted() {
         "expired row must not read 'expires in': {body}"
     );
 
-    // `evict_expired` semantics agree the seeded row is expired.
+    // W3-02: `evict_expired` honours the stale-serve grace — a row expired
+    // inside `cache.stale_grace_s` is still servable, so the expired
+    // delete spares it.
     let (status, body) = page_delete(&app, "/api/cache?expired=true").await;
     assert_eq!(status, StatusCode::OK, "{body}");
-    assert_eq!(body["removed"], 1, "seeded row is expired: {body}");
+    assert_eq!(
+        body["removed"], 0,
+        "in-grace expired row survives eviction: {body}"
+    );
+
+    let (status, entries) = get_json(&app, "/api/cache").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        entries.as_array().unwrap().len(),
+        1,
+        "in-grace row is still listed: {entries}"
+    );
 }
 
 /// W2-04 acceptance: delete via the page removes the row and writes an

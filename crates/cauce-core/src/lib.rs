@@ -39,7 +39,7 @@ pub use health::{
 pub use metrics::{EngineMetricStats, EnginePhase, Metrics};
 pub use normalize::normalize_url;
 pub use pipeline::{
-    DEFAULT_COLLAPSE_SAME_HOST_AFTER, DEFAULT_DEADLINE, DEFAULT_RRF_K, DEFAULT_TTL,
+    CachePolicy, DEFAULT_COLLAPSE_SAME_HOST_AFTER, DEFAULT_DEADLINE, DEFAULT_RRF_K, DEFAULT_TTL,
     DEFAULT_TTL_CAP, HedgePolicy, MergePolicy, PipelineError, RrfMerge, SearchOpts, SearchPipeline,
 };
 pub use request::{ClientKind, SafeSearch, SearchRequest, TimeRange};

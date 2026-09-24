@@ -78,7 +78,8 @@ pub async fn cache_exact_roundtrip(store: &impl Store) {
 }
 
 /// Rows past `expires_at` are invisible to `get_exact`, visible to the admin
-/// `get_cache`, and removed by `evict_expired`.
+/// `get_cache`, and removed by `evict_expired` — but only once they are
+/// `grace` past expiry (the W3-02 stale-serve window).
 pub async fn cache_expiry_and_eviction(store: &impl Store) {
     let key = CacheKey::from(&request("conformance expired row"));
     let resp = response(
@@ -109,7 +110,25 @@ pub async fn cache_expiry_and_eviction(store: &impl Store) {
         "admin get_cache must still see expired rows"
     );
 
-    let evicted = store.evict_expired().await.expect("evict_expired failed");
+    // The W3-02 stale-serve grace: a row expired inside the window is not
+    // garbage — eviction must spare it.
+    store
+        .evict_expired(Duration::from_secs(3600))
+        .await
+        .expect("evict_expired failed");
+    assert!(
+        store
+            .get_cache(&key)
+            .await
+            .expect("get_cache failed")
+            .is_some(),
+        "in-grace expired row survives eviction"
+    );
+
+    let evicted = store
+        .evict_expired(Duration::ZERO)
+        .await
+        .expect("evict_expired failed");
     assert!(evicted >= 1, "evict_expired must report the removed row");
 
     assert!(
