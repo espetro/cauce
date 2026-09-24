@@ -128,3 +128,28 @@ global store, and is never shared with or copied into another project.
   never coexist with an Open breaker through engine calls alone).
 - Singleflight gotcha: pinned occupier searches with the SAME query dedupe
   into followers — only one holds the permit. Distinct queries per holder.
+
+## 2026-09-24 — W3-08 pipeline/test-surface decomposition
+
+- `pipeline.rs` (2466 LOC) → `pipeline/` module dir, same `impl
+  SearchPipeline` blocks split across files. Splitting an `impl` across a
+  module dir works because child modules see the parent's private fields —
+  the only visibility changes needed are `pub(super)` on items shared
+  between siblings (types `Gated`/`Waves`/`FanOut`/`FetchCtx`/`StreamCtx`
+  and every method a sibling calls).
+- Map: `mod.rs` public API + admission/singleflight/leader-follower;
+  `cache.rs` tier-1/2 lookups + stale overflow + background refresh
+  (W3-02's surface); `waves.rs` breaker gate + primary/deferred split;
+  `fanout.rs` spawn/hedge/deadline; `merge.rs` `RrfMerge` (W3-03's
+  surface); `persistence.rs` response shaping/`put`/`search_log`.
+- tests/support/mod.rs → `engines.rs` (Gate/Dial), `store.rs` (StubStore),
+  `requests.rs` (req/replay_at); `pub use` re-exports mean zero call-site
+  churn — needs `#[allow(unused_imports)]` since each test binary compiles
+  support separately and uses a different subset.
+- `scripts/loc-report.sh` + `mise run loc` + a `loc report` CI step:
+  non-gating totals/largest-files/largest-functions report (thresholds
+  >1000 review / >1500 decompose / fn>150 extract). First run already flags
+  config.rs at ~1.9k LOC as the next candidate.
+- Test-shape adoption: the 13 `interpolation_*` config tests became one
+  `InterpCase` table; `merge.rs` gained a shift-left proptest pinning RRF
+  completion-order independence (W3-03's property at the new boundary).
