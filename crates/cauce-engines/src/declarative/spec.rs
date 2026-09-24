@@ -155,7 +155,8 @@ pub struct RequestSpec {
     pub timeout_ms: Option<u64>,
     /// Optional `lang -> market` map feeding the `{market}` token
     /// (`mkt={market}` on Bing). Keys are request-lang values (`en`,
-    /// `en-GB`); the reserved `default` key is the fallback. Resolution
+    /// `en-GB`), matched case-insensitively (stored lowercase at
+    /// compile); the reserved `default` key is the fallback. Resolution
     /// order: exact lang, then `-x` subtags stripped (`en-GB` -> `en`),
     /// then a key the lang is a prefix of (`pt` -> `pt-BR`), then
     /// `default`, else the first map entry. A template using `{market}`
@@ -311,7 +312,7 @@ impl CompiledSpec {
     }
 
     /// Validate and compile an already-parsed spec.
-    pub fn compile(spec: EngineSpec, env: &EnvMap) -> Result<Self, SpecError> {
+    pub fn compile(mut spec: EngineSpec, env: &EnvMap) -> Result<Self, SpecError> {
         let invalid = |msg: String| SpecError::Invalid {
             id: spec.id.to_string(),
             msg,
@@ -329,8 +330,16 @@ impl CompiledSpec {
             return Err(invalid("page_size must be >= 1".to_string()));
         }
 
-        if spec.request.market.as_ref().is_some_and(BTreeMap::is_empty) {
-            return Err(invalid("request.market has no entries".to_string()));
+        if let Some(market) = &mut spec.request.market {
+            if market.is_empty() {
+                return Err(invalid("request.market has no entries".to_string()));
+            }
+            // Lang tags are case-insensitive (BCP-47); keys are stored
+            // lowercase so lookups never depend on request spelling.
+            *market = market
+                .iter()
+                .map(|(k, v)| (k.to_lowercase(), v.clone()))
+                .collect();
         }
         let probe_market = spec
             .request
@@ -668,12 +677,16 @@ fn resolve_token(token: &str, vars: &TemplateVars<'_>) -> Result<String, EngineE
     }
 }
 
-/// `{market}` resolution through a `request.market` map: exact lang,
-/// then `-x` subtags stripped one at a time (`en-GB` -> `en`), then the
-/// first key (sorted order) the lang is a prefix of (`pt` -> `pt-BR`),
-/// then the reserved `default` key, else the first map entry. `None`
-/// only for an empty map (rejected at compile time).
+/// `{market}` resolution through a `request.market` map (keys are
+/// lowercased at compile; `lang` is lowered here so matching is
+/// case-insensitive): exact lang, then `-x` subtags stripped one at a
+/// time (`en-GB` -> `en`), then the first key (sorted order) the lang
+/// is a prefix of (`pt` -> `pt-BR`), then the reserved `default` key,
+/// else the first map entry. `None` only for an empty map (rejected at
+/// compile time).
 fn resolve_market<'a>(market: &'a BTreeMap<String, String>, lang: &str) -> Option<&'a str> {
+    let lang = lang.to_lowercase();
+    let lang = lang.as_str();
     let mut l = lang;
     loop {
         if let Some(m) = market.get(l) {

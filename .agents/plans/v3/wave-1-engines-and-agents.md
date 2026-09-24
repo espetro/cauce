@@ -88,7 +88,8 @@ stdio, tier-2 lexical cache, a metrics endpoint, and the cutover of the owner's 
 - Amended 2026-09-24 (issue #110): the schema gains an optional `request.market` map
   (`lang -> market` codes) feeding a new `{market}` template token — e.g.
   `mkt={market}` on `bing.yaml`, replacing the pinned `mkt=en-US` that sent `lang=fr`
-  queries to the en-US market. Resolution is deterministic: exact lang, then `-x`
+  queries to the en-US market. Resolution is deterministic: exact lang
+  (case-insensitive, per BCP-47), then `-x`
   subtags stripped (`en-GB` -> `en`), then a key the lang is a prefix of (`pt` ->
   `pt-BR`), then the reserved `default` key, else the first map entry; a spec using
   `{market}` without `market:` fails compilation. A template filter was considered and

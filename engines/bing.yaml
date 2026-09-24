@@ -43,6 +43,10 @@ request:
     ja: ja-JP
     ko: ko-KR
     zh: zh-CN
+    # Script-qualified Traditional tags must reach a Traditional market
+    # before the generic `zh` key (mainland) does.
+    zh-Hant: zh-TW
+    zh-Hant-HK: zh-HK
     zh-TW: zh-TW
     zh-HK: zh-HK
     default: en-US

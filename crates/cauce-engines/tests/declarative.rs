@@ -191,6 +191,10 @@ request:
     en-GB: en-GB
     fr: fr-FR
     pt-BR: pt-BR
+    zh: zh-CN
+    zh-Hant: zh-TW
+    zh-Hant-HK: zh-HK
+    zh-TW: zh-TW
     default: en-US
 parse:
   kind: html
@@ -214,13 +218,19 @@ fn mkt_for(spec: &CompiledSpec, lang: Option<&str>) -> String {
 fn market_token_resolves_lang_to_market_map() {
     let spec = CompiledSpec::from_yaml(MARKET_SPEC_YAML, &env()).unwrap();
     for (lang, want) in [
-        (Some("fr"), "fr-FR"),    // exact key
-        (Some("en"), "en-US"),    // exact key
-        (Some("en-GB"), "en-GB"), // exact key beats subtag strip
-        (Some("fr-CA"), "fr-FR"), // `-x` subtag stripped
-        (Some("pt"), "pt-BR"),    // lang is a prefix of a map key
-        (Some("ja"), "en-US"),    // unmapped -> `default` key
-        (None, "en-US"),          // no lang -> `en`
+        (Some("fr"), "fr-FR"),         // exact key
+        (Some("en"), "en-US"),         // exact key
+        (Some("en-GB"), "en-GB"),      // exact key beats subtag strip
+        (Some("fr-CA"), "fr-FR"),      // `-x` subtag stripped
+        (Some("pt"), "pt-BR"),         // lang is a prefix of a map key
+        (Some("zh-Hant-TW"), "zh-TW"), // script subtag keeps Traditional market
+        (Some("zh-Hant-HK"), "zh-HK"), // exact script+region key
+        (Some("zh-TW"), "zh-TW"),      // exact region-only key
+        (Some("zh"), "zh-CN"),         // generic `zh` -> mainland
+        (Some("FR-ca"), "fr-FR"),      // BCP-47 tags are case-insensitive
+        (Some("ZH-TW"), "zh-TW"),      // ...on exact and stripped matches
+        (Some("ja"), "en-US"),         // unmapped -> `default` key
+        (None, "en-US"),               // no lang -> `en`
     ] {
         assert_eq!(mkt_for(&spec, lang), want, "lang {lang:?}");
     }
@@ -242,8 +252,10 @@ fn market_fallback_without_default_key_is_deterministic() {
 
 #[test]
 fn market_token_without_map_fails_compile() {
-    let yaml = MARKET_SPEC_YAML
-        .replace("  market:\n    en: en-US\n    en-GB: en-GB\n    fr: fr-FR\n    pt-BR: pt-BR\n    default: en-US\n", "");
+    let yaml = MARKET_SPEC_YAML.replace(
+        "  market:\n    en: en-US\n    en-GB: en-GB\n    fr: fr-FR\n    pt-BR: pt-BR\n    zh: zh-CN\n    zh-Hant: zh-TW\n    zh-Hant-HK: zh-HK\n    zh-TW: zh-TW\n    default: en-US\n",
+        "",
+    );
     let err = CompiledSpec::from_yaml(&yaml, &env()).unwrap_err();
     match err {
         SpecError::Invalid { msg, .. } => assert!(msg.contains("{market}"), "{msg}"),
