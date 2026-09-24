@@ -249,6 +249,7 @@ fn handler_for(spec: &RouteSpec, state: &AppState) -> Option<MethodRouter<AppSta
         ("GET", "/dashboard", RouteKind::Html) => Some(get(dashboard::dashboard)),
         ("GET", "/api/search", RouteKind::Json) => Some(get(handlers::search)),
         ("GET", "/api/search/stream", RouteKind::Sse) => Some(get(handlers::search_stream)),
+        ("GET", "/api/suggest", RouteKind::Json) => Some(get(handlers::suggest)),
         ("GET", "/api/history", RouteKind::Json) => Some(get(handlers::history)),
         ("DELETE", "/api/history/{id}", RouteKind::Json) => Some(delete(handlers::history_delete)),
         ("POST", "/api/click", RouteKind::Json) => Some(post(handlers::click)),
