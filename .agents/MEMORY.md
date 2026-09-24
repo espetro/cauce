@@ -153,3 +153,27 @@ global store, and is never shared with or copied into another project.
 - Test-shape adoption: the 13 `interpolation_*` config tests became one
   `InterpCase` table; `merge.rs` gained a shift-left proptest pinning RRF
   completion-order independence (W3-03's property at the new boundary).
+
+## 2026-09-24 — W3-08 follow-through: repo-wide hygiene batch (PRs #162–#169)
+
+- Same privacy-boundary split applied repo-wide, all zero-behaviour PRs:
+  `handlers.rs` → `handlers/` (#162), `html.rs` → `html/` by page domain (#163),
+  Exa wire adapter + error mappers out of `mcp.rs` (#164),
+  sqlite `store.rs` → `store/` with thin delegating `impl Store` (#165),
+  `config.rs` (1.9k) → `config/` (mod facade + tree/redact/interpolate/resources +
+  `tests_support`) (#166), `conformance.rs` → `conformance/` with `seed_*`/`verify_*`
+  helpers, no fn >150 (#167).
+- `cauce-server/tests/support/` now exists like core's — shared `state`/`http`/`env`
+  harness; each test binary still compiles support separately so `pub use` re-exports
+  need `#[allow(unused_imports)]`. `tests/routes.rs` split into routes_table/sse/
+  host_guard/config_api. `FieldCase` table in settings; `search_stream_*`/`history_page`
+  clusters stayed named (divergent setups — don't force-fit tables).
+- Proptest findings worth remembering: SQLite truncates bound text at embedded `\0`
+  in `LIKE`/`MATCH` args — no escaping can carry a NUL through; tests exclude `\0`
+  rather than "fix" it. The SSRF http(s)-only pin lives in `parse.rs::resolve_url`,
+  not in `redirect.rs` — redirect unwrap only declines on host/path miss.
+- Parallel-dispatch gotcha: org SWE-2 cap is 7 concurrent sessions (the parent
+  counts); terminate settled children to release slots before spawning more.
+- Case-table pattern that worked: `CfgCase`/`InterpCase`-style
+  `{env, file, want}` rows in config tests; `FieldCase {name, form_body, want_status,
+  want_error_substr}` for per-field form errors.
