@@ -182,6 +182,7 @@ pub(crate) fn unwrap_redirect(url: &Url, rules: &[CompiledRedirect]) -> Url {
 #[cfg(test)]
 mod tests {
     use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+    use proptest::prelude::*;
 
     use super::*;
 
@@ -257,5 +258,143 @@ mod tests {
             .compile()
             .is_err()
         );
+    }
+
+    /// Malformed `%` sequences are passed through literally; the only
+    /// `None` case is decoded bytes that are not UTF-8 (a decoded payload
+    /// that is not UTF-8 cannot be a URL).
+    #[test]
+    fn percent_decode_malformed_is_literal_non_utf8_is_none() {
+        assert_eq!(percent_decode("%zz").as_deref(), Some("%zz"));
+        assert_eq!(percent_decode("a%").as_deref(), Some("a%"));
+        assert_eq!(percent_decode("%1").as_deref(), Some("%1"));
+        assert_eq!(percent_decode("%C3%A9").as_deref(), Some("é"));
+        assert_eq!(percent_decode("%FF"), None);
+        assert_eq!(percent_decode("%80"), None);
+    }
+
+    /// Strings biased toward `%` sequences: literal `%`, truncated
+    /// escapes, invalid hex, and valid hex for arbitrary bytes.
+    fn arb_pct_str() -> impl Strategy<Value = String> {
+        prop::collection::vec(
+            prop_oneof![
+                "[^%]{0,8}",
+                Just("%".to_string()),
+                "%[0-9A-Za-z]{1,2}",
+                "%[0-9a-fA-F]{2}",
+                "%..",
+            ],
+            0..12,
+        )
+        .prop_map(|v| v.concat())
+    }
+
+    fn arb_url() -> impl Strategy<Value = Url> {
+        (
+            prop::sample::select(vec!["http", "https"]),
+            "[a-z][a-z0-9]{0,9}(\\.[a-z][a-z0-9]{0,7}){0,2}",
+            prop::collection::vec("[a-z0-9_-]{1,8}", 0..4),
+            prop::collection::vec(("[a-z]{1,4}", "[a-zA-Z0-9%]{0,16}"), 0..4),
+        )
+            .prop_map(|(scheme, host, segs, pairs)| {
+                let mut s = format!("{scheme}://{host}");
+                for seg in segs {
+                    s.push('/');
+                    s.push_str(&seg);
+                }
+                if !pairs.is_empty() {
+                    s.push('?');
+                    s.push_str(
+                        &pairs
+                            .iter()
+                            .map(|(k, v)| format!("{k}={v}"))
+                            .collect::<Vec<_>>()
+                            .join("&"),
+                    );
+                }
+                s
+            })
+            .prop_filter_map("generated url parses", |s| Url::parse(&s).ok())
+    }
+
+    fn arb_rule() -> impl Strategy<Value = CompiledRedirect> {
+        prop_oneof![
+            (
+                "[a-z][a-z0-9.-]{0,14}",
+                "[a-z]{1,4}",
+                prop::option::of("[a-z0-9]{0,4}"),
+                any::<bool>(),
+            )
+                .prop_map(|(match_, param, strip, base64)| RedirectRule {
+                    match_,
+                    param: Some(param),
+                    strip,
+                    base64,
+                    between: None,
+                }),
+            (
+                "[a-z][a-z0-9.-]{0,14}(/[a-z0-9]{1,6})?",
+                "[/=A-Za-z_]{1,6}",
+                "[/=A-Za-z_]{1,4}",
+            )
+                .prop_map(|(match_, start, end)| RedirectRule {
+                    match_,
+                    param: None,
+                    strip: None,
+                    base64: false,
+                    between: Some(BetweenMarkers { start, end }),
+                }),
+        ]
+        .prop_filter_map("rule must compile", |r| r.compile().ok())
+    }
+
+    proptest! {
+        /// Arbitrary byte strings never panic the decoder.
+        #[test]
+        fn percent_decode_never_panics(s in arb_pct_str()) {
+            let _ = percent_decode(&s);
+        }
+
+        /// A string without `%` decodes to itself.
+        #[test]
+        fn percent_decode_identity_without_percent(s in "[^%]{0,32}") {
+            prop_assert_eq!(percent_decode(&s), Some(s.clone()));
+        }
+
+        /// Round-trip: percent-encoding arbitrary bytes and decoding
+        /// yields the bytes back iff they are UTF-8.
+        #[test]
+        fn percent_decode_roundtrips_valid_encodings(
+            bytes in prop::collection::vec(any::<u8>(), 0..64),
+        ) {
+            let encoded = percent_encoding::percent_encode(
+                &bytes,
+                percent_encoding::NON_ALPHANUMERIC,
+            )
+            .to_string();
+            prop_assert_eq!(percent_decode(&encoded), String::from_utf8(bytes).ok());
+        }
+
+        /// Arbitrary urls and rules never panic the unwrap.
+        #[test]
+        fn unwrap_redirect_never_panics(
+            url in arb_url(),
+            rules in prop::collection::vec(arb_rule(), 0..4),
+        ) {
+            let _ = unwrap_redirect(&url, &rules);
+        }
+
+        /// When no rule matches host+path the input url is returned
+        /// unchanged (the fn declines rather than rewriting).
+        #[test]
+        fn unwrap_redirect_declines_on_match_miss(
+            url in arb_url(),
+            rules in prop::collection::vec(arb_rule(), 0..4),
+        ) {
+            let out = unwrap_redirect(&url, &rules);
+            if !rules.iter().any(|r| r.matches(&url)) {
+                prop_assert_eq!(out, url);
+            }
+        }
     }
 }
