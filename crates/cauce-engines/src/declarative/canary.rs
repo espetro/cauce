@@ -13,11 +13,14 @@
 //! * page-2 normalized-url overlap with page 1 above `MAX_URL_OVERLAP`
 //!   (the engine silently serving page 1 again, SearXNG #3402/#4546).
 //!
-//! Page 2 is only fetched when the spec's `request.url` renders
-//! differently for `page=2` — specs without a page placeholder
-//! (OpenSearch-style) have no page-2 canary. A page-2 fetch/parse failure
-//! is a note, not a failure: upstreams legitimately rate-limit or end
-//! pagination, and the plan's failure list covers overlap only.
+//! Page 2 is only fetched when the spec's rendered request — url or
+//! headers — differs for `page=2`: a spec without a page placeholder
+//! anywhere (OpenSearch-style) has no page-2 canary, while a header-held
+//! one (`X-Page: {page}`, the shape SearXNG's JSON engine allows via
+//! `{pageno}` in `headers`) still gets the overlap check. A page-2
+//! fetch/parse failure is a note, not a failure: upstreams legitimately
+//! rate-limit or end pagination, and the plan's failure list covers
+//! overlap only.
 //!
 //! `run` takes the fetch step injected so tests replay recorded bodies
 //! through the same evaluation path the nightly drives with real HTTP.
@@ -80,11 +83,15 @@ fn request_for(baseline: &ExpectedFixture, page: u8) -> SearchRequest {
     }
 }
 
-/// Whether `request.url` renders differently for page 2 — a spec without
-/// a `{page}`/`{page0}`/`{offset}` placeholder has no page-2 canary.
+/// Whether the rendered request differs for page 2 — a spec without a
+/// `{page}`/`{page0}`/`{offset}` placeholder in the url *or* the headers
+/// has no page-2 canary. Header templates take the same `vars` as the
+/// url, so `{page}` can live there.
 pub fn paginates(spec: &CompiledSpec, baseline: &ExpectedFixture) -> bool {
-    spec.render_url(&request_for(baseline, 1)).ok()
-        != spec.render_url(&request_for(baseline, 2)).ok()
+    let p1 = request_for(baseline, 1);
+    let p2 = request_for(baseline, 2);
+    spec.render_url(&p1).ok() != spec.render_url(&p2).ok()
+        || spec.render_headers(&p1).ok() != spec.render_headers(&p2).ok()
 }
 
 /// The canary's baseline fixture: the first pair (sorted by name) that
@@ -278,6 +285,22 @@ parse:
     snippet: { css: "p.s", text: true }
 "#;
 
+    /// Same url for every page; the page lives in a header.
+    const HEADERPAGE_SPEC_YAML: &str = r#"
+id: headerpage
+request:
+  url: "https://search.test.local/s?q={q}"
+  headers:
+    X-Page: "{page}"
+parse:
+  kind: html
+  results: "div.result"
+  fields:
+    title: { css: "h2.t", text: true }
+    url: { css: "a.u", attr: href }
+    snippet: { css: "p.s", text: true }
+"#;
+
     fn spec() -> CompiledSpec {
         CompiledSpec::from_yaml(SPEC_YAML, &BTreeMap::new()).unwrap()
     }
@@ -454,6 +477,32 @@ parse:
         assert_eq!(calls.load(Ordering::SeqCst), 1, "no page-2 fetch");
         assert_eq!(report.page2_count, None);
         assert!(report.ok());
+    }
+
+    /// A spec that carries `{page}` in a header rather than the url still
+    /// gets the page-2 overlap check (SearXNG's JSON engine allows
+    /// `{pageno}` in `headers` too).
+    #[test]
+    fn header_paginated_spec_still_canaries_page2() {
+        let spec = CompiledSpec::from_yaml(HEADERPAGE_SPEC_YAML, &BTreeMap::new()).unwrap();
+        let baseline = baseline_fixture(10);
+        assert!(
+            paginates(&spec, &baseline),
+            "{{page}} in a header paginates"
+        );
+        let body = html(
+            &rows(10, "f")
+                .iter()
+                .map(|(t, u, s)| (t.as_str(), u.as_str(), s.as_str()))
+                .collect::<Vec<_>>(),
+        );
+        // Same body on both pages: page 2 must be fetched for the
+        // overlap failure to fire.
+        let report = run(&spec, &baseline, &|req| {
+            Ok(fetched(&spec, &baseline, req.page, &body))
+        });
+        assert_eq!(report.page2_count, Some(10));
+        assert!(report.failures.iter().any(|f| f.contains("page-1 urls")));
     }
 
     #[test]
