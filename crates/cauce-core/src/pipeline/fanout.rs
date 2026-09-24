@@ -84,7 +84,11 @@ impl SearchPipeline {
             .promote_deferred(&mut waves, started, request_id)
             .await?;
         let mut fan = FanOut::new(runnable.len(), started);
-        let mut merge = RrfMerge::new();
+        let mut merge = RrfMerge::new(
+            self.merge.rrf_k,
+            self.merge_weights(runnable),
+            self.merge.collapse_same_host_after,
+        );
         let ctx = FetchCtx {
             req,
             key,
@@ -115,7 +119,11 @@ impl SearchPipeline {
             .promote_deferred(&mut waves, stream.started, stream.request_id)
             .await?;
         let mut fan = FanOut::new(runnable.len(), stream.started);
-        let mut merge = RrfMerge::new();
+        let mut merge = RrfMerge::new(
+            self.merge.rrf_k,
+            self.merge_weights(runnable),
+            self.merge.collapse_same_host_after,
+        );
         let ctx = FetchCtx {
             req: stream.req,
             key: stream.key,

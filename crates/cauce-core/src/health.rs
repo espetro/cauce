@@ -113,8 +113,12 @@ pub struct EngineHealth {
     /// Last `EngineError` rendered for display; kept after recovery.
     pub last_error: Option<String>,
     /// Latency samples seen; the first seeds the EWMA instead of blending
-    /// toward zero.
+    /// toward zero. Also the denominator of the observed reliability ratio
+    /// (`answered / samples`) the W3-03 merge weight reads.
     samples: u64,
+    /// Calls that produced an answer (`Ok` or `NoResults`) — the numerator
+    /// of the observed reliability ratio. Runtime-only like `samples`.
+    answered: u64,
     /// Consecutive `Timeout`s specifically — the settled rule is "3
     /// consecutive timeouts", so a `Parse` between two timeouts breaks the
     /// streak. Runtime-only: `engine_health` has no column for it, and a
@@ -146,6 +150,7 @@ impl Default for EngineHealth {
             last_ok_at: None,
             last_error: None,
             samples: 0,
+            answered: 0,
             timeout_streak: 0,
             degraded_streak: 0,
             probe_in_flight: false,
@@ -165,6 +170,11 @@ impl EngineHealth {
             last_error: row.last_error.clone(),
             // A persisted EWMA was already seeded; keep blending on top.
             samples: u64::from(row.ewma_ms > 0.0),
+            // Neutral reliability on restore: a persisted row says nothing
+            // about which calls answered, so the engine starts at weight 1.0
+            // and re-earns its ratio from this process's calls — the same
+            // convention the streaks and latency window already follow.
+            answered: u64::from(row.ewma_ms > 0.0),
             // The schema stores only the generic `failures`; a restart
             // assumes no timeout or degraded streak rather than guessing
             // one.
@@ -343,6 +353,7 @@ impl HealthTracker {
         {
             let health = inner.map.entry(id.clone()).or_default();
             health.observe(latency);
+            health.answered += 1;
             health.failures = 0;
             health.timeout_streak = 0;
             health.degraded_streak = 0;
@@ -516,6 +527,27 @@ impl HealthTracker {
     /// Whether the engine is known (configured or persisted).
     pub fn contains(&self, id: &EngineId) -> bool {
         self.lock().map.contains_key(id)
+    }
+
+    /// Observed reliability of one engine as a ratio in `[0.0, 1.0]`
+    /// (`answered / samples`; the same answered-or-not accounting SearXNG's
+    /// `reliability %` metric reports). `1.0` when the engine has no calls
+    /// recorded in this process — an unobserved engine starts at full
+    /// trust rather than being punished for missing history. The merge
+    /// scales this into the W3-03 weight range (0.5–1.0).
+    pub fn reliability(&self, id: &EngineId) -> f64 {
+        let inner = self.lock();
+        inner
+            .map
+            .get(id)
+            .map(|h| {
+                if h.samples == 0 {
+                    1.0
+                } else {
+                    h.answered as f64 / h.samples as f64
+                }
+            })
+            .unwrap_or(1.0)
     }
 
     /// The current row for one engine, if known.

@@ -19,8 +19,8 @@ use std::time::Duration;
 
 use cauce_core::config::{Config, Resources};
 use cauce_core::{
-    Admission, AdmissionLimits, ClientKind, EngineId, HedgePolicy, SafeSearch, SearchPipeline,
-    SearchRequest, SearchResponse,
+    Admission, AdmissionLimits, ClientKind, EngineId, HedgePolicy, MergePolicy, SafeSearch,
+    SearchPipeline, SearchRequest, SearchResponse,
 };
 use cauce_engines::factory::build_engines;
 use cauce_server::observability;
@@ -123,6 +123,10 @@ async fn search_async(cfg: &Config, opts: &SearchArgs) -> i32 {
             floor: Duration::from_millis(cfg.search.hedge_floor_ms),
             ceiling: Duration::from_millis(cfg.search.hedge_ceiling_ms),
             min_results: cfg.search.min_results as usize,
+        })
+        .with_merge(MergePolicy {
+            rrf_k: cfg.merge.rrf_k as f32,
+            collapse_same_host_after: cfg.merge.collapse_same_host_after as usize,
         });
     // Honour persisted breakers (plan 4.4.6), same as `serve` startup.
     if let Err(e) = pipeline.load_health().await {

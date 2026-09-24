@@ -1,0 +1,71 @@
+{
+  "query": "rust ownership tutorial",
+  "engine": "bing",
+  "recorded_at": "2026-09-24T08:14:02Z",
+  "results": [
+    {
+      "url": "https://doc.rust-lang.org/book/ch04-01-what-is-ownership.html",
+      "title": "What is Ownership? - The Rust Programming Language",
+      "snippet": "Ownership is a set of rules that govern how a Rust program manages memory. Each value in Rust has an owner.",
+      "engine": "bing",
+      "published": null,
+      "score": 0.0
+    },
+    {
+      "url": "https://doc.rust-lang.org/book/ch04-02-references-and-borrowing.html",
+      "title": "References and Borrowing - The Rust Programming Language",
+      "snippet": "References allow you to refer to some value without taking ownership of it.",
+      "engine": "bing",
+      "published": null,
+      "score": 0.0
+    },
+    {
+      "url": "https://doc.rust-lang.org/nomicon/ownership.html",
+      "title": "Ownership - The Rustonomicon",
+      "snippet": "Ownership is the breakout feature of Rust. It allows Rust to be completely memory-safe and efficient.",
+      "engine": "bing",
+      "published": null,
+      "score": 0.0
+    },
+    {
+      "url": "https://doc.rust-lang.org/rust-by-example/scope/ownership.html",
+      "title": "Ownership and moves - Rust By Example",
+      "snippet": "Because variables are in charge of freeing their own resources, resources can only have one owner.",
+      "engine": "bing",
+      "published": null,
+      "score": 0.0
+    },
+    {
+      "url": "https://stackoverflow.com/questions/27990603/ownership-rules-in-rust",
+      "title": "Ownership rules in Rust - Stack Overflow",
+      "snippet": "Each value in Rust has a variable that's called its owner. There can only be one owner at a time.",
+      "engine": "bing",
+      "published": null,
+      "score": 0.0
+    },
+    {
+      "url": "https://reddit.com/r/rust/comments/10r3fqp/what_is_ownership_in_rust/",
+      "title": "What is ownership in Rust? : r/rust - Reddit",
+      "snippet": "I keep hearing about ownership and borrowing. Can someone explain the intuition behind it?",
+      "engine": "bing",
+      "published": null,
+      "score": 0.0
+    },
+    {
+      "url": "https://blog.rust-lang.org/2015/04/10/Fearless-Concurrency.html",
+      "title": "Fearless Concurrency with Rust - Rust Blog",
+      "snippet": "The ownership system is what makes Rust's concurrency guarantees possible.",
+      "engine": "bing",
+      "published": null,
+      "score": 0.0
+    },
+    {
+      "url": "https://jvns.ca/blog/2016/09/07/rust-ownership",
+      "title": "Understanding ownership in Rust - Julia Evans",
+      "snippet": "A practical walkthrough of ownership, moves and borrows with real compiler errors.",
+      "engine": "bing",
+      "published": null,
+      "score": 0.0
+    }
+  ]
+}

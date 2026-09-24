@@ -1,0 +1,86 @@
+{
+  "folds": [
+    {
+      "in": "https://example-com.cdn.ampproject.org/c/s/www.example.com/path/story",
+      "want": "https://www.example.com/path/story",
+      "why": "ampproject cache wrapper: /c/s/ embeds https host+path"
+    },
+    {
+      "in": "https://example-com.cdn.ampproject.org/c/example.com/path",
+      "want": "http://example.com/path",
+      "why": "ampproject /c/ (no s) embeds the http scheme"
+    },
+    {
+      "in": "https://www.google.com/amp/s/www.example.com/news/item",
+      "want": "https://www.example.com/news/item",
+      "why": "google AMP viewer /amp/s/ prefix unwraps to https host+path"
+    },
+    {
+      "in": "https://news.google.com/amp/s/example.com/a?amp_gsa=1",
+      "want": "https://example.com/a",
+      "why": "google viewer drops the wrapper's own query params"
+    },
+    {
+      "in": "https://amp.example.com/x/1",
+      "want": "https://example.com/x/1",
+      "why": "amp. host prefix folds to the canonical host"
+    },
+    {
+      "in": "https://m.example.com/x/1",
+      "want": "https://example.com/x/1",
+      "why": "m. (mobile) host prefix folds to the canonical host"
+    },
+    {
+      "in": "https://m.amp.example.com/x/1",
+      "want": "https://example.com/x/1",
+      "why": "stacked prefixes fold repeatedly"
+    },
+    {
+      "in": "https://www.example.com/story.amp.html",
+      "want": "https://www.example.com/story.html",
+      "why": ".amp.html suffix folds to .html"
+    },
+    {
+      "in": "https://www.example.com/story.amp",
+      "want": "https://www.example.com/story",
+      "why": "bare .amp suffix drops"
+    },
+    {
+      "in": "https://www.example.com/story/amp/",
+      "want": "https://www.example.com/story",
+      "why": "trailing /amp/ segment folds (trailing slash strips first)"
+    },
+    {
+      "in": "https://www.example.com/story?amp=1&utm_source=x",
+      "want": "https://www.example.com/story",
+      "why": "amp + tracking query params strip"
+    },
+    {
+      "in": "https://www.example.com/story?outputType=amp",
+      "want": "https://www.example.com/story",
+      "why": "outputType=amp strips"
+    }
+  ],
+  "kept": [
+    {
+      "in": "https://www.example.com/story?utm_source=x&outputType=rss",
+      "want": "https://www.example.com/story?outputType=rss",
+      "why": "outputType= non-amp values stay"
+    },
+    {
+      "in": "https://mobile.example.com/x",
+      "want": "https://mobile.example.com/x",
+      "why": "mobile. is not the m. prefix"
+    },
+    {
+      "in": "https://example.com/stamp",
+      "want": "https://example.com/stamp",
+      "why": "trailing segment must be exactly 'amp'"
+    },
+    {
+      "in": "https://example.com/amp/story",
+      "want": "https://example.com/amp/story",
+      "why": "non-terminal /amp/ segments do not fold"
+    }
+  ]
+}

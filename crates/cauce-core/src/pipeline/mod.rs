@@ -60,10 +60,13 @@
 //!    ([`HealthTracker`]) skips `Open` engines and lets one probe through
 //!    for `HalfOpen`; every outcome updates EWMA/failures and persists
 //!    through `Store::put_health` (transitions urgent, rest debounced 1/s).
-//! 5. Merge: dedupe by [`normalize_url`], RRF `k = 60` summed across
-//!    engines (`score = sum 1/(60 + rank)`, rank 1-based per engine),
-//!    stable ordering by first-seen position; the occurrence with the
-//!    best single contribution supplies the emitted `SearchResult`.
+//! 5. Merge: dedupe by [`normalize_url`], RRF summed across engines
+//!    (`score = sum weight/(k + rank)`, rank 1-based per engine; `k` is
+//!    `merge.rrf_k` and `weight` the engine's observed reliability scaled
+//!    into (0.5, 1.0], W3-03), stable ordering by first-seen position;
+//!    the occurrence with the best single contribution supplies the
+//!    emitted `SearchResult`. `merge.collapse_same_host_after` then caps
+//!    emissions per host (default 3).
 //! 6. `store.put` with `ttl = opts.ttl.unwrap_or(default_ttl)` clamped to
 //!    `ttl_cap` (defaults 3600 s / 86400 s), once per flight. Never on the
 //!    `AllEnginesFailed`/`RateLimited` paths.
@@ -99,6 +102,8 @@ mod merge;
 mod persistence;
 use persistence::LogRow;
 mod waves;
+
+pub use merge::{DEFAULT_COLLAPSE_SAME_HOST_AFTER, DEFAULT_RRF_K, RrfMerge};
 
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -139,6 +144,31 @@ pub struct HedgePolicy {
     pub ceiling: Duration,
     /// Merged results wanted before the hedge is called off.
     pub min_results: usize,
+}
+
+/// Merge shaping (the `[merge]` config section, W3-03): the RRF constant
+/// and the per-host emission cap. Per-engine reliability weights are not
+/// configured here — the merge reads them per flight from
+/// [`HealthTracker::reliability`].
+///
+/// [`HealthTracker::reliability`]: crate::health::HealthTracker::reliability
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct MergePolicy {
+    /// RRF `k` in `score += weight / (k + rank)` (`merge.rrf_k`).
+    pub rrf_k: f32,
+    /// Max merged results emitted per host — `m.`/`amp.` URL folds count
+    /// toward the same host (`merge.collapse_same_host_after`); `0`
+    /// disables the collapse.
+    pub collapse_same_host_after: usize,
+}
+
+impl Default for MergePolicy {
+    fn default() -> Self {
+        Self {
+            rrf_k: DEFAULT_RRF_K,
+            collapse_same_host_after: DEFAULT_COLLAPSE_SAME_HOST_AFTER,
+        }
+    }
 }
 
 /// Per-call options for [`SearchPipeline::search_opts`].
@@ -355,6 +385,8 @@ pub struct SearchPipeline {
     admission: Admission,
     /// W3-01 hedge knobs (floor/ceiling on the P90 trigger, `min_results`).
     hedge: HedgePolicy,
+    /// W3-03 merge shaping (`merge.rrf_k`, `merge.collapse_same_host_after`).
+    merge: MergePolicy,
     /// W1-09 metrics handle. A unit struct: every `record_*` writes into
     /// the process-global registry, so pipelines share one set of series.
     metrics: Metrics,
@@ -382,6 +414,7 @@ impl SearchPipeline {
             lexical: LexicalConfig::default(),
             admission: Admission::default(),
             hedge: HedgePolicy::default(),
+            merge: MergePolicy::default(),
             metrics: Metrics,
         }
     }
@@ -425,6 +458,14 @@ impl SearchPipeline {
     /// 5 results).
     pub fn with_hedge(mut self, hedge: HedgePolicy) -> Self {
         self.hedge = hedge;
+        self
+    }
+
+    /// Override the merge policy (`merge.rrf_k`,
+    /// `merge.collapse_same_host_after`, W3-03).
+    /// Default: [`MergePolicy::default`] (k = 60, 3 per host).
+    pub fn with_merge(mut self, merge: MergePolicy) -> Self {
+        self.merge = merge;
         self
     }
 

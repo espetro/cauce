@@ -93,6 +93,12 @@ const ENV_OVERRIDES: &[(&str, &[&str], bool)] = &[
         &["admission", "max_concurrent_per_engine"],
         true,
     ),
+    ("CAUCE_MERGE_RRF_K", &["merge", "rrf_k"], true),
+    (
+        "CAUCE_MERGE_COLLAPSE_SAME_HOST_AFTER",
+        &["merge", "collapse_same_host_after"],
+        true,
+    ),
     (
         "CAUCE_LOGS_RETENTION_DAYS",
         &["logs", "retention_days"],
@@ -509,6 +515,39 @@ fn default_lexical_threshold() -> f64 {
     0.8
 }
 
+/// `[merge]` section: RRF merge tuning (W3-03). The reliability weight
+/// itself is not a knob — it is computed from engine health; this section
+/// holds the RRF constant and the host-diversity cap.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MergeConfig {
+    /// The RRF constant: `score += weight / (rrf_k + rank)` per engine.
+    /// Must be finite and `>= 0.0`; `Config::load` rejects anything else.
+    #[serde(default = "default_rrf_k")]
+    pub rrf_k: f64,
+    /// Max merged results emitted per host — `m.`/`amp.` folds share the
+    /// host. `0` disables the collapse.
+    #[serde(default = "default_collapse_same_host_after")]
+    pub collapse_same_host_after: u32,
+}
+
+impl Default for MergeConfig {
+    fn default() -> Self {
+        Self {
+            rrf_k: default_rrf_k(),
+            collapse_same_host_after: default_collapse_same_host_after(),
+        }
+    }
+}
+
+fn default_rrf_k() -> f64 {
+    60.0
+}
+
+fn default_collapse_same_host_after() -> u32 {
+    3
+}
+
 /// `[logs]`: JSONL log retention (W0-05 consumes `retention_days`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -729,6 +768,9 @@ pub struct Config {
     /// `[cache]` section.
     #[serde(default)]
     pub cache: CacheConfig,
+    /// `[merge]` section.
+    #[serde(default)]
+    pub merge: MergeConfig,
     /// `[logs]` section.
     #[serde(default)]
     pub logs: LogsConfig,
@@ -765,6 +807,7 @@ struct ConfigSections<'a> {
     search: &'a SearchConfig,
     admission: &'a AdmissionConfig,
     cache: &'a CacheConfig,
+    merge: &'a MergeConfig,
     logs: &'a LogsConfig,
     ai: &'a AiConfig,
     auth: &'a AuthConfig,
@@ -800,6 +843,7 @@ impl Default for Config {
             search: SearchConfig::default(),
             admission: AdmissionConfig::default(),
             cache: CacheConfig::default(),
+            merge: MergeConfig::default(),
             logs: LogsConfig::default(),
             ai: AiConfig::default(),
             auth: AuthConfig::default(),
@@ -829,6 +873,7 @@ impl Config {
             search: &self.search,
             admission: &self.admission,
             cache: &self.cache,
+            merge: &self.merge,
             logs: &self.logs,
             ai: &self.ai,
             auth: &self.auth,
@@ -935,6 +980,17 @@ impl Config {
             return Err(ConfigError::InvalidValue {
                 path: "cache.lexical.threshold".to_string(),
                 msg: format!("expected a finite value in (0.0, 1.0], got {threshold}"),
+            });
+        }
+
+        // `merge.rrf_k` is the RRF denominator offset: a negative `k`
+        // zeroes the denominator at `rank == -k - 1` and a non-finite one
+        // poisons every score, so reject both rather than merge NaNs.
+        let rrf_k = cfg.merge.rrf_k;
+        if !rrf_k.is_finite() || rrf_k < 0.0 {
+            return Err(ConfigError::InvalidValue {
+                path: "merge.rrf_k".to_string(),
+                msg: format!("expected a finite value >= 0.0, got {rrf_k}"),
             });
         }
 

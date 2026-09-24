@@ -29,8 +29,8 @@ pub use admission::{Admission, AdmissionLimits, FlightResult};
 pub use cache::{CacheKey, CachedSearch, normalize_query};
 pub use config::{
     AdmissionConfig, AiConfig, AuthConfig, CacheConfig, Config, ConfigError, Dirs, EgressConfig,
-    EngineEntry, EngineKind, LexicalConfig, LogsConfig, MetaConfig, Resources, SearchConfig,
-    ServerConfig, is_loopback_host,
+    EngineEntry, EngineKind, LexicalConfig, LogsConfig, MergeConfig, MetaConfig, Resources,
+    SearchConfig, ServerConfig, is_loopback_host,
 };
 pub use engine::{ENGINE_ID_PATTERN, Engine, EngineError, EngineId, Tier};
 pub use health::{
@@ -39,8 +39,8 @@ pub use health::{
 pub use metrics::{EngineMetricStats, EnginePhase, Metrics};
 pub use normalize::normalize_url;
 pub use pipeline::{
-    DEFAULT_DEADLINE, DEFAULT_TTL, DEFAULT_TTL_CAP, HedgePolicy, PipelineError, SearchOpts,
-    SearchPipeline,
+    DEFAULT_COLLAPSE_SAME_HOST_AFTER, DEFAULT_DEADLINE, DEFAULT_RRF_K, DEFAULT_TTL,
+    DEFAULT_TTL_CAP, HedgePolicy, MergePolicy, PipelineError, RrfMerge, SearchOpts, SearchPipeline,
 };
 pub use request::{ClientKind, SafeSearch, SearchRequest, TimeRange};
 pub use response::{
