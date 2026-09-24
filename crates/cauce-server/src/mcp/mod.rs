@@ -19,21 +19,33 @@
 //! plan 6.1). The MCP client's `initialize.client_info.name` becomes
 //! [`ClientKind::Mcp(name)`] on every `SearchRequest`.
 //!
-//! Rate limiting: [`PipelineError::RateLimited`] (W1-07 admission) maps to a
-//! JSON-RPC server error carrying `rate_limited` + the real `retry_after_s`;
-//! an `AllEnginesFailed` whose every failure is [`EngineError::RateLimited`]
-//! maps to the same shape with a fixed hint as a fallback.
+//! Rate limiting: [`PipelineError::RateLimited`](cauce_core::PipelineError::RateLimited)
+//! (W1-07 admission) maps to a JSON-RPC server error carrying `rate_limited`
+//! and the real `retry_after_s`; an `AllEnginesFailed` whose every failure is
+//! [`EngineError::RateLimited`](cauce_core::EngineError::RateLimited) maps to
+//! the same shape with a fixed hint as a fallback.
+//!
+//! Module map (issue #156): `mod.rs` is the `CauceMcp` tool layer — the
+//! arg structs, tool impls, [`ServerHandler`] and the transports
+//! ([`streamable_service`], [`serve_stdio`]). [`exa`] is the frozen Exa
+//! wire adapter: the `results[]`/history shapes and the pure
+//! `build_query_text`/`extract_highlights`/`split_sentences`/`exa_response`
+//! helpers. [`errors`] holds the `ErrorData` mapping helpers every tool
+//! body shares.
 //!
 //! This Source Code Form is subject to the terms of the Mozilla Public
 //! License, v. 2.0. If a copy of the MPL was not distributed with this
 //! file, You can obtain one at <https://mozilla.org/MPL/2.0/>.
 
+mod errors;
+mod exa;
+
 use std::sync::Arc;
 use std::time::Duration;
 
 use cauce_core::{
-    AuditRow, CacheKey, ClientKind, EngineError, EngineId, HistoryFilter, HistoryItem,
-    PipelineError, SafeSearch, SearchOpts, SearchRequest, SearchResponse, Store, TimeRange,
+    AuditRow, CacheKey, ClientKind, EngineId, HistoryFilter, HistoryItem, SafeSearch, SearchOpts,
+    SearchRequest, SearchResponse, Store, TimeRange,
 };
 use chrono::Utc;
 use rmcp::handler::server::tool::ToolRouter;
@@ -44,13 +56,15 @@ use rmcp::transport::streamable_http_server::session::local::LocalSessionManager
 use rmcp::transport::{StreamableHttpServerConfig, StreamableHttpService, stdio};
 use rmcp::{RoleServer, ServerHandler, ServiceExt, tool, tool_handler, tool_router};
 use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::{Value, json};
 use tracing::{Instrument, info_span};
 use uuid::Uuid;
 
 use crate::app::AppState;
 use crate::observability::audit;
+use errors::{internal_error, invalid_params, pipeline_error, store_error, structured};
+use exa::{ExaHistoryClick, ExaHistoryResult, build_query_text, exa_response};
 
 /// Server-defined JSON-RPC error code for rate limiting (inside the reserved
 /// -32099..=-32000 range; `…029` echoes HTTP 429). `data.error` carries the
@@ -70,11 +84,6 @@ const RATE_LIMIT_RETRY_AFTER_S: u64 = 60;
 /// to `get_clicks(limit=)` unbounded.
 const NUM_RESULTS_MIN: u32 = 1;
 const NUM_RESULTS_MAX: u32 = 30;
-
-/// `highlights` per Exa item, frozen from `v2-legacy` (`_MAX_HIGHLIGHTS`,
-/// `_HIGHLIGHT_SCORE`): first three sentences of the snippet, each scored 0.5.
-const MAX_HIGHLIGHTS: usize = 3;
-const HIGHLIGHT_SCORE: f32 = 0.5;
 
 /// History-mode click cap (v2 `_HISTORY_LIMIT_BOUNDS` upper).
 const HISTORY_LIMIT: u32 = 200;
@@ -601,278 +610,11 @@ pub async fn serve_stdio(state: AppState) -> Result<(), ErrorData> {
     Ok(())
 }
 
-// ---------------------------------------------------------------------------
-// Frozen Exa wire shape (v2-legacy `oxe/api/exa.py` + `oxe/api/mcp.py`)
-// ---------------------------------------------------------------------------
-
-/// `results[]` item of the Exa response (frozen).
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct ExaResultItem {
-    title: String,
-    url: String,
-    /// Exa's opaque id; v2 used the URL.
-    id: String,
-    /// `contents.text` defaults to true in the v2 MCP tool, so the snippet.
-    text: String,
-    highlights: Vec<String>,
-    highlight_scores: Vec<f32>,
-    /// RFC 3339 when the engine reports a publication date.
-    published_date: Option<String>,
-    author: Option<String>,
-    image: Option<String>,
-    /// v2 sources this from `SearchResult.thumbnail` (NOT v1's Google
-    /// `s2/favicons` URL — v2 dropped that computation). v3's
-    /// `SearchResult` carries no thumbnail field, so this is always null
-    /// until one lands.
-    favicon: Option<String>,
-    extras: ExaExtras,
-}
-
-#[derive(Debug, Clone, Serialize)]
-struct ExaExtras {
-    links: Vec<String>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct ExaCostDollars {
-    total: f64,
-}
-
-/// `exa_search` web/cache response (frozen `McpExaSearchResult`: Exa's
-/// `ExaSearchResponse` plus the cauce-specific `tool_source`). The aliased
-/// fields are camelCase; `tool_source` stays snake (no alias in v2).
-#[derive(Debug, Serialize)]
-struct ExaSearchResult {
-    #[serde(rename = "requestId")]
-    request_id: String,
-    #[serde(rename = "searchType")]
-    search_type: String,
-    results: Vec<ExaResultItem>,
-    #[serde(rename = "costDollars")]
-    cost_dollars: ExaCostDollars,
-    tool_source: String,
-}
-
-/// `exa_search` `source = "history"` response (v2 `McpExaHistoryResult`,
-/// plus `request_id` — v3's every-tool-result contract).
-#[derive(Debug, Serialize)]
-struct ExaHistoryResult {
-    request_id: String,
-    query: String,
-    tool_source: &'static str,
-    results: Vec<ExaHistoryClick>,
-}
-
-/// One `clicks` row on the wire (v3 `ClickRow` fields, v2-compatible names).
-#[derive(Debug, Serialize)]
-struct ExaHistoryClick {
-    id: Option<i64>,
-    query_hash: Option<String>,
-    url: String,
-    title: String,
-    position: u32,
-    clicked_at: String,
-    client: String,
-}
-
-/// v2 `_build_query_text`: `query` plus `-site:` operators for
-/// `exclude_domains` (v3 has no `include_domains` arg — it is not in the
-/// settled tool shape).
-fn build_query_text(query: &str, exclude_domains: Option<&[String]>) -> String {
-    let mut parts = vec![query.trim().to_string()];
-    if let Some(domains) = exclude_domains {
-        parts.extend(
-            domains
-                .iter()
-                .filter(|d| !d.is_empty())
-                .map(|d| format!("-site:{d}")),
-        );
-    }
-    parts
-        .into_iter()
-        .filter(|p| !p.is_empty())
-        .collect::<Vec<_>>()
-        .join(" ")
-}
-
-/// v2 `_extract_highlights`: first `_MAX_HIGHLIGHTS` sentences of the
-/// snippet, each scored `_HIGHLIGHT_SCORE`.
-fn extract_highlights(snippet: &str) -> Vec<String> {
-    split_sentences(snippet)
-        .into_iter()
-        .take(MAX_HIGHLIGHTS)
-        .collect()
-}
-
-fn split_sentences(text: &str) -> Vec<String> {
-    // The v2 regex `(?<=[.!?])\s+` without lookbehind: split on whitespace
-    // that follows a sentence-final `.`, `!` or `?`.
-    let mut sentences = Vec::new();
-    let mut current = String::new();
-    let mut chars = text.chars().peekable();
-    while let Some(c) = chars.next() {
-        current.push(c);
-        if matches!(c, '.' | '!' | '?') && chars.peek().is_some_and(|n| n.is_whitespace()) {
-            let trimmed = current.trim();
-            if !trimmed.is_empty() {
-                sentences.push(trimmed.to_string());
-            }
-            current.clear();
-        }
-    }
-    let trimmed = current.trim();
-    if !trimmed.is_empty() {
-        sentences.push(trimmed.to_string());
-    }
-    sentences
-}
-
-/// Canonical `SearchResponse` -> frozen Exa shape (v2
-/// `searx_response_to_exa` + `_result_to_exa` with both `contents` flags on).
-fn exa_response(
-    resp: &SearchResponse,
-    args: &ExaSearchArgs,
-    source: &str,
-    num_results: u32,
-    request_id: Uuid,
-) -> ExaSearchResult {
-    let results = resp
-        .results
-        .iter()
-        .take(num_results as usize)
-        .map(|r| {
-            let url = r.url.to_string();
-            let highlights = extract_highlights(&r.snippet);
-            ExaResultItem {
-                title: r.title.clone(),
-                id: url.clone(),
-                url,
-                text: r.snippet.clone(),
-                highlight_scores: vec![HIGHLIGHT_SCORE; highlights.len()],
-                highlights,
-                published_date: r.published.map(|d| d.to_rfc3339()),
-                author: None,
-                image: None,
-                favicon: None,
-                extras: ExaExtras { links: Vec::new() },
-            }
-        })
-        .collect();
-    ExaSearchResult {
-        request_id: request_id.to_string(),
-        search_type: args
-            .search_type
-            .clone()
-            .unwrap_or_else(|| "auto".to_string()),
-        results,
-        cost_dollars: ExaCostDollars { total: 0.0 },
-        tool_source: source.to_string(),
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Error helpers
-// ---------------------------------------------------------------------------
-
-/// Serialize `value` into a structured tool result (`content` + `structuredContent`).
-fn structured<T: Serialize>(value: &T, request_id: Uuid) -> Result<CallToolResult, ErrorData> {
-    serde_json::to_value(value)
-        .map(CallToolResult::structured)
-        .map_err(|e| internal_error(e.to_string(), request_id))
-}
-
-/// `data` always carries `request_id` so even failures are traceable.
-fn with_request_id(request_id: Uuid) -> Option<Value> {
-    Some(json!({ "request_id": request_id }))
-}
-
-fn invalid_params(message: impl Into<String>, request_id: Uuid) -> ErrorData {
-    ErrorData::invalid_params(message.into(), with_request_id(request_id))
-}
-
-fn internal_error(message: impl Into<String>, request_id: Uuid) -> ErrorData {
-    ErrorData::internal_error(message.into(), with_request_id(request_id))
-}
-
-fn store_error(e: &cauce_core::StoreError, request_id: Uuid) -> ErrorData {
-    ErrorData::internal_error(
-        format!("store: {e}"),
-        Some(json!({ "error": "store_error", "request_id": request_id })),
-    )
-}
-
-/// `PipelineError` -> MCP error. `NoEngines` splits on whether the caller
-/// pinned `engines` (bad pin = `invalid_params`, unconfigured = internal);
-/// an all-`RateLimited` `AllEnginesFailed` is the settled `rate_limited`
-/// error with `retry_after_s` (W1-07 will route the real budget through the
-/// same shape).
-fn pipeline_error(e: &PipelineError, pinned: bool, request_id: Uuid) -> ErrorData {
-    match e {
-        // Issue #90 strict contract: the pin's offenders and the
-        // configured set ride along in `data`, mirroring the 400
-        // `unknown_engines` envelope's message.
-        PipelineError::UnknownEngines {
-            unknown,
-            configured,
-        } => ErrorData::invalid_params(
-            e.to_string(),
-            Some(json!({
-                "error": "unknown_engines",
-                "unknown": unknown.iter().map(|id| id.as_str()).collect::<Vec<_>>(),
-                "configured": configured.iter().map(|id| id.as_str()).collect::<Vec<_>>(),
-                "request_id": request_id,
-            })),
-        ),
-        PipelineError::NoEngines if pinned => {
-            invalid_params("engines pin matched no configured engine", request_id)
-        }
-        PipelineError::NoEngines => internal_error("no search engines configured", request_id),
-        // W1-07 admission rejection: the real retry budget, not the hint.
-        PipelineError::RateLimited { retry_after_s } => ErrorData::new(
-            MCP_RATE_LIMITED,
-            "rate_limited",
-            Some(json!({
-                "error": "rate_limited",
-                "retry_after_s": retry_after_s,
-                "request_id": request_id,
-            })),
-        ),
-        // Fallback while engines surface throttling as per-engine failures
-        // rather than an admission rejection.
-        PipelineError::AllEnginesFailed(failures)
-            if !failures.is_empty()
-                && failures
-                    .iter()
-                    .all(|(_, err)| matches!(err, EngineError::RateLimited)) =>
-        {
-            ErrorData::new(
-                MCP_RATE_LIMITED,
-                "rate_limited",
-                Some(json!({
-                    "error": "rate_limited",
-                    "retry_after_s": RATE_LIMIT_RETRY_AFTER_S,
-                    "request_id": request_id,
-                })),
-            )
-        }
-        PipelineError::AllEnginesFailed(_) => ErrorData::internal_error(
-            e.to_string(),
-            Some(json!({ "error": "upstream_failed", "request_id": request_id })),
-        ),
-        // W1-06: every matched engine was breaker-skipped. Temporary, like
-        // the HTTP 503 `breaker_open`, but there is no client retry budget
-        // to communicate — the breaker window is server-side state.
-        PipelineError::BreakerOpen(_) => ErrorData::internal_error(
-            e.to_string(),
-            Some(json!({ "error": "breaker_open", "request_id": request_id })),
-        ),
-    }
-}
-
 #[cfg(test)]
 mod tests {
+    use cauce_core::{EngineError, PipelineError};
+
+    use super::exa::extract_highlights;
     use super::*;
 
     #[test]
