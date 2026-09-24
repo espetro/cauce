@@ -17,7 +17,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use axum::Router;
-use axum::body::{Body, to_bytes};
+use axum::body::Body;
 use axum::http::{Method, Request, StatusCode};
 use cauce_core::config::{Config, EnvMap};
 use cauce_core::{AuditRow, SearchPipeline, StoreTuning};
@@ -26,6 +26,9 @@ use cauce_server::{AppState, build_router};
 use cauce_store_sqlite::SqliteStore;
 use serde_json::Value;
 use tower::ServiceExt;
+
+mod support;
+use support::*;
 
 /// A tempdir-backed state whose `Config` points `data_dir` (and therefore
 /// `logs_dir`) inside the tempdir, so `/trace/{id}` reads fixture JSONL the
@@ -57,36 +60,6 @@ fn test_state() -> (AppState, tempfile::TempDir) {
 fn app() -> (Router, AppState, tempfile::TempDir) {
     let (state, tmp) = test_state();
     (build_router(state.clone()), state, tmp)
-}
-
-async fn call(router: &Router, request: Request<Body>) -> (StatusCode, String) {
-    let resp = router.clone().oneshot(request).await.expect("response");
-    let status = resp.status();
-    let bytes = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
-    (status, String::from_utf8(bytes.to_vec()).unwrap())
-}
-
-async fn get_html(router: &Router, uri: &str) -> (StatusCode, String) {
-    let request = Request::builder()
-        .method(Method::GET)
-        .uri(uri)
-        .header("Accept", "text/html")
-        .body(Body::empty())
-        .unwrap();
-    call(router, request).await
-}
-
-async fn get_json(router: &Router, uri: &str) -> (StatusCode, Value) {
-    let request = Request::builder()
-        .method(Method::GET)
-        .uri(uri)
-        .header("Accept", "application/json")
-        .body(Body::empty())
-        .unwrap();
-    let resp = router.clone().oneshot(request).await.expect("response");
-    let status = resp.status();
-    let bytes = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
-    (status, serde_json::from_slice(&bytes).expect("valid JSON"))
 }
 
 /// Seed a cache row and delete it the way the W2-04 cache page does:

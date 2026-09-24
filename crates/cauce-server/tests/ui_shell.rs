@@ -13,54 +13,14 @@
 // The HTMX pages exist only in `ui` builds (W1-12 feature gates).
 #![cfg(feature = "ui")]
 
-use std::sync::Arc;
+use axum::http::StatusCode;
 
-use axum::Router;
-use axum::body::{Body, to_bytes};
-use axum::http::{Method, Request, StatusCode};
-use cauce_core::config::Config;
-use cauce_core::{SearchPipeline, StoreTuning};
-use cauce_engines::{Replay, ReplayOpts};
-use cauce_server::{AppState, build_router};
-use cauce_store_sqlite::SqliteStore;
-use tower::ServiceExt;
+mod support;
+use support::*;
 
 /// Upper bound on rendered elements after script/style bodies are
 /// stripped; the heaviest page today renders well under a thousand.
 const MAX_ELEMENTS: usize = 2000;
-
-fn app() -> (Router, tempfile::TempDir) {
-    let tmp = tempfile::tempdir().expect("tempdir");
-    let store = Arc::new(
-        SqliteStore::open(tmp.path().join("cauce.db"), StoreTuning::default()).expect("store"),
-    );
-    let pipeline = Arc::new(SearchPipeline::new(
-        store.clone(),
-        vec![Arc::new(Replay::new(ReplayOpts::default()))],
-    ));
-    (
-        build_router(AppState::new(pipeline, store, Config::default())),
-        tmp,
-    )
-}
-
-async fn get(router: &Router, uri: &str) -> (StatusCode, String) {
-    let resp = router
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method(Method::GET)
-                .uri(uri)
-                .header("Accept", "text/html")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .expect("response");
-    let status = resp.status();
-    let bytes = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
-    (status, String::from_utf8(bytes.to_vec()).unwrap())
-}
 
 /// Drop `<script>...</script>` (and `<style>...</style>`) bodies so the
 /// element/landmark counts measure the DOM, not the inlined htmx, theme
@@ -196,28 +156,12 @@ fn assert_shell(uri: &str, body: &str, expect_current: Option<&str>) {
 /// mount table; this asserts the rendered shell of each row).
 #[tokio::test]
 async fn every_page_renders_the_shared_shell() {
-    let (router, _tmp) = app();
+    let (router, _state, _tmp) = app();
 
     // Seed a search so history/dashboard/cache render populated states
     // and a real request id exists for /trace/<id>.
-    let (status, body) = {
-        let resp = router
-            .clone()
-            .oneshot(
-                Request::builder()
-                    .method(Method::GET)
-                    .uri("/api/search?q=shell")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .expect("response");
-        let status = resp.status();
-        let bytes = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
-        (status, String::from_utf8(bytes.to_vec()).unwrap())
-    };
-    assert_eq!(status, StatusCode::OK, "{body}");
-    let seeded: serde_json::Value = serde_json::from_str(&body).expect("search json");
+    let (status, seeded) = get_json(&router, "/api/search?q=shell").await;
+    assert_eq!(status, StatusCode::OK, "{seeded}");
     let rid = seeded["meta"]["request_id"]
         .as_str()
         .expect("meta.request_id")
@@ -235,14 +179,14 @@ async fn every_page_renders_the_shared_shell() {
         ("/settings", Some("/settings")),
     ];
     for (uri, current) in pages {
-        let (status, body) = get(&router, uri).await;
+        let (status, body) = get_html(&router, uri).await;
         assert_eq!(status, StatusCode::OK, "{uri}");
         assert_shell(uri, &body, *current);
     }
 
     // /trace/<id> of an issued request id renders the page frame even
     // when the JSONL has no records yet (404 body keeps the shell).
-    let (status, body) = get(&router, &format!("/trace/{rid}")).await;
+    let (status, body) = get_html(&router, &format!("/trace/{rid}")).await;
     assert!(
         status == StatusCode::OK || status == StatusCode::NOT_FOUND,
         "/trace answered {status}"
@@ -254,8 +198,8 @@ async fn every_page_renders_the_shared_shell() {
 /// destinations — a drift guard for the two renderings of one tier.
 #[tokio::test]
 async fn operator_group_matches_more_menu() {
-    let (router, _tmp) = app();
-    let (status, body) = get(&router, "/").await;
+    let (router, _state, _tmp) = app();
+    let (status, body) = get_html(&router, "/").await;
     assert_eq!(status, StatusCode::OK);
     for href in ["/engines", "/cache", "/audit"] {
         assert_eq!(
