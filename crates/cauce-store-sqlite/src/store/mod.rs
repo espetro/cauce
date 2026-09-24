@@ -24,6 +24,8 @@ mod cache;
 mod health;
 mod history;
 mod stats;
+#[cfg(test)]
+mod tests;
 
 use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
