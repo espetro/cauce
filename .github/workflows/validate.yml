@@ -49,3 +49,8 @@ jobs:
 
       - name: validate
         run: mise run validate
+
+      # W3-08: LOC/complexity report — publishes numbers in the log,
+      # always exits 0 (a signal source, not a gate).
+      - name: loc report
+        run: mise run loc
