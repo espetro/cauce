@@ -168,19 +168,22 @@ pub fn fixture_pairs(fixtures_root: &Path, id: &str) -> Result<Vec<FixturePair>,
     Ok(pairs)
 }
 
+/// Read a `.expected.json` file into an [`ExpectedFixture`].
+pub fn load_expected(path: &Path) -> Result<ExpectedFixture, FixtureError> {
+    let text = std::fs::read_to_string(path).map_err(|source| FixtureError::Io {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    serde_json::from_str(&text).map_err(|source| FixtureError::Json {
+        path: path.to_path_buf(),
+        source,
+    })
+}
+
 /// Run one pair against `spec`: parse the body and diff against the
 /// expected results (or expected error).
 pub fn run_pair(spec: &CompiledSpec, pair: &FixturePair) -> Result<FixtureReport, FixtureError> {
-    let expected_text =
-        std::fs::read_to_string(&pair.expected_path).map_err(|source| FixtureError::Io {
-            path: pair.expected_path.clone(),
-            source,
-        })?;
-    let expected: ExpectedFixture =
-        serde_json::from_str(&expected_text).map_err(|source| FixtureError::Json {
-            path: pair.expected_path.clone(),
-            source,
-        })?;
+    let expected = load_expected(&pair.expected_path)?;
     // Bytes, not `read_to_string`: live parsing decodes with
     // `from_utf8_lossy`, so `--record` can write a fixture whose body is
     // not valid UTF-8 (latin-1 pages); a hard UTF-8 read here would make
