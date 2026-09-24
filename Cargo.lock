@@ -342,6 +342,7 @@ dependencies = [
  "cauce-core",
  "chrono",
  "percent-encoding",
+ "proptest",
  "regex",
  "reqwest",
  "rust-embed",
