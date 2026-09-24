@@ -16,7 +16,7 @@ use std::time::Duration;
 
 use cauce_core::config::{Config, Resources};
 use cauce_core::{
-    Admission, AdmissionLimits, CachePolicy, HedgePolicy, MergePolicy, SearchPipeline,
+    Admission, AdmissionLimits, CachePolicy, HealthPolicy, HedgePolicy, MergePolicy, SearchPipeline,
 };
 use cauce_engines::factory::build_engines;
 use cauce_server::{AppState, observability};
@@ -120,6 +120,11 @@ async fn mcp_async(cfg: Config) -> i32 {
             .with_cache_policy(CachePolicy {
                 stale_grace: Duration::from_secs(cfg.cache.stale_grace_s),
                 degraded_ttl: Duration::from_secs(cfg.cache.degraded_ttl_s),
+            })
+            .with_health_policy(HealthPolicy {
+                degraded_threshold: cfg.health.degraded_threshold,
+                degraded_window: Duration::from_secs(cfg.health.degraded_window_s),
+                ..HealthPolicy::default()
             }),
     );
     // Restore persisted breakers, same as `cauce serve`: a stdio process
