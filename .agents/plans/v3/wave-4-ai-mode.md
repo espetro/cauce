@@ -39,7 +39,7 @@ that catch regressions offline. Anthropic Messages protocol as the last step.
 
 ### W4-01 OpenAI streaming client and `/models`
 - Issue #50 · Effort M · Label feature · Team Systems · Branch `v3/w4-01-openai-client`
-- Depends on: W2-07, W3-06
+- Depends on: W2-07, W2-10, W3-06
 - Do: `cauce-core::ai::openai`: SSE-streamed chat completions with tool-call delta
   assembly, usage extraction, typed errors (auth, rate limit with retry-after, context
   length), `GET {base_url}/models` listing with a 60 s cache; `wiremock` fixtures recorded
