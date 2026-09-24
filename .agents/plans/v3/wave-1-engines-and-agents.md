@@ -91,6 +91,16 @@ stdio, tier-2 lexical cache, a metrics endpoint, and the cutover of the owner's 
   yields `Blocked`, while one echoing a blocked substring inside matching results
   does not (amended 2026-09-24, #109).
 - Follow-up: W1-03, W1-04, W1-05 (parallel).
+- Amended 2026-09-24 (issue #110): the schema gains an optional `request.market` map
+  (`lang -> market` codes) feeding a new `{market}` template token — e.g.
+  `mkt={market}` on `bing.yaml`, replacing the pinned `mkt=en-US` that sent `lang=fr`
+  queries to the en-US market. Resolution is deterministic: exact lang
+  (case-insensitive, per BCP-47), then `-x`
+  subtags stripped (`en-GB` -> `en`), then a key the lang is a prefix of (`pt` ->
+  `pt-BR`), then the reserved `default` key, else the first map entry; a spec using
+  `{market}` without `market:` fails compilation. A template filter was considered and
+  rejected: market vocabularies are engine-specific (Bing `mkt`, Brave `country`,
+  Yahoo `vl`), so the data belongs in the spec, not the runtime.
 
 ### W1-03 `bing.yaml` with fixtures
 - Issue #23 · Effort S · Label feature · Team Systems · Branch `v3/w1-03-bing`
