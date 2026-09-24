@@ -67,25 +67,42 @@ fn override_spec_files(config_dir: &Path) -> Vec<PathBuf> {
     files
 }
 
-/// Every loadable spec: embedded first, then `$config_dir/engines/*.yaml`
-/// overrides merged by spec `id` (a same-`id` file replaces the embedded
-/// spec). Specs that fail to parse or compile are skipped with a `warn` —
-/// one bad user file must not take down the rest of the engine set.
-pub fn load_specs(config_dir: &Path, env: &EnvMap) -> Vec<CompiledSpec> {
+/// One spec source's load outcome: [`load_specs_report`]'s element.
+pub struct SpecSource {
+    /// Spec `id` when the YAML parsed far enough to name one; the file
+    /// name/path otherwise.
+    pub name: String,
+    /// The compiled spec, or why it could not load.
+    pub spec: Result<CompiledSpec, String>,
+}
+
+/// `load_specs`' merge order (embedded `engines/*.yaml` then
+/// `$config_dir/engines/*.yaml` overrides by spec `id`) with failures
+/// returned instead of skipped: for the `--live` drift canary a shipped
+/// spec that cannot even load *is* the drift being hunted — it must
+/// surface as a failure, not quietly drop out of the worklist.
+pub fn load_specs_report(config_dir: &Path, env: &EnvMap) -> Vec<SpecSource> {
+    let mut errors = Vec::new();
     let mut by_id: BTreeMap<String, String> = BTreeMap::new();
     for (name, text) in embedded_specs() {
         match EngineSpec::from_yaml(&text) {
             Ok(spec) => {
                 by_id.insert(spec.id.to_string(), text);
             }
-            Err(e) => warn!(file = name, error = %e, "embedded engine spec skipped"),
+            Err(e) => errors.push(SpecSource {
+                name,
+                spec: Err(format!("invalid spec yaml: {e}")),
+            }),
         }
     }
     for path in override_spec_files(config_dir) {
         let text = match std::fs::read_to_string(&path) {
             Ok(t) => t,
             Err(e) => {
-                warn!(file = %path.display(), error = %e, "engine spec override unreadable");
+                errors.push(SpecSource {
+                    name: path.display().to_string(),
+                    spec: Err(format!("unreadable spec: {e}")),
+                });
                 continue;
             }
         };
@@ -93,17 +110,34 @@ pub fn load_specs(config_dir: &Path, env: &EnvMap) -> Vec<CompiledSpec> {
             Ok(spec) => {
                 by_id.insert(spec.id.to_string(), text);
             }
-            Err(e) => {
-                warn!(file = %path.display(), error = %e, "engine spec override skipped")
-            }
+            Err(e) => errors.push(SpecSource {
+                name: path.display().to_string(),
+                spec: Err(format!("invalid spec yaml: {e}")),
+            }),
         }
     }
-    by_id
-        .into_values()
-        .filter_map(|text| match CompiledSpec::from_yaml(&text, env) {
+    let mut out: Vec<SpecSource> = by_id
+        .into_iter()
+        .map(|(id, text)| SpecSource {
+            name: id,
+            spec: CompiledSpec::from_yaml(&text, env).map_err(|e| e.to_string()),
+        })
+        .collect();
+    out.extend(errors);
+    out.sort_by(|a, b| a.name.cmp(&b.name));
+    out
+}
+
+/// Every loadable spec: [`load_specs_report`] filtered to successes.
+/// Specs that fail to parse or compile are skipped with a `warn` — one
+/// bad user file must not take down the rest of the engine set.
+pub fn load_specs(config_dir: &Path, env: &EnvMap) -> Vec<CompiledSpec> {
+    load_specs_report(config_dir, env)
+        .into_iter()
+        .filter_map(|source| match source.spec {
             Ok(spec) => Some(spec),
             Err(e) => {
-                warn!(error = %e, "engine spec failed to compile");
+                warn!(file = %source.name, error = %e, "engine spec skipped");
                 None
             }
         })
@@ -161,6 +195,37 @@ pub(crate) fn resolve_named(name: &str, config_dir: &Path) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The canary's strict worklist keeps unloadable specs visible as
+    /// `Err` entries; `load_specs` still filters them for app startup.
+    #[test]
+    fn load_specs_report_surfaces_specs_that_cannot_load() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("engines");
+        std::fs::create_dir_all(&dir).unwrap();
+        // Not even YAML-parseable and valid-YAML-but-invalid-spec.
+        std::fs::write(dir.join("broken.yaml"), "id: [not yaml").unwrap();
+        std::fs::write(dir.join("badkind.yaml"), "id: bad\nparse: { kind: nope }\n").unwrap();
+        let report = load_specs_report(tmp.path(), &EnvMap::new());
+        assert!(
+            report
+                .iter()
+                .any(|s| s.name.contains("broken") && s.spec.is_err())
+        );
+        assert!(
+            report
+                .iter()
+                .any(|s| s.name.contains("badkind") && s.spec.is_err())
+        );
+        // Embedded shipped specs still load.
+        assert!(report.iter().filter(|s| s.spec.is_ok()).count() >= 3);
+        // The tolerant loader drops the broken files entirely.
+        assert!(
+            load_specs(tmp.path(), &EnvMap::new())
+                .iter()
+                .all(|s| s.id().as_str() != "bad")
+        );
+    }
 
     #[test]
     fn embed_includes_only_top_level_yaml() {

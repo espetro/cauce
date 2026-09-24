@@ -1,0 +1,23 @@
+name: engine-canary
+
+# W3-06: nightly declarative-engine drift canary. `cron` only — never
+# gates merges and opens no tracking issue: the failed run itself is the
+# report (a spec exits non-zero on zero results, `Parse` errors, a field
+# fill-rate or page-1 count under 50% of its committed fixture, or a
+# >70% page-1/url overlap on page 2).
+on:
+  schedule:
+    - cron: "43 5 * * *"
+
+permissions:
+  contents: read
+
+jobs:
+  drift-canary:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jdx/mise-action@v2
+      - uses: Swatinem/rust-cache@v2
+      - name: Drift canary over every shipped spec (live)
+        run: cargo run -p cauce-cli -- engine test --live
