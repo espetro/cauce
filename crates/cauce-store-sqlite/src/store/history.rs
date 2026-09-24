@@ -7,6 +7,7 @@
 
 use cauce_core::{
     ClickRow, DeleteSearchLog, HistoryFilter, HistoryItem, HistoryStats, SearchLogRow, StoreError,
+    normalize_query,
 };
 use rusqlite::{OptionalExtension, params};
 
@@ -185,6 +186,41 @@ impl SqliteStore {
                     })
                 },
             )
+            .map_err(sql_err)
+        })
+        .await
+    }
+
+    /// `Store::suggest` (#150): distinct normalized queries starting with
+    /// `prefix`, ranked by frecency — use count first, most recent use
+    /// breaking ties — capped at `limit`. `prefix` goes through
+    /// `normalize_query` first, so callers pass user text verbatim and
+    /// unicode case/whitespace fold the same way `query` was written;
+    /// `LIKE` covers the remaining ASCII case.
+    pub(super) async fn suggest(
+        &self,
+        prefix: &str,
+        limit: u32,
+    ) -> Result<Vec<String>, StoreError> {
+        let prefix = normalize_query(prefix);
+        if prefix.is_empty() || limit == 0 {
+            return Ok(Vec::new());
+        }
+        let pattern = like_prefix(&prefix);
+        let limit = i64::from(limit);
+        self.with_reader(move |conn| {
+            conn.prepare(
+                "SELECT query
+                   FROM search_log
+                  WHERE query LIKE ?1 ESCAPE '\\'
+                  GROUP BY query
+                  ORDER BY COUNT(*) DESC, MAX(ts) DESC
+                  LIMIT ?2",
+            )
+            .map_err(sql_err)?
+            .query_map(params![pattern, limit], |r| r.get::<_, String>(0))
+            .map_err(sql_err)?
+            .collect::<Result<Vec<_>, _>>()
             .map_err(sql_err)
         })
         .await

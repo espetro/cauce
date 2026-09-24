@@ -14,7 +14,8 @@
 //! [`response`], [`log_row`]) plus [`run_all`], which invokes every cluster in
 //! order. The per-area suites live beside it: [`cache`] — exact round-trip,
 //! expiry/eviction and the admin surface; [`lexical`] — the tier-2 FTS lookup;
-//! [`history`] — search log, clicks and the merged feed; [`stats`] —
+//! [`history`] — search log, clicks, the merged feed and `suggest`
+//! completions; [`stats`] —
 //! dashboard aggregates; [`health`] — engine health upserts; [`audit`] — the
 //! audit trail and its facets.
 //!
@@ -32,7 +33,7 @@ mod stats;
 pub use audit::audit_trail;
 pub use cache::{cache_admin, cache_exact_roundtrip, cache_expiry_and_eviction};
 pub use health::engine_health;
-pub use history::log_clicks_history;
+pub use history::{log_clicks_history, suggest};
 pub use lexical::lexical_search;
 pub use stats::stats_aggregates;
 
@@ -136,6 +137,7 @@ pub async fn run_all(store: &impl Store) {
     cache_expiry_and_eviction(store).await;
     lexical_search(store).await;
     log_clicks_history(store).await;
+    suggest(store).await;
     stats_aggregates(store).await;
     engine_health(store).await;
     audit_trail(store).await;

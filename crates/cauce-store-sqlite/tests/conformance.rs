@@ -50,6 +50,12 @@ async fn log_clicks_history() {
 }
 
 #[tokio::test]
+async fn suggest() {
+    let (store, _dir) = open();
+    cauce_core::conformance::suggest(&store).await;
+}
+
+#[tokio::test]
 async fn stats_aggregates() {
     let (store, _dir) = open();
     cauce_core::conformance::stats_aggregates(&store).await;

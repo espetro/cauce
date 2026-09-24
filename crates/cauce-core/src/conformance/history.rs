@@ -245,6 +245,74 @@ async fn verify_delete_cascade(store: &impl Store, history: &[HistoryItem]) {
     );
 }
 
+/// `suggest` completions (#150): case-insensitive prefix match on stored
+/// queries, frecency order (use count first, most recent use breaking
+/// ties), the `limit` cap and the empty-prefix short-circuit.
+pub async fn suggest(store: &impl Store) {
+    let base = Utc::now();
+    // `beta` (two uses) outranks the more recent single-use rows; the
+    // one-use rows order by recency. `echo`'s `query_raw` carries a
+    // different casing — completions are the normalized `query` text.
+    // `suggest-zed` shares no prefix and must never appear.
+    for (q, offset_s) in [
+        ("suggest-check beta", -10),
+        ("suggest-check beta", -5),
+        ("suggest-check alpha", 0),
+        ("suggest-check gamma", -1),
+        ("suggest-check echo", -2),
+        ("suggest éclair unicode", -3),
+        ("suggest-zed", 0),
+    ] {
+        let mut row = log_row(
+            base + chrono::Duration::seconds(offset_s),
+            q,
+            ClientKind::Api,
+            LogSource::Network,
+            1,
+            0,
+        );
+        if q == "suggest-check echo" {
+            row.query_raw = Some("SUGGEST-CHECK Echo".to_string());
+        }
+        store.log_search(row).await.expect("log_search suggest");
+    }
+
+    let expected = vec![
+        "suggest-check beta",
+        "suggest-check alpha",
+        "suggest-check gamma",
+        "suggest-check echo",
+    ];
+    for prefix in ["suggest-check", "SUGGEST-CHECK"] {
+        let got = store.suggest(prefix, 10).await.expect("suggest failed");
+        assert_eq!(got, expected, "suggest({prefix:?})");
+    }
+
+    // `prefix` is normalised the same way stored queries were written:
+    // unicode case and whitespace runs fold before the prefix match.
+    let got = store
+        .suggest("  SUGGEST  ÉCLAIR  ", 10)
+        .await
+        .expect("suggest normalised");
+    assert_eq!(got, vec!["suggest éclair unicode"], "suggest unicode");
+    let got = store
+        .suggest("suggest-check  beta", 10)
+        .await
+        .expect("suggest whitespace");
+    assert_eq!(got, vec!["suggest-check beta"], "suggest whitespace");
+
+    let capped = store
+        .suggest("suggest-check", 2)
+        .await
+        .expect("suggest limit");
+    assert_eq!(capped, expected[..2].to_vec(), "suggest honouring limit");
+
+    for prefix in ["", "zz-nothing"] {
+        let got = store.suggest(prefix, 10).await.expect("suggest empty");
+        assert!(got.is_empty(), "suggest({prefix:?}) must be empty: {got:?}");
+    }
+}
+
 /// Seed two search rows sharing one query plus a click on that query.
 async fn seed_dup_rows(store: &impl Store, base: DateTime<Utc>) {
     // Two rows sharing a query: deleting the older one keeps the clicks

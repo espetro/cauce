@@ -9,7 +9,8 @@
 //! the `config.put` diff walker [`changed_config_paths`], the SSE error
 //! envelope [`search_error_payload`] and the engines-page [`engine_error_class`]
 //! — plus the `MAX_LIMIT` page cap. The route handlers live beside it by
-//! family: [`search`] — `/api/search` and the SSE stream; [`cache`] —
+//! family: [`search`] — `/api/search` and the SSE stream; [`suggest`] —
+//! `/api/suggest` OpenSearch completions; [`cache`] —
 //! `/api/cache` listing, get and deletes; [`engines`] — `/api/engines`,
 //! reset and enable/disable; [`history`] — `/api/history`, click, stats,
 //! metrics, health and audit; [`config`] — `/api/config` get/put.
@@ -34,6 +35,7 @@ mod config;
 mod engines;
 mod history;
 mod search;
+mod suggest;
 
 pub(crate) use cache::cache_list_data;
 pub use cache::{cache_bulk_delete, cache_delete, cache_get, cache_list};
@@ -44,6 +46,7 @@ pub(crate) use history::{HISTORY_LIMIT, audit_list_data, history_inner};
 pub use history::{audit_list, click, health, history, history_delete, metrics, stats};
 pub(crate) use search::{parse_search_request, search_error, search_inner, search_inner_classed};
 pub use search::{search, search_stream};
+pub use suggest::suggest;
 
 /// Cap on caller-supplied `limit`/`offset`-style page sizes.
 pub(super) const MAX_LIMIT: u32 = 1_000;

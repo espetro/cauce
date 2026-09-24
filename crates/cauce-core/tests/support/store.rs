@@ -172,6 +172,9 @@ impl Store for StubStore {
     async fn history_stats(&self, _: &HistoryFilter) -> Result<HistoryStats, StoreError> {
         unimplemented!()
     }
+    async fn suggest(&self, _: &str, _: u32) -> Result<Vec<String>, StoreError> {
+        unimplemented!()
+    }
     async fn delete_search_log(&self, _: i64) -> Result<Option<DeleteSearchLog>, StoreError> {
         unimplemented!()
     }
