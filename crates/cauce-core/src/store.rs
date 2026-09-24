@@ -620,6 +620,14 @@ pub trait Store: Send + Sync {
     /// "showing N of M" cap note (W2-02).
     async fn history_stats(&self, filter: &HistoryFilter) -> Result<HistoryStats, StoreError>;
 
+    /// Query completions for `GET /api/suggest` (the OpenSearch suggestions
+    /// document the W2-11 descriptor advertises, #150): distinct stored
+    /// `search_log.query` values starting with `prefix`, matched
+    /// case-insensitively, ranked by frecency — most-used first, most
+    /// recent use breaking ties — capped at `limit`. An empty `prefix`
+    /// yields `[]`.
+    async fn suggest(&self, prefix: &str, limit: u32) -> Result<Vec<String>, StoreError>;
+
     /// `DELETE /api/history/{id}` (W2-02): remove one `search_log` row, plus
     /// the `clicks` rows sharing its `query_hash` only when no other
     /// `search_log` row carries that hash. Returns `None` when no row has

@@ -190,6 +190,37 @@ impl SqliteStore {
         .await
     }
 
+    /// `Store::suggest` (#150): distinct normalized queries starting with
+    /// `prefix` (`LIKE` is ASCII case-insensitive), ranked by frecency —
+    /// use count first, most recent use breaking ties — capped at `limit`.
+    pub(super) async fn suggest(
+        &self,
+        prefix: &str,
+        limit: u32,
+    ) -> Result<Vec<String>, StoreError> {
+        if prefix.trim().is_empty() || limit == 0 {
+            return Ok(Vec::new());
+        }
+        let pattern = like_prefix(prefix);
+        let limit = i64::from(limit);
+        self.with_reader(move |conn| {
+            conn.prepare(
+                "SELECT query
+                   FROM search_log
+                  WHERE query LIKE ?1 ESCAPE '\\'
+                  GROUP BY query
+                  ORDER BY COUNT(*) DESC, MAX(ts) DESC
+                  LIMIT ?2",
+            )
+            .map_err(sql_err)?
+            .query_map(params![pattern, limit], |r| r.get::<_, String>(0))
+            .map_err(sql_err)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(sql_err)
+        })
+        .await
+    }
+
     /// `DELETE /api/history/{id}` (W2-02): one `search_log` row, plus the
     /// `clicks` rows that share its `query_hash` only when no other
     /// `search_log` row carries that hash — a click belongs to the query,
