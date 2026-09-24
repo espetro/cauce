@@ -3,7 +3,9 @@
 //! * a synthetic spec + HTML fixture parses 10 results;
 //! * a fixture whose selectors match nothing yields
 //!   `EngineError::Parse("0 results, selector ...")`, not an empty `Ok`;
-//! * a blocked-substring fixture yields `EngineError::Blocked`.
+//! * a fixture with a blocked substring and no matching results yields
+//!   `EngineError::Blocked`, while the same substring echoed inside a page
+//!   with results does not (#109).
 //!
 //! Plus the contract surface around them: request templating, header
 //! `${env:}` interpolation, `detect.rate_limited_status`, `parse.kind:
@@ -142,6 +144,21 @@ fn blocked_substring_fixture_yields_blocked() {
         )
         .unwrap_err();
     assert_eq!(err, EngineError::Blocked);
+}
+
+/// #109: engines echo the query into the body (Bing's SERP input value), so
+/// a blocked substring inside a page that still yields results is not a
+/// block page.
+#[test]
+fn blocked_substring_echoed_with_results_is_not_blocked() {
+    let spec = spec();
+    let base = base(&spec, "unusual traffic report");
+    let body = format!(
+        r#"<html><body><input name="q" value="unusual traffic report">{}</body></html>"#,
+        html_body(3)
+    );
+    let results = spec.parse_response(200, body.as_bytes(), &base).unwrap();
+    assert_eq!(results.len(), 3);
 }
 
 #[test]
