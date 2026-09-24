@@ -33,6 +33,9 @@ parse:
     url: { css: "h2 a", attr: href }
     snippet: { css: [".b_caption p", "p"], text: true }
 detect:
+  # Echo-safe by semantics, not by marker choice (#109): `blocked` substrings
+  # are evaluated only when `li.b_algo` matches no nodes, so Bing echoing the
+  # query into the SERP input value cannot false-positive a healthy SERP.
   blocked: ["captcha", "unusual traffic"]
   rate_limited_status: [429]
 unwrap_redirect:
