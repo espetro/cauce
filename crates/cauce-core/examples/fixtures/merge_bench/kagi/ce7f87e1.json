@@ -1,0 +1,71 @@
+{
+  "query": "rust ownership tutorial",
+  "engine": "kagi",
+  "recorded_at": "2026-09-24T08:14:20Z",
+  "results": [
+    {
+      "url": "https://doc.rust-lang.org/rust-by-example/scope/ownership.html#partial_borrows",
+      "title": "Ownership and moves - Rust By Example",
+      "snippet": "Ownership is used to manage memory: partial moves, the borrow rules.",
+      "engine": "kagi",
+      "published": null,
+      "score": 0.0
+    },
+    {
+      "url": "https://medium.com/@rustaceans/rust-ownership-101-e4b5a1c2d3f4",
+      "title": "Rust Ownership 101 | by rustaceans | Medium",
+      "snippet": "Ownership explained with diagrams: the heap, the stack and why values move.",
+      "engine": "kagi",
+      "published": null,
+      "score": 0.0
+    },
+    {
+      "url": "https://dev.to/rustaceans/ownership-explained-2a3k",
+      "title": "Ownership explained (with cats) - DEV Community",
+      "snippet": "A friendly introduction to Rust's ownership rules using everyday analogies.",
+      "engine": "kagi",
+      "published": null,
+      "score": 0.0
+    },
+    {
+      "url": "https://medium.com/@rustaceans/borrowing-and-lifetimes-a1b2c3d4e5f6",
+      "title": "Borrowing and lifetimes in Rust | by rustaceans | Medium",
+      "snippet": "References let you use a value without owning it; lifetimes keep them honest.",
+      "engine": "kagi",
+      "published": null,
+      "score": 0.0
+    },
+    {
+      "url": "https://medium.com/@rustaceans/moves-and-copies-b2c3d4e5f6a7",
+      "title": "Moves and copies: when does Rust clone? | by rustaceans | Medium",
+      "snippet": "Understanding Copy types vs moved values and where clone() fits.",
+      "engine": "kagi",
+      "published": null,
+      "score": 0.0
+    },
+    {
+      "url": "https://steveklabnik.com/writing/ownership-in-rust",
+      "title": "Ownership in Rust - Steve Klabnik",
+      "snippet": "Notes on the ownership model from one of the book's original authors.",
+      "engine": "kagi",
+      "published": null,
+      "score": 0.0
+    },
+    {
+      "url": "https://medium.com/@rustaceans/smart-pointers-c3d4e5f6a7b8",
+      "title": "Smart pointers and ownership | by rustaceans | Medium",
+      "snippet": "Box, Rc and Arc: owning data on the heap and sharing ownership.",
+      "engine": "kagi",
+      "published": null,
+      "score": 0.0
+    },
+    {
+      "url": "https://medium.com/@rustaceans/ownership-pitfalls-d4e5f6a7b8c9",
+      "title": "Five ownership pitfalls for beginners | by rustaceans | Medium",
+      "snippet": "The borrow checker errors every newcomer hits, and how to fix them.",
+      "engine": "kagi",
+      "published": null,
+      "score": 0.0
+    }
+  ]
+}
