@@ -7,12 +7,14 @@
 //! [`parse`] (detect + extraction), [`redirect`] (tracking-redirect
 //! unwrapping), [`loading`] (embedded `engines/*.yaml` +
 //! `$CAUCE_CONFIG_DIR/engines/` overrides), [`fixtures`] (`cauce engine test`
-//! fixture-pair machinery).
+//! fixture-pair machinery), [`canary`] (the `cauce engine test --live`
+//! nightly drift checks).
 //!
 //! This Source Code Form is subject to the terms of the Mozilla Public
 //! License, v. 2.0. If a copy of the MPL was not distributed with this
 //! file, You can obtain one at <https://mozilla.org/MPL/2.0/>.
 
+pub mod canary;
 pub mod fixtures;
 pub mod loading;
 mod parse;

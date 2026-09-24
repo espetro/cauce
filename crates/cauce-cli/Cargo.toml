@@ -45,6 +45,9 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 [dev-dependencies]
 tokio = { version = "1", features = ["io-util", "macros", "process", "time"] }
 tempfile = "3"
+# Mock upstream for the `engine test --live` canary e2e (same pattern as
+# cauce-engines' declarative tests).
+wiremock = "0.6"
 # rmcp client side for the `cauce mcp` stdio e2e test (feature-unified with
 # the rmcp that cauce-server depends on).
 rmcp = { version = "3", features = ["client", "transport-async-rw"] }
