@@ -180,7 +180,6 @@ pub(super) fn exa_response(
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use proptest::prelude::*;
