@@ -1,6 +1,16 @@
 //! Typed configuration, XDG directories, `${...}` interpolation and
 //! resource-adaptive defaults (`Resources`).
 //!
+//! Module map (issue #158): `mod.rs` is the public API — [`ConfigError`],
+//! [`EnvMap`], [`Dirs`], the typed section structs, [`EngineKind`],
+//! [`EngineEntry`] and the [`Config`] facade (load, `from_raw`
+//! validation, `save`, the redacted display tree and
+//! `restore_redacted`). Beside it: [`tree`] — TOML tree plumbing
+//! (`set_path`, `tree_at`, `env_scalar`, `default_tree`);
+//! [`interpolate`] — `${env:...}`/`${file:...}`/`$$` expansion;
+//! [`redact`] — secret-leaf redaction for the display tree;
+//! [`resources`] — host memory/core detection and scaled defaults.
+//!
 //! Settled contract (`.agents/plans/v3/wave-0-skeleton.md`, "Settled inputs"):
 //! TOML at `$CAUCE_CONFIG_DIR/config.toml` (default `~/.config/cauce/`), data at
 //! `$CAUCE_DATA_DIR` (default `~/.local/share/cauce/`: `cauce.db`, `logs/`).
@@ -23,7 +33,20 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use crate::engine::{ENGINE_ID_PATTERN, EngineId, Tier};
-use crate::store::StoreTuning;
+
+mod interpolate;
+mod redact;
+mod resources;
+#[cfg(test)]
+mod tests_support;
+mod tree;
+
+pub use interpolate::interpolate_str;
+pub use resources::Resources;
+
+use interpolate::interpolate_tree;
+use redact::{REDACTED, SECRET_PATHS, redact_secret_paths, redacted_leaves};
+use tree::{default_tree, env_scalar, set_display, set_path, to_value, tree_at, tree_mut_at};
 
 /// An environment map: the real process-env snapshot in production, an
 /// explicit map in tests so loads stay deterministic.
@@ -90,17 +113,6 @@ const ENV_OVERRIDES: &[(&str, &[&str], bool)] = &[
 // directories (`CAUCE_CONFIG_DIR`, `CAUCE_DATA_DIR`), the enabled engine set
 // (`CAUCE_ENGINES`) or other subsystems (`CAUCE_REPLAY_*`, `CAUCE_LOG_PRETTY`,
 // `CAUCE_LIVE`, `CAUCE_NIGHTLY`).
-
-/// What a secret leaf renders as in the display tree when it was not
-/// produced by an interpolation template (templates print as their raw
-/// `${...}` text instead).
-const REDACTED: &str = "<redacted>";
-
-/// Dotted paths whose values are secrets by position, so the display tree
-/// redacts them no matter the value's origin (`${env:...}` template, `CAUCE_*`
-/// override or a file literal). Engine `env` maps are covered separately:
-/// every `engines.<i>.env.*` value is secret-bearing.
-const SECRET_PATHS: &[&[&str]] = &[&["ai", "api_key"]];
 
 /// Errors from `Config::load`/`Config::save`.
 #[derive(Debug, thiserror::Error)]
@@ -1175,390 +1187,10 @@ impl Config {
     }
 }
 
-/// Serialise then reparse to get a `toml::Value` view of `v` (there is no
-/// direct `Serialize -> Value` path in the `toml` crate).
-fn to_value<T: Serialize>(v: &T) -> Result<toml::Value, ConfigError> {
-    let text = toml::to_string_pretty(v).map_err(ConfigError::Encode)?;
-    toml::from_str(&text).map_err(ConfigError::Invalid)
-}
-
-/// The built-in defaults as a TOML tree; used as the raw layer when no
-/// config file exists so a first `save` writes a complete template file.
-fn default_tree() -> Result<toml::Value, ConfigError> {
-    to_value(&Config::default().sections())
-}
-
-/// Navigate `tree` along `path` (numeric segments index into arrays) and
-/// return the leaf slot, or `None` when the path does not resolve.
-fn tree_mut_at<'a>(tree: &'a mut toml::Value, path: &[String]) -> Option<&'a mut toml::Value> {
-    let mut cur = tree;
-    for seg in path {
-        cur = match cur {
-            toml::Value::Table(t) => t.get_mut(seg)?,
-            toml::Value::Array(a) => a.get_mut(seg.parse::<usize>().ok()?)?,
-            _ => return None,
-        };
-    }
-    Some(cur)
-}
-
-fn set_display(slot: Option<&mut toml::Value>, value: toml::Value) {
-    if let Some(slot) = slot {
-        *slot = value;
-    }
-}
-
-/// Replace the leaf at `path` with `<redacted>` unless `templates` covers
-/// that path (a `${...}` template already displays as its raw text, which
-/// reveals the indirection but never the secret) or the leaf is an empty
-/// string (no secret to hide; showing `<redacted>` would falsely imply one
-/// is set).
-fn redact_leaf(tree: &mut toml::Value, path: &[String], templates: &BTreeMap<Vec<String>, String>) {
-    if templates.contains_key(path) {
-        return;
-    }
-    let Some(slot) = tree_mut_at(tree, path) else {
-        return;
-    };
-    if let toml::Value::String(s) = &*slot
-        && !s.is_empty()
-    {
-        *slot = toml::Value::String(REDACTED.to_string());
-    }
-}
-
-/// Redact every secret-bearing leaf the template overlay did not already
-/// cover: the fixed `SECRET_PATHS` plus every `engines.<i>.env.*` value
-/// (child-process env vars are where engine credentials live). This is the
-/// guard for secrets that entered the resolved config as literals — an
-/// `CAUCE_*` override such as `CAUCE_AI_API_KEY` or a plain string in the file.
-fn redact_secret_paths(tree: &mut toml::Value, templates: &BTreeMap<Vec<String>, String>) {
-    for path in SECRET_PATHS {
-        let owned: Vec<String> = path.iter().map(|s| (*s).to_string()).collect();
-        redact_leaf(tree, &owned, templates);
-    }
-    // `engines` is a `&mut` borrow of `tree`, so the env leaves are
-    // redacted in place rather than via `redact_leaf`/`tree_mut_at`.
-    let Some(toml::Value::Array(engines)) = tree.get_mut("engines") else {
-        return;
-    };
-    for (i, entry) in engines.iter_mut().enumerate() {
-        let Some(toml::Value::Table(env)) = entry.get_mut("env") else {
-            continue;
-        };
-        for (key, value) in env.iter_mut() {
-            let path = vec![
-                "engines".to_string(),
-                i.to_string(),
-                "env".to_string(),
-                key.clone(),
-            ];
-            if templates.contains_key(&path) {
-                continue;
-            }
-            if let toml::Value::String(s) = value
-                && !s.is_empty()
-            {
-                *value = toml::Value::String(REDACTED.to_string());
-            }
-        }
-    }
-}
-
-/// Navigate `tree` along `path` read-only; sibling of [`tree_mut_at`].
-fn tree_at<'a>(tree: &'a toml::Value, path: &[String]) -> Option<&'a toml::Value> {
-    let mut cur = tree;
-    for seg in path {
-        cur = match cur {
-            toml::Value::Table(t) => t.get(seg)?,
-            toml::Value::Array(a) => a.get(seg.parse::<usize>().ok()?)?,
-            _ => return None,
-        };
-    }
-    Some(cur)
-}
-
-/// Recursively collect the paths of every `<redacted>` string leaf.
-fn redacted_leaves(tree: &toml::Value, at: &mut Vec<String>, out: &mut Vec<Vec<String>>) {
-    match tree {
-        toml::Value::String(s) if s == REDACTED => out.push(at.clone()),
-        toml::Value::Table(t) => {
-            for (k, v) in t {
-                at.push(k.clone());
-                redacted_leaves(v, at, out);
-                at.pop();
-            }
-        }
-        toml::Value::Array(a) => {
-            for (i, v) in a.iter().enumerate() {
-                at.push(i.to_string());
-                redacted_leaves(v, at, out);
-                at.pop();
-            }
-        }
-        _ => {}
-    }
-}
-
-/// Parse an `CAUCE_*` override string into a TOML scalar: booleans, integers
-/// and floats get their native type; everything else stays a string.
-fn env_scalar(s: &str) -> toml::Value {
-    match s {
-        "true" => return toml::Value::Boolean(true),
-        "false" => return toml::Value::Boolean(false),
-        _ => {}
-    }
-    if let Ok(i) = s.parse::<i64>() {
-        return toml::Value::Integer(i);
-    }
-    if let Ok(f) = s.parse::<f64>()
-        && f.is_finite()
-    {
-        return toml::Value::Float(f);
-    }
-    toml::Value::String(s.to_string())
-}
-
-/// Set `path` (e.g. `["server", "port"]`) inside a TOML tree, creating or
-/// overwriting intermediate tables as needed.
-fn set_path(root: &mut toml::Value, path: &[&str], value: toml::Value) {
-    let Some((last, parents)) = path.split_last() else {
-        return;
-    };
-    let mut cur = root;
-    for seg in parents {
-        if !cur.is_table() {
-            *cur = toml::Value::Table(toml::Table::new());
-        }
-        let table = match cur.as_table_mut() {
-            Some(t) => t,
-            None => unreachable!("just converted to table"),
-        };
-        cur = table
-            .entry((*seg).to_string())
-            .or_insert_with(|| toml::Value::Table(toml::Table::new()));
-    }
-    if !cur.is_table() {
-        *cur = toml::Value::Table(toml::Table::new());
-    }
-    if let Some(table) = cur.as_table_mut() {
-        table.insert((*last).to_string(), value);
-    }
-}
-
-/// Recursively interpolate every string in the merged tree. `at` tracks the
-/// dotted path for error messages; paths whose value changed are recorded
-/// in `templates` (mapped to their raw text) for redacted display.
-fn interpolate_tree(
-    value: &mut toml::Value,
-    env: &EnvMap,
-    at: &mut Vec<String>,
-    templates: &mut BTreeMap<Vec<String>, String>,
-) -> Result<(), ConfigError> {
-    match value {
-        toml::Value::String(s) => {
-            if s.contains('$') {
-                let raw = std::mem::take(s);
-                *s = interpolate_str(&raw, env, &at.join("."))?;
-                if *s != raw {
-                    templates.insert(at.clone(), raw);
-                }
-            }
-        }
-        toml::Value::Array(items) => {
-            for (i, item) in items.iter_mut().enumerate() {
-                at.push(i.to_string());
-                interpolate_tree(item, env, at, templates)?;
-                at.pop();
-            }
-        }
-        toml::Value::Table(table) => {
-            for (key, item) in table.iter_mut() {
-                at.push(key.clone());
-                interpolate_tree(item, env, at, templates)?;
-                at.pop();
-            }
-        }
-        _ => {}
-    }
-    Ok(())
-}
-
-/// Interpolate one string value: `${env:...}`, `${file:...}`, `$$` escape.
-/// A bare `$` not followed by `$` or `{` is literal.
-///
-/// Public so engine spec loaders (cauce-engines `declarative`) can run the
-/// same `${env:NAME}`/`${file:PATH}` contract on `request.headers` values.
-/// `path` is the dotted location used in error messages.
-pub fn interpolate_str(raw: &str, env: &EnvMap, path: &str) -> Result<String, ConfigError> {
-    let mut out = String::with_capacity(raw.len());
-    let mut rest = raw;
-    while let Some(pos) = rest.find('$') {
-        out.push_str(&rest[..pos]);
-        let after = &rest[pos + 1..];
-        if let Some(tail) = after.strip_prefix('$') {
-            out.push('$');
-            rest = tail;
-        } else if let Some(tail) = after.strip_prefix('{') {
-            let end = tail
-                .find('}')
-                .ok_or_else(|| ConfigError::BadInterpolation {
-                    path: path.to_string(),
-                    expr: format!("${{{tail}"),
-                })?;
-            out.push_str(&resolve_expr(&tail[..end], env, path)?);
-            rest = &tail[end + 1..];
-        } else {
-            out.push('$');
-            rest = after;
-        }
-    }
-    out.push_str(rest);
-    Ok(out)
-}
-
-/// Resolve the inside of a `${...}` expression.
-fn resolve_expr(inner: &str, env: &EnvMap, path: &str) -> Result<String, ConfigError> {
-    if let Some(spec) = inner.strip_prefix("env:") {
-        // First `:-` or `:?` wins; the rest of the string is the payload.
-        let split = [(":-", '-'), (":?", '?')]
-            .into_iter()
-            .filter_map(|(sep, kind)| spec.find(sep).map(|i| (i, kind)))
-            .min_by_key(|(i, _)| *i);
-        let (name, suffix) = match split {
-            Some((i, kind)) => (&spec[..i], Some((kind, &spec[i + 2..]))),
-            None => (spec, None),
-        };
-        // POSIX semantics: the `:`-forms (`:-`, `:?`) treat unset OR empty
-        // as missing; the plain form treats empty as a real value.
-        let value = env.get(name).filter(|v| !v.is_empty());
-        return match suffix {
-            Some(('-', default)) => Ok(value.cloned().unwrap_or_else(|| default.to_string())),
-            Some(('?', msg)) => value.cloned().ok_or_else(|| ConfigError::MissingEnvMsg {
-                path: path.to_string(),
-                var: name.to_string(),
-                msg: msg.to_string(),
-            }),
-            // Plain `${env:NAME}`: unset errors, empty stays empty.
-            _ => env
-                .get(name)
-                .cloned()
-                .ok_or_else(|| ConfigError::MissingEnv {
-                    path: path.to_string(),
-                    var: name.to_string(),
-                }),
-        };
-    }
-    if let Some(file) = inner.strip_prefix("file:") {
-        let file = expand_home(file, env);
-        return std::fs::read_to_string(&file)
-            .map(|s| s.trim_end_matches(['\r', '\n']).to_string())
-            .map_err(|source| ConfigError::MissingFile {
-                path: path.to_string(),
-                file,
-                source,
-            });
-    }
-    Err(ConfigError::BadInterpolation {
-        path: path.to_string(),
-        expr: format!("${{{inner}}}"),
-    })
-}
-
-/// `~/...` inside `${file:...}` resolves against the user's home directory.
-fn expand_home(path: &str, env: &EnvMap) -> PathBuf {
-    match path.strip_prefix("~/") {
-        Some(rest) => home_dir(env).join(rest),
-        None => PathBuf::from(path),
-    }
-}
-
-/// Host resources detected at startup; the resource-adaptive defaults the
-/// settled inputs require (never a fixed large allocation).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Resources {
-    /// SQLite `cache_size`/`mmap_size`/`busy_timeout` tuning (W0-03 type,
-    /// consumed by `cauce-store-sqlite`).
-    pub store_tuning: StoreTuning,
-    /// Max concurrent upstream engine calls, scaled to cores.
-    pub upstream_concurrency: u16,
-    /// `cargo test`/`nextest` thread budget, scaled to cores.
-    pub test_threads: u16,
-}
-
-impl Resources {
-    /// Read available memory and core count via `sysinfo`, then derive.
-    pub fn detect() -> Self {
-        let mut sys = sysinfo::System::new();
-        sys.refresh_memory();
-        sys.refresh_cpu_all();
-        let mem_bytes = sys.available_memory();
-        let cores = sysinfo::System::physical_core_count()
-            .unwrap_or_else(|| sys.cpus().len())
-            .min(usize::from(u16::MAX)) as u16;
-        Self::from_specs(mem_bytes, cores)
-    }
-
-    /// Pure derivation from injected numbers (the acceptance test path).
-    ///
-    /// Scaling rules, clamped so small machines stay usable and big ones do
-    /// not get an unbounded allocation:
-    ///
-    /// - `cache_size_kib`: RAM / 128, clamped to 8-512 MiB
-    ///   (4 GiB -> 32 MiB, 32 GiB -> 256 MiB).
-    /// - `mmap_size_bytes`: RAM / 16, clamped to 64 MiB-4 GiB
-    ///   (4 GiB -> 256 MiB, 32 GiB -> 2 GiB).
-    /// - `busy_timeout_ms`: fixed 5000.
-    /// - `upstream_concurrency`: 4 per core, clamped to 4-64.
-    /// - `test_threads`: one per core, clamped to 1-32.
-    pub fn from_specs(mem_bytes: u64, cores: u16) -> Self {
-        const KIB: u64 = 1024;
-        const MIB: u64 = 1024 * KIB;
-        const GIB: u64 = 1024 * MIB;
-        let cache_size_kib = (mem_bytes / 128 / KIB).clamp(8 * KIB, 512 * KIB) as u32;
-        let mmap_size_bytes = (mem_bytes / 16).clamp(64 * MIB, 4 * GIB);
-        Self {
-            store_tuning: StoreTuning {
-                cache_size_kib,
-                mmap_size_bytes,
-                busy_timeout_ms: 5_000,
-            },
-            upstream_concurrency: (u32::from(cores) * 4).clamp(4, 64) as u16,
-            test_threads: cores.clamp(1, 32),
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
+    use super::tests_support::{env_of, sandbox, write_config};
     use super::*;
-
-    fn env_of(pairs: &[(&str, &str)]) -> EnvMap {
-        pairs
-            .iter()
-            .map(|(k, v)| ((*k).to_string(), (*v).to_string()))
-            .collect()
-    }
-
-    /// Temp config + data dirs, returned with an env map pointing at them.
-    fn sandbox(extra: &[(&str, &str)]) -> (tempfile::TempDir, EnvMap) {
-        let dir = tempfile::tempdir().unwrap();
-        let mut map = env_of(&[
-            ("CAUCE_CONFIG_DIR", dir.path().join("cfg").to_str().unwrap()),
-            ("CAUCE_DATA_DIR", dir.path().join("data").to_str().unwrap()),
-        ]);
-        for (k, v) in extra {
-            map.insert((*k).to_string(), (*v).to_string());
-        }
-        (dir, map)
-    }
-
-    fn write_config(dir: &Path, body: &str) {
-        std::fs::create_dir_all(dir).unwrap();
-        std::fs::write(dir.join("config.toml"), body).unwrap();
-    }
-
-    const GIB: u64 = 1024 * 1024 * 1024;
 
     #[test]
     fn defaults_when_no_file() {
@@ -1641,73 +1273,146 @@ mod tests {
         assert!(AuthConfig { enabled: true }.enabled_for("127.0.0.1"));
     }
 
+    /// `CAUCE_*` dirs win over `XDG_*_HOME`, which wins over the home
+    /// fallback; the resolved `Dirs` drive every path accessor on `Config`.
     #[test]
-    fn dirs_resolve_cauce_then_xdg_then_home() {
+    fn dirs_cases() {
         let (_tmp, env) = sandbox(&[]);
         let cfg = Config::load_with(&env).unwrap();
         assert_eq!(cfg.config_path(), cfg.config_dir().join("config.toml"));
         assert_eq!(cfg.db_path(), cfg.data_dir().join("cauce.db"));
         assert_eq!(cfg.logs_dir(), cfg.data_dir().join("logs"));
 
-        let xdg = env_of(&[
-            ("XDG_CONFIG_HOME", "/tmp/xdgcfg"),
-            ("XDG_DATA_HOME", "/tmp/xdgdata"),
-        ]);
-        let dirs = Dirs::detect_with(&xdg);
-        assert_eq!(dirs.config_dir, PathBuf::from("/tmp/xdgcfg/cauce"));
-        assert_eq!(dirs.data_dir, PathBuf::from("/tmp/xdgdata/cauce"));
-
-        let home = env_of(&[("HOME", "/tmp/home")]);
-        let dirs = Dirs::detect_with(&home);
-        assert_eq!(dirs.config_dir, PathBuf::from("/tmp/home/.config/cauce"));
-        assert_eq!(dirs.data_dir, PathBuf::from("/tmp/home/.local/share/cauce"));
+        struct DirsCase {
+            env: &'static [(&'static str, &'static str)],
+            config_dir: &'static str,
+            data_dir: &'static str,
+        }
+        let cases = &[
+            DirsCase {
+                env: &[
+                    ("XDG_CONFIG_HOME", "/tmp/xdgcfg"),
+                    ("XDG_DATA_HOME", "/tmp/xdgdata"),
+                ],
+                config_dir: "/tmp/xdgcfg/cauce",
+                data_dir: "/tmp/xdgdata/cauce",
+            },
+            DirsCase {
+                env: &[("HOME", "/tmp/home")],
+                config_dir: "/tmp/home/.config/cauce",
+                data_dir: "/tmp/home/.local/share/cauce",
+            },
+            // `CAUCE_*` beats both lower precedence sources.
+            DirsCase {
+                env: &[
+                    ("CAUCE_CONFIG_DIR", "/tmp/cc"),
+                    ("CAUCE_DATA_DIR", "/tmp/cd"),
+                    ("XDG_CONFIG_HOME", "/tmp/xdgcfg"),
+                    ("XDG_DATA_HOME", "/tmp/xdgdata"),
+                    ("HOME", "/tmp/home"),
+                ],
+                config_dir: "/tmp/cc",
+                data_dir: "/tmp/cd",
+            },
+        ];
+        for case in cases {
+            let dirs = Dirs::detect_with(&env_of(case.env));
+            assert_eq!(dirs.config_dir, PathBuf::from(case.config_dir));
+            assert_eq!(dirs.data_dir, PathBuf::from(case.data_dir));
+        }
     }
 
+    /// `public_url` is optional; accepted values must be bare HTTP(S)
+    /// origins and become the `public_origin` verbatim.
     #[test]
-    fn public_url_is_optional_validated_and_used_as_origin() {
+    fn public_url_cases() {
+        #[derive(Debug)]
+        enum PubUrlWant {
+            Ok,
+            Reject,
+        }
+        struct PubUrlCase {
+            value: &'static str,
+            want: PubUrlWant,
+        }
+        let cases = &[
+            PubUrlCase {
+                value: "https://search.localhost",
+                want: PubUrlWant::Ok,
+            },
+            PubUrlCase {
+                value: "https://search.localhost/",
+                want: PubUrlWant::Ok,
+            },
+            PubUrlCase {
+                value: "http://127.0.0.1:4480",
+                want: PubUrlWant::Ok,
+            },
+            PubUrlCase {
+                value: "relative/path",
+                want: PubUrlWant::Reject,
+            },
+            PubUrlCase {
+                value: "ftp://search.localhost",
+                want: PubUrlWant::Reject,
+            },
+            PubUrlCase {
+                value: "https://user:pass@search.localhost",
+                want: PubUrlWant::Reject,
+            },
+            PubUrlCase {
+                value: "https://search.localhost/path",
+                want: PubUrlWant::Reject,
+            },
+            PubUrlCase {
+                value: "https://search.localhost/?q=x",
+                want: PubUrlWant::Reject,
+            },
+            PubUrlCase {
+                value: "https://search.localhost/#fragment",
+                want: PubUrlWant::Reject,
+            },
+            PubUrlCase {
+                value: "https://search.localhost\" x=\"bad.localhost",
+                want: PubUrlWant::Reject,
+            },
+            PubUrlCase {
+                value: "https://search.localhost\n.evil",
+                want: PubUrlWant::Reject,
+            },
+            PubUrlCase {
+                value: "https://bad host.localhost",
+                want: PubUrlWant::Reject,
+            },
+            PubUrlCase {
+                value: "https://search.localhost:invalid",
+                want: PubUrlWant::Reject,
+            },
+        ];
+
         let (tmp, env) = sandbox(&[]);
         assert_eq!(Config::load_with(&env).unwrap().server.public_url, None);
-
-        for value in [
-            "https://search.localhost",
-            "https://search.localhost/",
-            "http://127.0.0.1:4480",
-        ] {
+        for case in cases {
             write_config(
                 &tmp.path().join("cfg"),
-                &format!("[server]\npublic_url = {value:?}\n"),
+                &format!("[server]\npublic_url = {:?}\n", case.value),
             );
-            let cfg = Config::load_with(&env).unwrap();
-            assert_eq!(cfg.server.public_url.as_deref(), Some(value));
-            assert_eq!(
-                cfg.server.public_origin("127.0.0.1", 4479),
-                value.trim_end_matches('/')
-            );
-        }
-
-        for value in [
-            "relative/path",
-            "ftp://search.localhost",
-            "https://user:pass@search.localhost",
-            "https://search.localhost/path",
-            "https://search.localhost/?q=x",
-            "https://search.localhost/#fragment",
-            "https://search.localhost\" x=\"bad.localhost",
-            "https://search.localhost\n.evil",
-            "https://bad host.localhost",
-            "https://search.localhost:invalid",
-        ] {
-            write_config(
-                &tmp.path().join("cfg"),
-                &format!("[server]\npublic_url = {value:?}\n"),
-            );
-            assert!(
-                matches!(
-                    Config::load_with(&env),
-                    Err(ConfigError::InvalidValue { ref path, .. }) if path == "server.public_url"
+            match (&case.want, Config::load_with(&env)) {
+                (PubUrlWant::Ok, Ok(cfg)) => {
+                    assert_eq!(cfg.server.public_url.as_deref(), Some(case.value));
+                    assert_eq!(
+                        cfg.server.public_origin("127.0.0.1", 4479),
+                        case.value.trim_end_matches('/')
+                    );
+                }
+                (PubUrlWant::Reject, Err(ConfigError::InvalidValue { ref path, .. })) => {
+                    assert_eq!(path, "server.public_url");
+                }
+                (want, got) => panic!(
+                    "public_url {:?}: expected {want:?}, got {got:?}",
+                    case.value
                 ),
-                "public_url {value:?} must be rejected"
-            );
+            }
         }
     }
 
@@ -1857,172 +1562,6 @@ mod tests {
         ));
     }
 
-    /// `${env:...}`/`${file:...}`/escape/disable cases share one
-    /// sandbox-and-load shape; a table keeps each contract visible
-    /// without repeating the harness. `FILE` inside `value` is
-    /// substituted with a per-case `secret.txt` path (POSIX `:-`/`:?`
-    /// treat unset-or-empty as missing).
-    #[derive(Debug)]
-    enum InterpWant {
-        Ok(&'static str),
-        MissingEnv(&'static str),
-        MissingEnvMsg(&'static str, &'static str),
-        MissingFile,
-    }
-
-    struct InterpCase {
-        env: &'static [(&'static str, &'static str)],
-        /// TOML written before `[ai]` (e.g. a `[config]` override).
-        prefix: &'static str,
-        /// `secret.txt` contents written beside the config.
-        file: Option<&'static str>,
-        /// Raw TOML value of `ai.api_key`.
-        value: &'static str,
-        want: InterpWant,
-    }
-
-    #[test]
-    fn interpolation_cases() {
-        let cases = &[
-            InterpCase {
-                env: &[("MY_SECRET", "s3cret")],
-                prefix: "",
-                file: None,
-                value: "${env:MY_SECRET}",
-                want: InterpWant::Ok("s3cret"),
-            },
-            InterpCase {
-                env: &[],
-                prefix: "",
-                file: None,
-                value: "${env:UNSET_VAR}",
-                want: InterpWant::MissingEnv("UNSET_VAR"),
-            },
-            InterpCase {
-                env: &[],
-                prefix: "",
-                file: None,
-                value: "${env:UNSET_VAR:-fallback}",
-                want: InterpWant::Ok("fallback"),
-            },
-            InterpCase {
-                env: &[("SET_VAR", "real")],
-                prefix: "",
-                file: None,
-                value: "${env:SET_VAR:-fallback}",
-                want: InterpWant::Ok("real"),
-            },
-            InterpCase {
-                env: &[],
-                prefix: "",
-                file: None,
-                value: "${env:UNSET_VAR:?get a Bifrost key first}",
-                want: InterpWant::MissingEnvMsg("UNSET_VAR", "get a Bifrost key first"),
-            },
-            InterpCase {
-                env: &[("SET_VAR", "real-value")],
-                prefix: "",
-                file: None,
-                value: "${env:SET_VAR:?unreachable}",
-                want: InterpWant::Ok("real-value"),
-            },
-            InterpCase {
-                env: &[],
-                prefix: "",
-                file: Some("file-secret\n"),
-                value: "${file:FILE}",
-                want: InterpWant::Ok("file-secret"),
-            },
-            InterpCase {
-                env: &[],
-                prefix: "",
-                file: None,
-                value: "${file:/nonexistent/secret}",
-                want: InterpWant::MissingFile,
-            },
-            InterpCase {
-                env: &[],
-                prefix: "",
-                file: None,
-                value: "literal $$HOME and $$",
-                want: InterpWant::Ok("literal $HOME and $"),
-            },
-            InterpCase {
-                env: &[("EMPTY_VAR", "")],
-                prefix: "",
-                file: None,
-                value: "${env:EMPTY_VAR:-fallback}",
-                want: InterpWant::Ok("fallback"),
-            },
-            InterpCase {
-                env: &[("EMPTY_VAR", "")],
-                prefix: "",
-                file: None,
-                value: "${env:EMPTY_VAR}",
-                want: InterpWant::Ok(""),
-            },
-            InterpCase {
-                env: &[("EMPTY_VAR", "")],
-                prefix: "",
-                file: None,
-                value: "${env:EMPTY_VAR:?need a key}",
-                want: InterpWant::MissingEnvMsg("EMPTY_VAR", "need a key"),
-            },
-            // `$${env:X}` produces the literal text; no expansion.
-            InterpCase {
-                env: &[("MY_SECRET", "s3cret")],
-                prefix: "",
-                file: None,
-                value: "$${env:MY_SECRET}",
-                want: InterpWant::Ok("${env:MY_SECRET}"),
-            },
-            InterpCase {
-                env: &[("PART_A", "sk-"), ("PART_B", "bf-123")],
-                prefix: "",
-                file: None,
-                value: "${env:PART_A}${env:PART_B}",
-                want: InterpWant::Ok("sk-bf-123"),
-            },
-            InterpCase {
-                env: &[("MY_SECRET", "s3cret")],
-                prefix: "[config]\ninterpolation = false\n",
-                file: None,
-                value: "${env:MY_SECRET}",
-                want: InterpWant::Ok("${env:MY_SECRET}"),
-            },
-        ];
-        for case in cases {
-            let (tmp, env) = sandbox(case.env);
-            let mut value = case.value.to_string();
-            if let Some(content) = case.file {
-                let secret = tmp.path().join("secret.txt");
-                std::fs::write(&secret, content).unwrap();
-                value = value.replace("FILE", &secret.display().to_string());
-            }
-            write_config(
-                &tmp.path().join("cfg"),
-                &format!("{}[ai]\napi_key = \"{value}\"\n", case.prefix),
-            );
-            match (&case.want, Config::load_with(&env)) {
-                (InterpWant::Ok(want), Ok(cfg)) => {
-                    assert_eq!(&cfg.ai.api_key, want, "{value:?} must resolve")
-                }
-                (InterpWant::MissingEnv(want), Err(ConfigError::MissingEnv { var, .. })) => {
-                    assert_eq!(&var, want, "{value:?} must name the missing var")
-                }
-                (
-                    InterpWant::MissingEnvMsg(wv, wm),
-                    Err(ConfigError::MissingEnvMsg { var, msg, .. }),
-                ) => {
-                    assert_eq!(&var, wv, "{value:?} must name the missing var");
-                    assert_eq!(&msg, wm, "{value:?} must carry the message");
-                }
-                (InterpWant::MissingFile, Err(ConfigError::MissingFile { .. })) => {}
-                (want, got) => panic!("{value:?}: expected {want:?}, got {got:?}"),
-            }
-        }
-    }
-
     #[test]
     fn save_round_trip_preserves_template() {
         let (tmp, env) = sandbox(&[("BIFROST_API_KEY", "sk-bf-live-secret")]);
@@ -2041,207 +1580,6 @@ mod tests {
         // The saved file loads back into the same resolved config.
         let reloaded = Config::load_with(&env).unwrap();
         assert_eq!(reloaded.ai.api_key, "sk-bf-live-secret");
-    }
-
-    #[test]
-    fn display_redacts_resolved_secrets() {
-        let (tmp, env) = sandbox(&[("BIFROST_API_KEY", "sk-bf-live-secret")]);
-        write_config(
-            &tmp.path().join("cfg"),
-            "[ai]\napi_key = \"${env:BIFROST_API_KEY}\"\n[server]\nport = 4480\n",
-        );
-        let cfg = Config::load_with(&env).unwrap();
-        let shown = cfg.display_toml().unwrap();
-        assert!(shown.contains("${env:BIFROST_API_KEY}"), "{shown}");
-        assert!(!shown.contains("sk-bf-live-secret"), "{shown}");
-        assert!(shown.contains("4480"), "{shown}");
-    }
-
-    #[test]
-    fn debug_and_serialize_redact_secrets() {
-        let (tmp, env) = sandbox(&[("BIFROST_API_KEY", "sk-bf-live-secret")]);
-        write_config(
-            &tmp.path().join("cfg"),
-            "[ai]\napi_key = \"${env:BIFROST_API_KEY}\"\n",
-        );
-        let cfg = Config::load_with(&env).unwrap();
-        assert_eq!(cfg.ai.api_key, "sk-bf-live-secret");
-
-        for rendered in [
-            format!("{cfg:?}"),
-            serde_json::to_string(&cfg).unwrap(),
-            toml::to_string_pretty(&cfg).unwrap(),
-        ] {
-            assert!(!rendered.contains("sk-bf-live-secret"), "{rendered}");
-            assert!(rendered.contains("${env:BIFROST_API_KEY}"), "{rendered}");
-        }
-    }
-
-    /// An `CAUCE_*` override lands as a literal in the resolved config — no
-    /// `${...}` template tracks it — yet secret paths are redacted by
-    /// position on every display surface (#82).
-    #[test]
-    fn display_redacts_env_override_secret() {
-        let (_tmp, env) = sandbox(&[("CAUCE_AI_API_KEY", "s3cret-from-env")]);
-        let cfg = Config::load_with(&env).unwrap();
-        assert_eq!(cfg.ai.api_key, "s3cret-from-env");
-
-        for rendered in [
-            cfg.display_toml().unwrap(),
-            format!("{cfg:?}"),
-            serde_json::to_string(&cfg).unwrap(),
-            toml::to_string_pretty(&cfg).unwrap(),
-        ] {
-            assert!(!rendered.contains("s3cret-from-env"), "{rendered}");
-            assert!(rendered.contains(REDACTED), "{rendered}");
-        }
-    }
-
-    /// File literals at secret paths are redacted too, and every
-    /// `engines.*.env.*` value is treated as secret-bearing — unless it
-    /// came from a template, which keeps its raw `${...}` display text.
-    #[test]
-    fn display_redacts_literal_and_engine_env_secrets() {
-        let (tmp, env) = sandbox(&[("ENGINE_TMPL", "tmpl-secret")]);
-        write_config(
-            &tmp.path().join("cfg"),
-            "[ai]\napi_key = \"literal-secret\"\n\n[[engines]]\nid = \"x\"\nkind = \"exec\"\ncommand = \"/bin/x\"\n\n[engines.env]\nMY_KEY = \"engine-secret\"\nOTHER = \"${env:ENGINE_TMPL}\"\n",
-        );
-        let cfg = Config::load_with(&env).unwrap();
-        assert_eq!(cfg.ai.api_key, "literal-secret");
-        assert_eq!(
-            cfg.engine("x")
-                .unwrap()
-                .env
-                .get("MY_KEY")
-                .map(String::as_str),
-            Some("engine-secret")
-        );
-
-        let shown = cfg.display_toml().unwrap();
-        for secret in ["literal-secret", "engine-secret", "tmpl-secret"] {
-            assert!(!shown.contains(secret), "{shown}");
-        }
-        // The template-valued env entry still shows its `${...}` text.
-        assert!(shown.contains("${env:ENGINE_TMPL}"), "{shown}");
-    }
-
-    /// Redacting an unset secret path must not fabricate one: an empty
-    /// `api_key` displays as `""`, not `<redacted>`.
-    #[test]
-    fn display_does_not_redact_empty_secret() {
-        let (_tmp, env) = sandbox(&[]);
-        let cfg = Config::load_with(&env).unwrap();
-        let shown = cfg.display_toml().unwrap();
-        assert!(!shown.contains(REDACTED), "{shown}");
-        assert!(shown.contains("api_key = \"\""), "{shown}");
-    }
-
-    /// A display -> PUT roundtrip restores `<redacted>` leaves to their
-    /// real values (template text or resolved literal) instead of
-    /// persisting the placeholder.
-    #[test]
-    fn restore_redacted_roundtrips_secret_leaves() {
-        let (_tmp, env) = sandbox(&[("CAUCE_AI_API_KEY", "env-secret"), ("TMPL", "t-secret")]);
-        let mut submitted: toml::Value = toml::from_str(
-            "[ai]\napi_key = \"<redacted>\"\n\n[[engines]]\nid = \"x\"\nkind = \"exec\"\ncommand = \"/bin/x\"\n\n[engines.env]\nMY_KEY = \"<redacted>\"\nOTHER = \"${env:TMPL}\"\n",
-        )
-        .unwrap();
-
-        // No current secret behind the placeholders yet.
-        let (_tmp2, env2) = sandbox(&[("TMPL", "t-secret")]);
-        let empty = Config::load_with(&env2).unwrap();
-        assert!(empty.restore_redacted(&mut submitted.clone()).is_err());
-
-        // With a current config that has the secrets, both restore.
-        write_config(
-            &_tmp.path().join("cfg"),
-            "[[engines]]\nid = \"x\"\nkind = \"exec\"\ncommand = \"/bin/x\"\n\n[engines.env]\nMY_KEY = \"file-secret\"\n",
-        );
-        let cfg = Config::load_with(&env).unwrap();
-        let restored = cfg.restore_redacted(&mut submitted).unwrap();
-        assert_eq!(restored, ["ai.api_key", "engines.0.env.MY_KEY"]);
-        assert_eq!(
-            tree_at(&submitted, &["ai".into(), "api_key".into()]).and_then(|v| v.as_str()),
-            Some("env-secret")
-        );
-        assert_eq!(
-            tree_at(
-                &submitted,
-                &["engines".into(), "0".into(), "env".into(), "MY_KEY".into()]
-            )
-            .and_then(|v| v.as_str()),
-            Some("file-secret")
-        );
-        // The restored tree validates and keeps the template untouched.
-        let cfg2 = Config::from_raw(&submitted, &env).unwrap();
-        assert_eq!(cfg2.ai.api_key, "env-secret");
-        assert_eq!(
-            cfg2.engine("x")
-                .unwrap()
-                .env
-                .get("MY_KEY")
-                .map(String::as_str),
-            Some("file-secret")
-        );
-    }
-
-    /// A `<redacted>` at a non-secret path (or any spot with no current
-    /// secret) is rejected rather than persisted as a literal.
-    #[test]
-    fn restore_redacted_rejects_orphaned_placeholder() {
-        let (_tmp, env) = sandbox(&[]);
-        let cfg = Config::load_with(&env).unwrap();
-        let mut submitted: toml::Value =
-            toml::from_str("[search]\ndeadline_ms = \"<redacted>\"\n").unwrap();
-        assert!(cfg.restore_redacted(&mut submitted).is_err());
-
-        // String-typed non-secret paths are rejected too, and a fabricated
-        // `<redacted>` on an engine field cannot leak a *different* engine's
-        // value across a reordered array.
-        let mut submitted: toml::Value = toml::from_str(
-            "[server]\nhost = \"<redacted>\"\n\n[[engines]]\nid = \"x\"\nkind = \"exec\"\ncommand = \"<redacted>\"\n",
-        )
-        .unwrap();
-        assert!(cfg.restore_redacted(&mut submitted).is_err());
-
-        // Unknown engine id under env is rejected.
-        let mut submitted: toml::Value = toml::from_str(
-            "[[engines]]\nid = \"ghost\"\nkind = \"exec\"\ncommand = \"/bin/x\"\n\n[engines.env]\nK = \"<redacted>\"\n",
-        )
-        .unwrap();
-        assert!(cfg.restore_redacted(&mut submitted).is_err());
-    }
-
-    /// Engine env placeholders bind by engine id, not array index: a
-    /// submitted `[[engines]]` order different from the current config still
-    /// restores each secret onto the right engine.
-    #[test]
-    fn restore_redacted_matches_engine_env_by_id() {
-        let (tmp, env) = sandbox(&[]);
-        write_config(
-            &tmp.path().join("cfg"),
-            "[[engines]]\nid = \"a\"\nkind = \"exec\"\ncommand = \"/bin/a\"\n\n[engines.env]\nK = \"secret-a\"\n\n[[engines]]\nid = \"b\"\nkind = \"exec\"\ncommand = \"/bin/b\"\n\n[engines.env]\nK = \"secret-b\"\n",
-        );
-        let cfg = Config::load_with(&env).unwrap();
-
-        // Submitted order is b, a — the reverse of the file.
-        let mut submitted: toml::Value = toml::from_str(
-            "[[engines]]\nid = \"b\"\nkind = \"exec\"\ncommand = \"/bin/b\"\n\n[engines.env]\nK = \"<redacted>\"\n\n[[engines]]\nid = \"a\"\nkind = \"exec\"\ncommand = \"/bin/a\"\n\n[engines.env]\nK = \"<redacted>\"\n",
-        )
-        .unwrap();
-        let mut restored = cfg.restore_redacted(&mut submitted).unwrap();
-        restored.sort();
-        assert_eq!(restored, ["engines.0.env.K", "engines.1.env.K"]);
-        let k = |i: &str| {
-            tree_at(
-                &submitted,
-                &["engines".into(), i.into(), "env".into(), "K".into()],
-            )
-            .and_then(|v| v.as_str().map(String::from))
-        };
-        assert_eq!(k("0").as_deref(), Some("secret-b"));
-        assert_eq!(k("1").as_deref(), Some("secret-a"));
     }
 
     #[test]
@@ -2310,30 +1648,36 @@ mod tests {
         assert!(cfg.engine("ddgs").unwrap().egress.is_none());
     }
 
+    /// `[[engines]]` semantic rejects share one file->`InvalidEngine`
+    /// shape; the error names the offending id.
     #[test]
-    fn engine_egress_zero_rate_rejected() {
-        let (tmp, env) = sandbox(&[]);
-        write_config(
-            &tmp.path().join("cfg"),
-            "[[engines]]\nid = \"x\"\nkind = \"exec\"\ncommand = \"/bin/x\"\n\n[engines.egress]\nrequests_per_second = 0\n",
-        );
-        assert!(matches!(
-            Config::load_with(&env),
-            Err(ConfigError::InvalidEngine { id, .. }) if id == "x"
-        ));
-    }
-
-    #[test]
-    fn exec_engine_requires_command() {
-        let (tmp, env) = sandbox(&[]);
-        write_config(
-            &tmp.path().join("cfg"),
-            "[[engines]]\nid = \"x\"\nkind = \"exec\"\n",
-        );
-        assert!(matches!(
-            Config::load_with(&env),
-            Err(ConfigError::InvalidEngine { .. })
-        ));
+    fn engine_reject_cases() {
+        struct RejectCase {
+            file: &'static str,
+            want_id: &'static str,
+        }
+        let cases = &[
+            // `kind = "exec"` without a `command`.
+            RejectCase {
+                file: "[[engines]]\nid = \"x\"\nkind = \"exec\"\n",
+                want_id: "x",
+            },
+            // A zero egress token-bucket rate.
+            RejectCase {
+                file: "[[engines]]\nid = \"x\"\nkind = \"exec\"\ncommand = \"/bin/x\"\n\n[engines.egress]\nrequests_per_second = 0\n",
+                want_id: "x",
+            },
+        ];
+        for case in cases {
+            let (tmp, env) = sandbox(&[]);
+            write_config(&tmp.path().join("cfg"), case.file);
+            match Config::load_with(&env) {
+                Err(ConfigError::InvalidEngine { id, .. }) => {
+                    assert_eq!(id, case.want_id);
+                }
+                other => panic!("{:?} must be rejected: {other:?}", case.file),
+            }
+        }
     }
 
     /// Engine ids are `[A-Za-z0-9._-]+`: they surface in URL path
@@ -2367,78 +1711,89 @@ mod tests {
         assert!(cfg.engine("a-b").is_some());
     }
 
+    /// `CAUCE_ENGINES` pins the enabled set to exactly the listed ids; an
+    /// empty or whitespace-only value is treated as unset (pinning to
+    /// nothing would produce a dead server), and every name must resolve
+    /// against the configured + built-in entries.
     #[test]
-    fn cauce_engines_pins_enabled_set() {
-        let (_tmp, env) = sandbox(&[("CAUCE_ENGINES", "replay")]);
-        let cfg = Config::load_with(&env).unwrap();
-        let enabled: Vec<_> = cfg.enabled_engines().map(|e| e.id.as_str()).collect();
-        assert_eq!(enabled, ["replay"]);
-
-        let (_tmp, env) = sandbox(&[("CAUCE_ENGINES", "ddgs")]);
-        let cfg = Config::load_with(&env).unwrap();
-        let enabled: Vec<_> = cfg.enabled_engines().map(|e| e.id.as_str()).collect();
-        assert_eq!(enabled, ["ddgs"]);
-
-        let (_tmp, env) = sandbox(&[("CAUCE_ENGINES", "replay, ddgs")]);
-        let cfg = Config::load_with(&env).unwrap();
-        let mut enabled: Vec<_> = cfg.enabled_engines().map(|e| e.id.as_str()).collect();
-        enabled.sort();
-        assert_eq!(enabled, ["ddgs", "replay"]);
-    }
-
-    #[test]
-    fn cauce_engines_empty_is_unset() {
-        // `CAUCE_ENGINES=""` (or whitespace) is treated as unset: pinning to
-        // zero engines would produce a dead server.
-        for value in ["", "   "] {
-            let (_tmp, env) = sandbox(&[("CAUCE_ENGINES", value)]);
-            let cfg = Config::load_with(&env).unwrap();
-            let enabled: Vec<_> = cfg.enabled_engines().map(|e| e.id.as_str()).collect();
-            assert_eq!(enabled, ["ddgs"]);
+    fn cauce_engines_pin_cases() {
+        #[derive(Debug)]
+        enum PinWant {
+            Enabled(&'static [&'static str]),
+            Unknown(&'static str),
         }
-    }
-
-    #[test]
-    fn cauce_engines_unknown_id_fails() {
-        let (_tmp, env) = sandbox(&[("CAUCE_ENGINES", "nosuch")]);
-        assert!(matches!(
-            Config::load_with(&env),
-            Err(ConfigError::UnknownEngine(id)) if id == "nosuch"
-        ));
-    }
-
-    #[test]
-    fn cauce_engines_replay_works_when_file_lists_others() {
-        let (tmp, env) = sandbox(&[("CAUCE_ENGINES", "replay")]);
-        write_config(
-            &tmp.path().join("cfg"),
-            "[[engines]]\nid = \"custom\"\nkind = \"exec\"\ncommand = \"/bin/custom\"\n",
-        );
-        let cfg = Config::load_with(&env).unwrap();
-        let enabled: Vec<_> = cfg.enabled_engines().map(|e| e.id.as_str()).collect();
-        assert_eq!(enabled, ["replay"]);
-    }
-
-    #[test]
-    fn resources_scale_with_memory() {
-        let small = Resources::from_specs(4 * GIB, 8);
-        let big = Resources::from_specs(32 * GIB, 8);
-        assert!(small.store_tuning.cache_size_kib < big.store_tuning.cache_size_kib);
-        assert!(small.store_tuning.mmap_size_bytes < big.store_tuning.mmap_size_bytes);
-        assert_eq!(small.store_tuning.busy_timeout_ms, 5_000);
-    }
-
-    #[test]
-    fn resources_clamp_extremes() {
-        let tiny = Resources::from_specs(512 * 1024 * 1024, 1);
-        assert_eq!(tiny.store_tuning.cache_size_kib, 8 * 1024);
-        assert_eq!(tiny.test_threads, 1);
-        assert_eq!(tiny.upstream_concurrency, 4);
-
-        let huge = Resources::from_specs(1024 * GIB, 128);
-        assert_eq!(huge.store_tuning.cache_size_kib, 512 * 1024);
-        assert_eq!(huge.store_tuning.mmap_size_bytes, 4 * GIB);
-        assert_eq!(huge.upstream_concurrency, 64);
-        assert_eq!(huge.test_threads, 32);
+        struct PinCase {
+            /// `CAUCE_ENGINES` value.
+            engines: &'static str,
+            /// TOML file body; empty means no file.
+            file: &'static str,
+            want: PinWant,
+        }
+        let cases = &[
+            PinCase {
+                engines: "replay",
+                file: "",
+                want: PinWant::Enabled(&["replay"]),
+            },
+            PinCase {
+                engines: "ddgs",
+                file: "",
+                want: PinWant::Enabled(&["ddgs"]),
+            },
+            PinCase {
+                engines: "replay, ddgs",
+                file: "",
+                want: PinWant::Enabled(&["ddgs", "replay"]),
+            },
+            PinCase {
+                engines: "",
+                file: "",
+                want: PinWant::Enabled(&["ddgs"]),
+            },
+            PinCase {
+                engines: "   ",
+                file: "",
+                want: PinWant::Enabled(&["ddgs"]),
+            },
+            PinCase {
+                engines: "nosuch",
+                file: "",
+                want: PinWant::Unknown("nosuch"),
+            },
+            // A pin survives file entries it does not name.
+            PinCase {
+                engines: "replay",
+                file: "[[engines]]\nid = \"custom\"\nkind = \"exec\"\ncommand = \"/bin/custom\"\n",
+                want: PinWant::Enabled(&["replay"]),
+            },
+        ];
+        for case in cases {
+            let (tmp, env) = sandbox(&[("CAUCE_ENGINES", case.engines)]);
+            if !case.file.is_empty() {
+                write_config(&tmp.path().join("cfg"), case.file);
+            }
+            match (&case.want, Config::load_with(&env)) {
+                (PinWant::Enabled(want), Ok(cfg)) => {
+                    let mut enabled: Vec<_> =
+                        cfg.enabled_engines().map(|e| e.id.as_str()).collect();
+                    enabled.sort();
+                    assert_eq!(
+                        enabled.as_slice(),
+                        *want,
+                        "CAUCE_ENGINES={:?}",
+                        case.engines
+                    );
+                }
+                (PinWant::Unknown(want), Err(ConfigError::UnknownEngine(id))) => {
+                    assert_eq!(&id, want);
+                }
+                (want, got) => {
+                    panic!(
+                        "CAUCE_ENGINES={:?}: expected {want:?}, got {got:?}",
+                        case.engines
+                    )
+                }
+            }
+        }
     }
 }
