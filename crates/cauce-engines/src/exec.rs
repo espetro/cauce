@@ -539,3 +539,174 @@ impl Engine for ExecEngine {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use proptest::prelude::*;
+    use serde_json::json;
+    use url::Url;
+
+    use super::*;
+
+    /// Outside a tokio runtime `ExecEngine::new` defers spawning, so this
+    /// never launches the (nonexistent) command.
+    fn engine() -> ExecEngine {
+        ExecEngine::new(ExecSpec {
+            id: EngineId::new("fuzz"),
+            command: "nonexistent-cauce-fuzz".to_string(),
+            args: vec![],
+            env: vec![],
+            cwd: None,
+            page_size: 10,
+            tier: Tier::T2,
+            params: BTreeMap::new(),
+        })
+    }
+
+    /// Error strings naming the protocol version in any casing.
+    fn arb_version_err() -> impl Strategy<Value = String> {
+        (
+            ".*",
+            prop::sample::select(vec![
+                "protocol version",
+                "Protocol Version",
+                "PROTOCOL VERSION",
+            ]),
+            ".*",
+        )
+            .prop_map(|(a, m, b)| format!("{a}{m}{b}"))
+    }
+
+    proptest! {
+        /// A raw response line of any shape never panics the
+        /// version-rejection probe.
+        #[test]
+        fn is_version_rejection_never_panics(line in ".*") {
+            let _ = is_version_rejection(&line);
+        }
+
+        /// Any error naming the protocol version downgrades — via the
+        /// decoded `error` field or the raw substring fallback for
+        /// undecodable lines.
+        #[test]
+        fn is_version_rejection_catches_version_errors(
+            e in arb_version_err(),
+            well_formed in any::<bool>(),
+        ) {
+            let line = if well_formed {
+                json!({"v": PROTOCOL_VERSION, "error": e}).to_string()
+            } else {
+                e
+            };
+            prop_assert!(is_version_rejection(&line));
+        }
+
+        /// Arbitrary error strings never panic the mapper.
+        #[test]
+        fn map_protocol_error_never_panics(err in ".*") {
+            let _ = map_protocol_error(&err);
+        }
+
+        /// Known codes map to their variant, `parse:` keeps the trimmed
+        /// detail, and anything else is `Transport` with the raw error
+        /// string verbatim.
+        #[test]
+        fn map_protocol_error_pins_codes(
+            code in prop::sample::select(vec![
+                "rate_limited",
+                "blocked",
+                "no_results",
+                "timeout",
+                "parse",
+                "transport",
+                "weird",
+                "",
+                "RATE_LIMITED",
+            ]),
+            detail in ".*",
+            colon in any::<bool>(),
+        ) {
+            let err = if colon {
+                format!("{code}:{detail}")
+            } else {
+                code.to_string()
+            };
+            let got = map_protocol_error(&err);
+            match code.trim() {
+                "rate_limited" => prop_assert_eq!(got, EngineError::RateLimited),
+                "blocked" => prop_assert_eq!(got, EngineError::Blocked),
+                "no_results" => prop_assert_eq!(got, EngineError::NoResults),
+                "timeout" => prop_assert_eq!(got, EngineError::Timeout),
+                "parse" => prop_assert_eq!(
+                    got,
+                    EngineError::Parse(if colon {
+                        detail.trim().to_string()
+                    } else {
+                        String::new()
+                    })
+                ),
+                _ => prop_assert_eq!(got, EngineError::Transport(err.clone())),
+            }
+        }
+
+        /// The response decoder never panics on arbitrary lines.
+        #[test]
+        fn decode_never_panics(line in ".*") {
+            let _ = engine().decode(&line);
+        }
+
+        /// `v` outside the negotiated range is a Transport error checked
+        /// before any `error`-field mapping.
+        #[test]
+        fn decode_rejects_out_of_range_version(
+            v in any::<u8>()
+                .prop_filter("out of range", |v| {
+                    !(MIN_PROTOCOL_VERSION..=PROTOCOL_VERSION).contains(v)
+                }),
+            error in prop::option::of(".*"),
+        ) {
+            let line = json!({"v": v, "error": error, "results": []}).to_string();
+            prop_assert!(matches!(
+                engine().decode(&line),
+                Err(EngineError::Transport(_))
+            ));
+        }
+
+        /// A non-empty `error` maps through the protocol table verbatim.
+        #[test]
+        fn decode_maps_protocol_error(
+            v in MIN_PROTOCOL_VERSION..=PROTOCOL_VERSION,
+            err in ".+",
+        ) {
+            let line = json!({"v": v, "error": err, "results": []}).to_string();
+            prop_assert_eq!(engine().decode(&line), Err(map_protocol_error(&err)));
+        }
+
+        /// Rows with unparseable urls are dropped; every emitted result
+        /// keeps its row's fields verbatim and in order.
+        #[test]
+        fn decode_drops_bad_result_urls(
+            rows in prop::collection::vec((".*", ".*", ".*"), 0..8),
+        ) {
+            let line = json!({
+                "v": PROTOCOL_VERSION,
+                "results": rows
+                    .iter()
+                    .map(|(t, u, s)| json!({"title": t, "url": u, "snippet": s}))
+                    .collect::<Vec<_>>(),
+            })
+            .to_string();
+            let out = engine().decode(&line).unwrap();
+            let kept: Vec<_> = rows
+                .iter()
+                .filter(|(_, u, _)| Url::parse(u).is_ok())
+                .collect();
+            prop_assert_eq!(out.len(), kept.len());
+            for (r, (t, u, s)) in out.iter().zip(kept) {
+                prop_assert_eq!(&r.url, &Url::parse(u).unwrap());
+                prop_assert_eq!(r.title.as_str(), t.as_str());
+                prop_assert_eq!(r.snippet.as_str(), s.as_str());
+            }
+        }
+    }
+}
