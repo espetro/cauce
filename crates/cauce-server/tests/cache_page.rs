@@ -10,76 +10,22 @@
 // The HTMX pages exist only in `ui` builds (W1-12 feature gates).
 #![cfg(feature = "ui")]
 
-use std::sync::Arc;
 use std::time::Duration;
 
 use axum::Router;
 use axum::body::{Body, to_bytes};
 use axum::http::{Method, Request, StatusCode};
-use cauce_core::config::Config;
-use cauce_core::{AuditFilter, CacheKey, SearchPipeline, StoreTuning};
-use cauce_engines::{Replay, ReplayOpts};
-use cauce_server::{AppState, build_router};
-use cauce_store_sqlite::SqliteStore;
+use cauce_core::{AuditFilter, CacheKey};
+use cauce_server::AppState;
 use serde_json::Value;
 use tower::ServiceExt;
 
-fn app() -> (Router, AppState, tempfile::TempDir) {
-    let tmp = tempfile::tempdir().expect("tempdir");
-    let store = Arc::new(
-        SqliteStore::open(tmp.path().join("cauce.db"), StoreTuning::default()).expect("store"),
-    );
-    let pipeline = Arc::new(SearchPipeline::new(
-        store.clone(),
-        vec![Arc::new(Replay::new(ReplayOpts::default()))],
-    ));
-    let state = AppState::new(pipeline, store, Config::default());
-    (build_router(state.clone()), state, tmp)
-}
-
-async fn call(router: &Router, request: Request<Body>) -> (StatusCode, String) {
-    let resp = router.clone().oneshot(request).await.expect("response");
-    let status = resp.status();
-    let bytes = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
-    (status, String::from_utf8(bytes.to_vec()).unwrap())
-}
-
-async fn call_json(router: &Router, request: Request<Body>) -> (StatusCode, Value) {
-    let resp = router.clone().oneshot(request).await.expect("response");
-    let status = resp.status();
-    let bytes = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
-    (status, serde_json::from_slice(&bytes).expect("valid JSON"))
-}
-
-async fn get_html(router: &Router, uri: &str) -> (StatusCode, String) {
-    call(
-        router,
-        Request::builder()
-            .method(Method::GET)
-            .uri(uri)
-            .header("Accept", "text/html")
-            .body(Body::empty())
-            .unwrap(),
-    )
-    .await
-}
-
-async fn get_json(router: &Router, uri: &str) -> (StatusCode, Value) {
-    call_json(
-        router,
-        Request::builder()
-            .method(Method::GET)
-            .uri(uri)
-            .header("Accept", "application/json")
-            .body(Body::empty())
-            .unwrap(),
-    )
-    .await
-}
+mod support;
+use support::*;
 
 /// The delete request exactly as the page's `hx-delete` button sends it.
 async fn page_delete(router: &Router, uri: &str) -> (StatusCode, Value) {
-    call_json(
+    let (status, _headers, body) = call_json(
         router,
         Request::builder()
             .method(Method::DELETE)
@@ -88,7 +34,8 @@ async fn page_delete(router: &Router, uri: &str) -> (StatusCode, Value) {
             .body(Body::empty())
             .unwrap(),
     )
-    .await
+    .await;
+    (status, body)
 }
 
 /// First cache entry's key after seeding `GET /api/search?q=<q>`.

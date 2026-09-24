@@ -7,73 +7,17 @@
 // The HTMX pages exist only in `ui` builds (W1-12 feature gates).
 #![cfg(feature = "ui")]
 
-use std::sync::Arc;
-
 use axum::Router;
-use axum::body::{Body, to_bytes};
+use axum::body::Body;
 use axum::http::{Method, Request, StatusCode};
-use cauce_core::config::Config;
 use cauce_core::{
     AuditFilter, CacheKey, ClientKind, EngineId, LogSource, SafeSearch, SearchLogRow,
-    SearchPipeline, SearchRequest, StoreTuning, Tier,
+    SearchRequest, Tier,
 };
-use cauce_engines::{Replay, ReplayOpts};
-use cauce_server::{AppState, build_router};
-use cauce_store_sqlite::SqliteStore;
 use serde_json::{Value, json};
-use tower::ServiceExt;
 
-fn test_state() -> (AppState, tempfile::TempDir) {
-    let tmp = tempfile::tempdir().expect("tempdir");
-    let store = Arc::new(
-        SqliteStore::open(tmp.path().join("cauce.db"), StoreTuning::default()).expect("store"),
-    );
-    let pipeline = Arc::new(SearchPipeline::new(
-        store.clone(),
-        vec![Arc::new(Replay::new(ReplayOpts::default()))],
-    ));
-    let state = AppState::new(pipeline, store, Config::default());
-    (state, tmp)
-}
-
-fn app() -> (Router, AppState, tempfile::TempDir) {
-    let (state, tmp) = test_state();
-    (build_router(state.clone()), state, tmp)
-}
-
-async fn call(router: &Router, request: Request<Body>) -> (StatusCode, String) {
-    let resp = router.clone().oneshot(request).await.expect("response");
-    let status = resp.status();
-    let bytes = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
-    (status, String::from_utf8(bytes.to_vec()).unwrap())
-}
-
-async fn get_html(router: &Router, uri: &str) -> (StatusCode, String) {
-    call(
-        router,
-        Request::builder()
-            .method(Method::GET)
-            .uri(uri)
-            .header("Accept", "text/html")
-            .body(Body::empty())
-            .unwrap(),
-    )
-    .await
-}
-
-async fn get_json(router: &Router, uri: &str) -> (StatusCode, Value) {
-    let (status, text) = call(
-        router,
-        Request::builder()
-            .method(Method::GET)
-            .uri(uri)
-            .header("Accept", "application/json")
-            .body(Body::empty())
-            .unwrap(),
-    )
-    .await;
-    (status, serde_json::from_str(&text).unwrap_or(Value::Null))
-}
+mod support;
+use support::*;
 
 async fn search(router: &Router, q: &str) {
     let (status, _) = get_json(router, &format!("/api/search?q={q}")).await;

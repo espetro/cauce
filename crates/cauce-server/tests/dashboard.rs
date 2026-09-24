@@ -12,57 +12,11 @@
 // The HTMX pages exist only in `ui` builds (W1-12 feature gates).
 #![cfg(feature = "ui")]
 
-use std::sync::Arc;
+use axum::http::StatusCode;
+use cauce_engines::ReplayOpts;
 
-use axum::Router;
-use axum::body::{Body, to_bytes};
-use axum::http::{Method, Request, StatusCode};
-use cauce_core::SearchPipeline;
-use cauce_core::StoreTuning;
-use cauce_core::config::Config;
-use cauce_engines::{Replay, ReplayOpts};
-use cauce_server::{AppState, build_router};
-use cauce_store_sqlite::SqliteStore;
-use serde_json::Value;
-use tower::ServiceExt;
-
-fn app_with(opts: ReplayOpts) -> (Router, Arc<SqliteStore>, tempfile::TempDir) {
-    let tmp = tempfile::tempdir().expect("tempdir");
-    let store = Arc::new(
-        SqliteStore::open(tmp.path().join("cauce.db"), StoreTuning::default()).expect("store"),
-    );
-    let pipeline = Arc::new(SearchPipeline::new(
-        store.clone(),
-        vec![Arc::new(Replay::new(opts))],
-    ));
-    (
-        build_router(AppState::new(pipeline, store.clone(), Config::default())),
-        store,
-        tmp,
-    )
-}
-
-async fn call(router: &Router, uri: &str, accept: &str) -> (StatusCode, String) {
-    let resp = router
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method(Method::GET)
-                .uri(uri)
-                .header("Accept", accept)
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .expect("response");
-    let status = resp.status();
-    let bytes = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
-    (status, String::from_utf8(bytes.to_vec()).unwrap())
-}
-
-async fn get_html(router: &Router, uri: &str) -> (StatusCode, String) {
-    call(router, uri, "text/html").await
-}
+mod support;
+use support::*;
 
 /// W2-03 acceptance, end to end on replay: empty-DB placeholders, mixed
 /// traffic -> non-zero hit rate + engine rows, window selector, and the
@@ -98,7 +52,7 @@ async fn dashboard_empty_populated_and_error_outcome() {
         "/api/search?q=dashbeta",
         "/api/search?q=dashbeta",
     ] {
-        let (status, _) = call(&app, uri, "application/json").await;
+        let (status, _) = get_with(&app, uri, "application/json").await;
         assert_eq!(status, StatusCode::OK, "{uri}");
     }
 
@@ -141,9 +95,8 @@ async fn dashboard_empty_populated_and_error_outcome() {
 
     // Content negotiation: `Accept: application/json` on the page route
     // returns the same StatsSnapshot `/api/stats` serves.
-    let (status, body) = call(&app, "/dashboard", "application/json").await;
+    let (status, snap) = get_json(&app, "/dashboard").await;
     assert_eq!(status, StatusCode::OK);
-    let snap: Value = serde_json::from_str(&body).expect("stats json");
     assert_eq!(snap["searches"], 4, "{snap}");
     assert_eq!(snap["cache_hits"], 2, "{snap}");
     assert!(snap["top_queries"].is_array(), "{snap}");
@@ -157,7 +110,7 @@ async fn dashboard_empty_populated_and_error_outcome() {
     // windowed count but never in the lifetime `cauce_deadline_hit_total`
     // counter — the panel must read the windowed source so its numerator
     // and denominator share the window (mixing them was the review bug).
-    let (windowed, store3, _tmp3) = app_with(ReplayOpts::default());
+    let (windowed, state3, _tmp3) = app_with(ReplayOpts::default());
     let mut hit = cauce_core::conformance::log_row(
         chrono::Utc::now(),
         "forced deadline",
@@ -167,7 +120,9 @@ async fn dashboard_empty_populated_and_error_outcome() {
         3,
     );
     hit.deadline_hit = true;
-    cauce_core::Store::log_search(store3.as_ref(), hit)
+    state3
+        .store()
+        .log_search(hit)
         .await
         .expect("log deadline-hit row");
 
@@ -189,14 +144,14 @@ async fn dashboard_empty_populated_and_error_outcome() {
     );
 
     // ---- forced 502 -> cauce_search_requests_total{outcome="error"} -------
-    let (failing, _store2, _tmp2) = app_with(ReplayOpts {
+    let (failing, _state2, _tmp2) = app_with(ReplayOpts {
         blocked: true,
         ..ReplayOpts::default()
     });
-    let (status, _) = call(&failing, "/api/search?q=boom", "application/json").await;
+    let (status, _) = get_json(&failing, "/api/search?q=boom").await;
     assert_eq!(status, StatusCode::BAD_GATEWAY, "blocked replay -> 502");
 
-    let (status, metrics) = call(&app, "/metrics", "text/plain").await;
+    let (status, metrics) = get_with(&app, "/metrics", "text/plain").await;
     assert_eq!(status, StatusCode::OK);
     let error_line = metrics
         .lines()

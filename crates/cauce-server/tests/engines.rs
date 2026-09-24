@@ -7,7 +7,7 @@
 //! file, You can obtain one at <https://mozilla.org/MPL/2.0/>.
 
 use std::collections::BTreeMap;
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 
 use axum::Router;
 use axum::body::{Body, to_bytes};
@@ -20,29 +20,8 @@ use cauce_store_sqlite::SqliteStore;
 use serde_json::{Value, json};
 use tower::ServiceExt;
 
-/// Serialises tests that mutate process env (`CAUCE_CONFIG_DIR`), same
-/// discipline as `tests/routes.rs`.
-static ENV_LOCK: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
-
-async fn env_lock() -> tokio::sync::MutexGuard<'static, ()> {
-    ENV_LOCK
-        .get_or_init(|| tokio::sync::Mutex::new(()))
-        .lock()
-        .await
-}
-
-fn state_with(replay: ReplayOpts) -> (Router, tempfile::TempDir) {
-    let tmp = tempfile::tempdir().expect("tempdir");
-    let store = Arc::new(
-        SqliteStore::open(tmp.path().join("cauce.db"), StoreTuning::default()).expect("store"),
-    );
-    let pipeline = Arc::new(SearchPipeline::new(
-        store.clone(),
-        vec![Arc::new(Replay::new(replay))],
-    ));
-    let state = AppState::new(pipeline, store, Config::default());
-    (build_router(state), tmp)
-}
+mod support;
+use support::*;
 
 async fn call(router: &Router, method: &str, uri: &str) -> (StatusCode, Value) {
     let (status, body, _) = fetch(router, method, uri, &[]).await;
@@ -96,7 +75,7 @@ fn replay_row(body: &Value) -> &Value {
 /// acceptance) and is audited; unknown ids 404.
 #[tokio::test]
 async fn engines_list_and_reset() {
-    let (router, _tmp) = state_with(ReplayOpts::default());
+    let (router, _state, _tmp) = app_with(ReplayOpts::default());
 
     let (status, body) = call(&router, "GET", "/api/engines").await;
     assert_eq!(status, StatusCode::OK, "{body}");
@@ -145,7 +124,7 @@ async fn engines_list_and_reset() {
 /// engine (which fails again and re-opens).
 #[tokio::test]
 async fn blocked_engine_reports_open_and_reset_readmits() {
-    let (router, _tmp) = state_with(ReplayOpts {
+    let (router, _state, _tmp) = app_with(ReplayOpts {
         blocked: true,
         ..ReplayOpts::default()
     });
@@ -191,7 +170,7 @@ async fn blocked_engine_reports_open_and_reset_readmits() {
 /// list, the summary line and the full request id footer.
 #[tokio::test]
 async fn engines_page_lists_cards() {
-    let (router, _tmp) = state_with(ReplayOpts::default());
+    let (router, _state, _tmp) = app_with(ReplayOpts::default());
 
     let (status, body, ct) = fetch(&router, "GET", "/engines", &[("accept", "text/html")]).await;
     assert_eq!(status, StatusCode::OK, "{body}");
@@ -245,7 +224,7 @@ async fn engines_page_lists_cards() {
 /// on the page path gets the same rows the API returns.
 #[tokio::test]
 async fn engines_page_path_negotiates_json() {
-    let (router, _tmp) = state_with(ReplayOpts::default());
+    let (router, _state, _tmp) = app_with(ReplayOpts::default());
 
     let (status, body) = call(&router, "GET", "/engines").await;
     assert_eq!(status, StatusCode::OK, "{body}");
@@ -279,7 +258,7 @@ async fn engines_page_path_negotiates_json() {
 /// `HalfOpen` card.
 #[tokio::test]
 async fn engines_page_open_breaker_resets_to_half_open() {
-    let (router, _tmp) = state_with(ReplayOpts {
+    let (router, _state, _tmp) = app_with(ReplayOpts {
         blocked: true,
         ..ReplayOpts::default()
     });
@@ -336,7 +315,7 @@ async fn engines_page_open_breaker_resets_to_half_open() {
 /// plus the shared `results.html` list (checkpoint #29).
 #[tokio::test]
 async fn api_search_html_returns_test_fragment() {
-    let (router, _tmp) = state_with(ReplayOpts::default());
+    let (router, _state, _tmp) = app_with(ReplayOpts::default());
 
     let (status, body, ct) = fetch(
         &router,
@@ -365,7 +344,7 @@ async fn api_search_html_returns_test_fragment() {
 /// gets the real status.
 #[tokio::test]
 async fn api_search_html_fragment_names_error_class() {
-    let (router, _tmp) = state_with(ReplayOpts {
+    let (router, _state, _tmp) = app_with(ReplayOpts {
         blocked: true,
         ..ReplayOpts::default()
     });
@@ -403,7 +382,7 @@ async fn engine_enable_disable_writes_config_and_audits() {
     unsafe {
         std::env::set_var("CAUCE_CONFIG_DIR", cfg_dir.path());
     }
-    let (router, _tmp) = state_with(ReplayOpts::default());
+    let (router, _state, _tmp) = app_with(ReplayOpts::default());
 
     let (status, body) = call(&router, "POST", "/api/engines/ddgs/disable").await;
     assert_eq!(status, StatusCode::OK, "{body}");
@@ -513,7 +492,7 @@ async fn engine_toggle_hx_returns_card_with_saved_hint() {
     unsafe {
         std::env::set_var("CAUCE_CONFIG_DIR", cfg_dir.path());
     }
-    let (router, _tmp) = state_with(ReplayOpts::default());
+    let (router, _state, _tmp) = app_with(ReplayOpts::default());
 
     let (status, card, _) = fetch(
         &router,
