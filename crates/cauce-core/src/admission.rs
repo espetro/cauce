@@ -12,9 +12,11 @@
 //!    publishes and persists.
 //! 2. **Bounded per-engine queue.** Each engine id owns a `Semaphore` with
 //!    `max_concurrent_per_engine` permits; a flight must hold one permit per
-//!    runnable engine before calling upstream. Waits are FIFO (tokio
-//!    semaphore fairness) and bounded by `max_wait` in total. A flight that
-//!    cannot acquire inside the budget *overflows*: the pipeline then serves
+//!    engine call it spawns before calling upstream — the t=0 wave
+//!    upfront, a deferred (tier-2) engine inside the fetch when its
+//!    hedge triggers. Waits are FIFO (tokio semaphore fairness) and
+//!    bounded by `max_wait` in total. A flight that cannot acquire inside
+//!    the budget *overflows*: the pipeline then serves
 //!    the stored row for the key if one exists (`Source::Cache{stale:true}`
 //!    when expired, plus a background refresh) else
 //!    [`PipelineError::RateLimited`].

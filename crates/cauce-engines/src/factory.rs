@@ -68,13 +68,14 @@ fn cauce_engines_pinned() -> bool {
 pub fn build_engine(entry: &EngineEntry, config_dir: &Path) -> Option<Arc<dyn Engine>> {
     match entry.kind {
         EngineKind::Replay => {
-            if entry.id.as_str() != "replay" {
-                warn!(
-                    id = %entry.id,
-                    "replay engines always run as id \"replay\"; a pin on this id will miss"
-                );
-            }
-            Some(Arc::new(Replay::from_env()))
+            // W3-01: id/tier honour the entry like every other kind, so a
+            // config can run several replay instances (e.g. a fast tier-2
+            // hedge set beside the default tier-1 one). The env-driven
+            // fault injection (`CAUCE_REPLAY_*`) applies to all of them.
+            let mut opts = Replay::from_env().opts().clone();
+            opts.id = entry.id.clone();
+            opts.tier = entry.tier.unwrap_or(Tier::T1);
+            Some(Arc::new(Replay::new(opts)))
         }
         EngineKind::Exec => {
             let Some(command) = &entry.command else {

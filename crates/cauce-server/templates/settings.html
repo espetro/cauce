@@ -34,9 +34,21 @@
   </label>
   {% if !ttl.env.is_empty() %}<p class="hint">{{ crate::strings::settings::SET_BY }} {{ ttl.env }}</p>{% endif %}
   <p class="field-error" id="fe-search-dttl_s"></p>
-  <label class="greyed">{{ crate::strings::settings::HEDGE }}
-    <input disabled placeholder="{{ crate::strings::settings::HEDGE_WAVE }}">
+  <label>{{ crate::strings::settings::MIN_RESULTS }}
+    <input type="text" name="search.min_results" value="{{ min_results.value }}" {% if !min_results.env.is_empty() %}disabled{% endif %}>
   </label>
+  {% if !min_results.env.is_empty() %}<p class="hint">{{ crate::strings::settings::SET_BY }} {{ min_results.env }}</p>{% endif %}
+  <p class="field-error" id="fe-search-dmin_results"></p>
+  <label>{{ crate::strings::settings::HEDGE_FLOOR }}
+    <input type="text" name="search.hedge_floor_ms" value="{{ hedge_floor.value }}" {% if !hedge_floor.env.is_empty() %}disabled{% endif %}>
+  </label>
+  {% if !hedge_floor.env.is_empty() %}<p class="hint">{{ crate::strings::settings::SET_BY }} {{ hedge_floor.env }}</p>{% endif %}
+  <p class="field-error" id="fe-search-dhedge_floor_ms"></p>
+  <label>{{ crate::strings::settings::HEDGE_CEILING }}
+    <input type="text" name="search.hedge_ceiling_ms" value="{{ hedge_ceiling.value }}" {% if !hedge_ceiling.env.is_empty() %}disabled{% endif %}>
+  </label>
+  {% if !hedge_ceiling.env.is_empty() %}<p class="hint">{{ crate::strings::settings::SET_BY }} {{ hedge_ceiling.env }}</p>{% endif %}
+  <p class="field-error" id="fe-search-dhedge_ceiling_ms"></p>
 </fieldset>
 
 <fieldset {% if engines_pinned %}class="greyed"{% endif %}>

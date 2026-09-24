@@ -149,8 +149,10 @@ async fn settings_page_renders_sections_and_request_id() {
         "list=\"ai-models\"",
         "role=\"status\" aria-live=\"polite\"",
         "<code class=\"request-id\">",
-        // The hedge threshold is a disabled placeholder until W3.
-        "lands in wave 3",
+        // W3-01 hedge knobs are real editable fields now.
+        "name=\"search.min_results\"",
+        "name=\"search.hedge_floor_ms\"",
+        "name=\"search.hedge_ceiling_ms\"",
         // Cross-links and the cache block.
         "href=\"/engines\"",
         "id=\"cache-block\"",

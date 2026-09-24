@@ -83,6 +83,14 @@ pub struct SearchMeta {
     pub engines_skipped: Vec<EngineId>,
     /// True when the hard deadline cancelled at least one engine call.
     pub deadline_hit: bool,
+    /// True when the W3-01 hedge fired tier-2 engines on this request.
+    /// `default` keeps `payload_json` rows written before the field
+    /// existed decodable.
+    #[serde(default)]
+    pub hedged: bool,
+    /// Elapsed ms at which the hedge fired; `None` when it did not.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hedge_at_ms: Option<u32>,
     pub elapsed_ms: u32,
     pub request_id: Uuid,
 }

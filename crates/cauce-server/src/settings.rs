@@ -71,6 +71,9 @@ fn apply_field(
     match name {
         "search.deadline_ms"
         | "search.ttl_s"
+        | "search.min_results"
+        | "search.hedge_floor_ms"
+        | "search.hedge_ceiling_ms"
         | "admission.max_wait_ms"
         | "admission.max_concurrent_per_engine"
         | "logs.retention_days" => {

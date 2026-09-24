@@ -19,8 +19,8 @@ use std::time::Duration;
 
 use cauce_core::config::{Config, Resources};
 use cauce_core::{
-    Admission, AdmissionLimits, ClientKind, EngineId, SafeSearch, SearchPipeline, SearchRequest,
-    SearchResponse,
+    Admission, AdmissionLimits, ClientKind, EngineId, HedgePolicy, SafeSearch, SearchPipeline,
+    SearchRequest, SearchResponse,
 };
 use cauce_engines::factory::build_engines;
 use cauce_server::observability;
@@ -118,7 +118,12 @@ async fn search_async(cfg: &Config, opts: &SearchArgs) -> i32 {
         .with_admission(Admission::new(AdmissionLimits {
             max_wait: Duration::from_millis(cfg.admission.max_wait_ms),
             max_concurrent_per_engine: cfg.admission.max_concurrent_per_engine.max(1) as usize,
-        }));
+        }))
+        .with_hedge(HedgePolicy {
+            floor: Duration::from_millis(cfg.search.hedge_floor_ms),
+            ceiling: Duration::from_millis(cfg.search.hedge_ceiling_ms),
+            min_results: cfg.search.min_results as usize,
+        });
     // Honour persisted breakers (plan 4.4.6), same as `serve` startup.
     if let Err(e) = pipeline.load_health().await {
         tracing::warn!(error = %e, "engine health load failed; starting with closed breakers");

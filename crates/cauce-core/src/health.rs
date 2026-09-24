@@ -32,7 +32,7 @@
 //! License, v. 2.0. If a copy of the MPL was not distributed with this
 //! file, You can obtain one at <https://mozilla.org/MPL/2.0/>.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -55,6 +55,12 @@ pub const PERSIST_DEBOUNCE: Duration = Duration::from_secs(1);
 /// request actor exists; `POST /api/engines/{id}/reset` audits with the
 /// caller's actor instead).
 const SYSTEM_ACTOR: &str = "cauce";
+
+/// Rolling-window size for the per-engine latency histogram (W3-01).
+/// Bounded so a long-running engine never grows state without limit; the
+/// hedge's `P90(tier-1 history)` describes the recent past, matching the
+/// rolling convention the metrics registry uses.
+const LATENCY_WINDOW: usize = 256;
 
 /// Breaker knobs (settled inputs). Kept as a struct so tests can shrink
 /// the windows instead of sleeping minutes; production uses
@@ -121,6 +127,13 @@ pub struct EngineHealth {
     /// `HalfOpen` single-probe gate: true while a probe call is in flight.
     /// Runtime-only — a restarted process has no probes in flight.
     probe_in_flight: bool,
+    /// Rolling latency histogram (W3-01): recent call latencies in ms the
+    /// hedge trigger's `P90(tier-1 history)` reads. Whole-ms samples —
+    /// HDR-style only in that the percentile is nearest-rank over the
+    /// window, not the EWMA — capped at `LATENCY_WINDOW`, runtime-only
+    /// like the streaks: a restart hedges at the floor until fresh
+    /// samples accumulate.
+    latencies: VecDeque<u32>,
 }
 
 impl Default for EngineHealth {
@@ -136,6 +149,7 @@ impl Default for EngineHealth {
             timeout_streak: 0,
             degraded_streak: 0,
             probe_in_flight: false,
+            latencies: VecDeque::new(),
         }
     }
 }
@@ -157,6 +171,9 @@ impl EngineHealth {
             timeout_streak: 0,
             degraded_streak: 0,
             probe_in_flight: false,
+            // No latency history persists either: the hedge falls back to
+            // its floor until this process re-observes the engine.
+            latencies: VecDeque::new(),
         }
     }
 
@@ -180,6 +197,11 @@ impl EngineHealth {
         } else {
             EWMA_ALPHA * ms + (1.0 - EWMA_ALPHA) * self.ewma_ms
         };
+        if self.latencies.len() == LATENCY_WINDOW {
+            self.latencies.pop_front();
+        }
+        self.latencies
+            .push_back(latency.as_millis().min(u32::MAX as u128) as u32);
     }
 }
 
@@ -469,6 +491,26 @@ impl HealthTracker {
         let row = health.to_row(id);
         inner.dirty.insert(id.clone());
         Some((previous, row))
+    }
+
+    /// Nearest-rank P90 (ms) of the pooled rolling latency histograms of
+    /// the given engines — the hedge trigger's `P90(tier-1 history)`
+    /// (W3-01). `0` when none of them has a sample yet; the caller's
+    /// floor turns that into the earliest hedge point.
+    pub fn p90_ms(&self, ids: &[EngineId]) -> u64 {
+        let inner = self.lock();
+        let mut samples: Vec<u32> = Vec::new();
+        for id in ids {
+            if let Some(health) = inner.map.get(id) {
+                samples.extend(health.latencies.iter().copied());
+            }
+        }
+        if samples.is_empty() {
+            return 0;
+        }
+        samples.sort_unstable();
+        let n = samples.len() as u64;
+        u64::from(samples[((n * 90).div_ceil(100).max(1) - 1) as usize])
     }
 
     /// Whether the engine is known (configured or persisted).

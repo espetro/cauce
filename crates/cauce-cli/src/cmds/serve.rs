@@ -15,7 +15,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use cauce_core::config::{Config, Resources, is_loopback_host};
-use cauce_core::{Admission, AdmissionLimits, SearchPipeline};
+use cauce_core::{Admission, AdmissionLimits, HedgePolicy, SearchPipeline};
 use cauce_engines::factory::build_engines;
 use cauce_server::{AppState, RouterOptions, observability};
 use cauce_store_sqlite::{SqliteStore, spawn_eviction_task};
@@ -127,7 +127,12 @@ async fn serve_async(opts: ServeOpts, cfg: Config, host: String) -> i32 {
             .with_admission(Admission::new(AdmissionLimits {
                 max_wait: Duration::from_millis(cfg.admission.max_wait_ms),
                 max_concurrent_per_engine: cfg.admission.max_concurrent_per_engine.max(1) as usize,
-            })),
+            }))
+            .with_hedge(HedgePolicy {
+                floor: Duration::from_millis(cfg.search.hedge_floor_ms),
+                ceiling: Duration::from_millis(cfg.search.hedge_ceiling_ms),
+                min_results: cfg.search.min_results as usize,
+            }),
     );
     // Restore persisted breakers before serving (plan 4.4.6: a restart
     // must not hammer a blocked engine). A read failure degrades to

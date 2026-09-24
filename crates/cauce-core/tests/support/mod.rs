@@ -101,6 +101,61 @@ impl Engine for GateEngine {
     }
 }
 
+/// A `Replay` whose latency is re-dialable between calls: health history
+/// builds at one latency while a later call measures at another — the
+/// knob hedge tests need when "slow history" and "current behaviour"
+/// must differ on the same engine id.
+#[allow(dead_code)]
+pub struct DialEngine {
+    inner: Replay,
+    latency_ms: AtomicU64,
+    calls: AtomicU64,
+}
+
+#[allow(dead_code)]
+impl DialEngine {
+    pub fn new(inner: Replay, latency_ms: u64) -> Self {
+        Self {
+            inner,
+            latency_ms: AtomicU64::new(latency_ms),
+            calls: AtomicU64::new(0),
+        }
+    }
+
+    pub fn set_latency_ms(&self, latency_ms: u64) {
+        self.latency_ms.store(latency_ms, Ordering::SeqCst);
+    }
+
+    pub fn call_count(&self) -> u64 {
+        self.calls.load(Ordering::SeqCst)
+    }
+}
+
+#[async_trait]
+impl Engine for DialEngine {
+    fn id(&self) -> EngineId {
+        self.inner.id()
+    }
+    fn tier(&self) -> Tier {
+        self.inner.tier()
+    }
+    fn page_size(&self) -> u8 {
+        self.inner.page_size()
+    }
+    async fn search(
+        &self,
+        req: &SearchRequest,
+        budget: Duration,
+    ) -> Result<Vec<cauce_core::SearchResult>, EngineError> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        let latency = self.latency_ms.load(Ordering::SeqCst);
+        if latency > 0 {
+            tokio::time::sleep(Duration::from_millis(latency).min(budget)).await;
+        }
+        self.inner.search(req, budget).await
+    }
+}
+
 /// What `put` stored: response, write time and TTL.
 type StoredEntry = (SearchResponse, DateTime<Utc>, Duration);
 
@@ -140,6 +195,9 @@ pub struct StubStore {
     pub audits: Mutex<Vec<AuditRow>>,
     pub fail_get: AtomicBool,
     pub fail_lexical: AtomicBool,
+    /// Extra delay inside `get_lexical` — simulates slow pre-fan-out
+    /// work for tests that care what instant the hedge clock starts at.
+    pub lexical_delay_ms: AtomicU64,
 }
 
 #[async_trait]
@@ -162,6 +220,10 @@ impl Store for StubStore {
     async fn get_lexical(&self, q: &str, limit: u8) -> Result<Vec<CachedSearch>, StoreError> {
         if self.fail_lexical.load(Ordering::SeqCst) {
             return Err(StoreError::Backend("injected lexical failure".to_string()));
+        }
+        let delay = self.lexical_delay_ms.load(Ordering::SeqCst);
+        if delay > 0 {
+            tokio::time::sleep(Duration::from_millis(delay)).await;
         }
         let want: HashSet<String> = q.split_whitespace().map(|t| t.to_lowercase()).collect();
         let mut rows: Vec<CachedSearch> = self
