@@ -13,18 +13,43 @@
 # limitations under the License.
 
 # Bing web search (W1-03). `first` is 1-based and steps by `page_size`
-# (page 2 -> first=11), hence `{offset+1}`. `mkt` is pinned to en-US:
-# verified live 2026-09-22, without a market Bing serves a syntactically
-# valid SERP whose organic results belong to a different query
-# (low-trust IP poisoning). `{lang}` still flows via Accept-Language.
+# (page 2 -> first=11), hence `{offset+1}`. `mkt` resolves via
+# `request.market` (issue #110): a market must always be sent — verified
+# live 2026-09-22, without one Bing serves a syntactically valid SERP
+# whose organic results belong to a different query (low-trust IP
+# geolocation poisoning). Unmapped langs fall back to `default: en-US`.
+# `{lang}` still flows via Accept-Language.
 id: bing
 tier: 1
 page_size: 10
 request:
-  url: "https://www.bing.com/search?q={q}&first={offset+1}&mkt=en-US"
+  url: "https://www.bing.com/search?q={q}&first={offset+1}&mkt={market}"
   headers:
     Accept-Language: "{lang}"
   timeout_ms: 8000
+  # lang -> Bing `mkt` market code; `default` is the fallback (en-US,
+  # the broadest English market).
+  market:
+    en: en-US
+    en-GB: en-GB
+    fr: fr-FR
+    de: de-DE
+    es: es-ES
+    it: it-IT
+    pt: pt-BR
+    nl: nl-NL
+    sv: sv-SE
+    ru: ru-RU
+    ja: ja-JP
+    ko: ko-KR
+    zh: zh-CN
+    # Script-qualified Traditional tags must reach a Traditional market
+    # before the generic `zh` key (mainland) does.
+    zh-Hant: zh-TW
+    zh-Hant-HK: zh-HK
+    zh-TW: zh-TW
+    zh-HK: zh-HK
+    default: en-US
 parse:
   kind: html
   results: "li.b_algo"
