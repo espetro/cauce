@@ -72,7 +72,11 @@ stdio, tier-2 lexical cache, a metrics endpoint, and the cutover of the owner's 
   templating (`{q}` url-encoded, `{page}`, `{page0}`, `{offset}` = (page-1)*page_size,
   `{lang}`); `parse.kind: html | json` (json uses a small JSONPath subset via
   `serde_json_path`); field extraction `css`/`attr`/`text`/`regex`; `detect.blocked`
-  substrings and `rate_limited_status` map to `EngineError`; relative URL resolution;
+  substrings map to `EngineError::Blocked` only when `parse.results` matches no
+  nodes — a block page serves no results, and engines echo the query into the body
+  so unconditional substrings false-positive on healthy SERPs (amended 2026-09-24,
+  #109) — and `rate_limited_status` maps to `EngineError::RateLimited`;
+  relative URL resolution;
   tracking-redirect unwrapping (`bing.com/ck/a?...&u=a1<base64>` and `r.search.yahoo.com`
   patterns as a `unwrap_redirect` list in the spec). `request.headers` values may contain
   `${env:NAME}`/`${file:PATH}` templates resolved through the config interpolator (needed
@@ -83,7 +87,9 @@ stdio, tier-2 lexical cache, a metrics endpoint, and the cutover of the owner's 
   overridable from `$OXE_CONFIG_DIR/engines/*.yaml` at runtime.
 - Acceptance: a synthetic spec + HTML fixture in the crate tests parses 10 results; a
   fixture whose selectors match nothing yields `EngineError::Parse("0 results, selector
-  ...")` not an empty Ok; blocked-substring fixture yields `Blocked`.
+  ...")` not an empty Ok; a fixture with a blocked substring and no matching results
+  yields `Blocked`, while one echoing a blocked substring inside matching results
+  does not (amended 2026-09-24, #109).
 - Follow-up: W1-03, W1-04, W1-05 (parallel).
 
 ### W1-03 `bing.yaml` with fixtures

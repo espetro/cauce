@@ -239,7 +239,9 @@ pub struct FieldSpec {
 #[serde(deny_unknown_fields)]
 pub struct DetectSpec {
     /// Body substrings (matched case-insensitively) meaning the engine
-    /// served a captcha/block page -> `EngineError::Blocked`.
+    /// served a captcha/block page -> `EngineError::Blocked`. Evaluated only
+    /// when `parse.results` matches no nodes: engines echo the query into
+    /// the body, so a marker on a page with results is not a block (#109).
     #[serde(default)]
     pub blocked: Vec<String>,
     /// HTTP statuses meaning the upstream is rate limiting ->
