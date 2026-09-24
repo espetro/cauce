@@ -405,6 +405,7 @@ dependencies = [
  "async-trait",
  "cauce-core",
  "chrono",
+ "proptest",
  "rusqlite",
  "serde",
  "serde_json",
