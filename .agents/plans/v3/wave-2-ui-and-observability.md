@@ -168,7 +168,9 @@ results over SSE. The owner uses the UI daily for a week and files findings.
   as new steps proposed for W3; at the end, `.agents/notes/<date>-v3-usage-week.md` records
   what was fixed and what moved.
 - Acceptance: the note exists and every filed issue is triaged (`Scheduled` or closed).
-- Follow-up: W3-01.
+- Follow-up: W4-01.
+- Amended 2026-09-23: no longer gates W3-01; runs alongside W3 and gates W4-01 (issue #42
+  comment).
 
 ### W2-11 OpenSearch descriptor and `cauce search` CLI formats
 - Issue #43 · Effort S · Label feature · Team Product Builders · Branch `v3/w2-11-opensearch-cli`

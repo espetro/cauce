@@ -36,7 +36,7 @@ on latency and reliability, and every knob is configurable because the owner's n
 
 ### W3-01 P90 hedge to tier 2
 - Issue #44 · Effort M · Label feature · Team Systems · Branch `v3/w3-01-hedge`
-- Depends on: W2-10
+- Depends on: W2-01 to W2-09
 - Do: scheduler keeps a rolling latency histogram per engine (HDR-style, in
   `EngineHealth`); at `t = clamp(P90(tier1), floor, ceiling)` if fewer than `min_results`
   merged results have arrived, fire healthy tier-2 engines with the remaining budget;
@@ -45,6 +45,10 @@ on latency and reliability, and every knob is configurable because the owner's n
 - Acceptance: exit criterion 1; with tier-1 fast (`latency_ms=100`, 10 results) tier 2 is
   never called.
 - Follow-up: W3-02.
+- Amended 2026-09-23: dependency was W2-10. The step is verified on `replay` and tunes
+  against latency numbers already in "Settled inputs"; the usage week (W2-10, #42) is
+  calendar-bound and adds W3 steps rather than feeding this one, so it runs alongside W3 and
+  gates W4-01 instead (issue #42 comment).
 
 ### W3-02 Stale-while-revalidate
 - Issue #45 · Effort S · Label feature · Team Systems · Branch `v3/w3-02-swr`

@@ -29,7 +29,8 @@ W0 ─► W1-01 http/egress ─► W1-02 declarative runtime ─► W1-03/04/05 
    ├► W1-06 health, W1-07 admission, W1-10 tier-2 FTS  (need W0-08)
    ├► W1-08 MCP (needs W0-09), W1-09 metrics (needs W0-05), W1-12 modes (needs W1-08),
    │  W1-13 loopback guard (needs W0-09)
-W1 ─► W2-* (UI pages, each needs its route from W0/W1) ─► W2-10 usage week ─► W3-*
+W1 ─► W2-* (UI pages, each needs its route from W0/W1) ─► W3-*
+   └► W2-10 usage week (runs alongside W3; gates W4-01)
 W3 ─► W4 (AI) ─► W5 (archive); W3-07 (needs W1-06)
 W5 ─► W6 (conformance suite only; Postgres impl is `later/postgres-and-multi-instance.md`)
 ```
