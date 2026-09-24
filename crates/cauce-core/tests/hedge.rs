@@ -400,3 +400,110 @@ async fn skipped_engine_history_does_not_delay_hedge() {
          engine's history would land ~800 ms, got {hedge_at}"
     );
 }
+
+/// The deferred wave is gated only once its permits are held: a hedge
+/// whose permit wait is abandoned — here aborted when the merge fills
+/// — must leave the wave untouched, so `engines_skipped` stays empty
+/// and no `HalfOpen` probe claim leaks without its call. t2's breaker
+/// is opened directly via `record_err` because the four pinned holders
+/// saturate its permits for the whole test (a real poisoning call
+/// could never get a slot).
+#[tokio::test]
+async fn aborted_hedge_acquire_never_gates_tier2() {
+    let dir = tempfile::tempdir().unwrap();
+    let t1a = replay_at(dir.path(), |o| {
+        o.id = EngineId::from("t1a");
+        o.latency_ms = 500; // fills the page mid-wait
+    });
+    let t1b = replay_at(dir.path(), |o| {
+        o.id = EngineId::from("t1b");
+        o.latency_ms = 2_000; // keeps a primary in flight
+    });
+    let t2 = Arc::new(replay_at(dir.path(), |o| {
+        o.id = EngineId::from("t2");
+        o.tier = Tier::T2;
+        o.latency_ms = 1_200;
+    }));
+    let store = Arc::new(StubStore::default());
+    let pipe = SearchPipeline::new(store, vec![Arc::new(t1a), Arc::new(t1b), t2.clone()])
+        .with_admission(Admission::new(AdmissionLimits {
+            max_wait: Duration::from_millis(50),
+            max_concurrent_per_engine: 4,
+        }));
+
+    // Four pinned tier-2 calls saturate every permit for ~1.2 s
+    // (distinct queries — identical ones would dedupe into one flight).
+    let mut holders = Vec::new();
+    for n in 0..4 {
+        let mut pinned = req(&format!("occupy tier two {n}"));
+        pinned.engines = Some(vec![EngineId::from("t2")]);
+        let pipe_occ = pipe.clone();
+        holders.push(tokio::spawn(async move { pipe_occ.search(&pinned).await }));
+    }
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    pipe.health().record_err(
+        &EngineId::from("t2"),
+        Duration::ZERO,
+        &cauce_core::EngineError::Blocked,
+        uuid::Uuid::now_v7(),
+    );
+
+    // The hedge trigger queues the permit wait at ~300 ms (all permits
+    // held, so it stays pending); the merge fills at ~500 ms and aborts
+    // it. The deferred wave must never have been gated — a skip report
+    // implies a gate ran for a wave that never spawned.
+    let resp = pipe.search(&req("aborted hedge")).await.expect("search");
+    assert!(!resp.meta.hedged);
+    assert!(
+        resp.meta.engines_skipped.is_empty(),
+        "an abandoned permit wait must not record gate decisions, got {:?}",
+        resp.meta.engines_skipped
+    );
+    for holder in holders {
+        let _ = holder.await;
+    }
+}
+
+/// The promotion path shares the invariant: when the deferred wave is
+/// the only runnable one its permits are acquired BEFORE the breaker
+/// gate, so a timed-out wait reports `RateLimited` (the queue, not a
+/// gate decision) — and never `BreakerOpen`, which would mean the wave
+/// was gated first, leaking any claimed `HalfOpen` probe.
+#[tokio::test]
+async fn promoted_acquire_timeout_is_rate_limited() {
+    let dir = tempfile::tempdir().unwrap();
+    let t2 = Arc::new(replay_at(dir.path(), |o| {
+        o.id = EngineId::from("t2");
+        o.tier = Tier::T2;
+        o.latency_ms = 1_200;
+    }));
+    let store = Arc::new(StubStore::default());
+    let pipe = SearchPipeline::new(store, vec![t2.clone()]).with_admission(Admission::new(
+        AdmissionLimits {
+            max_wait: Duration::from_millis(50),
+            max_concurrent_per_engine: 1,
+        },
+    ));
+
+    // One pinned call holds the only permit past the victim's 50 ms
+    // wait; the direct Blocked report keeps t2's breaker open so a gate
+    // would suppress it — observable only if gating ran before the wait.
+    let mut pinned = req("occupy tier two");
+    pinned.engines = Some(vec![EngineId::from("t2")]);
+    let pipe_occ = pipe.clone();
+    let occupier = tokio::spawn(async move { pipe_occ.search(&pinned).await });
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    pipe.health().record_err(
+        &EngineId::from("t2"),
+        Duration::ZERO,
+        &cauce_core::EngineError::Blocked,
+        uuid::Uuid::now_v7(),
+    );
+
+    let outcome = pipe.search(&req("promotion victim")).await;
+    assert!(
+        matches!(outcome, Err(cauce_core::PipelineError::RateLimited { .. })),
+        "an un-reached wave reports RateLimited, got {outcome:?}"
+    );
+    occupier.await.unwrap().expect("occupier search");
+}

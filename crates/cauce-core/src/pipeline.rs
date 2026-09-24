@@ -1404,8 +1404,10 @@ impl SearchPipeline {
         request_id: Uuid,
         started: Instant,
     ) -> Result<SearchResponse, PipelineError> {
-        let (mut waves, hedge_at) = self.gate_waves(runnable, request_id)?;
-        let _promoted = self.promoted_permits(&waves, started).await?;
+        let (mut waves, hedge_at) = self.gate_waves(runnable, request_id);
+        let _promoted = self
+            .promote_deferred(&mut waves, started, request_id)
+            .await?;
         let mut fan = FanOut::new(runnable.len(), started);
         let mut merge = RrfMerge::new();
         let ctx = FetchCtx {
@@ -1433,8 +1435,10 @@ impl SearchPipeline {
         stream: &StreamCtx<'_>,
         runnable: &[Arc<dyn Engine>],
     ) -> Result<SearchResponse, PipelineError> {
-        let (mut waves, hedge_at) = self.gate_waves(runnable, stream.request_id)?;
-        let _promoted = self.promoted_permits(&waves, stream.started).await?;
+        let (mut waves, hedge_at) = self.gate_waves(runnable, stream.request_id);
+        let _promoted = self
+            .promote_deferred(&mut waves, stream.started, stream.request_id)
+            .await?;
         let mut fan = FanOut::new(runnable.len(), stream.started);
         let mut merge = RrfMerge::new();
         let ctx = FetchCtx {
@@ -1505,47 +1509,39 @@ impl SearchPipeline {
 
     /// Split `runnable` into the fan-out's two waves and breaker-gate the
     /// t=0 one (W3-01): tier-1 and specialised tier-3 engines run
-    /// immediately; tier-2 is the hedge set, gated only at fire time so a
-    /// claimed `HalfOpen` probe always precedes a real call. When the
-    /// t=0 gate leaves nothing runnable — every tier-1/3 skipped, or the
-    /// pin/config has none — the deferred set runs immediately instead:
-    /// deferring it would add dead time to every such request. Returns
-    /// the waves and the hedge point (`None` when there is no tier-2 to
-    /// fire or none left waiting on a primary call).
+    /// immediately; tier-2 is the hedge set, gated only once its permits
+    /// are held — by [`SearchPipeline::promote_deferred`] when the t=0
+    /// wave is empty, or by [`SearchPipeline::finish_hedge`] when a hedge
+    /// trigger fires — so a claimed `HalfOpen` probe always precedes a
+    /// real call. Returns the waves and the hedge point (`None` when the
+    /// t=0 wave is empty: the deferred wave promotes instead of hedging).
     fn gate_waves(
         &self,
         runnable: &[Arc<dyn Engine>],
         request_id: Uuid,
-    ) -> Result<(Waves, Option<Duration>), PipelineError> {
-        let (primary, mut deferred): (Vec<Gated>, Vec<Gated>) = runnable
+    ) -> (Waves, Option<Duration>) {
+        let (primary, deferred): (Vec<Gated>, Vec<Gated>) = runnable
             .iter()
             .cloned()
             .enumerate()
             .partition(|(_, e)| e.tier() != Tier::T2);
-        let (mut gated, mut skipped) = self.breaker_gate(&primary, request_id);
-        if gated.is_empty() {
-            let (now, now_skipped) = self.breaker_gate(&deferred, request_id);
-            gated = now;
-            skipped.extend(now_skipped);
-            deferred.clear();
-        }
-        if gated.is_empty() {
-            // Nothing ran; `shared_response` still writes this request's
-            // search_log row on the error path.
-            return Err(PipelineError::BreakerOpen(skipped));
-        }
+        let (gated, skipped) = self.breaker_gate(&primary, request_id);
         // P90 pools only the tier-1 engines this request actually
         // admitted: a skipped engine cannot answer, so its slow history
         // must not postpone the hedge for the healthy set.
-        let hedge_at = self.hedge_point(&gated, &deferred);
-        Ok((
+        let hedge_at = if gated.is_empty() {
+            None
+        } else {
+            self.hedge_point(&gated, &deferred)
+        };
+        (
             Waves {
                 gated,
                 deferred,
                 skipped,
             },
             hedge_at,
-        ))
+        )
     }
 
     /// `t = clamp(P90(tier-1 history), floor, ceiling)` for this flight
@@ -1569,38 +1565,54 @@ impl SearchPipeline {
         Some(Duration::from_millis(self.health.p90_ms(&t1)).clamp(lo, hi))
     }
 
-    /// Permits for tier-2 engines `gate_waves` promoted into the t=0
-    /// wave (every primary absent or breaker-skipped). Upfront
-    /// acquisition only covers the non-tier-2 ids, so a promoted engine
-    /// acquires here — inside the fetch, where it is async — bounded by
-    /// the request's remaining deadline budget. `None` when the t=0
-    /// wave has no tier-2 member; `Err(RateLimited)` when tier-2
-    /// capacity never frees, which the caller routes to the same
-    /// overflow fallback as an exhausted primary queue.
-    async fn promoted_permits(
+    /// Promote the deferred wave when the t=0 gate left nothing
+    /// runnable (every primary absent or breaker-skipped): acquire the
+    /// wave's permits BEFORE breaker-gating it — a claimed `HalfOpen`
+    /// probe must always precede a spawn, and a failed wait must leave
+    /// no claims behind — then move the survivors into `waves.gated`.
+    /// `Ok(None)` when the primary wave already has work.
+    /// `Err(RateLimited)` when tier-2 capacity never frees inside
+    /// `min(remaining deadline, max_wait)` — the caller routes that to
+    /// the same overflow fallback as an exhausted primary queue — and
+    /// `Err(BreakerOpen)` when nothing at all survived the gates.
+    async fn promote_deferred(
         &self,
-        waves: &Waves,
+        waves: &mut Waves,
         started: Instant,
+        request_id: Uuid,
     ) -> Result<Option<EnginePermits>, PipelineError> {
-        let promoted: Vec<EngineId> = waves
-            .gated
-            .iter()
-            .filter(|(_, e)| e.tier() == Tier::T2)
-            .map(|(_, e)| e.id())
-            .collect();
-        if promoted.is_empty() {
+        if !waves.gated.is_empty() {
             return Ok(None);
         }
+        if waves.deferred.is_empty() {
+            // Nothing ran; `shared_response` still writes this request's
+            // search_log row on the error path.
+            return Err(PipelineError::BreakerOpen(std::mem::take(
+                &mut waves.skipped,
+            )));
+        }
+        let ids: Vec<EngineId> = waves.deferred.iter().map(|(_, e)| e.id()).collect();
         // Same bound as the upfront queue (`admission.max_wait`) but
         // never past the hard deadline.
         let wait = self
             .deadline
             .saturating_sub(started.elapsed())
             .min(self.admission.limits().max_wait);
-        match self.admission.acquire_within(&promoted, wait).await {
-            Ok(permits) => Ok(Some(permits)),
-            Err(_) => Err(self.rate_limited()),
+        let permits = self
+            .admission
+            .acquire_within(&ids, wait)
+            .await
+            .map_err(|_| self.rate_limited())?;
+        let (now, now_skipped) = self.breaker_gate(&waves.deferred, request_id);
+        waves.skipped.extend(now_skipped);
+        waves.deferred.clear();
+        waves.gated = now;
+        if waves.gated.is_empty() {
+            return Err(PipelineError::BreakerOpen(std::mem::take(
+                &mut waves.skipped,
+            )));
         }
+        Ok(Some(permits))
     }
 
     /// Fold one [`EngineOutcome`] into the [`FanOut`] bookkeeping: metrics,
@@ -2027,7 +2039,6 @@ impl SearchPipeline {
         // no spawn budget left anyway.
         let hedge_wake = hedge_at
             .map(|at| tokio::time::Instant::from_std((fan_started + at).min(hard_deadline)));
-        let mut hedge_gated: Vec<Gated> = Vec::new();
         let mut hedge_acquire: Option<tokio::task::JoinHandle<Result<EnginePermits, WaitTimeout>>> =
             None;
         // Held until the loop ends so the spawned hedge wave's calls
@@ -2061,8 +2072,7 @@ impl SearchPipeline {
                             {
                                 hedge_pending = false;
                                 if merge.map.len() < self.hedge.min_results {
-                                    hedge_acquire =
-                                        self.queue_hedge(waves, ctx, &mut hedge_gated);
+                                    hedge_acquire = self.queue_hedge(waves, ctx);
                                 }
                             }
                             // A merge that filled while tier-2 permits
@@ -2071,7 +2081,6 @@ impl SearchPipeline {
                                 && merge.map.len() >= self.hedge.min_results
                             {
                                 hedge_acquire.take().unwrap().abort();
-                                hedge_gated.clear();
                             }
                         }
                         Some(Err(join_err)) => {
@@ -2093,7 +2102,7 @@ impl SearchPipeline {
                     if ctx.started.elapsed() < self.deadline
                         && merge.map.len() < self.hedge.min_results
                     {
-                        hedge_acquire = self.queue_hedge(waves, ctx, &mut hedge_gated);
+                        hedge_acquire = self.queue_hedge(waves, ctx);
                     }
                 }
                 // `select!` evaluates every branch's expression even for
@@ -2115,19 +2124,16 @@ impl SearchPipeline {
                                 fan,
                                 ctx,
                                 fan_started,
-                                std::mem::take(&mut hedge_gated),
                             );
                         }
                         Ok(Err(_timeout)) => {
                             info!(
-                                engines = hedge_gated.len(),
+                                engines = waves.deferred.len(),
                                 "hedge dropped: tier-2 permits never freed"
                             );
-                            hedge_gated.clear();
                         }
                         Err(join_err) => {
                             warn!(error = %join_err, "hedge permit task failed");
-                            hedge_gated.clear();
                         }
                     }
                 }
@@ -2135,43 +2141,38 @@ impl SearchPipeline {
         }
     }
 
-    /// Begin a hedge (W3-01): breaker-gate the deferred wave now —
-    /// suppressions land on `engines_skipped` like the t=0 gate's — and
-    /// return the spawned task that waits for the survivors' permits,
-    /// bounded by the deadline budget remaining at trigger time. A zero
-    /// budget never gates: a claimed `HalfOpen` probe must always
-    /// precede a real call, and nothing could spawn anyway. `None` also
-    /// when every deferred engine was suppressed.
+    /// Begin a hedge (W3-01): spawn the task that waits for the
+    /// deferred wave's permits, bounded by the deadline budget remaining
+    /// at trigger time. The wave is NOT breaker-gated here — gating
+    /// claims `HalfOpen` probes, and a claim must always precede a
+    /// spawn, so it happens inside [`SearchPipeline::finish_hedge`] once
+    /// the permits are actually held (an aborted or timed-out wait then
+    /// leaves no claims behind). `None` when nothing is deferred or the
+    /// deadline already elapsed — a spawn would get a zero budget anyway.
     fn queue_hedge(
         &self,
-        waves: &mut Waves,
+        waves: &Waves,
         ctx: &FetchCtx<'_>,
-        hedge_gated: &mut Vec<Gated>,
     ) -> Option<tokio::task::JoinHandle<Result<EnginePermits, WaitTimeout>>> {
         let remaining = self.deadline.saturating_sub(ctx.started.elapsed());
-        if remaining.is_zero() {
+        if remaining.is_zero() || waves.deferred.is_empty() {
             return None;
         }
-        let (now, now_skipped) = self.breaker_gate(&waves.deferred, ctx.request_id);
-        waves.skipped.extend(now_skipped);
-        waves.deferred.clear();
-        if now.is_empty() {
-            debug!("hedge point reached but every tier-2 engine is breaker-skipped");
-            return None;
-        }
-        let ids: Vec<EngineId> = now.iter().map(|(_, e)| e.id()).collect();
-        *hedge_gated = now;
+        let ids: Vec<EngineId> = waves.deferred.iter().map(|(_, e)| e.id()).collect();
         let admission = self.admission.clone();
         Some(tokio::spawn(async move {
             admission.acquire_within(&ids, remaining).await
         }))
     }
 
-    /// Spawn the hedge wave once its permits are held (W3-01): mark
+    /// Fire the hedge once its permits are held (W3-01): re-check the
+    /// deadline — a permit resolved past it must not gate or spawn —
+    /// then breaker-gate the deferred wave (suppressions land on
+    /// `engines_skipped` like the t=0 gate's), mark
     /// `meta.hedged`/`meta.hedge_at_ms` (measured from fan-out start)
     /// and `cauce_hedge_total{reason}` — `few` once every primary call
-    /// answered, `slow` while one is still in flight — then start the
-    /// engines on the deadline budget remaining at fire time.
+    /// answered, `slow` while one is still in flight — and spawn the
+    /// survivors on the deadline budget remaining at fire time.
     fn finish_hedge(
         &self,
         set: &mut tokio::task::JoinSet<EngineOutcome>,
@@ -2179,9 +2180,17 @@ impl SearchPipeline {
         fan: &mut FanOut,
         ctx: &FetchCtx<'_>,
         fan_started: Instant,
-        now: Vec<Gated>,
     ) {
+        let remaining = self.deadline.saturating_sub(ctx.started.elapsed());
+        if remaining.is_zero() {
+            info!("hedge dropped: deadline elapsed during the permit wait");
+            return;
+        }
+        let (now, now_skipped) = self.breaker_gate(&waves.deferred, ctx.request_id);
+        waves.skipped.extend(now_skipped);
+        waves.deferred.clear();
         if now.is_empty() {
+            debug!("hedge point reached but every tier-2 engine is breaker-skipped");
             return;
         }
         let reason = if waves.gated.iter().all(|(idx, _)| fan.answered[*idx]) {
@@ -2189,7 +2198,6 @@ impl SearchPipeline {
         } else {
             "slow"
         };
-        let remaining = self.deadline.saturating_sub(ctx.started.elapsed());
         let hedge_at = fan_started.elapsed();
         self.metrics.record_hedge(reason);
         fan.hedged = true;
