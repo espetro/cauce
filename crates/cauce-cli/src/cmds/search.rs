@@ -19,8 +19,8 @@ use std::time::Duration;
 
 use cauce_core::config::{Config, Resources};
 use cauce_core::{
-    Admission, AdmissionLimits, CachePolicy, ClientKind, EngineId, HedgePolicy, MergePolicy,
-    SafeSearch, SearchPipeline, SearchRequest, SearchResponse,
+    Admission, AdmissionLimits, CachePolicy, ClientKind, EngineId, HealthPolicy, HedgePolicy,
+    MergePolicy, SafeSearch, SearchPipeline, SearchRequest, SearchResponse,
 };
 use cauce_engines::factory::build_engines;
 use cauce_server::observability;
@@ -131,6 +131,11 @@ async fn search_async(cfg: &Config, opts: &SearchArgs) -> i32 {
         .with_cache_policy(CachePolicy {
             stale_grace: Duration::from_secs(cfg.cache.stale_grace_s),
             degraded_ttl: Duration::from_secs(cfg.cache.degraded_ttl_s),
+        })
+        .with_health_policy(HealthPolicy {
+            degraded_threshold: cfg.health.degraded_threshold,
+            degraded_window: Duration::from_secs(cfg.health.degraded_window_s),
+            ..HealthPolicy::default()
         });
     // Honour persisted breakers (plan 4.4.6), same as `serve` startup.
     if let Err(e) = pipeline.load_health().await {

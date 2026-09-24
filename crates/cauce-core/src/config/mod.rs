@@ -103,6 +103,16 @@ const ENV_OVERRIDES: &[(&str, &[&str], bool)] = &[
         &["admission", "max_concurrent_per_engine"],
         true,
     ),
+    (
+        "CAUCE_HEALTH_DEGRADED_THRESHOLD",
+        &["health", "degraded_threshold"],
+        true,
+    ),
+    (
+        "CAUCE_HEALTH_DEGRADED_WINDOW_S",
+        &["health", "degraded_window_s"],
+        true,
+    ),
     ("CAUCE_MERGE_RRF_K", &["merge", "rrf_k"], true),
     (
         "CAUCE_MERGE_COLLAPSE_SAME_HOST_AFTER",
@@ -487,6 +497,44 @@ fn default_max_concurrent_per_engine() -> u32 {
     3
 }
 
+/// `[health]`: circuit-breaker knobs (W3-07). The other breaker rules
+/// (`RateLimited`/`Blocked` abuse window, the timeout streak) stay
+/// settled constants on `HealthPolicy`; this section holds the degraded
+/// pair: `degraded_threshold` consecutive `Parse`/`Transport` errors
+/// open the breaker for `degraded_window_s` seconds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HealthConfig {
+    /// Consecutive `Parse`/`Transport` errors that open the breaker
+    /// (default 5). Must be >= 1: `0` would fire on the very first error
+    /// instead of being a streak.
+    #[serde(default = "default_degraded_threshold")]
+    pub degraded_threshold: u32,
+    /// Seconds the breaker stays open once the degraded streak trips it
+    /// (default 600) — also the re-open window for a half-open probe
+    /// that fails with `Parse`/`Transport`. `0` makes the breaker never
+    /// stay open (it flips to `HalfOpen` on the next gate).
+    #[serde(default = "default_degraded_window_s")]
+    pub degraded_window_s: u64,
+}
+
+impl Default for HealthConfig {
+    fn default() -> Self {
+        Self {
+            degraded_threshold: default_degraded_threshold(),
+            degraded_window_s: default_degraded_window_s(),
+        }
+    }
+}
+
+fn default_degraded_threshold() -> u32 {
+    5
+}
+
+fn default_degraded_window_s() -> u64 {
+    600
+}
+
 /// `[cache]`: cache-tier behaviour beyond TTLs (those live in `[search]`).
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -804,6 +852,9 @@ pub struct Config {
     /// `[admission]` section.
     #[serde(default)]
     pub admission: AdmissionConfig,
+    /// `[health]` section.
+    #[serde(default)]
+    pub health: HealthConfig,
     /// `[cache]` section.
     #[serde(default)]
     pub cache: CacheConfig,
@@ -845,6 +896,7 @@ struct ConfigSections<'a> {
     server: &'a ServerConfig,
     search: &'a SearchConfig,
     admission: &'a AdmissionConfig,
+    health: &'a HealthConfig,
     cache: &'a CacheConfig,
     merge: &'a MergeConfig,
     logs: &'a LogsConfig,
@@ -881,6 +933,7 @@ impl Default for Config {
             server: ServerConfig::default(),
             search: SearchConfig::default(),
             admission: AdmissionConfig::default(),
+            health: HealthConfig::default(),
             cache: CacheConfig::default(),
             merge: MergeConfig::default(),
             logs: LogsConfig::default(),
@@ -911,6 +964,7 @@ impl Config {
             server: &self.server,
             search: &self.search,
             admission: &self.admission,
+            health: &self.health,
             cache: &self.cache,
             merge: &self.merge,
             logs: &self.logs,
@@ -1030,6 +1084,16 @@ impl Config {
             return Err(ConfigError::InvalidValue {
                 path: "merge.rrf_k".to_string(),
                 msg: format!("expected a finite value >= 0.0, got {rrf_k}"),
+            });
+        }
+
+        // `health.degraded_threshold` counts a streak: `0` would trip the
+        // breaker on the first `Parse`/`Transport` error rather than after
+        // a run of them, so it is rejected rather than re-interpreted.
+        if cfg.health.degraded_threshold == 0 {
+            return Err(ConfigError::InvalidValue {
+                path: "health.degraded_threshold".to_string(),
+                msg: "expected >= 1".to_string(),
             });
         }
 
@@ -1594,6 +1658,65 @@ mod tests {
             Config::load_with(&env).unwrap().cache.lexical.threshold,
             1.0
         );
+    }
+
+    /// `[health]` (W3-07): the degraded-breaker pair loads from file and
+    /// env with the settled defaults (5 consecutive `Parse`/`Transport`
+    /// errors open the breaker for 600 s).
+    #[test]
+    fn health_section_loads() {
+        let (tmp, env) = sandbox(&[]);
+        let cfg = Config::load_with(&env).unwrap();
+        assert_eq!(cfg.health.degraded_threshold, 5);
+        assert_eq!(cfg.health.degraded_window_s, 600);
+        assert!(cfg.display_toml().unwrap().contains("health"));
+
+        // File layer, partial section: untouched field keeps its default.
+        write_config(
+            &tmp.path().join("cfg"),
+            "[health]\ndegraded_threshold = 8\n",
+        );
+        let cfg = Config::load_with(&env).unwrap();
+        assert_eq!(cfg.health.degraded_threshold, 8);
+        assert_eq!(cfg.health.degraded_window_s, 600);
+
+        // `CAUCE_*` pins beat the file.
+        let (_tmp2, env_override) = sandbox(&[
+            ("CAUCE_HEALTH_DEGRADED_THRESHOLD", "2"),
+            ("CAUCE_HEALTH_DEGRADED_WINDOW_S", "120"),
+        ]);
+        let cfg = Config::load_with(&env_override).unwrap();
+        assert_eq!(cfg.health.degraded_threshold, 2);
+        assert_eq!(cfg.health.degraded_window_s, 120);
+
+        // Unknown keys inside the section are still rejected.
+        write_config(&tmp.path().join("cfg"), "[health]\nbogus = 1\n");
+        assert!(matches!(
+            Config::load_with(&env),
+            Err(ConfigError::Invalid(_))
+        ));
+    }
+
+    /// `degraded_threshold = 0` is not a valid streak length — it would
+    /// open the breaker on the first `Parse`/`Transport` error — so it is
+    /// rejected from either source rather than re-interpreted.
+    #[test]
+    fn health_degraded_threshold_zero_is_rejected() {
+        let (tmp, env) = sandbox(&[]);
+        write_config(
+            &tmp.path().join("cfg"),
+            "[health]\ndegraded_threshold = 0\n",
+        );
+        assert!(matches!(
+            Config::load_with(&env),
+            Err(ConfigError::InvalidValue { ref path, .. }) if path == "health.degraded_threshold"
+        ));
+
+        let (_tmp2, env_override) = sandbox(&[("CAUCE_HEALTH_DEGRADED_THRESHOLD", "0")]);
+        assert!(matches!(
+            Config::load_with(&env_override),
+            Err(ConfigError::InvalidValue { ref path, .. }) if path == "health.degraded_threshold"
+        ));
     }
 
     /// An inverted hedge window (floor > ceiling) violates
