@@ -1,6 +1,6 @@
-//! `cauce` binary: `serve`, `search`, `mcp`, `record`, `engine`, `trace`,
-//! `tail`, `config` are implemented (`mcp` only with the `mcp` cargo
-//! feature); `cache` lands in a later wave.
+//! `cauce` binary: `serve`, `search`, `mcp`, `record`, `engine`, `eval`,
+//! `trace`, `tail`, `config` are implemented (`mcp` only with the `mcp`
+//! cargo feature); `cache` lands in a later wave.
 //!
 //! This Source Code Form is subject to the terms of the Mozilla Public
 //! License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -32,6 +32,9 @@ fn main() {
         "engine" => std::process::exit(cmds::engine::run(
             &std::env::args().skip(2).collect::<Vec<_>>(),
         )),
+        "eval" => std::process::exit(cmds::eval::run(
+            &std::env::args().skip(2).collect::<Vec<_>>(),
+        )),
         "trace" => std::process::exit(cmds::trace::run(std::env::args().nth(2))),
         "tail" => std::process::exit(cmds::tail::run(
             &std::env::args().skip(2).collect::<Vec<_>>(),
@@ -46,7 +49,9 @@ fn main() {
             std::process::exit(2);
         }
         _ => {
-            eprintln!("usage: cauce <serve|search|mcp|record|engine|trace|tail|config> [args]");
+            eprintln!(
+                "usage: cauce <serve|search|mcp|record|engine|eval|trace|tail|config> [args]"
+            );
             std::process::exit(2);
         }
     }

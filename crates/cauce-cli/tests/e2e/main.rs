@@ -1,5 +1,6 @@
 mod budget;
 mod common;
+mod evals;
 mod golden_path;
 mod guard;
 mod headless;

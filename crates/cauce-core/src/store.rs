@@ -511,6 +511,11 @@ pub struct StatsSnapshot {
     /// Admission/queue aggregates. Zeroed by store impls; the HTTP handler
     /// fills it from the in-process metrics registry via `merge_metrics`.
     pub admission: AdmissionStats,
+    /// The newest `evals/results/<date>-engines.json` run (W3-05), read by
+    /// the `/api/stats` handler on each request — `None` when no report
+    /// file exists. Store impls always emit `None`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub engine_eval: Option<crate::evals::EvalReport>,
 }
 
 impl StatsSnapshot {
