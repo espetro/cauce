@@ -180,3 +180,42 @@ pub(super) fn exa_response(
     }
 }
 
+
+#[cfg(test)]
+mod tests {
+    use proptest::prelude::*;
+
+    use super::*;
+
+    proptest! {
+        #[test]
+        fn split_sentences_no_empty_and_preserve_content(text in ".*") {
+            let sentences = split_sentences(&text);
+            prop_assert!(sentences.iter().all(|s| !s.trim().is_empty()));
+            let non_ws = |s: &str| s.chars().filter(|c| !c.is_whitespace()).collect::<String>();
+            prop_assert_eq!(non_ws(&sentences.join("")), non_ws(&text));
+        }
+
+        #[test]
+        fn extract_highlights_bounded_and_from_snippet(snippet in ".*") {
+            let highlights = extract_highlights(&snippet);
+            prop_assert!(highlights.len() <= MAX_HIGHLIGHTS);
+            let non_ws = |s: &str| s.chars().filter(|c| !c.is_whitespace()).collect::<String>();
+            let haystack = non_ws(&snippet);
+            prop_assert!(highlights.iter().all(|h| haystack.contains(&non_ws(h))));
+        }
+
+        #[test]
+        fn build_query_text_retains_query_and_exclusions(
+            query in ".*",
+            exclude_domains in prop::collection::vec(".*", 0..6),
+        ) {
+            let out = build_query_text(&query, Some(&exclude_domains));
+            prop_assert!(out.contains(query.trim()));
+            for d in exclude_domains.iter().filter(|d| !d.is_empty()) {
+                let tag = format!("-site:{d}");
+                prop_assert!(out.contains(&tag));
+            }
+        }
+    }
+}
