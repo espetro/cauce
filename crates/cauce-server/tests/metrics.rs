@@ -12,62 +12,32 @@
 //! file, You can obtain one at <https://mozilla.org/MPL/2.0/>.
 
 use std::collections::BTreeSet;
-use std::sync::Arc;
 
-use axum::body::{Body, to_bytes};
-use axum::http::{Request, StatusCode};
-use cauce_core::config::Config;
-use cauce_core::{SearchPipeline, StoreTuning};
-use cauce_engines::{Replay, ReplayOpts};
-use cauce_server::{AppState, METRICS_CONTENT_TYPE, build_router};
-use cauce_store_sqlite::SqliteStore;
-use serde_json::Value;
-use tower::ServiceExt;
+use axum::http::StatusCode;
+use cauce_server::{METRICS_CONTENT_TYPE, build_router};
 
-fn req(method: &str, uri: &str) -> Request<Body> {
-    Request::builder()
-        .method(method)
-        .uri(uri)
-        .body(Body::empty())
-        .unwrap()
-}
+mod support;
+use support::*;
 
 #[tokio::test]
 async fn metrics_endpoint_and_stats_after_replay_search() {
-    let tmp = tempfile::tempdir().expect("tempdir");
-    let store = Arc::new(
-        SqliteStore::open(tmp.path().join("cauce.db"), StoreTuning::default()).expect("store"),
-    );
-    let pipeline = Arc::new(SearchPipeline::new(
-        store.clone(),
-        vec![Arc::new(Replay::new(ReplayOpts::default()))],
-    ));
-    let router = build_router(AppState::new(pipeline, store, Config::default()));
+    let (state, _tmp) = test_state();
+    let router = build_router(state);
 
     // One replay (network) search populates the search/engine instruments.
-    let resp = router
-        .clone()
-        .oneshot(req("GET", "/api/search?q=metrics-check"))
-        .await
-        .expect("search response");
-    assert_eq!(resp.status(), StatusCode::OK);
+    let (status, _) = get_json(&router, "/api/search?q=metrics-check").await;
+    assert_eq!(status, StatusCode::OK);
 
     // ---- GET /metrics: parseable Prometheus text --------------------------
-    let resp = router
-        .clone()
-        .oneshot(req("GET", "/metrics"))
-        .await
-        .expect("metrics response");
-    assert_eq!(resp.status(), StatusCode::OK);
+    let (status, headers, text) = get_headers(&router, "/metrics").await;
+    assert_eq!(status, StatusCode::OK);
     assert_eq!(
-        resp.headers()
+        headers
             .get(axum::http::header::CONTENT_TYPE)
             .and_then(|v| v.to_str().ok()),
         Some(METRICS_CONTENT_TYPE),
         "Prometheus content type"
     );
-    let bytes = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
-    let text = String::from_utf8(bytes.to_vec()).expect("utf8 exposition");
 
     let scrape = prometheus_parse::Scrape::parse(
         text.lines()
@@ -133,14 +103,8 @@ async fn metrics_endpoint_and_stats_after_replay_search() {
     }
 
     // ---- GET /api/stats: engines[] + admission aggregates ------------------
-    let resp = router
-        .clone()
-        .oneshot(req("GET", "/api/stats"))
-        .await
-        .expect("stats response");
-    assert_eq!(resp.status(), StatusCode::OK);
-    let bytes = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
-    let body: Value = serde_json::from_slice(&bytes).expect("stats json");
+    let (status, body) = get_json(&router, "/api/stats").await;
+    assert_eq!(status, StatusCode::OK);
 
     let engines = body["engines"].as_array().expect("engines array");
     assert_eq!(engines.len(), 1, "one engine ran: {body}");

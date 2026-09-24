@@ -16,15 +16,9 @@
 
 use std::collections::BTreeSet;
 use std::net::SocketAddr;
-use std::sync::Arc;
 
-use cauce_core::config::Config;
-use cauce_core::{
-    AuditFilter, ClientKind, HistoryFilter, HistoryItem, SearchPipeline, StoreTuning,
-};
-use cauce_engines::{Replay, ReplayOpts};
+use cauce_core::{AuditFilter, ClientKind, HistoryFilter, HistoryItem};
 use cauce_server::{AppState, build_router};
-use cauce_store_sqlite::SqliteStore;
 use rmcp::model::{
     CallToolRequestParams, ClientCapabilities, Implementation, InitializeRequestParams,
 };
@@ -33,6 +27,9 @@ use rmcp::transport::StreamableHttpClientTransport;
 use rmcp::transport::streamable_http_client::StreamableHttpClientTransportConfig;
 use rmcp::{RoleClient, ServiceExt};
 use serde_json::{Value, json};
+
+mod support;
+use support::*;
 
 /// The settled W1-08 tool surface: exactly these four names.
 const TOOL_NAMES: [&str; 4] = [
@@ -43,19 +40,6 @@ const TOOL_NAMES: [&str; 4] = [
 ];
 
 const CLIENT_NAME: &str = "cauce-mcp-http-test";
-
-/// Tempdir-backed state: SqliteStore + the deterministic `replay` engine.
-fn test_state() -> (AppState, tempfile::TempDir) {
-    let tmp = tempfile::tempdir().expect("tempdir");
-    let store = Arc::new(
-        SqliteStore::open(tmp.path().join("cauce.db"), StoreTuning::default()).expect("store"),
-    );
-    let pipeline = Arc::new(SearchPipeline::new(
-        store.clone(),
-        vec![Arc::new(Replay::new(ReplayOpts::default()))],
-    ));
-    (AppState::new(pipeline, store, Config::default()), tmp)
-}
 
 /// Serve the full router (including `/mcp`) on a loopback port.
 async fn spawn_server(state: AppState) -> (SocketAddr, tokio::task::JoinHandle<()>) {
