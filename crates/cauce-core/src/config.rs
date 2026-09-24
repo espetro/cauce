@@ -1857,175 +1857,170 @@ mod tests {
         ));
     }
 
-    #[test]
-    fn interpolation_env_required() {
-        let (tmp, env) = sandbox(&[("MY_SECRET", "s3cret")]);
-        write_config(
-            &tmp.path().join("cfg"),
-            "[ai]\napi_key = \"${env:MY_SECRET}\"\n",
-        );
-        let cfg = Config::load_with(&env).unwrap();
-        assert_eq!(cfg.ai.api_key, "s3cret");
+    /// `${env:...}`/`${file:...}`/escape/disable cases share one
+    /// sandbox-and-load shape; a table keeps each contract visible
+    /// without repeating the harness. `FILE` inside `value` is
+    /// substituted with a per-case `secret.txt` path (POSIX `:-`/`:?`
+    /// treat unset-or-empty as missing).
+    #[derive(Debug)]
+    enum InterpWant {
+        Ok(&'static str),
+        MissingEnv(&'static str),
+        MissingEnvMsg(&'static str, &'static str),
+        MissingFile,
+    }
+
+    struct InterpCase {
+        env: &'static [(&'static str, &'static str)],
+        /// TOML written before `[ai]` (e.g. a `[config]` override).
+        prefix: &'static str,
+        /// `secret.txt` contents written beside the config.
+        file: Option<&'static str>,
+        /// Raw TOML value of `ai.api_key`.
+        value: &'static str,
+        want: InterpWant,
     }
 
     #[test]
-    fn interpolation_env_missing_fails() {
-        let (tmp, env) = sandbox(&[]);
-        write_config(
-            &tmp.path().join("cfg"),
-            "[ai]\napi_key = \"${env:UNSET_VAR}\"\n",
-        );
-        assert!(matches!(
-            Config::load_with(&env),
-            Err(ConfigError::MissingEnv { var, .. }) if var == "UNSET_VAR"
-        ));
-    }
-
-    #[test]
-    fn interpolation_env_default() {
-        let (tmp, env) = sandbox(&[]);
-        write_config(
-            &tmp.path().join("cfg"),
-            "[ai]\napi_key = \"${env:UNSET_VAR:-fallback}\"\n",
-        );
-        let cfg = Config::load_with(&env).unwrap();
-        assert_eq!(cfg.ai.api_key, "fallback");
-
-        let (tmp, env) = sandbox(&[("SET_VAR", "real")]);
-        write_config(
-            &tmp.path().join("cfg"),
-            "[ai]\napi_key = \"${env:SET_VAR:-fallback}\"\n",
-        );
-        let cfg = Config::load_with(&env).unwrap();
-        assert_eq!(cfg.ai.api_key, "real");
-    }
-
-    #[test]
-    fn interpolation_env_required_message_fails_startup() {
-        let (tmp, env) = sandbox(&[]);
-        write_config(
-            &tmp.path().join("cfg"),
-            "[ai]\napi_key = \"${env:UNSET_VAR:?get a Bifrost key first}\"\n",
-        );
-        match Config::load_with(&env) {
-            Err(ConfigError::MissingEnvMsg { var, msg, .. }) => {
-                assert_eq!(var, "UNSET_VAR");
-                assert_eq!(msg, "get a Bifrost key first");
+    fn interpolation_cases() {
+        let cases = &[
+            InterpCase {
+                env: &[("MY_SECRET", "s3cret")],
+                prefix: "",
+                file: None,
+                value: "${env:MY_SECRET}",
+                want: InterpWant::Ok("s3cret"),
+            },
+            InterpCase {
+                env: &[],
+                prefix: "",
+                file: None,
+                value: "${env:UNSET_VAR}",
+                want: InterpWant::MissingEnv("UNSET_VAR"),
+            },
+            InterpCase {
+                env: &[],
+                prefix: "",
+                file: None,
+                value: "${env:UNSET_VAR:-fallback}",
+                want: InterpWant::Ok("fallback"),
+            },
+            InterpCase {
+                env: &[("SET_VAR", "real")],
+                prefix: "",
+                file: None,
+                value: "${env:SET_VAR:-fallback}",
+                want: InterpWant::Ok("real"),
+            },
+            InterpCase {
+                env: &[],
+                prefix: "",
+                file: None,
+                value: "${env:UNSET_VAR:?get a Bifrost key first}",
+                want: InterpWant::MissingEnvMsg("UNSET_VAR", "get a Bifrost key first"),
+            },
+            InterpCase {
+                env: &[("SET_VAR", "real-value")],
+                prefix: "",
+                file: None,
+                value: "${env:SET_VAR:?unreachable}",
+                want: InterpWant::Ok("real-value"),
+            },
+            InterpCase {
+                env: &[],
+                prefix: "",
+                file: Some("file-secret\n"),
+                value: "${file:FILE}",
+                want: InterpWant::Ok("file-secret"),
+            },
+            InterpCase {
+                env: &[],
+                prefix: "",
+                file: None,
+                value: "${file:/nonexistent/secret}",
+                want: InterpWant::MissingFile,
+            },
+            InterpCase {
+                env: &[],
+                prefix: "",
+                file: None,
+                value: "literal $$HOME and $$",
+                want: InterpWant::Ok("literal $HOME and $"),
+            },
+            InterpCase {
+                env: &[("EMPTY_VAR", "")],
+                prefix: "",
+                file: None,
+                value: "${env:EMPTY_VAR:-fallback}",
+                want: InterpWant::Ok("fallback"),
+            },
+            InterpCase {
+                env: &[("EMPTY_VAR", "")],
+                prefix: "",
+                file: None,
+                value: "${env:EMPTY_VAR}",
+                want: InterpWant::Ok(""),
+            },
+            InterpCase {
+                env: &[("EMPTY_VAR", "")],
+                prefix: "",
+                file: None,
+                value: "${env:EMPTY_VAR:?need a key}",
+                want: InterpWant::MissingEnvMsg("EMPTY_VAR", "need a key"),
+            },
+            // `$${env:X}` produces the literal text; no expansion.
+            InterpCase {
+                env: &[("MY_SECRET", "s3cret")],
+                prefix: "",
+                file: None,
+                value: "$${env:MY_SECRET}",
+                want: InterpWant::Ok("${env:MY_SECRET}"),
+            },
+            InterpCase {
+                env: &[("PART_A", "sk-"), ("PART_B", "bf-123")],
+                prefix: "",
+                file: None,
+                value: "${env:PART_A}${env:PART_B}",
+                want: InterpWant::Ok("sk-bf-123"),
+            },
+            InterpCase {
+                env: &[("MY_SECRET", "s3cret")],
+                prefix: "[config]\ninterpolation = false\n",
+                file: None,
+                value: "${env:MY_SECRET}",
+                want: InterpWant::Ok("${env:MY_SECRET}"),
+            },
+        ];
+        for case in cases {
+            let (tmp, env) = sandbox(case.env);
+            let mut value = case.value.to_string();
+            if let Some(content) = case.file {
+                let secret = tmp.path().join("secret.txt");
+                std::fs::write(&secret, content).unwrap();
+                value = value.replace("FILE", &secret.display().to_string());
             }
-            other => panic!("expected MissingEnvMsg, got {other:?}"),
+            write_config(
+                &tmp.path().join("cfg"),
+                &format!("{}[ai]\napi_key = \"{value}\"\n", case.prefix),
+            );
+            match (&case.want, Config::load_with(&env)) {
+                (InterpWant::Ok(want), Ok(cfg)) => {
+                    assert_eq!(&cfg.ai.api_key, want, "{value:?} must resolve")
+                }
+                (InterpWant::MissingEnv(want), Err(ConfigError::MissingEnv { var, .. })) => {
+                    assert_eq!(&var, want, "{value:?} must name the missing var")
+                }
+                (
+                    InterpWant::MissingEnvMsg(wv, wm),
+                    Err(ConfigError::MissingEnvMsg { var, msg, .. }),
+                ) => {
+                    assert_eq!(&var, wv, "{value:?} must name the missing var");
+                    assert_eq!(&msg, wm, "{value:?} must carry the message");
+                }
+                (InterpWant::MissingFile, Err(ConfigError::MissingFile { .. })) => {}
+                (want, got) => panic!("{value:?}: expected {want:?}, got {got:?}"),
+            }
         }
-    }
-
-    #[test]
-    fn interpolation_file_reads_and_trims() {
-        let (tmp, env) = sandbox(&[]);
-        let secret = tmp.path().join("secret.txt");
-        std::fs::write(&secret, "file-secret\n").unwrap();
-        write_config(
-            &tmp.path().join("cfg"),
-            &format!("[ai]\napi_key = \"${{file:{}}}\"\n", secret.display()),
-        );
-        let cfg = Config::load_with(&env).unwrap();
-        assert_eq!(cfg.ai.api_key, "file-secret");
-    }
-
-    #[test]
-    fn interpolation_file_missing_fails() {
-        let (tmp, env) = sandbox(&[]);
-        write_config(
-            &tmp.path().join("cfg"),
-            "[ai]\napi_key = \"${file:/nonexistent/secret}\"\n",
-        );
-        assert!(matches!(
-            Config::load_with(&env),
-            Err(ConfigError::MissingFile { .. })
-        ));
-    }
-
-    #[test]
-    fn interpolation_dollar_escape() {
-        let (tmp, env) = sandbox(&[]);
-        write_config(
-            &tmp.path().join("cfg"),
-            "[ai]\napi_key = \"literal $$HOME and $$\"\n",
-        );
-        let cfg = Config::load_with(&env).unwrap();
-        assert_eq!(cfg.ai.api_key, "literal $HOME and $");
-    }
-
-    #[test]
-    fn interpolation_empty_env_uses_default_posix() {
-        // POSIX: `:-` and `:?` treat unset-or-empty as missing.
-        let (tmp, env) = sandbox(&[("EMPTY_VAR", "")]);
-        write_config(
-            &tmp.path().join("cfg"),
-            "[ai]\napi_key = \"${env:EMPTY_VAR:-fallback}\"\n",
-        );
-        let cfg = Config::load_with(&env).unwrap();
-        assert_eq!(cfg.ai.api_key, "fallback");
-
-        // Plain `${env:NAME}` keeps the empty value.
-        write_config(
-            &tmp.path().join("cfg"),
-            "[ai]\napi_key = \"${env:EMPTY_VAR}\"\n",
-        );
-        let cfg = Config::load_with(&env).unwrap();
-        assert_eq!(cfg.ai.api_key, "");
-
-        // `:?` on an empty var fails startup like an unset one.
-        write_config(
-            &tmp.path().join("cfg"),
-            "[ai]\napi_key = \"${env:EMPTY_VAR:?need a key}\"\n",
-        );
-        assert!(matches!(
-            Config::load_with(&env),
-            Err(ConfigError::MissingEnvMsg { .. })
-        ));
-    }
-
-    #[test]
-    fn interpolation_escaped_template_is_literal() {
-        // `$${env:X}` produces the literal text `${env:X}`; no expansion.
-        let (tmp, env) = sandbox(&[("MY_SECRET", "s3cret")]);
-        write_config(
-            &tmp.path().join("cfg"),
-            "[ai]\napi_key = \"$${env:MY_SECRET}\"\n",
-        );
-        let cfg = Config::load_with(&env).unwrap();
-        assert_eq!(cfg.ai.api_key, "${env:MY_SECRET}");
-    }
-
-    #[test]
-    fn interpolation_adjacent_templates() {
-        let (tmp, env) = sandbox(&[("PART_A", "sk-"), ("PART_B", "bf-123")]);
-        write_config(
-            &tmp.path().join("cfg"),
-            "[ai]\napi_key = \"${env:PART_A}${env:PART_B}\"\n",
-        );
-        let cfg = Config::load_with(&env).unwrap();
-        assert_eq!(cfg.ai.api_key, "sk-bf-123");
-    }
-
-    #[test]
-    fn interpolation_required_message_with_set_var_uses_value() {
-        let (tmp, env) = sandbox(&[("SET_VAR", "real-value")]);
-        write_config(
-            &tmp.path().join("cfg"),
-            "[ai]\napi_key = \"${env:SET_VAR:?unreachable}\"\n",
-        );
-        let cfg = Config::load_with(&env).unwrap();
-        assert_eq!(cfg.ai.api_key, "real-value");
-    }
-
-    #[test]
-    fn interpolation_disabled_keeps_literals() {
-        let (tmp, env) = sandbox(&[("MY_SECRET", "s3cret")]);
-        write_config(
-            &tmp.path().join("cfg"),
-            "[config]\ninterpolation = false\n[ai]\napi_key = \"${env:MY_SECRET}\"\n",
-        );
-        let cfg = Config::load_with(&env).unwrap();
-        assert_eq!(cfg.ai.api_key, "${env:MY_SECRET}");
     }
 
     #[test]
