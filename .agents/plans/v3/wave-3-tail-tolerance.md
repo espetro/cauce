@@ -118,6 +118,33 @@ on latency and reliability, and every knob is configurable because the owner's n
   5th; a `Parse` streak interrupted by an `Ok` or `NoResults` does not.
 - Follow-up: W2-05 surfaces the new streak counts.
 
+### W3-08 Pipeline and test-surface decomposition
+- Issue #151 · Effort M · Label infra · Team Systems · Branch `v3/w3-08-pipeline-decomp`
+- Depends on: W3-07
+- Do: architecture-hygiene checkpoint before W4 adds AI streaming, tool loops, and
+  provider-specific code. `crates/cauce-core/src/pipeline.rs` (~2.5k LOC) now carries
+  request/cache orchestration, lexical lookup, admission, breaker gating, wave
+  construction, hedge timing and permit races, engine fan-out, outcome folding, merge,
+  persistence, and both streaming paths — split it along privacy boundaries
+  (`pipeline/mod.rs` for the public `SearchPipeline` API and orchestration, plus focused
+  files for cache lookup, wave gating, fan-out/hedge, outcome folding, merge, and
+  persistence); split `tests/support/mod.rs` into focused fixture modules; add a
+  non-gating LOC/complexity report (implementation vs test LOC, largest files/functions,
+  changed LOC per PR) with warning thresholds (file > 1000 review, > 1500 decomposition
+  issue, fn > 150 extract, test module > 800 split) — report only, never fails merges;
+  adopt the test-shape guidance where it removes repetition: table-driven case tables
+  for repeated config/outcome combinations, proptest for invariants (RRF order-stability,
+  URL-normalisation idempotence, permit acquisition never leaks, budgets never negative),
+  fixture directories for parser cases, fuzzing only on parser/security boundaries
+  (URL normalisation, selectors, SSE frame assembly), and shift-left contract tests at
+  the new module boundaries so W4 does not grow `pipeline.rs` again. The target is lower
+  coupling and easier review, not a per-file LOC cap.
+- Acceptance: `pipeline.rs` decomposed into a `pipeline/` module directory with no
+  behaviour change (the full workspace suite passes untouched); the LOC report runs in
+  CI and publishes its numbers without failing; at least one repeated test cluster
+  converted to a case table.
+- Follow-up: W4 steps build on the new module boundaries.
+
 ## Out of scope for W3
 
 New engine specs (file as follow-ups with the failing canary as evidence), per-client
