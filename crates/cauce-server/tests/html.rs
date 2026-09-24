@@ -20,29 +20,13 @@ use cauce_core::{
     CacheKey, ClientKind, Engine, EngineError, EngineId, HistoryFilter, SafeSearch, SearchRequest,
     SearchResponse, SearchResult, StoreTuning, Tier,
 };
-use cauce_engines::{Replay, ReplayOpts};
 use cauce_server::{AppState, build_router};
 use cauce_store_sqlite::SqliteStore;
 use serde_json::{Value, json};
 use tower::ServiceExt;
 
-fn test_state() -> (AppState, tempfile::TempDir) {
-    let tmp = tempfile::tempdir().expect("tempdir");
-    let store = Arc::new(
-        SqliteStore::open(tmp.path().join("cauce.db"), StoreTuning::default()).expect("store"),
-    );
-    let pipeline = Arc::new(SearchPipeline::new(
-        store.clone(),
-        vec![Arc::new(Replay::new(ReplayOpts::default()))],
-    ));
-    let state = AppState::new(pipeline, store, Config::default());
-    (state, tmp)
-}
-
-fn app() -> (Router, AppState, tempfile::TempDir) {
-    let (state, tmp) = test_state();
-    (build_router(state.clone()), state, tmp)
-}
+mod support;
+use support::*;
 
 struct StatusEngine {
     id: EngineId,
@@ -122,26 +106,6 @@ fn status_app(empty_success: bool) -> (Router, tempfile::TempDir) {
     );
     let state = AppState::new(pipeline, store, Config::default());
     (build_router(state), tmp)
-}
-
-fn req_html(method: Method, uri: &str) -> Request<Body> {
-    Request::builder()
-        .method(method)
-        .uri(uri)
-        .header("Accept", "text/html")
-        .body(Body::empty())
-        .unwrap()
-}
-
-async fn call_html(router: &Router, request: Request<Body>) -> (StatusCode, String) {
-    let resp = router.clone().oneshot(request).await.expect("response");
-    let status = resp.status();
-    let bytes = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
-    (status, String::from_utf8(bytes.to_vec()).unwrap())
-}
-
-async fn get_html(router: &Router, uri: &str) -> (StatusCode, String) {
-    call_html(router, req_html(Method::GET, uri)).await
 }
 
 async fn get_json(router: &Router, uri: &str) -> (StatusCode, SearchResponse) {
@@ -383,7 +347,7 @@ async fn htmx_request_returns_results_partial() {
         .header("HX-Request", "true")
         .body(Body::empty())
         .unwrap();
-    let (status, body) = call_html(&app, request).await;
+    let (status, body) = call(&app, request).await;
     assert_eq!(status, StatusCode::OK);
     assert!(
         body.starts_with("<div id=\"results\""),

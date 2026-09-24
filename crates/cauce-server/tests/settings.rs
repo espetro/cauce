@@ -11,10 +11,10 @@
 // The HTMX pages exist only in `ui` builds (W1-12 feature gates).
 #![cfg(feature = "ui")]
 
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 
 use axum::Router;
-use axum::body::{Body, to_bytes};
+use axum::body::Body;
 use axum::http::{Method, Request, StatusCode};
 use cauce_core::config::Config;
 use cauce_core::{SearchPipeline, StoreTuning};
@@ -22,54 +22,9 @@ use cauce_engines::{Replay, ReplayOpts};
 use cauce_server::{AppState, build_router};
 use cauce_store_sqlite::SqliteStore;
 use serde_json::Value;
-use tower::ServiceExt;
 
-/// Serialises tests that mutate process env: `PUT /api/config` resolves the
-/// save path and `${...}` templates against `system_env()`, so the sandbox
-/// config dir must be a real env var, not an injected `EnvMap`.
-static ENV_LOCK: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
-
-async fn env_lock() -> tokio::sync::MutexGuard<'static, ()> {
-    ENV_LOCK
-        .get_or_init(|| tokio::sync::Mutex::new(()))
-        .lock()
-        .await
-}
-
-/// Write `toml_src` to `tmp/cfg/config.toml` and point the process env at
-/// the sandbox. Caller must hold `env_lock`.
-fn config_env(toml_src: &str) -> tempfile::TempDir {
-    let tmp = tempfile::tempdir().expect("tempdir");
-    let cfg_dir = tmp.path().join("cfg");
-    std::fs::create_dir_all(&cfg_dir).unwrap();
-    std::fs::write(cfg_dir.join("config.toml"), toml_src).unwrap();
-    // SAFETY: serialized by ENV_LOCK; nextest also isolates per process.
-    unsafe {
-        std::env::set_var("CAUCE_CONFIG_DIR", &cfg_dir);
-        std::env::set_var("CAUCE_DATA_DIR", tmp.path().join("data"));
-    }
-    tmp
-}
-
-/// Clear the vars `config_env`/`config_env_vars` may set. Caller holds the lock.
-fn clear_env() {
-    // SAFETY: serialized by ENV_LOCK; nextest also isolates per process.
-    unsafe {
-        std::env::remove_var("CAUCE_CONFIG_DIR");
-        std::env::remove_var("CAUCE_DATA_DIR");
-        std::env::remove_var("CAUCE_SEARCH_DEADLINE_MS");
-        std::env::remove_var("CAUCE_SEARCH_TTL_S");
-        std::env::remove_var("CAUCE_ADMISSION_MAX_WAIT_MS");
-        std::env::remove_var("CAUCE_ADMISSION_MAX_CONCURRENT_PER_ENGINE");
-        std::env::remove_var("CAUCE_LOGS_RETENTION_DAYS");
-        std::env::remove_var("CAUCE_AI_BASE_URL");
-        std::env::remove_var("CAUCE_AI_API_KEY");
-        std::env::remove_var("CAUCE_AI_MODEL");
-        std::env::remove_var("CAUCE_AI_ENABLED");
-        std::env::remove_var("CAUCE_ENGINES");
-        std::env::remove_var("BIFROST_API_KEY");
-    }
-}
+mod support;
+use support::*;
 
 /// A replay-engine app whose `Config` was `load()`ed against the sandbox env.
 fn app(tmp: &tempfile::TempDir) -> Router {
@@ -82,39 +37,6 @@ fn app(tmp: &tempfile::TempDir) -> Router {
     ));
     let state = AppState::new(pipeline, store, Config::load().expect("config"));
     build_router(state)
-}
-
-async fn call(router: &Router, request: Request<Body>) -> (StatusCode, String) {
-    let resp = router.clone().oneshot(request).await.expect("response");
-    let status = resp.status();
-    let bytes = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
-    (status, String::from_utf8(bytes.to_vec()).unwrap())
-}
-
-async fn get_html(router: &Router, uri: &str) -> (StatusCode, String) {
-    call(
-        router,
-        Request::builder()
-            .method(Method::GET)
-            .uri(uri)
-            .header("Accept", "text/html")
-            .body(Body::empty())
-            .unwrap(),
-    )
-    .await
-}
-
-/// `PUT /api/config` with an urlencoded form body, as htmx sends it.
-async fn put_form(router: &Router, body: &str, hx: bool) -> (StatusCode, String) {
-    let mut req = Request::builder()
-        .method(Method::PUT)
-        .uri("/api/config")
-        .header("Content-Type", "application/x-www-form-urlencoded")
-        .header("X-Cauce-Client", "ui");
-    if hx {
-        req = req.header("HX-Request", "true");
-    }
-    call(router, req.body(Body::from(body.to_string())).unwrap()).await
 }
 
 fn saved_config(tmp: &tempfile::TempDir) -> String {
@@ -259,40 +181,90 @@ async fn api_key_template_survives_roundtrip() {
     clear_env();
 }
 
+/// A rejected urlencoded save: the status and the error-marking
+/// substrings the envelope/status fragment must carry, plus `fe-*` ids
+/// that must NOT appear (engine rows target the row element, never a
+/// per-field phantom).
+struct FieldCase {
+    name: &'static str,
+    form_body: &'static str,
+    hx: bool,
+    want_status: StatusCode,
+    want_error_substrs: &'static [&'static str],
+    want_absent: &'static [&'static str],
+}
+
 #[tokio::test]
-async fn invalid_field_reports_inline_error() {
+async fn field_errors_report_per_field() {
     let _guard = env_lock().await;
-    clear_env();
-    let tmp = config_env("");
-    let app = app(&tmp);
-
-    // Plain form submit (no HX header): the JSON envelope still applies.
-    let (status, body) = put_form(&app, "search.deadline_ms=soon", false).await;
-    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
-    let json: Value = serde_json::from_str(&body).expect("json envelope");
-    assert_eq!(json["error"]["code"], "invalid_config");
-    assert!(
-        json["error"]["message"]
-            .as_str()
-            .unwrap()
-            .contains("deadline_ms")
-    );
-
-    // The htmx submit swaps the error fragment into the page (200 + inline):
-    // a status line plus an out-of-band error under the offending input.
-    let (status, body) = put_form(&app, "search.deadline_ms=soon", true).await;
-    assert_eq!(status, StatusCode::OK, "{body}");
-    assert!(body.contains("form-status error"), "{body}");
-    assert!(body.contains("not saved: 1 error"), "{body}");
-    assert!(
-        body.contains("id=\"fe-search-ddeadline_ms\""),
-        "error line targets the deadline field: {body}"
-    );
-    let pos = body.find("id=\"fe-search-ddeadline_ms\"").unwrap();
-    assert!(
-        body[pos..].contains("hx-swap-oob"),
-        "error element swaps out of band: {body}"
-    );
+    for case in [
+        // Plain form submit (no HX header): the JSON envelope applies.
+        FieldCase {
+            name: "plain submit returns the JSON envelope",
+            form_body: "search.deadline_ms=soon",
+            hx: false,
+            want_status: StatusCode::BAD_REQUEST,
+            want_error_substrs: &["invalid_config", "deadline_ms"],
+            want_absent: &[],
+        },
+        // The htmx submit swaps the error fragment in (200 + inline):
+        // a status line plus an out-of-band error under the input.
+        FieldCase {
+            name: "htmx submit swaps the per-field error in",
+            form_body: "search.deadline_ms=soon",
+            hx: true,
+            want_status: StatusCode::OK,
+            want_error_substrs: &[
+                "form-status error",
+                "not saved: 1 error",
+                "id=\"fe-search-ddeadline_ms\"",
+                "hx-swap-oob",
+            ],
+            want_absent: &[],
+        },
+        FieldCase {
+            name: "engine field error targets the row element",
+            form_body: "engines.replay.tier=9",
+            hx: true,
+            want_status: StatusCode::OK,
+            want_error_substrs: &["not saved: 1 error", "id=\"fe-engines-dreplay\""],
+            want_absent: &["fe-engines-dreplay-dtier"],
+        },
+        FieldCase {
+            name: "multiple invalid fields each get an error line",
+            form_body: "search.deadline_ms=soon&admission.max_wait_ms=later",
+            hx: true,
+            want_status: StatusCode::OK,
+            want_error_substrs: &[
+                "not saved: 2 errors",
+                "id=\"fe-search-ddeadline_ms\"",
+                "id=\"fe-admission-dmax_wait_ms\"",
+            ],
+            want_absent: &[],
+        },
+    ] {
+        clear_env();
+        let tmp = config_env("");
+        let app = app(&tmp);
+        let (status, body) = put_form(&app, case.form_body, case.hx).await;
+        assert_eq!(status, case.want_status, "{}: {body}", case.name);
+        for needle in case.want_error_substrs {
+            assert!(
+                body.contains(needle),
+                "{}: missing {needle:?}: {body}",
+                case.name
+            );
+        }
+        for needle in case.want_absent {
+            assert!(
+                !body.contains(needle),
+                "{}: unexpected {needle:?}: {body}",
+                case.name
+            );
+        }
+        // Rejected saves never touch the file.
+        assert_eq!(saved_config(&tmp), "", "{}: file written", case.name);
+    }
     clear_env();
 }
 
@@ -327,30 +299,16 @@ async fn engine_fields_write_file_entries() {
     clear_env();
 }
 
-/// Engine field errors and clears target the row's `fe-engines-<id>`
-/// element — the page renders one error line per row, never a per-field
-/// `fe-engines-<id>-<field>` phantom.
+/// A clean save clears the row's `fe-engines-<id>` element exactly once
+/// even though several `engines.replay.*` fields were submitted — the
+/// error leg of this contract is the `engines.replay.tier=9` FieldCase.
 #[tokio::test]
-async fn engine_field_errors_target_the_row() {
+async fn clean_engine_save_emits_one_oob_clear() {
     let _guard = env_lock().await;
     clear_env();
     let tmp = config_env("");
     let app = app(&tmp);
 
-    let (status, body) = put_form(&app, "engines.replay.tier=9", true).await;
-    assert_eq!(status, StatusCode::OK, "{body}");
-    assert!(body.contains("not saved: 1 error"), "{body}");
-    assert!(
-        body.contains("id=\"fe-engines-dreplay\""),
-        "the row error element must carry the message: {body}"
-    );
-    assert!(
-        !body.contains("fe-engines-dreplay-dtier"),
-        "no per-field error element exists: {body}"
-    );
-
-    // A clean save clears the row element exactly once even though several
-    // `engines.replay.*` fields were submitted.
     let (status, body) = put_form(
         &app,
         "engines.replay.tier=2&engines.replay.egress.proxy=http%3A%2F%2F127.0.0.1%3A8888&search.deadline_ms=1234",
@@ -582,31 +540,6 @@ async fn env_overridden_field_is_disabled() {
         on_disk.contains("deadline_ms = 3000"),
         "env override must not be baked into the file: {on_disk}"
     );
-    clear_env();
-}
-
-/// Multiple invalid fields each get their own error line and the status
-/// counts them.
-#[tokio::test]
-async fn multiple_invalid_fields_report_per_field_errors() {
-    let _guard = env_lock().await;
-    clear_env();
-    let tmp = config_env("");
-    let app = app(&tmp);
-
-    let (status, body) = put_form(
-        &app,
-        "search.deadline_ms=soon&admission.max_wait_ms=later",
-        true,
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK, "{body}");
-    assert!(body.contains("not saved: 2 errors"), "{body}");
-    for id in ["fe-search-ddeadline_ms", "fe-admission-dmax_wait_ms"] {
-        assert!(body.contains(&format!("id=\"{id}\"")), "{body}");
-    }
-    // The file is untouched: values stay in the submitted form only.
-    assert_eq!(saved_config(&tmp), "");
     clear_env();
 }
 
