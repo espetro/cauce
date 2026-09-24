@@ -15,7 +15,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use cauce_core::config::{Config, Resources};
-use cauce_core::{Admission, AdmissionLimits, HedgePolicy, SearchPipeline};
+use cauce_core::{Admission, AdmissionLimits, HedgePolicy, MergePolicy, SearchPipeline};
 use cauce_engines::factory::build_engines;
 use cauce_server::{AppState, observability};
 use cauce_store_sqlite::{SqliteStore, spawn_eviction_task};
@@ -110,6 +110,10 @@ async fn mcp_async(cfg: Config) -> i32 {
                 floor: Duration::from_millis(cfg.search.hedge_floor_ms),
                 ceiling: Duration::from_millis(cfg.search.hedge_ceiling_ms),
                 min_results: cfg.search.min_results as usize,
+            })
+            .with_merge(MergePolicy {
+                rrf_k: cfg.merge.rrf_k as f32,
+                collapse_same_host_after: cfg.merge.collapse_same_host_after as usize,
             }),
     );
     // Restore persisted breakers, same as `cauce serve`: a stdio process
