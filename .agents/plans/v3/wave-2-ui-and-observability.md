@@ -171,6 +171,8 @@ results over SSE. The owner uses the UI daily for a week and files findings.
 - Follow-up: W4-01.
 - Amended 2026-09-23: no longer gates W3-01; runs alongside W3 and gates W4-01 (issue #42
   comment).
+- Amended 2026-09-24: no longer gates W4-01 either; runs alongside W4 and feeds W4-04
+  eval cases and refinement (issue #42).
 
 ### W2-11 OpenSearch descriptor and `cauce search` CLI formats
 - Issue #43 · Effort S · Label feature · Team Product Builders · Branch `v3/w2-11-opensearch-cli`
