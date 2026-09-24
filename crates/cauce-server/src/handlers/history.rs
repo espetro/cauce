@@ -149,6 +149,12 @@ pub async fn stats(
     let days = params.u32(&ctx, "days", 7)?.clamp(1, 365);
     let mut snap = state.store().stats(days).await.map_err(|e| ctx.store(&e))?;
     snap.merge_metrics();
+    // W3-05: the newest evals/results/*-engines.json, read per request —
+    // a stats response never caches the file's contents.
+    match cauce_core::evals::latest_report(&cauce_core::evals::results_dir()) {
+        Ok(report) => snap.engine_eval = report,
+        Err(e) => tracing::warn!(error = %e, "engine eval report unreadable; omitting from stats"),
+    }
     Ok(Json(snap))
 }
 

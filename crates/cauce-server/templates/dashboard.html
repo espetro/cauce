@@ -176,6 +176,20 @@
       </ul>
       {% endif %}
     </section>
+
+    <section class="panel">
+      <h2>{{ crate::strings::dashboard::ENGINE_EVAL }}</h2>
+      {% if !has_engine_eval %}
+      <p class="muted">{{ crate::strings::dashboard::EVAL_NO_RUN }}</p>
+      {% else %}
+      <p class="muted">{{ eval_meta }}</p>
+      <ul class="flat">
+        {% for e in eval_rows %}
+        <li><span>{{ e.engine }}</span><span>{{ e.score }}</span></li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+    </section>
   </div>
 
   <section class="panel">
