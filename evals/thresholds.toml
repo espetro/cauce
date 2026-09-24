@@ -1,0 +1,11 @@
+# Engine relevance thresholds (W3-05): minimum domain-hit@5 per engine for
+# the nightly `cauce eval engines --live` run. An engine not listed falls
+# back to `default`. Below threshold the workflow opens/updates one
+# tracking issue — it never fails merges.
+
+default = 0.8
+
+[engines]
+bing = 0.8
+brave = 0.8
+ddgs = 0.6

@@ -275,6 +275,8 @@ impl SqliteStore {
                 ttfr: None,
                 outcomes: Default::default(),
                 admission: AdmissionStats::default(),
+                // Read from `evals/results/` by the `/api/stats` handler.
+                engine_eval: None,
             })
         })
         .await

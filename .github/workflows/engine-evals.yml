@@ -1,0 +1,66 @@
+name: engine-evals
+
+# W3-05: nightly engine relevance evals. Cron only — never gates merges;
+# a below-threshold run opens/updates one tracking issue instead.
+on:
+  schedule:
+    - cron: "29 4 * * *"
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  relevance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jdx/mise-action@v2
+      - uses: astral-sh/setup-uv@v5
+      - name: Provision ddgs live engine
+        run: |
+          uv sync --project sdk/python --extra ddgs
+          echo "$GITHUB_WORKSPACE/sdk/python/.venv/bin" >> "$GITHUB_PATH"
+      - uses: Swatinem/rust-cache@v2
+      - name: Run engine relevance eval (live)
+        run: cargo run -p cauce-cli -- eval engines evals/engines/*.jsonl --live
+      - name: Upload eval results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: engine-evals
+          path: evals/results/
+      - name: Open or update the tracking issue on below-threshold scores
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          latest=$(ls -t evals/results/*-engines.json 2>/dev/null | head -1 || true)
+          if [ -z "$latest" ]; then
+            echo "no eval report produced; nothing to track"
+            exit 0
+          fi
+          below=$(jq -r '.below_threshold | join(" ")' "$latest")
+          if [ -z "$below" ]; then
+            echo "all engines at or above threshold"
+            exit 0
+          fi
+          title="engine relevance evals below threshold"
+          body=$(
+            {
+              echo "The nightly engine relevance eval scored these engines below their domain-hit@5 thresholds (report: \`$(basename "$latest")\`, run ${{ github.run_id }}):"
+              echo
+              jq -r '.engines[] | select(.ok | not) | "- **\(.engine)**: \(.hits)/\(.cases) domain-hit@5 = \(.domain_hit_at5) (threshold \(.threshold))"' "$latest"
+              echo
+              echo "Thresholds live in \`evals/thresholds.toml\`. This issue is updated by the nightly workflow; close it once scores recover."
+            }
+          )
+          existing=$(gh issue list --state open --search "\"$title\" in:title" --json number --jq '.[0].number' --limit 1)
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body "$body"
+            echo "updated tracking issue #$existing"
+          else
+            gh issue create --title "$title" --body "$body"
+            echo "opened new tracking issue"
+          fi

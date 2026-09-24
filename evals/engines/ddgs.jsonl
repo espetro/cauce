@@ -1,0 +1,5 @@
+{"query": "rust programming language wikipedia", "expect_domains_top5": ["wikipedia.org"], "engines": ["ddgs"]}
+{"query": "rust playground online", "expect_domains_top5": ["play.rust-lang.org", "rust-lang.org"], "engines": ["ddgs"]}
+{"query": "crates.io serde crate", "expect_domains_top5": ["crates.io"], "engines": ["ddgs"]}
+{"query": "css grid mdn guide", "expect_domains_top5": ["developer.mozilla.org"], "engines": ["ddgs"]}
+{"query": "the rust programming language book", "expect_domains_top5": ["doc.rust-lang.org", "rust-lang.org"], "engines": ["ddgs"]}

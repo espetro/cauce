@@ -1,0 +1,5 @@
+{"query": "tanstack router docs", "expect_domains_top5": ["tanstack.com"], "engines": ["bing"]}
+{"query": "rust borrow checker explained", "expect_domains_top5": ["doc.rust-lang.org", "rust-lang.org", "blog.rust-lang.org"], "engines": ["bing"]}
+{"query": "github cli manual", "expect_domains_top5": ["cli.github.com", "github.com"], "engines": ["bing"]}
+{"query": "mdn javascript promises", "expect_domains_top5": ["developer.mozilla.org"], "engines": ["bing"]}
+{"query": "stackoverflow rust lifetime annotation", "expect_domains_top5": ["stackoverflow.com"], "engines": ["bing"]}

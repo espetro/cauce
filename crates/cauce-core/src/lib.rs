@@ -16,6 +16,7 @@ pub mod config;
 #[cfg(feature = "conformance")]
 pub mod conformance;
 mod engine;
+pub mod evals;
 mod health;
 pub mod http;
 pub mod metrics;
@@ -33,6 +34,7 @@ pub use config::{
     SearchConfig, ServerConfig, is_loopback_host,
 };
 pub use engine::{ENGINE_ID_PATTERN, Engine, EngineError, EngineId, Tier};
+pub use evals::{EvalReport, Thresholds};
 pub use health::{
     EWMA_ALPHA, EngineHealth, Gate, HealthPolicy, HealthTracker, PERSIST_DEBOUNCE, ProbeGuard,
 };
