@@ -110,3 +110,21 @@ global store, and is never shared with or copied into another project.
   select expr panics on `None`; use a match that returns `pending()`.
 - Test support: `DialEngine` (dialable latency so history ≠ current behaviour)
   and `StubStore.lexical_delay_ms` added in tests/support/mod.rs.
+
+## 2026-09-24 — W3-01 review round 2 (PR #148, e85f6a3)
+
+- Second Devin Review round found the deferred gate-before-wait leaked
+  `probe_in_flight`: `admission` claims the HalfOpen probe at gate time and only
+  a spawned task releases it (`probe_guard`/`record_*`), so a timed-out or
+  aborted permit wait left the engine permanently unprobeable.
+- Fix direction (the reviewer's alternative): acquire BEFORE gating.
+  `gate_waves` now gates only the t=0 wave; `promote_deferred` acquires then
+  gates (RateLimited never claims); `queue_hedge` only spawns the acquire and
+  `finish_hedge` gates at fire time after a `remaining.is_zero()` recheck
+  (also fixes expired hedges spawning zero-budget calls).
+- Regression-test trick: `pipe.health().record_err(id, .., EngineError::Blocked,
+  request_id)` opens a breaker directly — the only way to have Open + all
+  permits held, since every permit-holding call also gates (a held permit can
+  never coexist with an Open breaker through engine calls alone).
+- Singleflight gotcha: pinned occupier searches with the SAME query dedupe
+  into followers — only one holds the permit. Distinct queries per holder.
