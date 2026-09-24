@@ -23,5 +23,6 @@ uuid = "1"
 
 [dev-dependencies]
 cauce-core = { path = "../cauce-core", features = ["conformance"] }
+proptest = "1"
 tempfile = "3"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
