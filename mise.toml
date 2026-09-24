@@ -60,6 +60,13 @@ depends = ["fmt", "lint", "test", "deny", "check:features"]
 description = "Nightly budget, live canary, and full gate"
 run = "CAUCE_NIGHTLY=1 CAUCE_LIVE=1 mise run validate"
 
+# W3-08: LOC/complexity report. Non-gating — prints totals, largest
+# files/functions and the >1000/>1500/>150 warning thresholds; always
+# exits 0. Runs in CI for tracking; not part of `validate`.
+[tasks.loc]
+description = "Non-gating LOC/complexity report"
+run = "bash scripts/loc-report.sh"
+
 [tasks.dev]
 description = "Run the cauce binary (cauce serve)"
 run = "cargo run -p cauce-cli -- serve"
