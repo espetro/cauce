@@ -29,8 +29,8 @@ mod store;
 
 pub use admission::{Admission, AdmissionLimits, FlightResult};
 pub use ai::{
-    AiCallCtx, AiError, AiStreamEvent, ChatCompletion, ChatMessage, ChatRequest, ModelInfo,
-    OpenAiClient, ToolCall, ToolSpec, Usage,
+    AiCallCtx, AiError, AiStreamEvent, AnswerFrame, AnswerLoop, AnswerRequest, ChatCompletion,
+    ChatMessage, ChatProvider, ChatRequest, ModelInfo, OpenAiClient, ToolCall, ToolSpec, Usage,
 };
 pub use cache::{CacheKey, CachedSearch, normalize_query};
 pub use config::{
@@ -55,8 +55,9 @@ pub use response::{
     StreamMeta,
 };
 pub use store::{
-    AdmissionStats, AuditFacets, AuditFilter, AuditRow, BreakerState, CacheState, ClickRow,
-    ClientCount, DayCount, DeleteSearchLog, EngineHealthRow, EngineStatsRow, HistoryFilter,
-    HistoryItem, HistoryStats, LatencyPercentiles, LogSource, PhaseStats, QueryCount, SearchLogRow,
-    StatsSnapshot, Store, StoreError, StoreTuning, TierHit,
+    AdmissionStats, AnswerKey, AnswerPayload, AnswerRow, AnswerSource, AuditFacets, AuditFilter,
+    AuditRow, BreakerState, CacheState, CachedAnswer, ClickRow, ClientCount, DayCount,
+    DeleteSearchLog, EngineHealthRow, EngineStatsRow, HistoryFilter, HistoryItem, HistoryStats,
+    LatencyPercentiles, LogSource, PhaseStats, QueryCount, SearchLogRow, StatsSnapshot, Store,
+    StoreError, StoreTuning, TierHit,
 };
