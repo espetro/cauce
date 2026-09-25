@@ -18,6 +18,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "0002_search_log_query_raw",
         include_str!("../migrations/0002_search_log_query_raw.sql"),
     ),
+    (
+        "0003_answers",
+        include_str!("../migrations/0003_answers.sql"),
+    ),
 ];
 
 fn current_version(conn: &Connection) -> Result<u32, StoreError> {

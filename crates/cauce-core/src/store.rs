@@ -9,16 +9,19 @@
 //! License, v. 2.0. If a copy of the MPL was not distributed with this
 //! file, You can obtain one at <https://mozilla.org/MPL/2.0/>.
 
+use std::fmt;
+use std::str::FromStr;
 use std::time::Duration;
 
 use async_trait::async_trait;
 use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use url::Url;
 use uuid::Uuid;
 
 use crate::Tier;
-use crate::cache::{CacheKey, CachedSearch};
+use crate::cache::{CacheKey, CachedSearch, normalize_query, push_str};
 use crate::engine::EngineId;
 use crate::request::ClientKind;
 use crate::response::SearchResponse;
@@ -243,6 +246,104 @@ pub struct CacheState {
     pub key: CacheKey,
     /// The stored query text — the `/cache?q=` link target.
     pub query: String,
+    pub created_at: DateTime<Utc>,
+    pub expires_at: DateTime<Utc>,
+}
+
+/// `answers` primary key (W4-02, section 5): sha256 over the
+/// length-prefixed pair `normalize_query(q)` + `model` — the `CacheKey`
+/// preimage convention pointed at a different table.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(try_from = "String")]
+pub struct AnswerKey(String);
+
+impl TryFrom<String> for AnswerKey {
+    type Error = String;
+
+    fn try_from(s: String) -> Result<Self, Self::Error> {
+        s.parse()
+    }
+}
+
+impl AnswerKey {
+    /// The row for `q` answered by `model`: `q` passes through
+    /// `normalize_query` like every stored query, so casing and stray
+    /// whitespace hit the same row.
+    pub fn new(q: &str, model: &str) -> Self {
+        let mut buf = Vec::with_capacity(64);
+        push_str(&mut buf, &normalize_query(q));
+        push_str(&mut buf, model);
+        let digest = Sha256::digest(&buf);
+        Self(format!("{digest:x}"))
+    }
+
+    /// Hex digest (64 lowercase chars), the `key` column of `answers`.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Display for AnswerKey {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl FromStr for AnswerKey {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if s.len() == 64 && s.bytes().all(|b| b.is_ascii_hexdigit()) {
+            Ok(Self(s.to_lowercase()))
+        } else {
+            Err(format!(
+                "invalid answer key: expected 64 hex chars, got {s:?}"
+            ))
+        }
+    }
+}
+
+/// One cited source: an item of the `sources` frame (W4-02 settled wire
+/// shape) and of `answers.sources_json`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AnswerSource {
+    pub url: Url,
+    pub title: String,
+    pub snippet: String,
+    pub engine: EngineId,
+}
+
+/// The replayable `done` fields, minus the per-request `request_id` and
+/// `cached` (`answers.payload_json` column).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AnswerPayload {
+    pub answer: String,
+    pub confidence: u8,
+    #[serde(default)]
+    pub related_questions: Vec<String>,
+}
+
+/// One `answers` row as written (`put_answer`): the caching rule
+/// (>= 1 source, confidence >= 4, no error) has already applied; `query`
+/// is the normalized form the key hashes.
+#[derive(Debug, Clone)]
+pub struct AnswerRow {
+    pub query: String,
+    pub model: String,
+    pub payload: AnswerPayload,
+    pub sources: Vec<AnswerSource>,
+}
+
+/// One `answers` row as `get_answer` returns it.
+#[derive(Debug, Clone)]
+pub struct CachedAnswer {
+    pub key: AnswerKey,
+    /// The normalized query the key hashes.
+    pub query: String,
+    /// Model the answer was generated with (part of the key preimage).
+    pub model: String,
+    pub payload: AnswerPayload,
+    pub sources: Vec<AnswerSource>,
     pub created_at: DateTime<Utc>,
     pub expires_at: DateTime<Utc>,
 }
@@ -591,6 +692,22 @@ pub trait Store: Send + Sync {
 
     /// `DELETE /api/cache?all=true`. Returns rows removed; audited by caller.
     async fn clear_cache(&self) -> Result<u64, StoreError>;
+
+    // ---- answers (W4-02 AI answer cache, section 5) -----------------------
+
+    /// Fresh `answers` row for `key`. Rows past `expires_at` are
+    /// invisible here (the 24 h TTL honoured at read time).
+    async fn get_answer(&self, key: &AnswerKey) -> Result<Option<CachedAnswer>, StoreError>;
+
+    /// Insert or replace the `answers` row for `key`. The caching rule
+    /// (>= 1 source, confidence >= 4, no error) is the caller's — the
+    /// store writes what it is given.
+    async fn put_answer(
+        &self,
+        key: &AnswerKey,
+        row: &AnswerRow,
+        ttl: Duration,
+    ) -> Result<(), StoreError>;
 
     // ---- search log, clicks, history -----------------------------------------
 
