@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<!-- W5-01 archive fixture: changelog/release notes page. -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Tailwind 3.4 → HarbingerDB 2.9 release notes</title>
+  <link rel="stylesheet" href="/docs.css">
+</head>
+<body>
+<header><a href="/">HarbingerDB</a> <nav><a href="/docs">Docs</a> <a href="/download">Download</a> <a href="/community">Community</a></nav></header>
+<main class="release-notes">
+  <article>
+    <h1>HarbingerDB 2.9 release notes</h1>
+    <p class="date">Released 2025-10-01 · <a href="/download/2.9">Download</a> · <a href="/docs/upgrading">Upgrade guide</a></p>
+    <h2>Highlights</h2>
+    <ul>
+      <li>Streaming compaction reduces write amplification by up to 40% on append-heavy workloads.</li>
+      <li>Prepared statements are now cached per connection, cutting parse overhead on repeated queries.</li>
+      <li>The <code>VACUUM ANALYZE</code> command gains a <code>PARALLEL n</code> option (default 1).</li>
+    </ul>
+    <h2>Breaking changes</h2>
+    <ul>
+      <li><code>hb_ctl backup --incremental</code> now requires a prior full backup manifest in the target directory; it fails with exit code 3 otherwise.</li>
+      <li>The deprecated <code>max_row_size</code> setting was removed; use <code>max_tuple_bytes</code> instead.</li>
+      <li>Clients older than protocol 3.2 are rejected at handshake with a clear error instead of timing out.</li>
+    </ul>
+    <h2>Fixed</h2>
+    <ul>
+      <li>Index-only scans no longer return stale visibility on hot standby after a replay burst (#4821).</li>
+      <li>Corrected a race where two concurrent <code>CREATE INDEX CONCURRENTLY</code> calls on the same table could silently drop one index (#4877).</li>
+      <li>JSON path queries on deeply nested arrays no longer overflow the evaluation stack (#4902).</li>
+    </ul>
+    <h2>Deprecation notices</h2>
+    <p>The <code>legacy_hash</code> index type is deprecated and scheduled for removal in 3.2. Migration guidance is in the <a href="/docs/migrating-legacy-hash">upgrade guide</a>.</p>
+    <h2>Checksums</h2>
+    <pre><code>harbingerdb-2.9-linux-x86_64.tar.gz  sha256: 9f2c…a1
+harbingerdb-2.9-darwin-arm64.tar.gz  sha256: 77e4…be</code></pre>
+  </article>
+</main>
+<footer><p>© 2025 HarbingerDB Project · <a href="/security">Security</a></p></footer>
+</body>
+</html>

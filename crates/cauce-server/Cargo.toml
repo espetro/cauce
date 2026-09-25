@@ -6,13 +6,13 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 
-# Cargo features (parent plan "Modes and budgets", W1-12): `ui`, `mcp` and
-# `ai` are the default set; `otlp` is non-default so tonic/prost stay out of
-# the default build. `archive`, `semantic` and `postgres` are declared for
-# the later waves that land their modules (`requires` rows in `ROUTES`
-# already name them); today they gate nothing.
+# Cargo features (parent plan "Modes and budgets", W1-12): `ui`, `mcp`,
+# `ai` and `archive` are the default set; `otlp` is non-default so
+# tonic/prost stay out of the default build. `semantic` and `postgres` are
+# declared for the later waves that land their modules (`requires` rows in
+# `ROUTES` already name them); today they gate nothing.
 [features]
-default = ["ui", "mcp", "ai"]
+default = ["ui", "mcp", "ai", "archive"]
 # HTMX pages and embedded static assets (html.rs, askama templates).
 # `cauce serve --headless` can drop them at runtime; building without `ui`
 # drops them (and askama/rust-embed) at compile time.
@@ -22,9 +22,10 @@ ui = ["dep:askama", "dep:rust-embed", "dep:urlencoding", "dep:reqwest"]
 mcp = ["dep:rmcp", "dep:schemars"]
 # AI answer pipeline (wave 4 `/api/answer`); no modules yet.
 ai = []
-# Page archive / fetch-and-index (wave 5 `/api/pages`, `/api/archive`); no
-# modules yet.
-archive = []
+# Page archive / fetch-and-index (W5-01 `/api/pages`, MCP `fetch_and_index`,
+# the UI click beacon); forwards to `cauce-core`'s readability/markdown
+# deps, so the minimal `mcp` build stays free of them.
+archive = ["cauce-core/archive"]
 # Semantic/vector search; no modules yet.
 semantic = []
 # Postgres Store impl (wave 6); no modules yet.

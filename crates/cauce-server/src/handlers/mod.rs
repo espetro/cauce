@@ -14,7 +14,8 @@
 //! [`suggest`] — `/api/suggest` OpenSearch completions; [`cache`] —
 //! `/api/cache` listing, get and deletes; [`engines`] — `/api/engines`,
 //! reset and enable/disable; [`history`] — `/api/history`, click, stats,
-//! metrics, health and audit; [`config`] — `/api/config` get/put.
+//! metrics, health and audit; [`config`] — `/api/config` get/put;
+//! [`pages`] — `/api/pages` fetch-and-index and read (`archive` builds).
 //!
 //! This Source Code Form is subject to the terms of the Mozilla Public
 //! License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -37,6 +38,8 @@ mod cache;
 mod config;
 mod engines;
 mod history;
+#[cfg(feature = "archive")]
+mod pages;
 mod search;
 mod suggest;
 
@@ -49,6 +52,8 @@ pub(crate) use engines::engine_views;
 pub use engines::{EngineView, engine_disable, engine_enable, engine_reset, engines_list};
 pub(crate) use history::{HISTORY_LIMIT, audit_list_data, history_inner};
 pub use history::{audit_list, click, health, history, history_delete, metrics, stats};
+#[cfg(feature = "archive")]
+pub use pages::{pages_get, pages_index};
 pub(crate) use search::{parse_search_request, search_error, search_inner, search_inner_classed};
 pub use search::{search, search_stream};
 pub use suggest::suggest;

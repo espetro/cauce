@@ -20,6 +20,8 @@ use axum::http::Uri;
 use axum::routing::any_service;
 use axum::routing::{MethodRouter, delete, get, post, put};
 use axum::{Router, middleware};
+#[cfg(feature = "archive")]
+use cauce_core::Archiver;
 use cauce_core::{AnswerLoop, SearchPipeline, Store, config::Config};
 use tokio::net::TcpListener;
 
@@ -60,12 +62,20 @@ pub struct AppState {
     /// than failing boot. `POST /api/answer` answers 503 `ai_disabled`
     /// and `/answer` renders its disabled notice when `None`.
     answer: Option<AnswerLoop>,
+    /// The W5-01 fetch-and-index pipeline (`POST /api/pages`, the click
+    /// beacon, MCP `fetch_and_index`). `None` when the `archive` feature
+    /// is off or the fetcher failed to build; handlers answer 503
+    /// `archive_disabled`.
+    #[cfg(feature = "archive")]
+    archive: Option<Archiver>,
 }
 
 impl AppState {
     pub fn new(pipeline: Arc<SearchPipeline>, store: Arc<dyn Store>, config: Config) -> Self {
         Self {
             answer: build_answer_loop(&pipeline, &store, &config),
+            #[cfg(feature = "archive")]
+            archive: build_archive(&store, &config),
             pipeline,
             metrics: MetricsHandle::new(store.clone()),
             store,
@@ -97,6 +107,27 @@ impl AppState {
     /// provider client could not be built at startup.
     pub fn answer(&self) -> Option<&AnswerLoop> {
         self.answer.as_ref()
+    }
+
+    /// The fetch-and-index pipeline; `None` when the feature is off or the
+    /// fetcher could not be built at startup.
+    #[cfg(feature = "archive")]
+    pub fn archive(&self) -> Option<&Archiver> {
+        self.archive.as_ref()
+    }
+
+    /// Whether the results-page click beacon posts indexing requests
+    /// (W5-01): `archive.index_on_click` AND a live pipeline. Beacon JS is
+    /// only rendered when this is true.
+    #[cfg(feature = "archive")]
+    pub fn archive_index_on_click(&self) -> bool {
+        self.archive.is_some() && self.with_config(|c| c.archive.index_on_click)
+    }
+
+    /// Without the `archive` cargo feature there is no beacon.
+    #[cfg(not(feature = "archive"))]
+    pub fn archive_index_on_click(&self) -> bool {
+        false
     }
 }
 
@@ -140,6 +171,21 @@ fn build_answer_loop(
 ) -> Option<AnswerLoop> {
     let _ = (pipeline, store, config);
     None
+}
+
+/// Build the W5-01 fetch-and-index pipeline from `[archive]`. There is no
+/// `archive.enabled` switch — the pipeline exists whenever the feature is
+/// compiled; `None` only when the fetcher itself fails to build (a zero
+/// politeness knob), logged rather than fatal like `build_answer_loop`.
+#[cfg(feature = "archive")]
+fn build_archive(store: &Arc<dyn Store>, config: &Config) -> Option<Archiver> {
+    match cauce_core::Archiver::new(store.clone(), &config.archive) {
+        Ok(archiver) => Some(archiver),
+        Err(e) => {
+            tracing::warn!(error = %e, "archive fetcher failed to build; page indexing disabled");
+            None
+        }
+    }
 }
 
 /// Which `requires` features a build mounts. `cauce serve --headless` sets
@@ -306,6 +352,10 @@ fn handler_for(spec: &RouteSpec, state: &AppState) -> Option<MethodRouter<AppSta
         ("GET", "/api/search/stream", RouteKind::Sse) => Some(get(handlers::search_stream)),
         #[cfg(feature = "ai")]
         ("POST", "/api/answer", RouteKind::Sse) => Some(post(handlers::answer)),
+        #[cfg(feature = "archive")]
+        ("POST", "/api/pages", RouteKind::Json) => Some(post(handlers::pages_index)),
+        #[cfg(feature = "archive")]
+        ("GET", "/api/pages/{url}", RouteKind::Json) => Some(get(handlers::pages_get)),
         // `ui` alone: a build without `ai` still mounts `/answer` so the
         // page can render its disabled notice instead of 404ing.
         #[cfg(feature = "ui")]

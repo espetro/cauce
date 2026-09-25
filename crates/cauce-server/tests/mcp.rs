@@ -2,10 +2,12 @@
 //!
 //! An rmcp streamable-HTTP client talks to a real `cauce serve` router (same
 //! `AppState`, tempdir SQLite, `replay` engine): `tools/list` must expose
-//! exactly the four settled tools, `search_web`/`cache_status`/
+//! exactly the settled tools, `search_web`/`cache_status`/
 //! `cache_invalidate` must carry `request_id`, the MCP client name must land
-//! in `ClientKind::Mcp(name)` on the `search_log` row, and `exa_search` must
-//! validate against the frozen v2 wire shape (`fixtures/exa_schema.json`).
+//! in `ClientKind::Mcp(name)` on the `search_log` row, `exa_search` must
+//! validate against the frozen v2 wire shape (`fixtures/exa_schema.json`),
+//! and `fetch_and_index` must yield a `pages` row carrying the extracted
+//! markdown (W5-01, `archive` builds).
 //!
 //! This Source Code Form is subject to the terms of the Mozilla Public
 //! License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -27,16 +29,23 @@ use rmcp::transport::StreamableHttpClientTransport;
 use rmcp::transport::streamable_http_client::StreamableHttpClientTransportConfig;
 use rmcp::{RoleClient, ServiceExt};
 use serde_json::{Value, json};
+#[cfg(feature = "archive")]
+use wiremock::matchers::{method, path};
+#[cfg(feature = "archive")]
+use wiremock::{Mock, MockServer, ResponseTemplate};
 
 mod support;
 use support::*;
 
-/// The settled W1-08 tool surface: exactly these four names.
-const TOOL_NAMES: [&str; 4] = [
+/// The settled tool surface: the four W1-08 tools plus W5-01's
+/// `fetch_and_index` in `archive` builds.
+const TOOL_NAMES: &[&str] = &[
     "search_web",
     "cache_status",
     "cache_invalidate",
     "exa_search",
+    #[cfg(feature = "archive")]
+    "fetch_and_index",
 ];
 
 const CLIENT_NAME: &str = "cauce-mcp-http-test";
@@ -112,7 +121,7 @@ async fn mcp_http_tools_and_search() {
         "instructions: {instructions}"
     );
 
-    // Exactly four tools.
+    // Exactly the settled tools.
     let tools = client.list_all_tools().await.expect("tools/list");
     let names: BTreeSet<String> = tools.iter().map(|t| t.name.to_string()).collect();
     let expected: BTreeSet<String> = TOOL_NAMES.iter().map(|s| s.to_string()).collect();
@@ -408,6 +417,78 @@ async fn mcp_http_allows_portless_alias_host() {
         .await
         .expect("post");
     assert_eq!(resp.status(), reqwest::StatusCode::FORBIDDEN);
+
+    server.abort();
+}
+
+/// W5-01: `fetch_and_index` over a mock origin — the tool fetches,
+/// extracts markdown and writes the `pages` row, returning the row as
+/// structured content. The `mcp.fetch_and_index` audit row lands like
+/// every tool's.
+#[cfg(feature = "archive")]
+#[tokio::test]
+async fn mcp_fetch_and_index_writes_page() {
+    let origin = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/doc"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(include_str!(
+            "../../cauce-core/tests/fixtures/archive/10-minimal.html"
+        )))
+        .mount(&origin)
+        .await;
+
+    let (state, _tmp) = test_state();
+    let (addr, server) = spawn_server(state.clone()).await;
+    let client = mcp_client(addr).await;
+
+    let page_url = format!("{}/doc", origin.uri());
+    let result = client
+        .call_tool(
+            CallToolRequestParams::new("fetch_and_index")
+                .with_arguments(args(json!({ "url": page_url }))),
+        )
+        .await
+        .expect("fetch_and_index");
+    let body = structured(&result);
+    assert_eq!(body["url"], page_url);
+    assert!(
+        body["markdown"]
+            .as_str()
+            .is_some_and(|m| m.contains("patience as a method")),
+        "markdown: {body}"
+    );
+    assert!(body["byte_len"].as_u64().is_some_and(|n| n > 0));
+
+    // The row landed in `pages` and the audit trail recorded the tool.
+    let stored = state
+        .store()
+        .get_page(&url::Url::parse(&page_url).unwrap())
+        .await
+        .unwrap()
+        .expect("pages row written");
+    assert_eq!(stored.markdown, body["markdown"].as_str().unwrap());
+    let audits = state
+        .store()
+        .list_audit(&AuditFilter {
+            action: Some("mcp.fetch_and_index".to_string()),
+            ..AuditFilter::default()
+        })
+        .await
+        .unwrap();
+    assert_eq!(audits.len(), 1);
+
+    // A bad URL is invalid_params, not a panic.
+    let err = client
+        .call_tool(
+            CallToolRequestParams::new("fetch_and_index")
+                .with_arguments(args(json!({ "url": "not a url" }))),
+        )
+        .await
+        .expect_err("invalid url");
+    assert!(
+        err.to_string().contains("invalid url"),
+        "error names the input: {err}"
+    );
 
     server.abort();
 }

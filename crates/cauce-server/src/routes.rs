@@ -151,8 +151,29 @@ pub const ROUTES: &[RouteSpec] = &[
     // disabled notice (and links `/settings`) rather than 404ing.
     html("/answer", 4),
     // ---- wave 5 ------------------------------------------------------------
-    json("POST", "/api/pages", 5),
-    json("GET", "/api/pages/{url}", 5),
-    json("GET", "/api/archive", 5),
+    // W5-01 mounts the fetch-and-index pair; `/api/archive` and `/archive`
+    // are the W5-02 listing surface. `requires` names the `archive` cargo
+    // feature so a minimal build keeps them unmounted.
+    RouteSpec {
+        method: "POST",
+        path: "/api/pages",
+        kind: RouteKind::Json,
+        wave: 5,
+        requires: Some("archive"),
+    },
+    RouteSpec {
+        method: "GET",
+        path: "/api/pages/{url}",
+        kind: RouteKind::Json,
+        wave: 5,
+        requires: Some("archive"),
+    },
+    RouteSpec {
+        method: "GET",
+        path: "/api/archive",
+        kind: RouteKind::Json,
+        wave: 5,
+        requires: Some("archive"),
+    },
     html("/archive", 5),
 ];

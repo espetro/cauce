@@ -10,7 +10,7 @@
 
 use cauce_core::{
     AuditRow, BreakerState, CacheKey, CachedAnswer, CachedSearch, ClickRow, ClientKind,
-    EngineHealthRow, EngineId, LogSource, SearchLogRow, SearchResponse, StoreError, Tier,
+    EngineHealthRow, EngineId, LogSource, PageRow, SearchLogRow, SearchResponse, StoreError, Tier,
 };
 use chrono::{DateTime, Utc};
 use rusqlite::Row;
@@ -25,6 +25,9 @@ pub const CACHE_COLS: &str =
 /// Column list shared by every `answers` read.
 pub const ANSWER_COLS: &str =
     "key, query, model, payload_json, sources_json, created_at, expires_at";
+
+/// Column list shared by every `pages` read.
+pub const PAGE_COLS: &str = "url, fetched_at, title, markdown, byte_len, source_query_hash";
 
 /// Wrap a `StoreError` for a rusqlite row closure; `as_store` unwraps it again
 /// at the outer boundary so `Corrupt` is not flattened into `Backend`.
@@ -170,6 +173,20 @@ pub fn answer(row: &Row) -> Result<CachedAnswer, StoreError> {
         sources: json(row, 4, "sources_json")?,
         created_at: from_ms(int(row, 5, "created_at")?)?,
         expires_at: from_ms(int(row, 6, "expires_at")?)?,
+    })
+}
+
+/// Decode one `pages` row selected with [`PAGE_COLS`].
+pub fn page(row: &Row) -> Result<PageRow, StoreError> {
+    Ok(PageRow {
+        url: Url::parse(&text(row, 0, "url")?).map_err(|e| corrupt("url", e))?,
+        fetched_at: from_ms(int(row, 1, "fetched_at")?)?,
+        title: text(row, 2, "title")?,
+        markdown: text(row, 3, "markdown")?,
+        byte_len: int(row, 4, "byte_len")? as u64,
+        source_query_hash: opt_text(row, 5, "source_query_hash")?
+            .map(|s| cache_key(&s))
+            .transpose()?,
     })
 }
 

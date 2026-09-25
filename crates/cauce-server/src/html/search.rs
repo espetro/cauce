@@ -35,7 +35,7 @@ struct Results {
 
 /// `GET /` landing page with the search form.
 pub async fn index(
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
     Extension(ctx): Extension<RequestCtx>,
 ) -> Result<Html<String>, ApiError> {
     let rid = ctx.request_id.as_uuid().to_string();
@@ -60,6 +60,7 @@ pub async fn index(
         sse_js: SSE_JS.clone(),
         stream_strings: stream_strings(),
         ask_url: String::new(),
+        index_on_click: state.archive_index_on_click(),
     };
     render_html(page, ctx.request_id.as_uuid())
 }
@@ -120,6 +121,7 @@ pub async fn search(
             sse_js: SSE_JS.clone(),
             stream_strings: stream_strings(),
             ask_url: ask_url(&state, &req.q),
+            index_on_click: state.archive_index_on_click(),
         };
         return Ok(Html(
             page.render()
@@ -169,6 +171,7 @@ pub async fn search(
             sse_js: SSE_JS.clone(),
             stream_strings: stream_strings(),
             ask_url: ask_url(&state, &req.q),
+            index_on_click: state.archive_index_on_click(),
         };
         Ok(Html(
             page.render()

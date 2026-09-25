@@ -12,6 +12,8 @@
 
 mod admission;
 pub mod ai;
+#[cfg(feature = "archive")]
+pub mod archive;
 mod cache;
 pub mod config;
 #[cfg(feature = "conformance")]
@@ -33,11 +35,13 @@ pub use ai::{
     ChatCompletion, ChatMessage, ChatProvider, ChatRequest, ModelInfo, OpenAiClient, ToolCall,
     ToolSpec, Usage,
 };
+#[cfg(feature = "archive")]
+pub use archive::{ArchiveError, Archiver, MAX_FETCH_BYTES, MAX_MARKDOWN_BYTES};
 pub use cache::{CacheKey, CachedSearch, normalize_query};
 pub use config::{
-    AdmissionConfig, AiConfig, AiProtocol, AuthConfig, CacheConfig, Config, ConfigError, Dirs,
-    EgressConfig, EngineEntry, EngineKind, LexicalConfig, LogsConfig, MergeConfig, MetaConfig,
-    Resources, SearchConfig, ServerConfig, is_loopback_host,
+    AdmissionConfig, AiConfig, AiProtocol, ArchiveConfig, AuthConfig, CacheConfig, Config,
+    ConfigError, Dirs, EgressConfig, EngineEntry, EngineKind, LexicalConfig, LogsConfig,
+    MergeConfig, MetaConfig, Resources, SearchConfig, ServerConfig, is_loopback_host,
 };
 pub use engine::{ENGINE_ID_PATTERN, Engine, EngineError, EngineId, Tier};
 pub use evals::{EvalReport, Thresholds};
@@ -59,6 +63,6 @@ pub use store::{
     AdmissionStats, AnswerKey, AnswerPayload, AnswerRow, AnswerSource, AuditFacets, AuditFilter,
     AuditRow, BreakerState, CacheState, CachedAnswer, ClickRow, ClientCount, DayCount,
     DeleteSearchLog, EngineHealthRow, EngineStatsRow, HistoryFilter, HistoryItem, HistoryStats,
-    LatencyPercentiles, LogSource, PhaseStats, QueryCount, SearchLogRow, StatsSnapshot, Store,
-    StoreError, StoreTuning, TierHit,
+    LatencyPercentiles, LogSource, PageRow, PhaseStats, QueryCount, SearchLogRow, StatsSnapshot,
+    Store, StoreError, StoreTuning, TierHit,
 };

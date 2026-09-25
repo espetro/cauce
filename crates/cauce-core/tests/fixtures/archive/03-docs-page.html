@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<!-- W5-01 archive fixture: docs page with TOC sidebar and prev/next nav. -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Rate limiting | OtterDocs</title>
+  <link rel="stylesheet" href="/docs.css">
+</head>
+<body class="docs">
+<div class="layout">
+  <nav class="toc">
+    <a href="/docs/quickstart">Quickstart</a>
+    <a href="/docs/auth">Authentication</a>
+    <a href="/docs/pagination">Pagination</a>
+    <a href="/docs/rate-limits" aria-current="page">Rate limiting</a>
+    <a href="/docs/webhooks">Webhooks</a>
+    <a href="/docs/errors">Errors</a>
+  </nav>
+  <main id="content">
+    <nav class="breadcrumb"><a href="/docs">Docs</a> / <span>Rate limiting</span></nav>
+    <article>
+      <h1>Rate limiting</h1>
+      <p>Otter's API applies a token bucket per API key: 120 requests per minute sustained, with a burst allowance of 30. When you exceed the bucket the API returns <code>429 Too Many Requests</code> and a <code>Retry-After</code> header with the number of seconds to wait.</p>
+      <h2 id="headers">Response headers</h2>
+      <p>Every response carries the bucket state so a client can preemptively slow down instead of hitting the limit:</p>
+      <pre><code>X-RateLimit-Limit: 120
+X-RateLimit-Remaining: 87
+X-RateLimit-Reset: 1729038060
+Retry-After: 14</code></pre>
+      <p><code>X-RateLimit-Reset</code> is a unix timestamp — the moment the window fully refills. <code>Retry-After</code> is present only on 429 responses.</p>
+      <h2 id="strategy">Retry strategy</h2>
+      <p>On a 429, wait <code>Retry-After</code> seconds, then retry once. If the second attempt also fails, apply exponential backoff starting at 2 seconds and doubling to a ceiling of 60 seconds. Honour <code>Retry-After</code> exactly: the clock resets each time a request lands early, so hammering the endpoint keeps you blocked indefinitely.</p>
+      <h2 id="scope">Scope of the bucket</h2>
+      <p>Limits apply per API key, not per IP or per endpoint. All endpoints share one bucket, including <code>GET</code> requests — with two exceptions: <code>/health</code> and <code>/openapi.json</code> are unmetered and safe for load-balancer health checks.</p>
+      <blockquote>
+        <p><strong>Batching tip:</strong> if you find yourself brushing the limit, switch to <code>POST /v1/batch</code>, which accepts up to 100 operations per call and counts once against the bucket.</p>
+      </blockquote>
+      <h2 id="contact">Need more headroom?</h2>
+      <p>Accounts on the Scale plan can request a raised bucket (240/min sustained, burst 60) from the dashboard under Settings → Limits. Approval is usually same-day.</p>
+    </article>
+    <nav class="prevnext">
+      <a href="/docs/pagination">← Pagination</a>
+      <a href="/docs/webhooks">Webhooks →</a>
+    </nav>
+  </main>
+  <aside class="on-this-page">
+    <h5>On this page</h5>
+    <ul>
+      <li><a href="#headers">Response headers</a></li>
+      <li><a href="#strategy">Retry strategy</a></li>
+      <li><a href="#scope">Scope of the bucket</a></li>
+      <li><a href="#contact">Need more headroom?</a></li>
+    </ul>
+  </aside>
+</div>
+<footer class="site-footer">© 2025 OtterDocs · <a href="/docs">All docs</a></footer>
+</body>
+</html>

@@ -56,6 +56,24 @@
         });
       }
 
+      {% if index_on_click %}
+      // W5-01: clicking a result queues indexing of that page. Delegated
+      // (SSR, streaming and paginated rows alike), keepalive so it
+      // survives navigation, and failure-silent — a rejected beacon never
+      // breaks the click flow.
+      var indexQueryHash = "{{ query_hash }}";
+      document.addEventListener("click", function (event) {
+        var a = event.target.closest ? event.target.closest("#results a") : null;
+        if (!a || !a.href || !/^https?:/.test(a.href)) return;
+        fetch("/api/pages", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-Cauce-Client": "ui" },
+          body: JSON.stringify(indexQueryHash ? { url: a.href, query_hash: indexQueryHash } : { url: a.href }),
+          keepalive: true
+        }).catch(function () {});
+      });
+      {% endif %}
+
       {% if is_streaming %}
       var S = {{ stream_strings|safe }};
       var ERR_KINDS = {

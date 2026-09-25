@@ -29,6 +29,7 @@ mod cache;
 mod health;
 mod history;
 mod lexical;
+mod pages;
 mod stats;
 
 pub use answers::answers_roundtrip;
@@ -37,6 +38,7 @@ pub use cache::{cache_admin, cache_exact_roundtrip, cache_expiry_and_eviction};
 pub use health::engine_health;
 pub use history::{log_clicks_history, suggest};
 pub use lexical::lexical_search;
+pub use pages::pages_roundtrip;
 pub use stats::stats_aggregates;
 
 use chrono::{DateTime, Utc};
@@ -143,6 +145,7 @@ pub async fn run_all(store: &impl Store) {
     stats_aggregates(store).await;
     engine_health(store).await;
     audit_trail(store).await;
+    pages_roundtrip(store).await;
     answers_roundtrip(store).await;
     cache_admin(store).await;
 }

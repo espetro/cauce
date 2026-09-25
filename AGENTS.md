@@ -53,7 +53,7 @@ tests/e2e                golden path integration tests
 
 One binary: `cauce serve` (full: UI + API + MCP, < 80 MB idle), `cauce serve --headless` (API +
 MCP, < 50 MB), `cauce mcp` (stdio only, < 40 MB). Cargo features `ui mcp ai archive semantic
-postgres otlp`; defaults are `ui mcp ai` (`otlp` is non-default). Port 4479, loopback by
+postgres otlp`; defaults are `ui mcp ai archive` (`otlp` is non-default). Port 4479, loopback by
 default.
 
 ## Enforced

@@ -16,11 +16,12 @@ name = "e2e"
 path = "tests/e2e/main.rs"
 
 # The binary's feature surface mirrors cauce-server's (W1-12): defaults are
-# `ui mcp ai`. `cargo build -p cauce-cli --no-default-features --features mcp`
-# produces the minimal agent build (`cauce mcp` + headless `cauce serve`, no
-# templates/assets, no OTLP); `mise run validate` keeps it compiling.
+# `ui mcp ai archive`. `cargo build -p cauce-cli --no-default-features
+# --features mcp` produces the minimal agent build (`cauce mcp` + headless
+# `cauce serve`, no templates/assets, no archive, no OTLP); `mise run
+# validate` keeps it compiling.
 [features]
-default = ["ui", "mcp", "ai"]
+default = ["ui", "mcp", "ai", "archive"]
 ui = ["cauce-server/ui"]
 mcp = ["cauce-server/mcp"]
 ai = ["cauce-server/ai"]

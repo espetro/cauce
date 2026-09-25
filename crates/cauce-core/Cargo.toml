@@ -10,6 +10,10 @@ repository.workspace = true
 # Reusable `Store` conformance suite (`src/conformance.rs`). Off by default;
 # Store impls enable it as a dev-dependency (cauce-store-sqlite, W6 postgres).
 conformance = []
+# W5-01 fetch-and-index pipeline (`src/archive/`): readability extraction +
+# HTML->markdown. Off by default so the minimal `mcp` build (check:features)
+# keeps the extraction deps out; cauce-server's `archive` feature forwards it.
+archive = ["dep:dom_smoothie", "dep:htmd"]
 
 [dependencies]
 async-trait = "0.1"
@@ -32,6 +36,12 @@ reqwest = { version = "0.13.5", default-features = false, features = [
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
+# `archive` feature (W5-01): readability extraction + HTML->markdown.
+# dom_smoothie is a pure-Rust Mozilla Readability port (dom_query/html5ever,
+# no C deps); htmd is a turndown-style converter. Pinned exact per the
+# >=7-day-old dependency rule.
+dom_smoothie = { version = "=0.18.1", optional = true }
+htmd = { version = "=0.5.5", optional = true }
 sysinfo = "0.37"
 thiserror = "2"
 toml = { version = "0.9", features = ["preserve_order"] }
