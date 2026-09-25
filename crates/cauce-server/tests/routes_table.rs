@@ -81,6 +81,12 @@ const EXPECTED_WAVE2_UI_MOUNTED: &[(&str, &str)] = &[
     ("GET", "/engines"),
 ];
 
+/// Wave-4 rows mounted so far (W4-03): the grounded-answer SSE route
+/// rides the `ai` gate; its page rides `ui` alone (it renders the
+/// disabled notice in `ai`-less builds rather than 404ing).
+const EXPECTED_WAVE4_AI_MOUNTED: &[(&str, &str)] = &[("POST", "/api/answer")];
+const EXPECTED_WAVE4_UI_MOUNTED: &[(&str, &str)] = &[("GET", "/answer")];
+
 // ---------------------------------------------------------------------------
 // Plan-table parsing (parent plan section 6)
 // ---------------------------------------------------------------------------
@@ -263,11 +269,19 @@ fn mounted_routes_match_declaration() {
                 .iter()
                 .chain(EXPECTED_WAVE2_UI)
                 .chain(EXPECTED_WAVE2_UI_MOUNTED)
+                .chain(EXPECTED_WAVE4_UI_MOUNTED)
                 .map(|(m, p)| (m.to_string(), p.to_string())),
         );
     }
     if cfg!(feature = "mcp") {
         expected.insert(("*".to_string(), "/mcp".to_string()));
+    }
+    if cfg!(feature = "ai") {
+        expected.extend(
+            EXPECTED_WAVE4_AI_MOUNTED
+                .iter()
+                .map(|(m, p)| (m.to_string(), p.to_string())),
+        );
     }
     assert_eq!(mounted, expected);
 }

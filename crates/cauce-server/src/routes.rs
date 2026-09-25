@@ -138,7 +138,17 @@ pub const ROUTES: &[RouteSpec] = &[
         requires: Some("ui"),
     },
     // ---- wave 4 ------------------------------------------------------------
-    sse("POST", "/api/answer", 4),
+    // `/api/answer` rides the `ai` gate like `/mcp` rides `mcp`: a build
+    // without the feature has no answer loop to stream from.
+    RouteSpec {
+        method: "POST",
+        path: "/api/answer",
+        kind: RouteKind::Sse,
+        wave: 4,
+        requires: Some("ai"),
+    },
+    // The page stays on `ui` alone: in an `ai`-less build it renders the
+    // disabled notice (and links `/settings`) rather than 404ing.
     html("/answer", 4),
     // ---- wave 5 ------------------------------------------------------------
     json("POST", "/api/pages", 5),
