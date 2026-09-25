@@ -24,6 +24,8 @@ pub mod common {
     pub const NAV_HISTORY: &str = "history";
     /// Primary nav link to `/dashboard`.
     pub const NAV_DASHBOARD: &str = "dashboard";
+    /// Primary nav link to `/archive`.
+    pub const NAV_ARCHIVE: &str = "archive";
     /// Operator nav link to `/engines`.
     pub const NAV_ENGINES: &str = "engines";
     /// Operator nav link to `/cache`.
@@ -487,6 +489,48 @@ pub mod engines {
 /// `/answer` page copy (W4-03): the ask form, the streamed-answer shell
 /// and every string the shell's inline JS interpolates (serialized as
 /// `var S = {...}` — JS placeholders read `{name}` like Rust's).
+pub mod archive {
+    pub const PAGE_TITLE: &str = "Archive";
+    /// Search-box placeholder.
+    pub const FILTER_PLACEHOLDER: &str = "Search archived pages...";
+    /// Search-box submit label.
+    pub const FILTER_BUTTON: &str = "Search";
+    /// "Clear filter" link shown while `q` is active.
+    pub const FILTER_CLEAR: &str = "clear";
+    /// `hx-confirm` for a single-row delete.
+    pub const CONFIRM_ROW: &str = "Delete this archived page?";
+    /// Per-row delete button label.
+    pub const DELETE_ROW: &str = "Delete";
+    /// Empty state when no pages are archived yet.
+    pub const EMPTY: &str = "no archived pages yet. fetch one with POST /api/pages or click a result when indexing is on.";
+    /// Empty state when `q` matched nothing; `{q}` is the active query.
+    pub const EMPTY_FILTERED: &str = "nothing in the archive matches \"{q}\".";
+    /// Notice when the `archive` pipeline is unavailable (the page still
+    /// renders its shell); links `/settings`.
+    pub const DISABLED: &str = "page archiving is disabled.";
+    /// The disabled notice's link text to `/settings`.
+    pub const DISABLED_LINK: &str = "check settings";
+    /// Pagination: link to the previous (newer) page.
+    pub const PAGE_PREV: &str = "Newer";
+    /// Pagination: link to the next (older) page.
+    pub const PAGE_NEXT: &str = "Older";
+    /// Placeholder inside the markdown slot before the lazy fragment
+    /// loads.
+    pub const MARKDOWN_LOADING: &str = "loading...";
+    /// Inline error inside the markdown slot when the lazy fetch fails;
+    /// `{status}` is the HTTP status code.
+    pub const MARKDOWN_FAILED: &str = "error: could not load page body ({status})";
+    /// The `hx-on::response-error` fallback for error statuses raised
+    /// outside the handler; `{status}` is the HTTP status code.
+    pub const MARKDOWN_ERROR: &str = "error: could not load page body ({status})";
+    /// Count line, singular (`1 page`).
+    pub const PAGE_ONE: &str = "page";
+    /// Count line, plural (`34 pages`).
+    pub const PAGE_MANY: &str = "pages";
+    /// Count line qualifier while a `q` is active (`3 matching pages`).
+    pub const MATCHING: &str = "matching";
+}
+
 pub mod answer {
     /// Search-box placeholder on the ask form.
     pub const PLACEHOLDER: &str = "Ask a question...";

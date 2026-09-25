@@ -1,5 +1,5 @@
 {# The shared page header (W2-08): brand, the primary nav
-   (`search · history · dashboard`), the quieter operator group
+   (`search · history · dashboard · archive`), the quieter operator group
    (`engines · cache · audit`), then `settings`, the version label and
    the theme toggle. Below 700 px the operator group collapses into the
    `more` <details> menu (CSS-only, works without JS). `nav_active`
@@ -11,6 +11,7 @@
     <a href="/"{% if nav_active == "search" %} aria-current="page"{% endif %}>{{ crate::strings::common::NAV_SEARCH }}</a>
     <a href="/history"{% if nav_active == "history" %} aria-current="page"{% endif %}>{{ crate::strings::common::NAV_HISTORY }}</a>
     <a href="/dashboard"{% if nav_active == "dashboard" %} aria-current="page"{% endif %}>{{ crate::strings::common::NAV_DASHBOARD }}</a>
+    <a href="/archive"{% if nav_active == "archive" %} aria-current="page"{% endif %}>{{ crate::strings::common::NAV_ARCHIVE }}</a>
   </nav>
   <div class="nav-right">
     <nav class="nav-operator" aria-label="{{ crate::strings::common::NAV_OPERATOR_LABEL }}">
