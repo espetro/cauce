@@ -29,6 +29,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::{EngineId, SearchResult, normalize_url};
 
+/// AI answer evals (W4-04) — transcripts, scoring and the `[ai]` gate.
+pub mod ai;
+
 /// Results directory: `$CAUCE_EVAL_RESULTS_DIR` or `evals/results` relative
 /// to the process cwd — the same place `cauce eval engines` writes and the
 /// `/api/stats` handler reads (read per request, never cached state).
@@ -71,6 +74,12 @@ pub enum EvalError {
     Thresholds(PathBuf, String),
     #[error("invalid report json {path}: {source}")]
     ReportJson {
+        path: PathBuf,
+        #[source]
+        source: serde_json::Error,
+    },
+    #[error("invalid transcript json {path}: {source}")]
+    TranscriptJson {
         path: PathBuf,
         #[source]
         source: serde_json::Error,
@@ -146,23 +155,31 @@ pub fn domain_hit(hosts: &[String], expected: &[String]) -> bool {
         .any(|d| hosts.iter().any(|h| domain_matches(h, d)))
 }
 
-/// `evals/thresholds.toml`: per-engine minimum domain-hit@5.
+/// `evals/thresholds.toml`: per-engine minimum domain-hit@5 plus the
+/// `[ai]` answer-eval gate (W4-04).
 ///
 /// ```toml
 /// default = 0.8
 ///
 /// [engines]
 /// bing = 0.8
+///
+/// [ai]
+/// baseline = 1.0
+/// tolerance = 0.2
 /// ```
 ///
 /// An engine without an entry falls back to `default` (itself defaulting to
-/// 0.0 — a file that only names engines still parses).
+/// 0.0 — a file that only names engines still parses). `ai` is optional at
+/// parse time; `cauce eval ai` errors when the section is absent.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Thresholds {
     #[serde(default)]
     pub default: f64,
     #[serde(default)]
     pub engines: BTreeMap<String, f64>,
+    #[serde(default)]
+    pub ai: Option<ai::AiThresholds>,
 }
 
 impl Thresholds {
@@ -182,6 +199,19 @@ impl Thresholds {
                     path.to_path_buf(),
                     format!("{name} = {v}: threshold must be within 0.0..=1.0"),
                 ));
+            }
+        }
+        if let Some(ai) = &t.ai {
+            for (name, v) in [("ai.baseline", ai.baseline), ("ai.tolerance", ai.tolerance)]
+                .into_iter()
+                .chain(ai.ungrounded_max.map(|v| ("ai.ungrounded_max", v)))
+            {
+                if !(0.0..=1.0).contains(&v) {
+                    return Err(EvalError::Thresholds(
+                        path.to_path_buf(),
+                        format!("{name} = {v}: threshold must be within 0.0..=1.0"),
+                    ));
+                }
             }
         }
         Ok(t)

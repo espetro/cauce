@@ -1,0 +1,45 @@
+{
+  "model": "liquid/lfm-2.5-2.6b:free",
+  "provider": "https://openrouter.ai/api/v1",
+  "recorded_at": "2026-09-24T00:00:00Z",
+  "turns": [
+    {
+      "deltas": [],
+      "completion": {
+        "id": "chatcmpl-tool-cauce",
+        "model": "liquid/lfm-2.5-2.6b:free",
+        "content": "",
+        "tool_calls": [
+          {
+            "id": "chatcmpl-tool-cauce",
+            "name": "search_web",
+            "arguments": "{\"query\": \"cauce metasearch engine github\"}"
+          }
+        ],
+        "finish_reason": "tool_calls",
+        "usage": {
+          "prompt_tokens": 410,
+          "completion_tokens": 28,
+          "total_tokens": 438
+        }
+      }
+    },
+    {
+      "deltas": [
+        "Cauce is a self-hosted **metasearch** engine written in Rust with a shared TTL cache [1][2].\n",
+        "{\"confidence\": 7, \"related_questions\": [\"How do I self-host cauce?\"]}"
+      ],
+      "completion": {
+        "id": "chatcmpl-final-cauce",
+        "model": "liquid/lfm-2.5-2.6b:free",
+        "content": "Cauce is a self-hosted **metasearch** engine written in Rust with a shared TTL cache [1][2].\n{\"confidence\": 7, \"related_questions\": [\"How do I self-host cauce?\"]}",
+        "finish_reason": "stop",
+        "usage": {
+          "prompt_tokens": 560,
+          "completion_tokens": 45,
+          "total_tokens": 605
+        }
+      }
+    }
+  ]
+}

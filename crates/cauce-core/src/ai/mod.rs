@@ -96,8 +96,9 @@ impl AiError {
 }
 
 /// `usage` block of a chat completion (OpenAI shape, also sent by
-/// OpenRouter/Bifrost with `stream_options.include_usage`).
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Deserialize)]
+/// OpenRouter/Bifrost with `stream_options.include_usage`). `Serialize`
+/// exists for the eval transcripts (`evals/ai`), which store it verbatim.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, serde::Deserialize)]
 pub struct Usage {
     #[serde(default)]
     pub prompt_tokens: u64,

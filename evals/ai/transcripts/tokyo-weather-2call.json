@@ -1,0 +1,66 @@
+{
+  "model": "liquid/lfm-2.5-2.6b:free",
+  "provider": "https://openrouter.ai/api/v1",
+  "recorded_at": "2026-09-24T00:00:00Z",
+  "turns": [
+    {
+      "deltas": [],
+      "completion": {
+        "id": "chatcmpl-tool-b0d6032a45b725d0",
+        "model": "liquid/lfm-2.5-2.6b:free",
+        "content": "",
+        "tool_calls": [
+          {
+            "id": "chatcmpl-tool-b0d6032a45b725d0",
+            "name": "search_web",
+            "arguments": "{\"query\": \"current weather in Tokyo right now\"}"
+          }
+        ],
+        "finish_reason": "tool_calls",
+        "usage": {
+          "prompt_tokens": 480,
+          "completion_tokens": 32,
+          "total_tokens": 512
+        }
+      }
+    },
+    {
+      "deltas": [],
+      "completion": {
+        "id": "chatcmpl-tool-77aa11bb22cc33dd",
+        "model": "liquid/lfm-2.5-2.6b:free",
+        "content": "",
+        "tool_calls": [
+          {
+            "id": "chatcmpl-tool-77aa11bb22cc33dd",
+            "name": "search_web",
+            "arguments": "{\"query\": \"tokyo hourly weather forecast\"}"
+          }
+        ],
+        "finish_reason": "tool_calls",
+        "usage": {
+          "prompt_tokens": 610,
+          "completion_tokens": 30,
+          "total_tokens": 640
+        }
+      }
+    },
+    {
+      "deltas": [
+        "Tokyo is currently **22°C** with **clear skies** and light wind [1][2]. The **hourly** forecast stays clear through the evening [3][4].\n",
+        "{\"confidence\": 8, \"related_questions\": [\"Will it rain in Tokyo tomorrow?\"]}"
+      ],
+      "completion": {
+        "id": "chatcmpl-final-tokyo-2",
+        "model": "liquid/lfm-2.5-2.6b:free",
+        "content": "Tokyo is currently **22°C** with **clear skies** and light wind [1][2]. The **hourly** forecast stays clear through the evening [3][4].\n{\"confidence\": 8, \"related_questions\": [\"Will it rain in Tokyo tomorrow?\"]}",
+        "finish_reason": "stop",
+        "usage": {
+          "prompt_tokens": 850,
+          "completion_tokens": 70,
+          "total_tokens": 920
+        }
+      }
+    }
+  ]
+}

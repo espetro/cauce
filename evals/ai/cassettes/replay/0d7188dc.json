@@ -1,0 +1,21 @@
+{
+  "query": "tokyo hourly weather forecast",
+  "engine": "replay",
+  "recorded_at": "2026-09-24T00:00:00Z",
+  "results": [
+    {
+      "url": "https://www.timeanddate.com/weather/japan/tokyo/hourly",
+      "title": "Hourly weather in Tokyo",
+      "snippet": "Hour-by-hour forecast for Tokyo",
+      "engine": "replay",
+      "score": 1.0
+    },
+    {
+      "url": "https://weather.com/weather/hourbyhour/l/Tokyo+Japan",
+      "title": "Tokyo hourly \u2014 weather.com",
+      "snippet": "Hourly temperatures and precipitation",
+      "engine": "replay",
+      "score": 0.5
+    }
+  ]
+}

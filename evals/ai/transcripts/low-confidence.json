@@ -1,0 +1,45 @@
+{
+  "model": "liquid/lfm-2.5-2.6b:free",
+  "provider": "https://openrouter.ai/api/v1",
+  "recorded_at": "2026-09-24T00:00:00Z",
+  "turns": [
+    {
+      "deltas": [],
+      "completion": {
+        "id": "chatcmpl-tool-obscure",
+        "model": "liquid/lfm-2.5-2.6b:free",
+        "content": "",
+        "tool_calls": [
+          {
+            "id": "chatcmpl-tool-obscure",
+            "name": "search_web",
+            "arguments": "{\"query\": \"obscure fact nobody knows\"}"
+          }
+        ],
+        "finish_reason": "tool_calls",
+        "usage": {
+          "prompt_tokens": 405,
+          "completion_tokens": 24,
+          "total_tokens": 429
+        }
+      }
+    },
+    {
+      "deltas": [
+        "The answer is **unclear** from the available sources [1][2].\n",
+        "{\"confidence\": 2, \"related_questions\": []}"
+      ],
+      "completion": {
+        "id": "chatcmpl-final-obscure",
+        "model": "liquid/lfm-2.5-2.6b:free",
+        "content": "The answer is **unclear** from the available sources [1][2].\n{\"confidence\": 2, \"related_questions\": []}",
+        "finish_reason": "stop",
+        "usage": {
+          "prompt_tokens": 520,
+          "completion_tokens": 30,
+          "total_tokens": 550
+        }
+      }
+    }
+  ]
+}

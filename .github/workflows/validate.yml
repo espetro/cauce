@@ -50,6 +50,21 @@ jobs:
       - name: validate
         run: mise run validate
 
+      # W4-04: AI evals fast gate — the `smoke`-tagged cases over recorded
+      # transcripts + replay cassettes, run with the binary `mise run
+      # validate` already built (adds <30 s, no rebuild). Fails the job
+      # when the score drops below `[ai].baseline - tolerance`.
+      - name: ai evals smoke gate
+        run: ./target/debug/cauce eval ai evals/ai/*.jsonl --tag smoke --gate
+
+      - name: upload ai evals report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-evals-results
+          path: evals/results/
+          if-no-files-found: ignore
+
       # W3-08: LOC/complexity report — publishes numbers in the log,
       # always exits 0 (a signal source, not a gate).
       - name: loc report
