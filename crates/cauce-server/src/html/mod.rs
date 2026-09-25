@@ -12,6 +12,8 @@
 //! strings, result rows) plus the `Accept: text/html` arm of
 //! `GET /api/search`; [`answer`] — the `/answer` AI-answer page (W4-03);
 //! [`history`] — the `/history` feed page;
+//! [`archive`] — the `/archive` search+listing page and the
+//! `/api/pages/{url}` markdown fragments (W5-02);
 //! [`settings`] — the `/settings` form page; [`assets`] — the embedded
 //! static assets and the `favicon`/`opensearch` endpoints.
 //!
@@ -20,6 +22,7 @@
 //! file, You can obtain one at <https://mozilla.org/MPL/2.0/>.
 
 mod answer;
+mod archive;
 mod assets;
 mod history;
 mod search;
@@ -32,6 +35,9 @@ use axum::response::Html;
 use crate::error::ApiError;
 
 pub use answer::answer;
+pub use archive::archive;
+#[cfg(feature = "archive")]
+pub(crate) use archive::{archive_page, page_markdown, page_markdown_error};
 pub(crate) use assets::{HTMX_JS, JSON_ENC_JS, STYLE_CSS, VERSION_LABEL};
 pub use assets::{favicon, opensearch};
 pub use history::history;
