@@ -1,0 +1,45 @@
+{
+  "model": "liquid/lfm-2.5-2.6b:free",
+  "provider": "https://openrouter.ai/api/v1",
+  "recorded_at": "2026-09-24T00:00:00Z",
+  "turns": [
+    {
+      "deltas": [],
+      "completion": {
+        "id": "chatcmpl-tool-rust-go",
+        "model": "liquid/lfm-2.5-2.6b:free",
+        "content": "",
+        "tool_calls": [
+          {
+            "id": "chatcmpl-tool-rust-go",
+            "name": "search_web",
+            "arguments": "{\"query\": \"rust vs go error handling\"}"
+          }
+        ],
+        "finish_reason": "tool_calls",
+        "usage": {
+          "prompt_tokens": 430,
+          "completion_tokens": 26,
+          "total_tokens": 456
+        }
+      }
+    },
+    {
+      "deltas": [
+        "Rust uses `Result` and the `?` operator for **error** handling, while Go returns explicit **error** values [1][2].\n",
+        "{\"confidence\": 7, \"related_questions\": [\"How does Go's error wrapping compare to Rust's anyhow?\"]}"
+      ],
+      "completion": {
+        "id": "chatcmpl-final-rust-go",
+        "model": "liquid/lfm-2.5-2.6b:free",
+        "content": "Rust uses `Result` and the `?` operator for **error** handling, while Go returns explicit **error** values [1][2].\n{\"confidence\": 7, \"related_questions\": [\"How does Go's error wrapping compare to Rust's anyhow?\"]}",
+        "finish_reason": "stop",
+        "usage": {
+          "prompt_tokens": 600,
+          "completion_tokens": 50,
+          "total_tokens": 650
+        }
+      }
+    }
+  ]
+}

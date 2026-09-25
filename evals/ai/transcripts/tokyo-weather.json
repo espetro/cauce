@@ -1,0 +1,45 @@
+{
+  "model": "liquid/lfm-2.5-2.6b:free",
+  "provider": "https://openrouter.ai/api/v1",
+  "recorded_at": "2026-09-24T00:00:00Z",
+  "turns": [
+    {
+      "deltas": [],
+      "completion": {
+        "id": "chatcmpl-tool-b0d6032a45b725d0",
+        "model": "liquid/lfm-2.5-2.6b:free",
+        "content": "",
+        "tool_calls": [
+          {
+            "id": "chatcmpl-tool-b0d6032a45b725d0",
+            "name": "search_web",
+            "arguments": "{\"query\": \"current weather in Tokyo right now\"}"
+          }
+        ],
+        "finish_reason": "tool_calls",
+        "usage": {
+          "prompt_tokens": 480,
+          "completion_tokens": 32,
+          "total_tokens": 512
+        }
+      }
+    },
+    {
+      "deltas": [
+        "Tokyo's current weather is **22°C** with **clear skies** and **light wind** [1][2].\n",
+        "{\"confidence\": 8, \"related_questions\": [\"What is the hourly forecast for Tokyo?\", \"Is it humid in Tokyo today?\", \"What should I wear in Tokyo right now?\"]}"
+      ],
+      "completion": {
+        "id": "chatcmpl-final-tokyo",
+        "model": "liquid/lfm-2.5-2.6b:free",
+        "content": "Tokyo's current weather is **22°C** with **clear skies** and **light wind** [1][2].\n{\"confidence\": 8, \"related_questions\": [\"What is the hourly forecast for Tokyo?\", \"Is it humid in Tokyo today?\", \"What should I wear in Tokyo right now?\"]}",
+        "finish_reason": "stop",
+        "usage": {
+          "prompt_tokens": 640,
+          "completion_tokens": 61,
+          "total_tokens": 701
+        }
+      }
+    }
+  ]
+}

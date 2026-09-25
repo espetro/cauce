@@ -1,0 +1,21 @@
+{
+  "query": "obscure fact nobody knows",
+  "engine": "replay",
+  "recorded_at": "2026-09-24T00:00:00Z",
+  "results": [
+    {
+      "url": "https://en.wikipedia.org/wiki/Obscure_fact",
+      "title": "Obscure fact \u2014 Wikipedia",
+      "snippet": "An obscure fact with unclear sourcing",
+      "engine": "replay",
+      "score": 1.0
+    },
+    {
+      "url": "https://www.britannica.com/topic/obscure-fact",
+      "title": "obscure fact | Britannica",
+      "snippet": "Encyclopaedia entry for an obscure fact",
+      "engine": "replay",
+      "score": 0.5
+    }
+  ]
+}
