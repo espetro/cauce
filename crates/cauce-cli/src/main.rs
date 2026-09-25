@@ -42,6 +42,9 @@ fn main() {
         "config" => std::process::exit(cmds::config::run(
             &std::env::args().skip(2).collect::<Vec<_>>(),
         )),
+        "version" | "--version" | "-V" => {
+            println!("cauce {}", env!("CARGO_PKG_VERSION"));
+        }
         // Declared in the plan but not implemented yet: say so instead of
         // falling into generic usage.
         "cache" => {
@@ -50,7 +53,7 @@ fn main() {
         }
         _ => {
             eprintln!(
-                "usage: cauce <serve|search|mcp|record|engine|eval|trace|tail|config> [args]"
+                "usage: cauce <serve|search|mcp|record|engine|eval|trace|tail|config|version> [args]\n       cauce --version"
             );
             std::process::exit(2);
         }
