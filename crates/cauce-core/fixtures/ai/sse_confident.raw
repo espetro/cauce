@@ -1,0 +1,12 @@
+data: {"id":"gen-1790320505-K4mW9xP2vN7hL6tY","object":"chat.completion.chunk","created":1790320505,"model":"liquid/lfm-2.5-2.6b:free","provider":"Liquid","choices":[{"index":0,"delta":{"content":"Tokyo's current weather is **22\u00b0C** with","role":"assistant"},"finish_reason":null,"native_finish_reason":null}]}
+
+data: {"id":"gen-1790320505-K4mW9xP2vN7hL6tY","object":"chat.completion.chunk","created":1790320505,"model":"liquid/lfm-2.5-2.6b:free","provider":"Liquid","choices":[{"index":0,"delta":{"content":" **clear skies** and **light wind** [1][2].","role":"assistant"},"finish_reason":null,"native_finish_reason":null}]}
+
+data: {"id":"gen-1790320505-K4mW9xP2vN7hL6tY","object":"chat.completion.chunk","created":1790320505,"model":"liquid/lfm-2.5-2.6b:free","provider":"Liquid","choices":[{"index":0,"delta":{"content":"\n{\"confidence\": 8, \"related_questions\": [\"Will it rain in Tokyo tomorrow?\", \"What is the 10-day forecast for Tokyo?\"]}","role":"assistant"},"finish_reason":null,"native_finish_reason":null}]}
+
+data: {"id":"gen-1790320505-K4mW9xP2vN7hL6tY","object":"chat.completion.chunk","created":1790320505,"model":"liquid/lfm-2.5-2.6b:free","provider":"Liquid","system_fingerprint":"vllm-0.29.1rc1.dev9+g2671fedfc-dafbf1d2","choices":[{"index":0,"delta":{"content":"","role":"assistant"},"finish_reason":"stop","native_finish_reason":"stop"}]}
+
+data: {"id":"gen-1790320505-K4mW9xP2vN7hL6tY","object":"chat.completion.chunk","created":1790320505,"model":"liquid/lfm-2.5-2.6b:free","provider":"Liquid","system_fingerprint":"vllm-0.29.1rc1.dev9+g2671fedfc-dafbf1d2","service_tier":null,"choices":[{"index":0,"delta":{"content":"","role":"assistant"},"finish_reason":"stop","native_finish_reason":"stop"}],"usage":{"prompt_tokens":212,"completion_tokens":55,"total_tokens":267}}
+
+data: [DONE]
+

@@ -1,0 +1,8 @@
+data: {"id":"gen-1790320401-Zx9vN8mQ7wY6tR5s","object":"chat.completion.chunk","created":1790320401,"model":"liquid/lfm-2.5-2.6b:free","provider":"Liquid","choices":[{"index":0,"delta":{"content":"Tokyo's weather is currently","role":"assistant"},"finish_reason":null,"native_finish_reason":null}]}
+
+data: {"id":"gen-1790320401-Zx9vN8mQ7wY6tR5s","object":"chat.completion.chunk","created":1790320401,"model":"liquid/lfm-2.5-2.6b:free","provider":"Liquid","choices":[{"index":0,"delta":{"content":" quite warm, with temperatures","role":"assistant"},"finish_reason":null,"native_finish_reason":null}]}
+
+data: {"id":"gen-1790320401-Zx9vN8mQ7wY6tR5s","object":"chat.completion.chunk","created":1790320401,"model":"liquid/lfm-2.5-2.6b:free","provider":"Liquid","choices":[{"index":0,"delta":{"content":" reaching about","role":"assistant"},"finish_reason":null,"native_finish_reason":null}]}
+
+data: {"error":{"message":"upstream connection terminated","code":502}}
+

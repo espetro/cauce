@@ -1,0 +1,10 @@
+{
+  "model": "liquid/lfm-2.5-2.6b:free",
+  "stream": true,
+  "messages": [
+    {"role": "system", "content": "You are a metasearch answer engine. Answer briefly and cite sources inline as [n]."},
+    {"role": "user", "content": "What's the weather in Tokyo right now?"},
+    {"role": "assistant", "content": null, "tool_calls": [{"id": "chatcmpl-tool-b0d6032a45b725d0", "type": "function", "function": {"name": "search_web", "arguments": "{\"query\": \"current weather in Tokyo right now\"}"}}]},
+    {"role": "tool", "tool_call_id": "chatcmpl-tool-b0d6032a45b725d0", "content": "{\"results\": [{\"title\": \"Tokyo Weather - JMA\", \"url\": \"https://www.jma.go.jp/tokyo\", \"snippet\": \"Tokyo: 22C, clear skies, light wind\"}, {\"title\": \"Weather Tokyo - weather.com\", \"url\": \"https://weather.com/tokyo\", \"snippet\": \"Currently 22 degrees and clear in Tokyo\"}]}"}
+  ]
+}

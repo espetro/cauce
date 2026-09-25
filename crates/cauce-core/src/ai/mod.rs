@@ -9,18 +9,22 @@
 //! typed [`AiError`]. [`openai`] is the OpenAI-compatible client
 //! (`POST {base_url}/chat/completions` streamed over SSE, plus a
 //! 60 s-cached `GET {base_url}/models`); W4-05's Anthropic protocol maps
-//! onto the same types.
+//! onto the same types. [`answer`] (W4-02) is the grounded-answer tool
+//! loop: [`AnswerLoop::stream_answer`](answer::AnswerLoop::stream_answer)
+//! + the [`AnswerFrame`](answer::AnswerFrame) wire union.
 //!
 //! This Source Code Form is subject to the terms of the Mozilla Public
 //! License, v. 2.0. If a copy of the MPL was not distributed with this
 //! file, You can obtain one at <https://mozilla.org/MPL/2.0/>.
 
+pub mod answer;
 pub mod openai;
 
 use serde::Serialize;
 use thiserror::Error;
 use uuid::Uuid;
 
+pub use answer::{AnswerFrame, AnswerLoop, AnswerRequest, ChatProvider};
 pub use openai::OpenAiClient;
 
 /// Fallback `audit.actor` when a provider call has no inbound request

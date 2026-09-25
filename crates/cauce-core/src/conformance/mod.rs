@@ -17,12 +17,13 @@
 //! [`history`] — search log, clicks, the merged feed and `suggest`
 //! completions; [`stats`] —
 //! dashboard aggregates; [`health`] — engine health upserts; [`audit`] — the
-//! audit trail and its facets.
+//! audit trail and its facets; [`answers`] — the W4-02 AI answer cache.
 //!
 //! This Source Code Form is subject to the terms of the Mozilla Public
 //! License, v. 2.0. If a copy of the MPL was not distributed with this
 //! file, You can obtain one at <https://mozilla.org/MPL/2.0/>.
 
+mod answers;
 mod audit;
 mod cache;
 mod health;
@@ -30,6 +31,7 @@ mod history;
 mod lexical;
 mod stats;
 
+pub use answers::answers_roundtrip;
 pub use audit::audit_trail;
 pub use cache::{cache_admin, cache_exact_roundtrip, cache_expiry_and_eviction};
 pub use health::engine_health;
@@ -141,5 +143,6 @@ pub async fn run_all(store: &impl Store) {
     stats_aggregates(store).await;
     engine_health(store).await;
     audit_trail(store).await;
+    answers_roundtrip(store).await;
     cache_admin(store).await;
 }
