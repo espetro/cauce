@@ -14,7 +14,9 @@
 //! answer cache (`answers` TTL read + upsert); [`history`] — `search_log`,
 //! `clicks`, the merged feed and `history_stats`; [`stats`] — the
 //! `/api/stats` aggregate groups; [`health`] — `engine_health` read/upsert;
-//! [`pages`] — the W5-01 `pages` archive read + upsert; [`audit`] — `audit`
+//! [`pages`] — the W5-01 `pages` archive read + upsert, the W5-02
+//! `pages_fts` search and browsing reads, and single-row delete;
+//! [`audit`] — `audit`
 //! append, filtered list and facets.
 //!
 //! This Source Code Form is subject to the terms of the Mozilla Public
@@ -40,7 +42,7 @@ use async_trait::async_trait;
 use cauce_core::{
     AnswerKey, AnswerRow, AuditFacets, AuditFilter, AuditRow, CacheKey, CacheState, CachedAnswer,
     CachedSearch, ClickRow, DeleteSearchLog, EngineHealthRow, HistoryFilter, HistoryItem,
-    HistoryStats, PageRow, SearchLogRow, SearchResponse, StatsSnapshot, Store, StoreError,
+    HistoryStats, PageHit, PageRow, SearchLogRow, SearchResponse, StatsSnapshot, Store, StoreError,
     StoreTuning,
 };
 use rusqlite::Connection;
@@ -283,6 +285,18 @@ impl Store for SqliteStore {
 
     async fn get_page(&self, url: &url::Url) -> Result<Option<PageRow>, StoreError> {
         self.get_page(url).await
+    }
+
+    async fn search_pages(&self, q: &str, limit: u32) -> Result<Vec<PageHit>, StoreError> {
+        self.search_pages(q, limit).await
+    }
+
+    async fn list_pages(&self, limit: u32, offset: u32) -> Result<Vec<PageHit>, StoreError> {
+        self.list_pages(limit, offset).await
+    }
+
+    async fn delete_page(&self, url: &url::Url) -> Result<bool, StoreError> {
+        self.delete_page(url).await
     }
 
     // ---- search log, clicks, history ----------------------------------------

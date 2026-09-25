@@ -144,6 +144,72 @@ pub struct PageRow {
     pub source_query_hash: Option<CacheKey>,
 }
 
+/// Start delimiter `Store::search_pages` wraps each matched term with in
+/// `PageHit::snippet` (FTS5 `snippet()` match markers). A private-use
+/// codepoint: it can never appear in real page text and is never valid
+/// markup, so callers either strip it ([`PageHit::plain_snippet`], the
+/// JSON arm) or map it to `<mark>` after escaping
+/// ([`PageHit::snippet_parts`], the `/archive` page).
+pub const PAGE_MARK_OPEN: char = '\u{e000}';
+
+/// The `PAGE_MARK_OPEN` closing counterpart.
+pub const PAGE_MARK_CLOSE: char = '\u{e001}';
+
+/// One row of the W5-02 archive surface: a `pages_fts` hit
+/// (`Store::search_pages`) or a `pages` browsing row
+/// (`Store::list_pages`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PageHit {
+    /// Normalized stored URL (the `pages` primary key).
+    pub url: Url,
+    /// Readability title; may be empty when the page carries none.
+    pub title: String,
+    /// Excerpt of `markdown`: FTS5 `snippet()` with the `PAGE_MARK_*`
+    /// delimiters on `search_pages` hits, a plain leading excerpt on
+    /// `list_pages` rows.
+    pub snippet: String,
+    /// When the page was fetched and indexed.
+    pub fetched_at: DateTime<Utc>,
+    /// bm25 rank on `search_pages` hits (more negative is a better
+    /// match); `None` on `list_pages` rows.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub score: Option<f64>,
+}
+
+impl PageHit {
+    /// `snippet` with every mark delimiter removed — the JSON wire text.
+    pub fn plain_snippet(&self) -> String {
+        self.snippet
+            .chars()
+            .filter(|c| *c != PAGE_MARK_OPEN && *c != PAGE_MARK_CLOSE)
+            .collect()
+    }
+
+    /// `(text, is_match)` segments for HTML rendering: escape each
+    /// `text` at insertion and wrap `is_match` segments in `<mark>` —
+    /// never trust the raw snippet, it is stored page content.
+    pub fn snippet_parts(&self) -> Vec<(String, bool)> {
+        let mut parts = Vec::new();
+        let mut marked = false;
+        let mut buf = String::new();
+        for c in self.snippet.chars() {
+            match c {
+                PAGE_MARK_OPEN | PAGE_MARK_CLOSE => {
+                    if !buf.is_empty() {
+                        parts.push((std::mem::take(&mut buf), marked));
+                    }
+                    marked = c == PAGE_MARK_OPEN;
+                }
+                _ => buf.push(c),
+            }
+        }
+        if !buf.is_empty() {
+            parts.push((buf, marked));
+        }
+        parts
+    }
+}
+
 /// Breaker state persisted in `engine_health` (scheduler section 4.4.6).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -737,6 +803,27 @@ pub trait Store: Send + Sync {
 
     /// Fetch one archived page by its stored (normalized) URL.
     async fn get_page(&self, url: &Url) -> Result<Option<PageRow>, StoreError>;
+
+    /// FTS5 over `pages_fts` (title + markdown), bm25 rank order, capped
+    /// at `limit` hits (`GET /api/archive?q=`, the `/archive` search box,
+    /// W5-02). `q` is raw user text: implementations run it through the
+    /// shared `fts_query` escaping convention, so an all-punctuation
+    /// query yields `[]`, never an FTS error. Hit snippets carry the
+    /// `PAGE_MARK_*` delimiters — strip them for JSON output
+    /// ([`PageHit::plain_snippet`]) or map them to `<mark>` after
+    /// escaping ([`PageHit::snippet_parts`]).
+    async fn search_pages(&self, q: &str, limit: u32) -> Result<Vec<PageHit>, StoreError>;
+
+    /// Newest `pages` rows first (`GET /api/archive` without `q`, the
+    /// `/archive` browsing surface). Hit snippets are plain leading
+    /// excerpts of `markdown`; `score` is `None`.
+    async fn list_pages(&self, limit: u32, offset: u32) -> Result<Vec<PageHit>, StoreError>;
+
+    /// `DELETE /api/pages/{url}`: remove one `pages` row by its stored
+    /// (normalized) URL; the `pages_fts_ad` trigger cleans the index row
+    /// with it. Returns false when the URL was not archived. The caller
+    /// writes the audit row.
+    async fn delete_page(&self, url: &Url) -> Result<bool, StoreError>;
 
     // ---- search log, clicks, history -----------------------------------------
 

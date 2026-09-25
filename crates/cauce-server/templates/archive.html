@@ -1,0 +1,85 @@
+<!doctype html>
+<!-- This Source Code Form is subject to the terms of the Mozilla Public
+     License, v. 2.0. If a copy of the MPL was not distributed with this
+     file, You can obtain one at https://mozilla.org/MPL/2.0/. -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ crate::strings::archive::PAGE_TITLE|lower }} · {{ crate::strings::common::BRAND }}</title>
+  <style>{{ style_css|safe }}</style>
+  {% include "theme_head.html" %}
+</head>
+<body class="archive-page">
+  {% include "header.html" %}
+  <main>
+  <h1>{{ crate::strings::archive::PAGE_TITLE }}</h1>
+
+  {% if !enabled %}
+  <p id="archive-disabled" class="notice">{{ crate::strings::archive::DISABLED }} <a href="/settings">{{ crate::strings::archive::DISABLED_LINK }}</a></p>
+  {% else %}
+  <form action="/archive" method="get">
+    <input type="search" name="q" value="{{ q }}" placeholder="{{ crate::strings::archive::FILTER_PLACEHOLDER }}">
+    <button type="submit">{{ crate::strings::archive::FILTER_BUTTON }}</button>
+    {% if searching %}
+    <a href="/archive">{{ crate::strings::archive::FILTER_CLEAR }}</a>
+    {% endif %}
+  </form>
+
+  <div class="meta">
+    <span id="archive-count">{{ count_line }}</span>
+  </div>
+
+  {% if rows.is_empty() %}
+  <p>{{ empty_line }}</p>
+  {% endif %}
+
+  {% for row in rows %}
+  <article class="archive-entry">
+    <div class="archive-row">
+      <details
+        class="archive-details"
+        hx-get="{{ row.markdown_url }}"
+        hx-trigger="toggle once"
+        hx-target="find .archive-markdown"
+        hx-swap="innerHTML"
+        hx-headers='{"Accept":"text/html","X-Cauce-Client":"ui"}'
+        hx-on::response-error="var p=this.querySelector('.archive-markdown');if(p)p.textContent='{{ crate::strings::archive::MARKDOWN_ERROR }}'.replace('{status}',event.detail.xhr.status)"
+      >
+        <summary>
+          <span class="archive-title">{{ row.title }}</span>
+          <span class="archive-meta">
+            <span>{{ row.host }}</span>
+            <span>{{ row.fetched }}</span>
+          </span>
+        </summary>
+        <p class="archive-snippet">{% for part in row.snippet_parts %}{% if part.marked %}<mark>{{ part.text }}</mark>{% else %}{{ part.text }}{% endif %}{% endfor %}</p>
+        <div class="archive-markdown">{{ crate::strings::archive::MARKDOWN_LOADING }}</div>
+      </details>
+      <button
+        class="archive-delete danger"
+        hx-delete="{{ row.delete_url }}"
+        hx-target="closest .archive-entry"
+        hx-swap="delete"
+        hx-confirm="{{ crate::strings::archive::CONFIRM_ROW }}"
+        hx-headers='{"X-Cauce-Client":"ui"}'
+      >{{ crate::strings::archive::DELETE_ROW }}</button>
+    </div>
+  </article>
+  {% endfor %}
+
+  {% if !prev_url.is_empty() || !next_url.is_empty() %}
+  <div class="archive-pager meta">
+    {% if !prev_url.is_empty() %}<a href="{{ prev_url }}">&larr; {{ crate::strings::archive::PAGE_PREV }}</a>{% endif %}
+    {% if !next_url.is_empty() %}<a href="{{ next_url }}">{{ crate::strings::archive::PAGE_NEXT }} &rarr;</a>{% endif %}
+  </div>
+  {% endif %}
+  {% endif %}
+  </main>
+  <footer class="meta">
+    <code class="request-id">{{ request_id }}</code>
+  </footer>
+
+  <script>{{ htmx_js|safe }}</script>
+</body>
+</html>
