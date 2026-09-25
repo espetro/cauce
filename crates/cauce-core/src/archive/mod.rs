@@ -95,10 +95,13 @@ impl Archiver {
         url: &str,
         source_query_hash: Option<CacheKey>,
     ) -> Result<PageRow, ArchiveError> {
-        let parsed = Url::parse(url)
-            .ok()
-            .filter(|u| matches!(u.scheme(), "http" | "https"))
-            .ok_or_else(|| ArchiveError::InvalidUrl(url.to_string()))?;
+        let parsed = Url::parse(url).map_err(|_| ArchiveError::InvalidUrl(url.to_string()))?;
+        if !matches!(parsed.scheme(), "http" | "https") {
+            return Err(ArchiveError::Blocked(format!(
+                "scheme {:?} is not http or https",
+                parsed.scheme()
+            )));
+        }
         let requested = normalize_url(&parsed);
 
         let fetched = self

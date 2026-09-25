@@ -128,22 +128,22 @@ async fn caller_faults_map_to_4xx() {
     assert_envelope(&body, "not_found");
 }
 
-/// #189: a private/reserved fetch target is a caller fault — the egress
-/// guard's refusal maps to `403 url_blocked`, not `502`.
+/// #189: a private/reserved fetch target or a non-http(s) scheme is a
+/// caller fault — the egress guard's refusal maps to `403 url_blocked`,
+/// not `502`.
 #[tokio::test]
 async fn blocked_target_maps_to_403() {
     let (router, _state, _tmp) = app();
 
-    let (status, _h, body) = call_json(
-        &router,
-        post_pages(
-            "/api/pages",
-            json!({ "url": "http://169.254.169.254/latest/meta-data" }),
-        ),
-    )
-    .await;
-    assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
-    assert_envelope(&body, "url_blocked");
+    for url in [
+        "http://169.254.169.254/latest/meta-data",
+        "file:///etc/passwd",
+    ] {
+        let (status, _h, body) =
+            call_json(&router, post_pages("/api/pages", json!({ "url": url }))).await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "{url}: {body}");
+        assert_envelope(&body, "url_blocked");
+    }
 }
 
 /// An upstream failure is `502 upstream_error`, not a 4xx and not a

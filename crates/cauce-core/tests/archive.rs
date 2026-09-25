@@ -292,12 +292,25 @@ async fn upstream_error_writes_nothing() {
 async fn invalid_urls_are_rejected() {
     let store = Arc::new(StubStore::default());
     let archiver = archiver(&store);
-    for bad in ["not a url", "ftp://example.com/f", "javascript:alert(1)"] {
+    for bad in ["not a url"] {
         let err = archiver
             .fetch_and_index(bad, None)
             .await
             .expect_err("rejected");
         assert!(matches!(err, ArchiveError::InvalidUrl(_)), "{bad}: {err}");
+    }
+    // Parseable but not http(s): refused by the scheme allowlist, not as
+    // a malformed URL — same `Blocked` class as a private address.
+    for bad in [
+        "ftp://example.com/f",
+        "javascript:alert(1)",
+        "file:///etc/passwd",
+    ] {
+        let err = archiver
+            .fetch_and_index(bad, None)
+            .await
+            .expect_err("rejected");
+        assert!(matches!(err, ArchiveError::Blocked(_)), "{bad}: {err}");
     }
 }
 
