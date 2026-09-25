@@ -59,6 +59,7 @@ pub async fn index(
         query_hash: String::new(),
         sse_js: SSE_JS.clone(),
         stream_strings: stream_strings(),
+        ask_url: String::new(),
     };
     render_html(page, ctx.request_id.as_uuid())
 }
@@ -118,6 +119,7 @@ pub async fn search(
             query_hash: CacheKey::from(&req).as_str().to_string(),
             sse_js: SSE_JS.clone(),
             stream_strings: stream_strings(),
+            ask_url: ask_url(&state, &req.q),
         };
         return Ok(Html(
             page.render()
@@ -166,6 +168,7 @@ pub async fn search(
             query_hash: CacheKey::from(&req).as_str().to_string(),
             sse_js: SSE_JS.clone(),
             stream_strings: stream_strings(),
+            ask_url: ask_url(&state, &req.q),
         };
         Ok(Html(
             page.render()
@@ -332,6 +335,17 @@ fn stream_strings() -> String {
         "err_unknown": s::ERR_UNKNOWN,
     }))
     .expect("search strings serialize")
+}
+
+/// W4-03: the `/answer?q=` link the meta line shows when an answer
+/// loop exists (`ai` compiled in and the provider client built at
+/// startup); empty otherwise, and the template renders no link.
+fn ask_url(state: &AppState, q: &str) -> String {
+    if state.answer().is_some() {
+        format!("/answer?q={}", urlencoding::encode(q))
+    } else {
+        String::new()
+    }
 }
 
 fn stream_url(params: &QueryParams, req: &SearchRequest) -> String {

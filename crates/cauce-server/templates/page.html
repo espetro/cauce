@@ -25,6 +25,7 @@
     <span id="result-count">{{ result_count }} {{ crate::strings::search::RESULTS }}</span>
     <span id="search-meta">{{ badge }}</span>
     <span id="request-id" class="request-id" title="{{ request_id }}">{{ short_request_id }}</span>
+    {% if !ask_url.is_empty() %}<span><a id="ask-link" href="{{ ask_url }}">{{ crate::strings::answer::ASK_LINK }}</a></span>{% endif %}
   </div>
   {% if is_streaming %}
   <div id="search-stream" hx-ext="sse" sse-connect="{{ stream_url }}" sse-close="meta,error"

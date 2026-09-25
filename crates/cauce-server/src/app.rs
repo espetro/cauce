@@ -20,7 +20,7 @@ use axum::http::Uri;
 use axum::routing::any_service;
 use axum::routing::{MethodRouter, delete, get, post, put};
 use axum::{Router, middleware};
-use cauce_core::{SearchPipeline, Store, config::Config};
+use cauce_core::{AnswerLoop, SearchPipeline, Store, config::Config};
 use tokio::net::TcpListener;
 
 #[cfg(feature = "ui")]
@@ -44,8 +44,9 @@ use crate::routes::{ROUTES, RouteKind, RouteSpec};
 pub const CURRENT_WAVE: u8 = 1;
 
 /// Shared handler state: the search pipeline, the store, the live config
-/// (`PUT /api/config` swaps it under the lock) and the W1-09 metrics
-/// handle (`GET /metrics` scrape off the owned in-process registry).
+/// (`PUT /api/config` swaps it under the lock), the W1-09 metrics
+/// handle (`GET /metrics` scrape off the owned in-process registry) and
+/// the W4-03 grounded-answer loop.
 #[derive(Clone)]
 pub struct AppState {
     pipeline: Arc<SearchPipeline>,
@@ -54,11 +55,17 @@ pub struct AppState {
     /// a file write and a `Config::load()` — sync IO, no `.await` inside.
     config: Arc<Mutex<Config>>,
     metrics: MetricsHandle,
+    /// `Some` only when `[ai]` was `enabled` at startup and the provider
+    /// client built; a rejected config logs and degrades to `None` rather
+    /// than failing boot. `POST /api/answer` answers 503 `ai_disabled`
+    /// and `/answer` renders its disabled notice when `None`.
+    answer: Option<AnswerLoop>,
 }
 
 impl AppState {
     pub fn new(pipeline: Arc<SearchPipeline>, store: Arc<dyn Store>, config: Config) -> Self {
         Self {
+            answer: build_answer_loop(&pipeline, &store, &config),
             pipeline,
             metrics: MetricsHandle::new(store.clone()),
             store,
@@ -85,6 +92,53 @@ impl AppState {
         let mut guard = self.config.lock().unwrap_or_else(|e| e.into_inner());
         f(&mut guard)
     }
+
+    /// The grounded-answer loop; `None` when AI answers are off or the
+    /// provider client could not be built at startup.
+    pub fn answer(&self) -> Option<&AnswerLoop> {
+        self.answer.as_ref()
+    }
+}
+
+/// Build the grounded-answer loop out of `[ai]` (W4-03): `ai.enabled`
+/// plus a successfully constructed [`cauce_core::OpenAiClient`]. The
+/// client carries `with_audit` so every provider call lands in the
+/// audit feed (W4-01 contract). `None` means the `/answer` page renders
+/// its disabled notice and `POST /api/answer` rejects as `ai_disabled`.
+#[cfg(feature = "ai")]
+fn build_answer_loop(
+    pipeline: &Arc<SearchPipeline>,
+    store: &Arc<dyn Store>,
+    config: &Config,
+) -> Option<AnswerLoop> {
+    if !config.ai.enabled {
+        return None;
+    }
+    match cauce_core::OpenAiClient::new(&config.ai) {
+        Ok(client) => Some(AnswerLoop::new(
+            pipeline.as_ref().clone(),
+            Arc::new(client.with_audit(store.clone())),
+            store.clone(),
+        )),
+        Err(e) => {
+            tracing::warn!(
+                error = %e,
+                "ai.enabled but the provider client failed to build; AI answers disabled"
+            );
+            None
+        }
+    }
+}
+
+/// Without the `ai` cargo feature the loop can never exist.
+#[cfg(not(feature = "ai"))]
+fn build_answer_loop(
+    pipeline: &Arc<SearchPipeline>,
+    store: &Arc<dyn Store>,
+    config: &Config,
+) -> Option<AnswerLoop> {
+    let _ = (pipeline, store, config);
+    None
 }
 
 /// Which `requires` features a build mounts. `cauce serve --headless` sets
@@ -249,6 +303,12 @@ fn handler_for(spec: &RouteSpec, state: &AppState) -> Option<MethodRouter<AppSta
         ("GET", "/dashboard", RouteKind::Html) => Some(get(dashboard::dashboard)),
         ("GET", "/api/search", RouteKind::Json) => Some(get(handlers::search)),
         ("GET", "/api/search/stream", RouteKind::Sse) => Some(get(handlers::search_stream)),
+        #[cfg(feature = "ai")]
+        ("POST", "/api/answer", RouteKind::Sse) => Some(post(handlers::answer)),
+        // `ui` alone: a build without `ai` still mounts `/answer` so the
+        // page can render its disabled notice instead of 404ing.
+        #[cfg(feature = "ui")]
+        ("GET", "/answer", RouteKind::Html) => Some(get(html::answer)),
         ("GET", "/api/suggest", RouteKind::Json) => Some(get(handlers::suggest)),
         ("GET", "/api/history", RouteKind::Json) => Some(get(handlers::history)),
         ("DELETE", "/api/history/{id}", RouteKind::Json) => Some(delete(handlers::history_delete)),

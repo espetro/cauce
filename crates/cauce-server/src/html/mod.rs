@@ -10,7 +10,8 @@
 //! which every `ui` page uses. The page domains live beside it:
 //! [`search`] — `/` + `/search` (badge, engine statuses, stream URL and
 //! strings, result rows) plus the `Accept: text/html` arm of
-//! `GET /api/search`; [`history`] — the `/history` feed page;
+//! `GET /api/search`; [`answer`] — the `/answer` AI-answer page (W4-03);
+//! [`history`] — the `/history` feed page;
 //! [`settings`] — the `/settings` form page; [`assets`] — the embedded
 //! static assets and the `favicon`/`opensearch` endpoints.
 //!
@@ -18,6 +19,7 @@
 //! License, v. 2.0. If a copy of the MPL was not distributed with this
 //! file, You can obtain one at <https://mozilla.org/MPL/2.0/>.
 
+mod answer;
 mod assets;
 mod history;
 mod search;
@@ -29,6 +31,7 @@ use axum::response::Html;
 
 use crate::error::ApiError;
 
+pub use answer::answer;
 pub(crate) use assets::{HTMX_JS, JSON_ENC_JS, STYLE_CSS, VERSION_LABEL};
 pub use assets::{favicon, opensearch};
 pub use history::history;
@@ -75,6 +78,9 @@ struct Page {
     sse_js: String,
     /// `crate::strings::search` copy the inline JS uses, as a JSON literal.
     stream_strings: String,
+    /// W4-03: `/answer?q=...` the meta line links to when an answer loop
+    /// exists (`ai` effectively on); empty otherwise and on `/`.
+    ask_url: String,
 }
 
 /// `Accept` prefers JSON (shared by every `ui` page's content negotiation).

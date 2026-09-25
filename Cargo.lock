@@ -399,6 +399,7 @@ dependencies = [
  "url",
  "urlencoding",
  "uuid",
+ "wiremock",
 ]
 
 [[package]]

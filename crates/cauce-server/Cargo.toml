@@ -104,6 +104,9 @@ proptest = "1"
 tempfile = "3"
 tokio = { version = "1", features = ["macros"] }
 tower = { version = "0.5", features = ["util"] }
+# Replayed provider transcripts for the `POST /api/answer` route tests
+# (W4-03); same pin as cauce-core's.
+wiremock = "0.6"
 # rmcp client side for the MCP-over-HTTP integration test (feature-unified
 # with the [dependencies] entry). reqwest is the rmcp streamable client's
 # HTTP backend; http-only on loopback so no TLS features are needed.

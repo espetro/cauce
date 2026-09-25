@@ -220,14 +220,13 @@ pub mod settings {
     pub const BROWSE_ENTRIES: &str = "browse entries";
 
     pub const SECTION_AI: &str = "AI answers";
-    pub const AI_WAVE: &str = "lands in wave 4";
     pub const AI_BASE_URL: &str = "Base URL";
     pub const AI_API_KEY: &str = "API key";
     pub const AI_API_KEY_PLACEHOLDER: &str = "${env:CAUCE_AI_API_KEY}";
     pub const AI_MODEL: &str = "Model";
     pub const AI_MODEL_PLACEHOLDER: &str = "model name";
     pub const MODELS_UNREACHABLE: &str = "model list unreachable; type a model name";
-    pub const AI_PIPELINE_NOTE: &str = "(the answer pipeline arrives in wave 4)";
+    pub const AI_PIPELINE_NOTE: &str = "(applies on restart)";
 
     pub const SET_BY: &str = "set by";
     pub const IS_SET: &str = "is set";
@@ -483,4 +482,46 @@ pub mod engines {
     /// Inline meta for a failed non-test htmx call (reset/toggle);
     /// `{status}` is the HTTP status code.
     pub const REQUEST_FAILED: &str = "request failed: HTTP {status}";
+}
+
+/// `/answer` page copy (W4-03): the ask form, the streamed-answer shell
+/// and every string the shell's inline JS interpolates (serialized as
+/// `var S = {...}` — JS placeholders read `{name}` like Rust's).
+pub mod answer {
+    /// Search-box placeholder on the ask form.
+    pub const PLACEHOLDER: &str = "Ask a question...";
+    /// Ask submit label.
+    pub const SUBMIT: &str = "ask";
+    /// The `/search` meta-line link to this page.
+    pub const ASK_LINK: &str = "ask";
+    /// Status line while the answer stream is in flight.
+    pub const WAITING: &str = "answering...";
+    /// Status word once the terminal `done` frame lands.
+    pub const COMPLETE: &str = "answered";
+    /// Status word when the stream fails before `done`.
+    pub const ERROR_STATUS: &str = "answer failed";
+    /// `done.confidence` meta phrase; `{n}` is the 1-10 score.
+    pub const CONFIDENCE: &str = "confidence {n}/10";
+    /// `done.cached` meta word.
+    pub const CACHED: &str = "cached";
+    /// `done.ungrounded` notice — a zero-source answer is never cached
+    /// (the core already enforces it) and gets this visible flag.
+    pub const UNGROUNDED: &str = "this answer cites no sources — it may be ungrounded";
+    /// `related_questions` section label.
+    pub const RELATED: &str = "related";
+    /// Sources section label (aria + heading).
+    pub const SOURCES: &str = "sources";
+    /// `error.retry_after_s` suffix; `{n}` is the seconds hint.
+    pub const RETRY_AFTER: &str = "retry after {n}s";
+    /// Inline error lead for HTTP-level and provider `error` frames.
+    pub const STREAM_FAILED: &str = "answer stream failed";
+    /// An SSE frame whose data did not parse.
+    pub const INVALID_STREAM: &str = "unreadable answer stream";
+    /// Disabled notice lead; followed by the `/settings` link.
+    pub const DISABLED: &str = "AI mode is disabled.";
+    /// Disabled notice link text to `/settings`.
+    pub const DISABLED_LINK: &str = "configure it in settings";
+    /// `<noscript>` line inside the stream shell.
+    pub const NOSCRIPT: &str =
+        "Answering needs JavaScript; the answer stream cannot run without it.";
 }
