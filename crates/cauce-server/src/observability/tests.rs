@@ -189,10 +189,10 @@ fn audit_writes_event_and_row() {
     use std::sync::Mutex;
 
     use cauce_core::{
-        AnswerKey, AnswerRow, AuditFilter, AuditRow, CacheKey, CacheState, CachedAnswer,
-        CachedSearch, ClickRow, DeleteSearchLog, EngineHealthRow, HistoryFilter, HistoryItem,
-        HistoryStats, PageHit, PageRow, SearchLogRow, SearchResponse, StatsSnapshot, Store,
-        StoreError,
+        AnswerKey, AnswerRow, AuditFilter, AuditRow, CacheKey, CacheResultHit, CacheState,
+        CachedAnswer, CachedSearch, ClickRow, DeleteSearchLog, EngineHealthRow, HistoryFilter,
+        HistoryItem, HistoryStats, PageHit, PageRow, SearchLogRow, SearchResponse, StatsSnapshot,
+        Store, StoreError,
     };
 
     struct Spy {
@@ -275,6 +275,13 @@ fn audit_writes_event_and_row() {
             unimplemented!()
         }
         async fn search_pages(&self, _: &str, _: u32) -> Result<Vec<PageHit>, StoreError> {
+            unimplemented!()
+        }
+        async fn search_cache_fts(
+            &self,
+            _: &str,
+            _: u32,
+        ) -> Result<Vec<CacheResultHit>, StoreError> {
             unimplemented!()
         }
         async fn list_pages(&self, _: u32, _: u32) -> Result<Vec<PageHit>, StoreError> {
