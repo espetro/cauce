@@ -838,7 +838,7 @@ fn builtin_engines() -> Vec<EngineEntry> {
 ///
 /// `Debug` and `Serialize` are manual: both emit the *redacted* view
 /// (`display_tree`), so a resolved secret (e.g. `ai.api_key` from
-/// `${env:CAUCE_AI_API_KEY}`) can never leak through `format!("{cfg:?}")`,
+/// `${env:PROVIDER_API_KEY}`) can never leak through `format!("{cfg:?}")`,
 /// `serde_json::to_string(&cfg)` or a debug log line.
 #[derive(Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -1782,17 +1782,17 @@ mod tests {
 
     #[test]
     fn save_round_trip_preserves_template() {
-        let (tmp, env) = sandbox(&[("CAUCE_AI_API_KEY", "sk-live-secret")]);
+        let (tmp, env) = sandbox(&[("PROVIDER_API_KEY", "sk-live-secret")]);
         write_config(
             &tmp.path().join("cfg"),
-            "[ai]\napi_key = \"${env:CAUCE_AI_API_KEY}\"\n",
+            "[ai]\napi_key = \"${env:PROVIDER_API_KEY}\"\n",
         );
         let cfg = Config::load_with(&env).unwrap();
         assert_eq!(cfg.ai.api_key, "sk-live-secret");
 
         cfg.save().unwrap();
         let written = std::fs::read_to_string(cfg.config_path()).unwrap();
-        assert!(written.contains("${env:CAUCE_AI_API_KEY}"), "{written}");
+        assert!(written.contains("${env:PROVIDER_API_KEY}"), "{written}");
         assert!(!written.contains("sk-live-secret"), "{written}");
 
         // The saved file loads back into the same resolved config.

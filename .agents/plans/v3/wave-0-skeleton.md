@@ -218,7 +218,7 @@ CI runs the golden path against the `replay` engine. Nothing else.
   `oxe config path`. Defaults: `ai.base_url = ""`, `ai.api_key = ""` (an
   `${env:...}`/`${file:...}` template), `ai.enabled = false` until W4.
 - Acceptance: unit tests for every interpolation form incl. `:?` failing startup and `$$`
-  escape; save/load round-trip preserves `${env:CAUCE_AI_API_KEY}` literally; a 4 GB machine
+  escape; save/load round-trip preserves `${env:PROVIDER_API_KEY}` literally; a 4 GB machine
   yields a smaller `cache_size` than a 32 GB one (inject the numbers).
 - Follow-up: W0-08 (consumes `StoreTuning`), W0-12.
 
