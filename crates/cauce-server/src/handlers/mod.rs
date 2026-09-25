@@ -15,7 +15,9 @@
 //! `/api/cache` listing, get and deletes; [`engines`] — `/api/engines`,
 //! reset and enable/disable; [`history`] — `/api/history`, click, stats,
 //! metrics, health and audit; [`config`] — `/api/config` get/put;
-//! [`pages`] — `/api/pages` fetch-and-index and read (`archive` builds).
+//! [`pages`] — `/api/pages` fetch-and-index, read and audited delete
+//! (`archive` builds); [`archive`] — `GET /api/archive`, the W5-02
+//! archive search + browsing surface (`archive` builds).
 //!
 //! This Source Code Form is subject to the terms of the Mozilla Public
 //! License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -34,6 +36,8 @@ use crate::observability::audit;
 
 #[cfg(feature = "ai")]
 mod answer;
+#[cfg(feature = "archive")]
+mod archive;
 mod cache;
 mod config;
 mod engines;
@@ -45,6 +49,10 @@ mod suggest;
 
 #[cfg(feature = "ai")]
 pub use answer::answer;
+#[cfg(feature = "archive")]
+pub use archive::archive_search;
+#[cfg(feature = "archive")]
+pub(crate) use archive::{ARCHIVE_LIMIT, archive_inner};
 pub(crate) use cache::cache_list_data;
 pub use cache::{cache_bulk_delete, cache_delete, cache_get, cache_list};
 pub use config::{config_get, config_put};
@@ -53,7 +61,7 @@ pub use engines::{EngineView, engine_disable, engine_enable, engine_reset, engin
 pub(crate) use history::{HISTORY_LIMIT, audit_list_data, history_inner};
 pub use history::{audit_list, click, health, history, history_delete, metrics, stats};
 #[cfg(feature = "archive")]
-pub use pages::{pages_get, pages_index};
+pub use pages::{pages_delete, pages_get, pages_index};
 pub(crate) use search::{parse_search_request, search_error, search_inner, search_inner_classed};
 pub use search::{search, search_stream};
 pub use suggest::suggest;

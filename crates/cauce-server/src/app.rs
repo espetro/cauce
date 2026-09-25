@@ -356,6 +356,14 @@ fn handler_for(spec: &RouteSpec, state: &AppState) -> Option<MethodRouter<AppSta
         ("POST", "/api/pages", RouteKind::Json) => Some(post(handlers::pages_index)),
         #[cfg(feature = "archive")]
         ("GET", "/api/pages/{url}", RouteKind::Json) => Some(get(handlers::pages_get)),
+        #[cfg(feature = "archive")]
+        ("DELETE", "/api/pages/{url}", RouteKind::Json) => Some(delete(handlers::pages_delete)),
+        #[cfg(feature = "archive")]
+        ("GET", "/api/archive", RouteKind::Json) => Some(get(handlers::archive_search)),
+        // `ui` alone: a build without `archive` still mounts `/archive` so
+        // the page can render its disabled notice instead of 404ing.
+        #[cfg(feature = "ui")]
+        ("GET", "/archive", RouteKind::Html) => Some(get(html::archive)),
         // `ui` alone: a build without `ai` still mounts `/answer` so the
         // page can render its disabled notice instead of 404ing.
         #[cfg(feature = "ui")]

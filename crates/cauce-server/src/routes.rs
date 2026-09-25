@@ -168,6 +168,15 @@ pub const ROUTES: &[RouteSpec] = &[
         wave: 5,
         requires: Some("archive"),
     },
+    // The GET must probe first: the live router check seeds one `pages`
+    // row, and DELETE's probe removes it.
+    RouteSpec {
+        method: "DELETE",
+        path: "/api/pages/{url}",
+        kind: RouteKind::Json,
+        wave: 5,
+        requires: Some("archive"),
+    },
     RouteSpec {
         method: "GET",
         path: "/api/archive",

@@ -50,6 +50,12 @@ async fn pages_roundtrip() {
 }
 
 #[tokio::test]
+async fn pages_search_and_delete() {
+    let (store, _dir) = open();
+    cauce_core::conformance::pages_search_and_delete(&store).await;
+}
+
+#[tokio::test]
 async fn log_clicks_history() {
     let (store, _dir) = open();
     cauce_core::conformance::log_clicks_history(&store).await;

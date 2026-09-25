@@ -14,7 +14,7 @@ use async_trait::async_trait;
 use cauce_core::{
     AnswerKey, AnswerRow, AuditFilter, AuditRow, CacheKey, CacheState, CachedAnswer, CachedSearch,
     ClickRow, DeleteSearchLog, EngineHealthRow, EngineStatus, HistoryFilter, HistoryItem,
-    HistoryStats, PageRow, SearchLogRow, SearchResponse, StatsSnapshot, Store, StoreError,
+    HistoryStats, PageHit, PageRow, SearchLogRow, SearchResponse, StatsSnapshot, Store, StoreError,
 };
 use chrono::{DateTime, Utc};
 
@@ -229,6 +229,61 @@ impl Store for StubStore {
 
     async fn get_page(&self, url: &url::Url) -> Result<Option<PageRow>, StoreError> {
         Ok(self.pages.lock().unwrap().get(url.as_str()).cloned())
+    }
+
+    /// `get_lexical`-style FTS stand-in for `pages`: rows whose markdown
+    /// shares a whitespace token with `q`. Snippets carry a `PAGE_MARK_*`
+    /// marked prefix of the body like the real `snippet()` output.
+    async fn search_pages(&self, q: &str, limit: u32) -> Result<Vec<PageHit>, StoreError> {
+        let want: HashSet<String> = q.split_whitespace().map(|t| t.to_lowercase()).collect();
+        let to_hit = |row: &PageRow| PageHit {
+            url: row.url.clone(),
+            title: row.title.clone(),
+            snippet: format!(
+                "{}{}{}",
+                cauce_core::PAGE_MARK_OPEN,
+                row.markdown.chars().take(80).collect::<String>(),
+                cauce_core::PAGE_MARK_CLOSE
+            ),
+            fetched_at: row.fetched_at,
+            score: Some(-1.0),
+        };
+        let mut rows: Vec<PageHit> = self
+            .pages
+            .lock()
+            .unwrap()
+            .values()
+            .filter(|row| {
+                row.markdown
+                    .split_whitespace()
+                    .any(|t| want.contains(&t.to_lowercase()))
+            })
+            .map(to_hit)
+            .collect();
+        rows.sort_by(|a, b| a.url.cmp(&b.url));
+        rows.truncate(limit as usize);
+        Ok(rows)
+    }
+
+    async fn list_pages(&self, limit: u32, offset: u32) -> Result<Vec<PageHit>, StoreError> {
+        let to_hit = |row: &PageRow| PageHit {
+            url: row.url.clone(),
+            title: row.title.clone(),
+            snippet: row.markdown.chars().take(80).collect(),
+            fetched_at: row.fetched_at,
+            score: None,
+        };
+        let mut rows: Vec<PageHit> = self.pages.lock().unwrap().values().map(to_hit).collect();
+        rows.sort_by_key(|r| std::cmp::Reverse(r.fetched_at));
+        Ok(rows
+            .into_iter()
+            .skip(offset as usize)
+            .take(limit as usize)
+            .collect())
+    }
+
+    async fn delete_page(&self, url: &url::Url) -> Result<bool, StoreError> {
+        Ok(self.pages.lock().unwrap().remove(url.as_str()).is_some())
     }
 
     async fn stats(&self, _: u32) -> Result<StatsSnapshot, StoreError> {

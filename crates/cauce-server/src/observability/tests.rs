@@ -191,7 +191,8 @@ fn audit_writes_event_and_row() {
     use cauce_core::{
         AnswerKey, AnswerRow, AuditFilter, AuditRow, CacheKey, CacheState, CachedAnswer,
         CachedSearch, ClickRow, DeleteSearchLog, EngineHealthRow, HistoryFilter, HistoryItem,
-        HistoryStats, PageRow, SearchLogRow, SearchResponse, StatsSnapshot, Store, StoreError,
+        HistoryStats, PageHit, PageRow, SearchLogRow, SearchResponse, StatsSnapshot, Store,
+        StoreError,
     };
 
     struct Spy {
@@ -271,6 +272,15 @@ fn audit_writes_event_and_row() {
             unimplemented!()
         }
         async fn get_page(&self, _: &url::Url) -> Result<Option<PageRow>, StoreError> {
+            unimplemented!()
+        }
+        async fn search_pages(&self, _: &str, _: u32) -> Result<Vec<PageHit>, StoreError> {
+            unimplemented!()
+        }
+        async fn list_pages(&self, _: u32, _: u32) -> Result<Vec<PageHit>, StoreError> {
+            unimplemented!()
+        }
+        async fn delete_page(&self, _: &url::Url) -> Result<bool, StoreError> {
             unimplemented!()
         }
         async fn health(&self) -> Result<Vec<EngineHealthRow>, StoreError> {

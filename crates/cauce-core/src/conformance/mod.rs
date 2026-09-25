@@ -17,7 +17,9 @@
 //! [`history`] — search log, clicks, the merged feed and `suggest`
 //! completions; [`stats`] —
 //! dashboard aggregates; [`health`] — engine health upserts; [`audit`] — the
-//! audit trail and its facets; [`answers`] — the W4-02 AI answer cache.
+//! audit trail and its facets; [`answers`] — the W4-02 AI answer cache;
+//! [`pages`] — the W5-01 fetch-and-index store and the W5-02 archive
+//! search surface.
 //!
 //! This Source Code Form is subject to the terms of the Mozilla Public
 //! License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -38,7 +40,7 @@ pub use cache::{cache_admin, cache_exact_roundtrip, cache_expiry_and_eviction};
 pub use health::engine_health;
 pub use history::{log_clicks_history, suggest};
 pub use lexical::lexical_search;
-pub use pages::pages_roundtrip;
+pub use pages::{pages_roundtrip, pages_search_and_delete};
 pub use stats::stats_aggregates;
 
 use chrono::{DateTime, Utc};
@@ -146,6 +148,7 @@ pub async fn run_all(store: &impl Store) {
     engine_health(store).await;
     audit_trail(store).await;
     pages_roundtrip(store).await;
+    pages_search_and_delete(store).await;
     answers_roundtrip(store).await;
     cache_admin(store).await;
 }

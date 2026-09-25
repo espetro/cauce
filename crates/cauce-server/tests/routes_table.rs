@@ -87,11 +87,17 @@ const EXPECTED_WAVE2_UI_MOUNTED: &[(&str, &str)] = &[
 const EXPECTED_WAVE4_AI_MOUNTED: &[(&str, &str)] = &[("POST", "/api/answer")];
 const EXPECTED_WAVE4_UI_MOUNTED: &[(&str, &str)] = &[("GET", "/answer")];
 
-/// Wave-5 rows mounted so far (W5-01): the archive index/read pair rides
-/// the `archive` gate. `GET /api/archive` (W5-02) is declared but not yet
-/// mounted.
-const EXPECTED_WAVE5_ARCHIVE_MOUNTED: &[(&str, &str)] =
-    &[("POST", "/api/pages"), ("GET", "/api/pages/{url}")];
+/// Wave-5 rows mounted so far (W5-02): the archive index/read/delete
+/// endpoints and the archive listing, all riding the `archive` gate.
+/// `/archive` rides `ui` alone (it renders the disabled notice in
+/// `archive`-less builds rather than 404ing).
+const EXPECTED_WAVE5_ARCHIVE_MOUNTED: &[(&str, &str)] = &[
+    ("POST", "/api/pages"),
+    ("GET", "/api/pages/{url}"),
+    ("DELETE", "/api/pages/{url}"),
+    ("GET", "/api/archive"),
+];
+const EXPECTED_WAVE5_UI_MOUNTED: &[(&str, &str)] = &[("GET", "/archive")];
 
 // ---------------------------------------------------------------------------
 // Plan-table parsing (parent plan section 6)
@@ -276,6 +282,7 @@ fn mounted_routes_match_declaration() {
                 .chain(EXPECTED_WAVE2_UI)
                 .chain(EXPECTED_WAVE2_UI_MOUNTED)
                 .chain(EXPECTED_WAVE4_UI_MOUNTED)
+                .chain(EXPECTED_WAVE5_UI_MOUNTED)
                 .map(|(m, p)| (m.to_string(), p.to_string())),
         );
     }

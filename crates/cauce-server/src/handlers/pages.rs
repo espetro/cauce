@@ -1,6 +1,8 @@
 //! `pages` (W5-01): `POST /api/pages` runs the fetch-and-index pipeline for
 //! one URL (also the UI click beacon's target); `GET /api/pages/{url}`
-//! reads the stored row by its percent-encoded URL.
+//! reads the stored row by its percent-encoded URL — under `Accept:
+//! text/html` it answers the `/archive` row expander's markdown fragment
+//! (W5-02) — and `DELETE /api/pages/{url}` removes the row, audited.
 //!
 //! This Source Code Form is subject to the terms of the Mozilla Public
 //! License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -10,10 +12,10 @@ use axum::Extension;
 use axum::body::Bytes;
 use axum::extract::{Path, State};
 use axum::http::{HeaderMap, StatusCode};
-use axum::response::Json;
+use axum::response::{IntoResponse, Json, Response};
 use cauce_core::{ArchiveError, CacheKey, EngineError, PageRow, normalize_url};
 use serde::Deserialize;
-use serde_json::json;
+use serde_json::{Value, json};
 use url::Url;
 
 use crate::app::AppState;
@@ -96,19 +98,95 @@ pub async fn pages_index(
 /// (`/api/pages/https%3A%2F%2Fexample.com%2Fa`); axum percent-decodes the
 /// segment and the lookup key is the same normalized form
 /// `fetch_and_index` stores.
+///
+/// `Accept: text/html` (ui builds) renders the stored `markdown` as the
+/// `/archive` row expander's `<pre>` fragment — the
+/// `handlers::cache_get` lazy-fragment pattern; failed lookups then
+/// answer a one-line fragment instead of the JSON envelope so the
+/// expander can swap the failure in place.
+#[cfg_attr(not(feature = "ui"), allow(unused_variables))]
 pub async fn pages_get(
     State(state): State<AppState>,
     Extension(ctx): Extension<RequestCtx>,
+    headers: HeaderMap,
     Path(url): Path<String>,
-) -> Result<Json<PageRow>, ApiError> {
-    let parsed = Url::parse(&url)
-        .map_err(|e| ctx.bad_request(format!("invalid url path parameter: {e}")))?;
+) -> Result<Response, ApiError> {
+    match pages_get_entry(&state, &ctx, &headers, &url).await {
+        Ok(resp) => Ok(resp),
+        Err(e) => {
+            #[cfg(feature = "ui")]
+            if crate::html::accepts_html(&headers) {
+                return Ok(crate::html::page_markdown_error(
+                    e.status(),
+                    crate::html::is_htmx(&headers),
+                ));
+            }
+            Err(e)
+        }
+    }
+}
+
+#[cfg_attr(not(feature = "ui"), allow(unused_variables))]
+async fn pages_get_entry(
+    state: &AppState,
+    ctx: &RequestCtx,
+    headers: &HeaderMap,
+    url: &str,
+) -> Result<Response, ApiError> {
+    let parsed =
+        Url::parse(url).map_err(|e| ctx.bad_request(format!("invalid url path parameter: {e}")))?;
     let key = normalize_url(&parsed);
-    let row = state
+    match state
         .store()
         .get_page(&key)
         .await
+        .map_err(|e| ctx.store(&e))?
+    {
+        Some(row) => {
+            #[cfg(feature = "ui")]
+            if crate::html::accepts_html(headers) {
+                return crate::html::page_markdown(&row, ctx.request_id.as_uuid())
+                    .map(IntoResponse::into_response);
+            }
+            Ok(Json(row).into_response())
+        }
+        None => Err(ctx.not_found(format!("no archived page for {url}"))),
+    }
+}
+
+/// `DELETE /api/pages/{url}` (W5-02): audited single-row delete — the
+/// `cache_delete`/`history_delete` convention (DELETE over POST; the
+/// engine-reset POST stays for non-destructive actions). The
+/// `pages_fts_ad` trigger retracts the index row with it. The JSON body
+/// echoes the normalized key the row was stored under.
+pub async fn pages_delete(
+    State(state): State<AppState>,
+    Extension(ctx): Extension<RequestCtx>,
+    headers: HeaderMap,
+    Path(url): Path<String>,
+) -> Result<Json<Value>, ApiError> {
+    let parsed = Url::parse(&url)
+        .map_err(|e| ctx.bad_request(format!("invalid url path parameter: {e}")))?;
+    let key = normalize_url(&parsed);
+    let removed = state
+        .store()
+        .delete_page(&key)
+        .await
         .map_err(|e| ctx.store(&e))?;
-    row.map(Json)
-        .ok_or_else(|| ctx.not_found(format!("no archived page for {url}")))
+    if !removed {
+        return Err(ctx.not_found(format!("no archived page for {url}")));
+    }
+    write_audit(
+        state.store(),
+        &ctx,
+        &headers,
+        "page.delete",
+        key.to_string(),
+        json!({}),
+    )
+    .await?;
+    Ok(Json(json!({
+        "deleted": true,
+        "url": key,
+    })))
 }
