@@ -47,6 +47,7 @@ async fn ai_app() -> (
         api_key: "sk-test".to_string(),
         model: MODEL.to_string(),
         enabled: true,
+        protocol: cauce_core::AiProtocol::OpenAi,
     };
     let (state, tmp) = test_state_with_config(config);
     (build_router(state.clone()), state, tmp, server)

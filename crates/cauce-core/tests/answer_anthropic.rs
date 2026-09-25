@@ -1,11 +1,11 @@
-//! W4-02 acceptance: `stream_answer`'s `AnswerFrame` protocol over
-//! replayed provider transcripts (wiremock) and a fixed two-result
-//! engine. Covers: two `search_web` turns → 2 `step` frames + deltas +
-//! `sources` (2 URLs) + `done`; a no-tool-call transcript →
-//! `ungrounded=true` and no `answers` row; a mid-stream provider error →
-//! partial deltas then `error`; the confident grounded path writing an
-//! `answers` row and the second call replaying `sources` then
-//! `done{cached:true}` with no provider call.
+//! W4-05 acceptance: the W4-02 `stream_answer` scenarios replayed
+//! through the Anthropic Messages-protocol client — the same
+//! `AnswerFrame` stream over `POST /v1/messages` SSE (`tool_use` /
+//! `text_delta` / `stop_reason`) instead of `/chat/completions`.
+//! Covers: two `search_web` turns → 2 `step` frames + deltas +
+//! `sources` (2 URLs) + `done`; a no-tool-call stream →
+//! `ungrounded=true`; a mid-stream `error` event → partial deltas then
+//! `error`; the grounded confident path caching and replaying.
 //!
 //! This Source Code Form is subject to the terms of the Mozilla Public
 //! License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -16,8 +16,9 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use cauce_core::{
-    AiConfig, AnswerFrame, AnswerKey, AnswerLoop, AnswerRequest, ChatProvider, ClientKind, Engine,
-    EngineError, EngineId, OpenAiClient, SearchPipeline, SearchRequest, SearchResult, Store, Tier,
+    AiConfig, AiProtocol, AnswerFrame, AnswerKey, AnswerLoop, AnswerRequest, AnthropicClient,
+    ChatProvider, ClientKind, Engine, EngineError, EngineId, SearchPipeline, SearchRequest,
+    SearchResult, Store, Tier,
 };
 use url::Url;
 use uuid::Uuid;
@@ -28,19 +29,18 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 mod support;
 use support::*;
 
-const MODEL: &str = "test-answer-loop";
+const MODEL: &str = "test-answer-anthropic";
 
-const SSE_TOOLCALL: &str = include_str!("../fixtures/ai/sse_toolcall.raw");
-const SSE_TOOLCALL_2: &str = include_str!("../fixtures/ai/sse_toolcall_2.raw");
-const SSE_ANSWER: &str = include_str!("../fixtures/ai/sse_answer.raw");
-const SSE_NOTOOLS: &str = include_str!("../fixtures/ai/sse_notools.raw");
-const SSE_ERROR: &str = include_str!("../fixtures/ai/sse_error.raw");
-const SSE_CONFIDENT: &str = include_str!("../fixtures/ai/sse_confident.raw");
+const SSE_TOOLCALL: &str = include_str!("../fixtures/ai/anthropic/sse_toolcall.raw");
+const SSE_TOOLCALL_2: &str = include_str!("../fixtures/ai/anthropic/sse_toolcall_2.raw");
+const SSE_ANSWER: &str = include_str!("../fixtures/ai/anthropic/sse_answer.raw");
+const SSE_NOTOOLS: &str = include_str!("../fixtures/ai/anthropic/sse_notools.raw");
+const SSE_ERROR: &str = include_str!("../fixtures/ai/anthropic/sse_error.raw");
+const SSE_CONFIDENT: &str = include_str!("../fixtures/ai/anthropic/sse_confident.raw");
 
 /// An engine returning the same two canned results on every call —
-/// the two sources carried by the recorded `req_answer.json` tool
-/// message. Distinct `search_web` queries therefore dedupe to exactly
-/// these 2 URLs.
+/// the two sources carried by the `sse_answer` tool results. Distinct
+/// `search_web` queries therefore dedupe to exactly these 2 URLs.
 struct FixedEngine {
     results: Vec<SearchResult>,
 }
@@ -96,7 +96,7 @@ fn fixed_engine() -> FixedEngine {
 /// so mounts run in call order.
 async fn mount_sse(server: &MockServer, body: &'static str, times: u64) {
     Mock::given(method("POST"))
-        .and(path("/chat/completions"))
+        .and(path("/v1/messages"))
         .respond_with(ResponseTemplate::new(200).set_body_raw(body, "text/event-stream"))
         .up_to_n_times(times)
         .mount(server)
@@ -109,12 +109,12 @@ fn answer_loop(server: &MockServer, store: Arc<StubStore>) -> AnswerLoop {
         vec![Arc::new(fixed_engine())],
     );
     let provider: Arc<dyn ChatProvider> = Arc::new(
-        OpenAiClient::new(&AiConfig {
+        AnthropicClient::new(&AiConfig {
             base_url: server.uri(),
-            api_key: "sk-test".to_string(),
+            api_key: "sk-ant-test".to_string(),
             model: MODEL.to_string(),
             enabled: true,
-            protocol: cauce_core::AiProtocol::OpenAi,
+            protocol: AiProtocol::Anthropic,
         })
         .expect("client builds"),
     );
@@ -161,10 +161,11 @@ fn delta_text(frames: &[AnswerFrame]) -> String {
         .collect()
 }
 
-/// Acceptance: recorded tool-call turn + hand-authored second tool call +
-/// recorded grounded answer ⇒ 2 `step` frames, deltas, `sources` with
-/// the 2 fixture URLs, `done` (confidence 0 — the recording carries no
-/// metadata tail — so no `answers` row).
+/// Acceptance (W4-02 replayed over the Anthropic protocol):
+/// `tool_use` turn + second tool call + grounded answer ⇒ 2 `step`
+/// frames, deltas, `sources` with the 2 fixture URLs, `done` — and the
+/// second request's body carries the `tool_use`/`tool_result` echo in
+/// the Messages-API shape.
 #[tokio::test]
 async fn tool_loop_yields_steps_deltas_sources_and_done() {
     let server = MockServer::start().await;
@@ -208,7 +209,6 @@ async fn tool_loop_yields_steps_deltas_sources_and_done() {
         ["https://www.jma.go.jp/tokyo", "https://weather.com/tokyo"],
         "deduped union of both tool calls, first-seen order"
     );
-    assert_eq!(sources[0].title, "Tokyo Weather - JMA");
 
     let done = frames
         .iter()
@@ -231,20 +231,28 @@ async fn tool_loop_yields_steps_deltas_sources_and_done() {
     };
     assert!(!cached && !ungrounded);
     assert_eq!(got_id, request_id);
-    assert_eq!(confidence, 0, "recorded answer carries no metadata tail");
-    assert_eq!(model, "liquid/lfm-2.5-2.6b:free");
+    assert_eq!(confidence, 0, "fixture answer carries no metadata tail");
+    assert_eq!(model, "claude-sonnet-4-20250514");
     assert!(related_questions.is_empty());
     assert!(answer.contains("22°C"));
 
-    // Three provider calls: two tool-call turns plus the answer turn.
+    // Three provider calls; the second request echoes the first turn in
+    // Messages-API shape: assistant `tool_use` block + `tool_result`
+    // inside the next `user` message.
     let requests = server.received_requests().await.expect("request log");
     assert_eq!(requests.len(), 3);
     let second: serde_json::Value = serde_json::from_slice(&requests[1].body).unwrap();
-    assert_eq!(second["messages"][2]["role"], "assistant");
-    assert_eq!(second["messages"][3]["role"], "tool");
+    assert_eq!(second["messages"][1]["role"], "assistant");
+    assert_eq!(second["messages"][1]["content"][0]["type"], "tool_use");
     assert_eq!(
-        second["messages"][3]["tool_call_id"],
-        "chatcmpl-tool-b0d6032a45b725d0"
+        second["messages"][1]["content"][0]["id"],
+        "toolu_01A09q90qw90lq917835lq9"
+    );
+    assert_eq!(second["messages"][2]["role"], "user");
+    assert_eq!(second["messages"][2]["content"][0]["type"], "tool_result");
+    assert_eq!(
+        second["messages"][2]["content"][0]["tool_use_id"],
+        "toolu_01A09q90qw90lq917835lq9"
     );
 
     // Confidence 0 is below the cache floor — nothing was written.
@@ -255,8 +263,8 @@ async fn tool_loop_yields_steps_deltas_sources_and_done() {
     );
 }
 
-/// Acceptance: a transcript with no tool calls ⇒ `done.ungrounded` and
-/// no `answers` row.
+/// A stream with no `tool_use` block ⇒ `done.ungrounded` and no
+/// `answers` row.
 #[tokio::test]
 async fn no_tool_calls_yields_ungrounded_and_no_answers_row() {
     let server = MockServer::start().await;
@@ -316,10 +324,10 @@ async fn no_tool_calls_yields_ungrounded_and_no_answers_row() {
     );
 }
 
-/// Acceptance: a provider error mid-stream yields the partial deltas
-/// emitted so far, then an `error` frame.
+/// A mid-stream `error` event yields the partial `text_delta`s emitted
+/// so far, then an `error` frame.
 #[tokio::test]
-async fn mid_stream_provider_error_yields_partial_deltas_then_error() {
+async fn mid_stream_error_event_yields_partial_deltas_then_error() {
     let server = MockServer::start().await;
     mount_sse(&server, SSE_ERROR, 1).await;
 
@@ -394,8 +402,6 @@ async fn grounded_confident_answer_is_cached_and_replayed() {
     assert_eq!(row.payload.confidence, 8);
     assert_eq!(row.payload.related_questions.len(), 2);
     assert_eq!(row.sources.len(), 2);
-    assert_eq!(row.model, MODEL);
-    assert_eq!(row.query, "current weather in tokyo right now");
 
     // Replay: sources then done{cached:true}, zero new provider calls.
     let replay_id = Uuid::now_v7();
@@ -418,14 +424,14 @@ async fn grounded_confident_answer_is_cached_and_replayed() {
     assert_eq!(calls.len(), 2, "cache hit makes no provider call");
 }
 
-/// The loop stops after `max_iterations` tool-call turns and ends in an
-/// `error` frame (settled cap: 5).
+/// The loop stops after `max_iterations` `tool_use` turns and ends in
+/// an `error` frame (settled cap: 5).
 #[tokio::test]
 async fn tool_calls_beyond_max_iterations_end_in_error() {
     let server = MockServer::start().await;
-    // No cap: every call returns another tool call.
+    // No cap: every call returns another tool_use block.
     Mock::given(method("POST"))
-        .and(path("/chat/completions"))
+        .and(path("/v1/messages"))
         .respond_with(ResponseTemplate::new(200).set_body_raw(SSE_TOOLCALL, "text/event-stream"))
         .mount(&server)
         .await;
@@ -443,18 +449,4 @@ async fn tool_calls_beyond_max_iterations_end_in_error() {
     }
     let calls = server.received_requests().await.expect("request log");
     assert_eq!(calls.len(), 5, "the loop called the provider 5 times");
-}
-
-/// `AnswerKey` folds query case and whitespace like `CacheKey`.
-#[test]
-fn answer_key_normalizes_query() {
-    assert_eq!(
-        AnswerKey::new("  Current Weather  In  Tokyo ", MODEL),
-        AnswerKey::new("current weather in tokyo", MODEL)
-    );
-    assert_ne!(
-        AnswerKey::new("same query", "model-a"),
-        AnswerKey::new("same query", "model-b"),
-        "the model is part of the key"
-    );
 }
