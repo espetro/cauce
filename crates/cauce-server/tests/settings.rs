@@ -1,7 +1,7 @@
 //! `/settings` page and the urlencoded `PUT /api/config` form path (W2-07).
 //!
 //! Acceptance: a page test edits `search.deadline_ms`, saves, reloads and
-//! sees the value; the `${env:BIFROST_API_KEY}` template survives a save
+//! sees the value; the `${env:CAUCE_AI_API_KEY}` template survives a save
 //! round-trip byte-for-byte.
 //!
 //! This Source Code Form is subject to the terms of the Mozilla Public
@@ -128,7 +128,7 @@ async fn deadline_edit_saves_and_reloads() {
     clear_env();
 }
 
-/// Acceptance: the `${env:BIFROST_API_KEY}` template is shown verbatim and
+/// Acceptance: the `${env:CAUCE_AI_API_KEY}` template is shown verbatim and
 /// survives a save round-trip byte-for-byte in `config.toml`.
 #[tokio::test]
 async fn api_key_template_survives_roundtrip() {
@@ -136,27 +136,27 @@ async fn api_key_template_survives_roundtrip() {
     clear_env();
     // SAFETY: serialized by ENV_LOCK; PUT validation resolves `${env:...}`
     // against the process env.
-    unsafe { std::env::set_var("BIFROST_API_KEY", "sk-test-key") };
+    unsafe { std::env::set_var("CAUCE_AI_API_KEY", "sk-test-key") };
 
-    let raw = "[ai]\nbase_url = \"\"\napi_key = \"${env:BIFROST_API_KEY}\"\n";
+    let raw = "[ai]\nbase_url = \"\"\napi_key = \"${env:CAUCE_AI_API_KEY}\"\n";
     let tmp = config_env(raw);
     let app = app(&tmp);
 
     let (status, body) = get_html(&app, "/settings").await;
     assert_eq!(status, StatusCode::OK, "{body}");
     assert!(
-        body.contains("value=\"${env:BIFROST_API_KEY}\""),
+        body.contains("value=\"${env:CAUCE_AI_API_KEY}\""),
         "api_key input must show the template verbatim: {body}"
     );
     assert!(
-        body.contains("BIFROST_API_KEY is set"),
+        body.contains("CAUCE_AI_API_KEY is set"),
         "env status should report the var as set: {body}"
     );
 
     // Save the whole form (the field value is the raw template text).
     let (status, body) = put_form(
         &app,
-        "search.deadline_ms=3000&ai.api_key=${env:BIFROST_API_KEY}",
+        "search.deadline_ms=3000&ai.api_key=${env:CAUCE_AI_API_KEY}",
         false,
     )
     .await;
@@ -164,7 +164,7 @@ async fn api_key_template_survives_roundtrip() {
 
     let on_disk = saved_config(&tmp);
     assert!(
-        on_disk.contains("api_key = \"${env:BIFROST_API_KEY}\""),
+        on_disk.contains("api_key = \"${env:CAUCE_AI_API_KEY}\""),
         "template must survive byte-for-byte: {on_disk}"
     );
     assert!(
@@ -175,7 +175,7 @@ async fn api_key_template_survives_roundtrip() {
     let (status, body) = get_html(&app, "/settings").await;
     assert_eq!(status, StatusCode::OK);
     assert!(
-        body.contains("value=\"${env:BIFROST_API_KEY}\""),
+        body.contains("value=\"${env:CAUCE_AI_API_KEY}\""),
         "reloaded page must still show the template: {body}"
     );
     clear_env();

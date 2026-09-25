@@ -52,6 +52,6 @@ pub fn clear_env() {
         std::env::remove_var("CAUCE_AI_ENABLED");
         std::env::remove_var("CAUCE_ENGINES");
         std::env::remove_var("CAUCE_EVAL_RESULTS_DIR");
-        std::env::remove_var("BIFROST_API_KEY");
+        std::env::remove_var("CAUCE_AI_API_KEY");
     }
 }

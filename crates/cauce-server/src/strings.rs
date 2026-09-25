@@ -223,7 +223,7 @@ pub mod settings {
     pub const AI_WAVE: &str = "lands in wave 4";
     pub const AI_BASE_URL: &str = "Base URL";
     pub const AI_API_KEY: &str = "API key";
-    pub const AI_API_KEY_PLACEHOLDER: &str = "${env:BIFROST_API_KEY}";
+    pub const AI_API_KEY_PLACEHOLDER: &str = "${env:CAUCE_AI_API_KEY}";
     pub const AI_MODEL: &str = "Model";
     pub const AI_MODEL_PLACEHOLDER: &str = "model name";
     pub const MODELS_UNREACHABLE: &str = "model list unreachable; type a model name";

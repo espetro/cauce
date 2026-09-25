@@ -148,20 +148,20 @@ mod tests {
     fn display_redact_cases() {
         let cases = &[
             RedactCase {
-                env: &[("BIFROST_API_KEY", "sk-bf-live-secret")],
-                file: "[ai]\napi_key = \"${env:BIFROST_API_KEY}\"\n[server]\nport = 4480\n",
+                env: &[("CAUCE_AI_API_KEY", "sk-live-secret")],
+                file: "[ai]\napi_key = \"${env:CAUCE_AI_API_KEY}\"\n[server]\nport = 4480\n",
                 resolved: &[],
-                present: &["${env:BIFROST_API_KEY}"],
+                present: &["${env:CAUCE_AI_API_KEY}"],
                 present_toml: &["4480"],
-                absent: &["sk-bf-live-secret"],
+                absent: &["sk-live-secret"],
             },
             RedactCase {
-                env: &[("BIFROST_API_KEY", "sk-bf-live-secret")],
-                file: "[ai]\napi_key = \"${env:BIFROST_API_KEY}\"\n",
-                resolved: &[Probe::ApiKey("sk-bf-live-secret")],
-                present: &["${env:BIFROST_API_KEY}"],
+                env: &[("CAUCE_AI_API_KEY", "sk-live-secret")],
+                file: "[ai]\napi_key = \"${env:CAUCE_AI_API_KEY}\"\n",
+                resolved: &[Probe::ApiKey("sk-live-secret")],
+                present: &["${env:CAUCE_AI_API_KEY}"],
                 present_toml: &[],
-                absent: &["sk-bf-live-secret"],
+                absent: &["sk-live-secret"],
             },
             RedactCase {
                 env: &[("CAUCE_AI_API_KEY", "s3cret-from-env")],

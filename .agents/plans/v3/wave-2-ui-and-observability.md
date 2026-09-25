@@ -134,7 +134,7 @@ results over SSE. The owner uses the UI daily for a week and files findings.
   enabled toggle, greyed until W4). Templates are never resolved in the form; saving
   preserves them. Validation errors inline.
 - Acceptance: page test edits `search.deadline_ms`, saves, reloads and sees the value; the
-  `${env:BIFROST_API_KEY}` template survives a save round-trip byte-for-byte.
+  `${env:CAUCE_AI_API_KEY}` template survives a save round-trip byte-for-byte.
 - Amended 2026-09-23: a Cache block after Logging (status line from `/api/stats`: entries,
   unexpired, db size, newest; `delete expired` / `delete all` reusing W2-04's endpoints,
   confirms and audit; `browse entries` link to `/cache`). Spec:
