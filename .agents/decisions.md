@@ -102,7 +102,7 @@ rather than editing it away.
   DOM assertion; #84 expands into W1-13, a loopback Host/Origin guard plus refusal to
   start on non-loopback bind; keyed-API engine specs are added as a `later/` escape hatch.
   The Anthropic Messages protocol (W4-05) is KEPT per the owner: supporting both protocols
-  is adoption-critical since not every user runs Bifrost. Source:
+  is adoption-critical since not every user runs a local AI gateway. Source:
   `/tmp/oxe-maintenance-area-review.md`. — 2026-09-22
 - **UX-complaint hardening applied from SearXNG research
   (`/tmp/oxe-searxng-ux-research.md`).** Never cache empty responses;

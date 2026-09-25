@@ -6,7 +6,7 @@ Parent: `../2026-09-21-v3-rust-core.md`. Index: `README.md`. Previous: `wave-3-t
 ## Goal
 
 A streamed, grounded answer surface over the search pipeline, via any OpenAI-compatible
-endpoint (Bifrost by default), with answers cached only when they cite sources, and evals
+endpoint (provider-agnostic; no vendor baked in), with answers cached only when they cite sources, and evals
 that catch regressions offline. Anthropic Messages protocol as the last step.
 
 ## Settled inputs
@@ -30,7 +30,7 @@ that catch regressions offline. Anthropic Messages protocol as the last step.
 
 ## Exit criteria
 
-1. `/answer?q=` streams tokens within 1 s of the first provider chunk through Bifrost.
+1. `/answer?q=` streams tokens within 1 s of the first provider chunk through the configured provider.
 2. An answer with zero sources is shown with a visible "ungrounded" notice and is not
    cached (test).
 3. CI AI smoke green; full offline eval scores at or above baseline.
@@ -45,8 +45,8 @@ that catch regressions offline. Anthropic Messages protocol as the last step.
   this step consumes usage-week output; AI mode is itself the multiplier for it.
 - Do: `cauce-core::ai::openai`: SSE-streamed chat completions with tool-call delta
   assembly, usage extraction, typed errors (auth, rate limit with retry-after, context
-  length), `GET {base_url}/models` listing with a 60 s cache; `wiremock` fixtures recorded
-  from Bifrost for tests; metrics `cauce_ai_requests_total{model,outcome}`,
+  length), `GET {base_url}/models` listing with a 60 s cache; `wiremock` fixtures (recorded
+  from a live provider or hand-authored) for tests; metrics `cauce_ai_requests_total{model,outcome}`,
   `cauce_ai_tokens_total{model,kind}`, `cauce_ai_duration_ms`; audit row per provider call
   (model, tokens, ms, request_id), never the prompt text.
 - Acceptance: fixture-driven test assembles a two-chunk tool call correctly; a 429 fixture
@@ -96,7 +96,7 @@ that catch regressions offline. Anthropic Messages protocol as the last step.
 - Depends on: W4-04
 - Do: `cauce-core::ai::anthropic`: Messages API streaming with tool use blocks, mapped onto
   the same `AnswerFrame` stream; `protocol = "anthropic"` selects it; fixtures recorded via
-  Bifrost's Anthropic passthrough or the public API; evals run against both protocols when
+  an Anthropic-protocol endpoint or the public API; evals run against both protocols when
   transcripts exist.
 - Acceptance: the W4-02 tests pass with the Anthropic fixtures.
 - Follow-up: W5-01.

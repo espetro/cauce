@@ -53,7 +53,7 @@ actually broken, or are we solving a problem nobody has?**
 
 **Where Go loses for v1:**
 - **DDG ecosystem is strictly weaker than Python.** Four libs surveyed: velariumai/go-ddgs (Apr 2026, niche), jcalvert/metawebsearch (Mar 2026, niche), Djarvur/ddg-search (Feb 2026, 9 stars), kuhahalong/ddgsearch (Dec 2024, abandoned). vs. `ddgs` v9.16 (May 2026, 2.7k stars, ~6.7M downloads/mo, weekly releases). Any Go port starts from scratch against DDG's rotating VQD-token + anti-bot surface.
-- **`from oxe import make_app` has no clean Go equivalent.** Realistic options are "spawn the Go binary, speak HTTP" (Bifrost/Ollama pattern — clean but a behavioral break) or "subprocess + JSON-RPC stdio" (adds supervisor complexity). PyO3-style embedding from the other direction isn't possible.
+- **`from oxe import make_app` has no clean Go equivalent.** Realistic options are "spawn the Go binary, speak HTTP" (the local-gateway/Ollama pattern — clean but a behavioral break) or "subprocess + JSON-RPC stdio" (adds supervisor complexity). PyO3-style embedding from the other direction isn't possible.
 - **C-FFI interop:** cgo can wrap SQLite, libcurl, OpenSSL — but not the DDG problem.
 
 **Verdict:** Go nails every hard target except the two that matter: the brittle dep (`ddgs`) is materially weaker in Go, and the embed API breaks. Revisit if oxe drops the embed API or if a credible Go DDG library emerges.
