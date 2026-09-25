@@ -2,6 +2,12 @@
 //! for a case whose cassette contains the expected domain, and the nightly
 //! workflow file exists with a `cron`-only trigger.
 //!
+//! W4-04 acceptance: `cauce eval ai --tag smoke --gate` runs the five
+//! committed smoke cases over recorded transcripts + replay cassettes and
+//! exits 0 at score 1.0 (the CI gate's exact invocation); a doctored
+//! case below `baseline - tolerance` exits 1; a missing transcript is a
+//! 0-scored outcome with a note, never a silent skip.
+//!
 //! This Source Code Form is subject to the terms of the Mozilla Public
 //! License, v. 2.0. If a copy of the MPL was not distributed with this
 //! file, You can obtain one at <https://mozilla.org/MPL/2.0/>.
@@ -201,4 +207,185 @@ fn engine_evals_workflow_is_cron_only() {
             "nightly evals must not trigger on {trigger:?}"
         );
     }
+}
+
+/// The CI gate's exact invocation: the five `smoke`-tagged committed
+/// cases over recorded transcripts + replay cassettes. Exit 0 at score
+/// 1.0 and the report lands as `<date>-ai.json` — this is what
+/// `.github/workflows/validate.yml` runs after `mise run validate`.
+#[tokio::test]
+async fn eval_ai_smoke_gate_passes_on_committed_cases() {
+    let root = workspace_root();
+    let results_dir = tempfile::tempdir().unwrap();
+    let output = Command::new(cauce_bin())
+        .current_dir(root)
+        .arg("eval")
+        .arg("ai")
+        .arg(root.join("evals/ai/smoke.jsonl"))
+        .arg("--tag")
+        .arg("smoke")
+        .arg("--gate")
+        .arg("--results-dir")
+        .arg(results_dir.path())
+        .output()
+        .await
+        .expect("spawn cauce eval ai");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        output.status.success(),
+        "smoke gate should exit 0\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+
+    let entry = std::fs::read_dir(results_dir.path())
+        .unwrap()
+        .filter_map(Result::ok)
+        .next()
+        .expect("one report file")
+        .file_name()
+        .into_string()
+        .unwrap();
+    assert!(entry.ends_with("-ai.json"), "report name: {entry}");
+    let report: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(results_dir.path().join(entry)).unwrap())
+            .unwrap();
+    assert_eq!(report["kind"], "ai");
+    assert_eq!(report["cases"], 5, "five smoke cases: {report}");
+    assert_eq!(report["score"], 1.0, "committed cases score 1.0: {report}");
+    assert_eq!(report["gate_ok"], true);
+    // Deterministic ordering: outcomes stay in case-file order.
+    let queries: Vec<_> = report["outcomes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|o| o["query"].as_str().unwrap().to_string())
+        .collect();
+    assert_eq!(
+        queries.first().unwrap(),
+        "current weather in Tokyo right now"
+    );
+    // The ungrounded metric reports the no-tools case without gating.
+    assert_eq!(
+        report["ungrounded_cases"],
+        serde_json::json!(["what is the rust programming language"])
+    );
+}
+
+/// `--gate` fails (exit 1) when the score drops below
+/// `baseline - tolerance` — a case whose `must_contain` cannot be met
+/// stands in for a regressed answer.
+#[tokio::test]
+async fn eval_ai_gate_fails_below_baseline() {
+    let root = workspace_root();
+    let tmp = tempfile::tempdir().unwrap();
+    let cases = tmp.path().join("cases.jsonl");
+    std::fs::write(
+        &cases,
+        "{\"query\": \"current weather in Tokyo right now\", \"transcript\": \"tokyo-weather\", \"must_cite_domains\": [\"jma.go.jp\"], \"must_contain\": [\"never-present-xyzzy\"], \"must_not_contain\": [\"related_questions\"], \"tags\": [\"smoke\"]}\n",
+    )
+    .unwrap();
+    let thresholds = tmp.path().join("thresholds.toml");
+    std::fs::write(&thresholds, "[ai]\nbaseline = 1.0\ntolerance = 0.0\n").unwrap();
+
+    let output = Command::new(cauce_bin())
+        .current_dir(root)
+        .arg("eval")
+        .arg("ai")
+        .arg(&cases)
+        .arg("--tag")
+        .arg("smoke")
+        .arg("--gate")
+        .arg("--thresholds")
+        .arg(&thresholds)
+        .arg("--results-dir")
+        .arg(tmp.path().join("results"))
+        .output()
+        .await
+        .expect("spawn cauce eval ai");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "gate should fail below baseline, stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("gate failed"),
+        "stderr should explain the gate failure: {stderr}"
+    );
+}
+
+/// A case whose transcript file is missing is a 0-scored outcome with
+/// the load error as its note — never a silent skip that would inflate
+/// the mean.
+#[tokio::test]
+async fn eval_ai_missing_transcript_scores_zero_with_note() {
+    let root = workspace_root();
+    let tmp = tempfile::tempdir().unwrap();
+    let cases = tmp.path().join("cases.jsonl");
+    std::fs::write(
+        &cases,
+        "{\"query\": \"a question\", \"transcript\": \"no-such-transcript\", \"must_cite_domains\": [\"a.com\"], \"must_contain\": [\"x\"], \"must_not_contain\": [], \"tags\": []}\n",
+    )
+    .unwrap();
+    let results_dir = tmp.path().join("results");
+
+    let output = Command::new(cauce_bin())
+        .current_dir(root)
+        .arg("eval")
+        .arg("ai")
+        .arg(&cases)
+        .arg("--results-dir")
+        .arg(&results_dir)
+        .output()
+        .await
+        .expect("spawn cauce eval ai");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "no --gate: a bad case is a report outcome, not a CLI failure\nstderr:\n{stderr}"
+    );
+    let entry = std::fs::read_dir(&results_dir)
+        .unwrap()
+        .filter_map(Result::ok)
+        .next()
+        .unwrap()
+        .file_name()
+        .into_string()
+        .unwrap();
+    let report: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(results_dir.join(entry)).unwrap()).unwrap();
+    assert_eq!(report["score"], 0.0);
+    assert_eq!(report["outcomes"][0]["ok"], false);
+    assert!(
+        report["outcomes"][0]["note"]
+            .as_str()
+            .unwrap()
+            .contains("transcript"),
+        "missing transcript should be noted: {report}"
+    );
+}
+
+/// `cauce eval` on its own prints combined usage; an unknown kind is a
+/// usage error (exit 2).
+#[tokio::test]
+async fn eval_usage_and_unknown_kind() {
+    let output = Command::new(cauce_bin())
+        .arg("eval")
+        .output()
+        .await
+        .expect("spawn cauce eval");
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("engines") && stdout.contains("ai"),
+        "{stdout}"
+    );
+
+    let output = Command::new(cauce_bin())
+        .arg("eval")
+        .arg("bogus")
+        .output()
+        .await
+        .expect("spawn cauce eval bogus");
+    assert_eq!(output.status.code(), Some(2));
 }

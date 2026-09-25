@@ -1,0 +1,28 @@
+{
+  "query": "current weather in tokyo right now",
+  "engine": "replay",
+  "recorded_at": "2026-09-24T00:00:00Z",
+  "results": [
+    {
+      "url": "https://www.jma.go.jp/bosai/forecast/area_forecast/130010.html",
+      "title": "Tokyo \u2014 weather forecast",
+      "snippet": "Japan Meteorological Agency Tokyo forecast",
+      "engine": "replay",
+      "score": 1.0
+    },
+    {
+      "url": "https://www.timeanddate.com/weather/japan/tokyo",
+      "title": "Weather for Tokyo, Japan",
+      "snippet": "Current conditions and forecast for Tokyo",
+      "engine": "replay",
+      "score": 0.5
+    },
+    {
+      "url": "https://weather.yahoo.co.jp/weather/jp/13/4410.html",
+      "title": "Tokyo weather \u2014 Yahoo Japan",
+      "snippet": "Hourly Tokyo weather from Yahoo Japan",
+      "engine": "replay",
+      "score": 0.3333333333333333
+    }
+  ]
+}

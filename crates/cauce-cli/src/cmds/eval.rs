@@ -1,3 +1,7 @@
+//! `cauce eval <kind> <cases.jsonl>...`: the eval front door. `engines`
+//! runs engine relevance evals (W3-05); `ai` runs the grounded-answer
+//! evals of W4-04 (see [`crate::cmds::eval_ai`]).
+//!
 //! `cauce eval engines <cases.jsonl>... [--live]`: engine relevance evals
 //! (W3-05). Each case line names the engines to run its query against;
 //! scoring is domain-hit@5 — a case hits when an expected domain shows up
@@ -34,7 +38,7 @@ use cauce_engines::cassette::cassette_path;
 use cauce_engines::factory::{build_engine, build_engines};
 use cauce_engines::{Replay, ReplayOpts};
 
-const USAGE: &str = "usage: cauce eval engines <cases.jsonl>... [--live] [--fixtures-dir <engines/fixtures>] [--results-dir <evals/results>] [--thresholds <evals/thresholds.toml>]";
+const USAGE: &str = "usage: cauce eval <engines|ai> <cases.jsonl>... [flags]\n  engines: [--live] [--fixtures-dir <engines/fixtures>] [--results-dir <evals/results>] [--thresholds <evals/thresholds.toml>]\n  ai: [--tag <tag>]... [--gate] [--record] [--fixtures-dir <evals/ai/cassettes>] [--transcripts-dir <evals/ai/transcripts>] [--results-dir <evals/results>] [--thresholds <evals/thresholds.toml>]";
 
 /// Budget for one engine call — live fetches bound their own
 /// `request.timeout_ms` inside it, replay answers instantly.
@@ -50,8 +54,25 @@ struct EvalArgs {
     thresholds: PathBuf,
 }
 
-/// Entry point for the `eval` subcommand. Returns the process exit code.
+/// Entry point for the `eval` subcommand: dispatches on the eval kind
+/// (`engines` below, `ai` in [`crate::cmds::eval_ai`]). Returns the
+/// process exit code.
 pub fn run(args: &[String]) -> i32 {
+    match args.first().map(String::as_str) {
+        Some("engines") => run_engines(&args[1..]),
+        Some("ai") => crate::cmds::eval_ai::run(&args[1..]),
+        Some("-h") | Some("--help") | None => {
+            println!("{USAGE}");
+            0
+        }
+        Some(other) => {
+            eprintln!("cauce eval: unknown eval kind {other:?}\n{USAGE}");
+            2
+        }
+    }
+}
+
+fn run_engines(args: &[String]) -> i32 {
     let opts = match parse(args) {
         Ok(Some(opts)) => opts,
         Ok(None) => {
@@ -291,9 +312,6 @@ fn parse(args: &[String]) -> Result<Option<EvalArgs>, String> {
         return Ok(None);
     }
     let mut it = args.iter();
-    if it.next().map(String::as_str) != Some("engines") {
-        return Err("expected `cauce eval engines <cases.jsonl>...`".to_string());
-    }
     let mut files = Vec::new();
     let mut live = false;
     let mut fixtures_dir = PathBuf::from("engines/fixtures");

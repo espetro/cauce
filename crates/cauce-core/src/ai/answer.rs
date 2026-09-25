@@ -194,6 +194,11 @@ pub struct AnswerLoop {
     provider_budget: Duration,
     answers_ttl: Duration,
     max_iterations: usize,
+    /// Tail-parse of the final assistant turn — `parse_final_answer` in
+    /// production. `eval ai` tests inject a deliberately broken parser to
+    /// prove the gate catches a metadata-tail leak; the seam changes no
+    /// `stream_answer` behaviour for anyone else.
+    tail_parser: fn(&str) -> (String, u8, Vec<String>),
 }
 
 impl AnswerLoop {
@@ -209,6 +214,7 @@ impl AnswerLoop {
             provider_budget: DEFAULT_PROVIDER_BUDGET,
             answers_ttl: DEFAULT_ANSWERS_TTL,
             max_iterations: DEFAULT_MAX_ITERATIONS,
+            tail_parser: parse_final_answer,
         }
     }
 
@@ -227,6 +233,15 @@ impl AnswerLoop {
     /// Tool-loop cap override (settled default: 5).
     pub fn with_max_iterations(mut self, n: usize) -> Self {
         self.max_iterations = n;
+        self
+    }
+
+    /// Final-turn tail-parse override: `(answer, confidence,
+    /// related_questions)` from the streamed content. Tests/evals only —
+    /// W4-04's gate proof swaps in a parser that leaves the metadata tail
+    /// in the body.
+    pub fn with_tail_parser(mut self, f: fn(&str) -> (String, u8, Vec<String>)) -> Self {
+        self.tail_parser = f;
         self
     }
 
@@ -393,7 +408,7 @@ impl AnswerLoop {
 
             // Final turn: tolerant tail parse, the unemitted remainder of
             // the answer body as the last delta, then sources + done.
-            let (answer, confidence, related) = parse_final_answer(&completion.content);
+            let (answer, confidence, related) = (self.tail_parser)(&completion.content);
             if let Some(rest) = answer.get(emitted..)
                 && !rest.is_empty()
                 && !send(

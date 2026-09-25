@@ -1,0 +1,44 @@
+{
+  "model": "liquid/lfm-2.5-2.6b:free",
+  "provider": "https://openrouter.ai/api/v1",
+  "recorded_at": "2026-09-24T00:00:00Z",
+  "turns": [
+    {
+      "deltas": [],
+      "completion": {
+        "id": "chatcmpl-tool-notail",
+        "model": "liquid/lfm-2.5-2.6b:free",
+        "content": "",
+        "tool_calls": [
+          {
+            "id": "chatcmpl-tool-notail",
+            "name": "search_web",
+            "arguments": "{\"query\": \"current weather in Tokyo right now\"}"
+          }
+        ],
+        "finish_reason": "tool_calls",
+        "usage": {
+          "prompt_tokens": 480,
+          "completion_tokens": 32,
+          "total_tokens": 512
+        }
+      }
+    },
+    {
+      "deltas": [
+        "Tokyo is **22°C** with **clear skies**."
+      ],
+      "completion": {
+        "id": "chatcmpl-final-notail",
+        "model": "liquid/lfm-2.5-2.6b:free",
+        "content": "Tokyo is **22°C** with **clear skies**.",
+        "finish_reason": "stop",
+        "usage": {
+          "prompt_tokens": 630,
+          "completion_tokens": 18,
+          "total_tokens": 648
+        }
+      }
+    }
+  ]
+}
