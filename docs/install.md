@@ -1,7 +1,37 @@
 # Install
 
-v3 is a single Rust binary, `cauce`. There is no package release yet; install
-from a checkout.
+v3 is a single self-contained Rust binary, `cauce` (engines + UI + AI +
+archive compiled in; rustls, no OpenSSL). Install from a GitHub release or
+build from a checkout.
+
+## Install a release binary
+
+Pick the tarball for your platform under
+<https://github.com/espetro/cauce/releases> (Linux x86_64 glibc and musl,
+Linux aarch64, macOS arm64 and x86_64), e.g.:
+
+```bash
+curl -LO https://github.com/espetro/cauce/releases/download/v0.5.0/cauce-v0.5.0-x86_64-unknown-linux-gnu.tar.gz
+tar -xzf cauce-v0.5.0-x86_64-unknown-linux-gnu.tar.gz
+./cauce serve     # UI + API + MCP on http://127.0.0.1:4479
+```
+
+Verify the binary reports the release version:
+
+```bash
+./cauce --version
+```
+
+macOS removes the quarantine attribute before first run:
+
+```bash
+xattr -d com.apple.quarantine ./cauce
+```
+
+The bundled `ddgs` exec engine is not in the release binaries — it needs a
+source checkout and python3 (`uv sync --project sdk/python --extra ddgs`),
+so it stays a custom-build option. Disable it in `config.toml` with the
+`[[engines]]` block shown below.
 
 ## Build and install
 

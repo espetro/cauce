@@ -1,0 +1,83 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jdx/mise-action@v2
+      - uses: Swatinem/rust-cache@v2
+      - run: mise run validate
+      - name: assert tag is semver and matches workspace version
+        run: |
+          echo "$GITHUB_REF_NAME" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+$'
+          ws=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+          test "${GITHUB_REF_NAME#v}" = "$ws"
+
+  build:
+    needs: gate
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: macos-latest,     target: aarch64-apple-darwin }
+          - { os: macos-13,         target: x86_64-apple-darwin }
+          - { os: ubuntu-latest,    target: x86_64-unknown-linux-gnu }
+          - { os: ubuntu-latest,    target: x86_64-unknown-linux-musl }
+          - { os: ubuntu-24.04-arm, target: aarch64-unknown-linux-gnu }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jdx/mise-action@v2
+      - uses: Swatinem/rust-cache@v2
+      - run: rustup target add ${{ matrix.target }}
+      - name: musl toolchain
+        if: contains(matrix.target, 'musl')
+        run: |
+          sudo apt-get update && sudo apt-get install -y musl-tools
+          echo "CC_x86_64_unknown_linux_musl=musl-gcc" >> "$GITHUB_ENV"
+      - run: cargo build --release -p cauce-cli --target ${{ matrix.target }}
+      - name: package
+        run: |
+          mkdir -p dist
+          bin=target/${{ matrix.target }}/release/cauce
+          tar -czf "dist/cauce-${GITHUB_REF_NAME}-${{ matrix.target }}.tar.gz" -C "$(dirname "$bin")" cauce
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cauce-${{ matrix.target }}
+          path: dist/*.tar.gz
+          if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: cauce-*
+          merge-multiple: true
+      - name: create prerelease
+        run: |
+          set -euo pipefail
+          sha256sum *.tar.gz > SHA256SUMS.txt
+
+          gh api "repos/$GITHUB_REPOSITORY/releases/generate-notes" \
+            -f tag_name="$GITHUB_REF_NAME" | jq -r .body > generated-notes.md
+
+          cat > release-notes.md <<'EOF'
+          Prebuilt `cauce` binaries. Fully self-contained (engines + UI + AI + archive compiled in). macOS: `xattr -d com.apple.quarantine ./cauce` after untarring. The `ddgs` exec engine needs a source checkout + python3 (`uv sync --project sdk/python --extra ddgs`) — custom builds only.
+          EOF
+          cat generated-notes.md >> release-notes.md
+
+          gh release create "$GITHUB_REF_NAME" --prerelease \
+            --title "$GITHUB_REF_NAME" --notes-file release-notes.md \
+            *.tar.gz SHA256SUMS.txt
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

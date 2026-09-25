@@ -32,6 +32,15 @@ fn post_pages(body: serde_json::Value) -> Request<Body> {
         .unwrap()
 }
 
+/// `app()` under `[archive] allow_private`: the wiremock origin is
+/// loopback, which #189's egress guard refuses by default.
+fn app_allow_private() -> (axum::Router, cauce_server::AppState, tempfile::TempDir) {
+    let mut config = cauce_core::config::Config::default();
+    config.archive.allow_private = true;
+    let (state, tmp) = test_state_with_config(config);
+    (cauce_server::build_router(state.clone()), state, tmp)
+}
+
 /// Index the news-article fixture through a mock origin; returns the
 /// stored page URL.
 async fn index_news(router: &axum::Router) -> String {
@@ -67,7 +76,7 @@ fn enc(url: &str) -> String {
 /// route browses newest-first; unknown/malformed params are 400s.
 #[tokio::test]
 async fn api_archive_searches_and_lists() {
-    let (router, _state, _tmp) = app();
+    let (router, _state, _tmp) = app_allow_private();
     let page_url = index_news(&router).await;
 
     // `?q=` — body-phrase FTS hit.
@@ -122,7 +131,7 @@ async fn api_archive_searches_and_lists() {
 /// (including the repeat delete).
 #[tokio::test]
 async fn delete_is_audited_and_evicts_fts() {
-    let (router, state, _tmp) = app();
+    let (router, state, _tmp) = app_allow_private();
     let page_url = index_news(&router).await;
     let uri = format!("/api/pages/{}", enc(&page_url));
 
@@ -176,7 +185,7 @@ async fn delete_is_audited_and_evicts_fts() {
 #[cfg(feature = "ui")]
 #[tokio::test]
 async fn page_finds_fixture_by_body_phrase() {
-    let (router, _state, _tmp) = app();
+    let (router, _state, _tmp) = app_allow_private();
     let page_url = index_news(&router).await;
 
     let (status, html) = get_html(&router, "/archive?q=night-time%20dredging").await;
