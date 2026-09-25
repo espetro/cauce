@@ -4,6 +4,8 @@
 //! License, v. 2.0. If a copy of the MPL was not distributed with this
 //! file, You can obtain one at <https://mozilla.org/MPL/2.0/>.
 
+#[cfg(feature = "archive")]
+use cauce_core::ArchiveError;
 use cauce_core::{EngineError, PipelineError, StoreError};
 use serde::Serialize;
 
@@ -36,6 +38,26 @@ pub(super) fn store_error(e: &StoreError, request_id: Uuid) -> ErrorData {
     ErrorData::internal_error(
         format!("store: {e}"),
         Some(json!({ "error": "store_error", "request_id": request_id })),
+    )
+}
+
+/// `ArchiveError` -> MCP error (W5-01): caller faults (bad URL, bad key)
+/// are `invalid_params`; upstream/extraction failures carry their own
+/// `data.error` label so agents can branch on the cause.
+#[cfg(feature = "archive")]
+pub(super) fn archive_error(e: &ArchiveError, request_id: Uuid) -> ErrorData {
+    let label = match e {
+        ArchiveError::InvalidUrl(_) => {
+            return invalid_params(e.to_string(), request_id);
+        }
+        ArchiveError::Fetch(EngineError::Timeout) => "upstream_timeout",
+        ArchiveError::Fetch(_) | ArchiveError::Status(_) => "upstream_error",
+        ArchiveError::Extract(_) => "extraction_failed",
+        ArchiveError::Store(se) => return store_error(se, request_id),
+    };
+    ErrorData::internal_error(
+        e.to_string(),
+        Some(json!({ "error": label, "request_id": request_id })),
     )
 }
 

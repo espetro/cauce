@@ -14,7 +14,7 @@ use async_trait::async_trait;
 use cauce_core::{
     AnswerKey, AnswerRow, AuditFilter, AuditRow, CacheKey, CacheState, CachedAnswer, CachedSearch,
     ClickRow, DeleteSearchLog, EngineHealthRow, EngineStatus, HistoryFilter, HistoryItem,
-    HistoryStats, SearchLogRow, SearchResponse, StatsSnapshot, Store, StoreError,
+    HistoryStats, PageRow, SearchLogRow, SearchResponse, StatsSnapshot, Store, StoreError,
 };
 use chrono::{DateTime, Utc};
 
@@ -72,6 +72,8 @@ pub struct StubStore {
     pub audits: Mutex<Vec<AuditRow>>,
     /// `answers` table stand-in (W4-02): rows by `AnswerKey` hex.
     pub answers: Mutex<HashMap<String, StoredAnswer>>,
+    /// `pages` table stand-in (W5-01): rows by normalized URL.
+    pub pages: Mutex<HashMap<String, PageRow>>,
     pub fail_get: AtomicBool,
     pub fail_lexical: AtomicBool,
     /// Extra delay inside `get_lexical` — simulates slow pre-fan-out
@@ -217,6 +219,18 @@ impl Store for StubStore {
     async fn delete_search_log(&self, _: i64) -> Result<Option<DeleteSearchLog>, StoreError> {
         unimplemented!()
     }
+    async fn put_page(&self, row: &PageRow) -> Result<(), StoreError> {
+        self.pages
+            .lock()
+            .unwrap()
+            .insert(row.url.as_str().to_string(), row.clone());
+        Ok(())
+    }
+
+    async fn get_page(&self, url: &url::Url) -> Result<Option<PageRow>, StoreError> {
+        Ok(self.pages.lock().unwrap().get(url.as_str()).cloned())
+    }
+
     async fn stats(&self, _: u32) -> Result<StatsSnapshot, StoreError> {
         unimplemented!()
     }

@@ -363,7 +363,7 @@ fn size_cap_error(seen: usize, cap: usize) -> EngineError {
     ))
 }
 
-fn map_reqwest_error(e: reqwest::Error) -> EngineError {
+pub(crate) fn map_reqwest_error(e: reqwest::Error) -> EngineError {
     if e.is_timeout() {
         EngineError::Timeout
     } else {

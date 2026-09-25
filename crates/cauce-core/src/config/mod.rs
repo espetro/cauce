@@ -130,6 +130,17 @@ const ENV_OVERRIDES: &[(&str, &[&str], bool)] = &[
     ("CAUCE_AI_ENABLED", &["ai", "enabled"], true),
     ("CAUCE_AI_PROTOCOL", &["ai", "protocol"], false),
     (
+        "CAUCE_ARCHIVE_INDEX_ON_CLICK",
+        &["archive", "index_on_click"],
+        true,
+    ),
+    (
+        "CAUCE_ARCHIVE_REQUESTS_PER_SECOND",
+        &["archive", "requests_per_second"],
+        true,
+    ),
+    ("CAUCE_ARCHIVE_BURST", &["archive", "burst"], true),
+    (
         "CAUCE_CONFIG_INTERPOLATION",
         &["config", "interpolation"],
         true,
@@ -711,6 +722,40 @@ impl std::fmt::Display for AiProtocol {
     }
 }
 
+/// `[archive]` (W5-01): the fetch-and-index pipeline behind
+/// `POST /api/pages`, the UI click beacon and MCP `fetch_and_index`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ArchiveConfig {
+    /// Whether clicking a result link in the UI fires the indexing beacon
+    /// (default true, settled input). The beacon is failure-silent and
+    /// never blocks the navigation either way.
+    #[serde(default = "default_true")]
+    pub index_on_click: bool,
+    /// Host-keyed token-bucket refill rate for archive fetches (>= 1).
+    /// Conservative by default so archive traffic never starves engine
+    /// fan-out.
+    #[serde(default = "default_requests_per_second")]
+    pub requests_per_second: u32,
+    /// Host-keyed token-bucket burst capacity (>= 1).
+    #[serde(default = "default_archive_burst")]
+    pub burst: u32,
+}
+
+impl Default for ArchiveConfig {
+    fn default() -> Self {
+        Self {
+            index_on_click: true,
+            requests_per_second: default_requests_per_second(),
+            burst: default_archive_burst(),
+        }
+    }
+}
+
+fn default_archive_burst() -> u32 {
+    2
+}
+
 /// `[config]`: meta settings about the config file itself.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -901,6 +946,9 @@ pub struct Config {
     /// `[ai]` section.
     #[serde(default)]
     pub ai: AiConfig,
+    /// `[archive]` section.
+    #[serde(default)]
+    pub archive: ArchiveConfig,
     /// `[auth]` section.
     #[serde(default)]
     pub auth: AuthConfig,
@@ -935,6 +983,7 @@ struct ConfigSections<'a> {
     merge: &'a MergeConfig,
     logs: &'a LogsConfig,
     ai: &'a AiConfig,
+    archive: &'a ArchiveConfig,
     auth: &'a AuthConfig,
     engines: &'a [EngineEntry],
     config: &'a MetaConfig,
@@ -972,6 +1021,7 @@ impl Default for Config {
             merge: MergeConfig::default(),
             logs: LogsConfig::default(),
             ai: AiConfig::default(),
+            archive: ArchiveConfig::default(),
             auth: AuthConfig::default(),
             engines: builtin_engines(),
             config: MetaConfig::default(),
@@ -1003,6 +1053,7 @@ impl Config {
             merge: &self.merge,
             logs: &self.logs,
             ai: &self.ai,
+            archive: &self.archive,
             auth: &self.auth,
             engines: &self.engines,
             config: &self.config,

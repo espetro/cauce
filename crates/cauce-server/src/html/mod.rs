@@ -81,6 +81,9 @@ struct Page {
     /// W4-03: `/answer?q=...` the meta line links to when an answer loop
     /// exists (`ai` effectively on); empty otherwise and on `/`.
     ask_url: String,
+    /// W5-01: render the click beacon that `POST`s `/api/pages` on result
+    /// clicks (`archive.index_on_click` and a live archive pipeline).
+    index_on_click: bool,
 }
 
 /// `Accept` prefers JSON (shared by every `ui` page's content negotiation).
