@@ -205,8 +205,8 @@ mod tests {
                 env: &[],
                 prefix: "",
                 file: None,
-                value: "${env:UNSET_VAR:?get a Bifrost key first}",
-                want: InterpWant::MissingEnvMsg("UNSET_VAR", "get a Bifrost key first"),
+                value: "${env:UNSET_VAR:?get a provider key first}",
+                want: InterpWant::MissingEnvMsg("UNSET_VAR", "get a provider key first"),
             },
             InterpCase {
                 env: &[("SET_VAR", "real-value")],
