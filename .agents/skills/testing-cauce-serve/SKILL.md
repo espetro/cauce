@@ -104,7 +104,11 @@ process — you cannot give tier-1 and tier-2 different latencies from env. Mult
   `#results a` (SSR, streaming and pagination alike); the `<article>` `hx-post="/api/click"`
   rows write the `clicks` table independently of the flag — a click with the flag off records
   `clicks` but no `pages` row (easy negative test).
-- The archive `Fetcher` has **no HostGuard** — loopback fetch targets work. Synthetic replay
+- The archive `Fetcher` has an **egress guard** (#189): private/reserved targets (loopback,
+  RFC 1918, link-local, CGNAT, multicast, `localhost`) are refused with a 4xx before any
+  connect, on every redirect hop. Loopback fetch targets need the documented opt-in
+  `CAUCE_ARCHIVE_ALLOW_PRIVATE=true` (`[archive] allow_private`); the scheme allowlist
+  (`http`/`https` only) always applies. Synthetic replay
   results point at real hosts with fabricated paths (`https://en.wikipedia.org/guide/q-0`),
   so click-beacon indexing is non-deterministic against them. For a deterministic click →
   `pages` row, serve `crates/cauce-core/tests/fixtures/archive/` on a loopback port

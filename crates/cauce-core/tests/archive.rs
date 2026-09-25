@@ -116,7 +116,23 @@ fn fixture_expected(name: &str) -> &'static str {
     }
 }
 
+/// Loopback-permitting archiver for the wiremock tests (#189): the
+/// mock origin is always 127.0.0.1, which the default-on egress guard
+/// refuses — `archive.allow_private` is the documented opt-in the guard
+/// tests below leave off.
 fn archiver(store: &Arc<StubStore>) -> Archiver {
+    Archiver::new(
+        store.clone(),
+        &ArchiveConfig {
+            allow_private: true,
+            ..ArchiveConfig::default()
+        },
+    )
+    .expect("archiver builds")
+}
+
+/// Guarded archiver (`allow_private` off, the shipped default).
+fn guarded_archiver(store: &Arc<StubStore>) -> Archiver {
     Archiver::new(store.clone(), &ArchiveConfig::default()).expect("archiver builds")
 }
 
@@ -316,10 +332,92 @@ fn zero_bucket_knobs_fail_to_build() {
         index_on_click: true,
         requests_per_second: 0,
         burst: 2,
+        allow_private: true,
     };
     let err = Archiver::new(store, &cfg).expect_err("rps=0 must fail");
     assert!(matches!(
         err,
         ArchiveError::Fetch(EngineError::Transport(_))
     ));
+}
+
+/// #189: the egress guard refuses private/reserved targets — literal IPs
+/// and `localhost` alike — before any connect, surfacing
+/// `ArchiveError::Blocked` (403 on `POST /api/pages`, `invalid_params`
+/// on MCP `fetch_and_index`), and writes nothing.
+#[tokio::test]
+async fn private_targets_are_blocked() {
+    // Nothing mounted: a guard-bypassing fetcher would still be observed
+    // by `received_requests` below.
+    let server = MockServer::start().await;
+    let uri = server.uri();
+
+    let store = Arc::new(StubStore::default());
+    let archiver = guarded_archiver(&store);
+    for target in [
+        "http://127.0.0.1/",
+        "http://169.254.169.254/latest/meta-data",
+        "http://10.0.0.1/",
+        "http://[::1]/",
+        "http://[fd00::1]/",
+        uri.as_str(),
+        // `localhost` is a real lookup resolving to loopback.
+        "http://localhost:1/",
+    ] {
+        let err = archiver
+            .fetch_and_index(target, None)
+            .await
+            .expect_err("private target must be blocked");
+        assert!(matches!(err, ArchiveError::Blocked(_)), "{target}: {err}");
+    }
+    assert!(
+        server
+            .received_requests()
+            .await
+            .expect("requests readable")
+            .is_empty(),
+        "egress guard allowed a connect"
+    );
+    assert!(store.pages.lock().unwrap().is_empty());
+}
+
+/// Redirect hops get the same treatment as hop 0: a 302 pointing at a
+/// non-http(s) scheme fails the fetch — it must never be followed.
+/// (Per-hop *address* validation can't be exercised against wiremock:
+/// with the guard on, a loopback origin is rejected at hop 0 already;
+/// the `archive::fetch` resolver unit tests cover the per-hop path.)
+#[tokio::test]
+async fn redirect_to_non_http_scheme_fails() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/old"))
+        .respond_with(ResponseTemplate::new(302).append_header("location", "file:///etc/passwd"))
+        .mount(&server)
+        .await;
+
+    let store = Arc::new(StubStore::default());
+    let err = archiver(&store)
+        .fetch_and_index(&format!("{}/old", server.uri()), None)
+        .await
+        .expect_err("file: redirect must fail");
+    assert!(matches!(err, ArchiveError::Blocked(_)), "{err}");
+}
+
+/// `[archive] allow_private` is the opt-in: with it set, the same
+/// loopback targets the guard blocks are fetched normally (every other
+/// test in this file runs through it).
+#[tokio::test]
+async fn allow_private_reaches_loopback() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/page"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(fixture_html("10-minimal")))
+        .mount(&server)
+        .await;
+
+    let store = Arc::new(StubStore::default());
+    archiver(&store)
+        .fetch_and_index(&format!("{}/page", server.uri()), None)
+        .await
+        .expect("guard must not reject when allow_private is set");
 }

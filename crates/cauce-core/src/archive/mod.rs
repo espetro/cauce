@@ -25,7 +25,7 @@ use crate::normalize::normalize_url;
 use crate::store::{PageRow, Store, StoreError};
 
 pub use extract::extract;
-pub use fetch::{FETCH_TIMEOUT, FetchedPage, Fetcher, MAX_FETCH_BYTES};
+pub use fetch::{FETCH_TIMEOUT, FetchError, FetchedPage, Fetcher, MAX_FETCH_BYTES};
 
 /// Stored-markdown cap (settled input: 200 KB). Longer extractions are cut
 /// on a char boundary, with a `warn!` on the caller's span.
@@ -37,6 +37,11 @@ pub enum ArchiveError {
     /// The URL does not parse or is not `http`/`https`.
     #[error("invalid url {0:?}: must be an absolute http(s) URL")]
     InvalidUrl(String),
+    /// The URL or a redirect hop was refused by the egress guard:
+    /// non-http(s) scheme or a private/reserved target address (SSRF).
+    /// Caller fault — the API maps it to 4xx, not an upstream error.
+    #[error("blocked by egress guard: {0}")]
+    Blocked(String),
     /// The network fetch failed (timeout, transport, DNS).
     #[error("fetch failed: {0}")]
     Fetch(EngineError),
@@ -73,7 +78,7 @@ impl Archiver {
     /// build error, matching `HttpClient`.
     pub fn new(store: Arc<dyn Store>, cfg: &ArchiveConfig) -> Result<Self, ArchiveError> {
         Ok(Self {
-            fetcher: Fetcher::new(cfg.requests_per_second, cfg.burst)
+            fetcher: Fetcher::new(cfg.requests_per_second, cfg.burst, cfg.allow_private)
                 .map_err(ArchiveError::Fetch)?,
             store,
         })
@@ -100,7 +105,10 @@ impl Archiver {
             .fetcher
             .get(requested.as_str())
             .await
-            .map_err(ArchiveError::Fetch)?;
+            .map_err(|e| match e {
+                FetchError::Blocked(msg) => ArchiveError::Blocked(msg),
+                FetchError::Engine(e) => ArchiveError::Fetch(e),
+            })?;
         if !(200..300).contains(&fetched.status) {
             return Err(ArchiveError::Status(fetched.status));
         }

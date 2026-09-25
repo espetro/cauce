@@ -45,6 +45,9 @@ fn archive_unavailable(ctx: &RequestCtx) -> ApiError {
 fn archive_error(ctx: &RequestCtx, e: &ArchiveError) -> ApiError {
     match e {
         ArchiveError::InvalidUrl(_) => ctx.bad_request(e.to_string()),
+        // Egress-guard refusal (private/reserved target): the URL is a
+        // caller fault, not an upstream failure — 403, not 502.
+        ArchiveError::Blocked(_) => ctx.err(StatusCode::FORBIDDEN, "url_blocked", e.to_string()),
         ArchiveError::Fetch(EngineError::Timeout) => ctx.err(
             StatusCode::GATEWAY_TIMEOUT,
             "upstream_timeout",
