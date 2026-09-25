@@ -210,6 +210,35 @@ impl PageHit {
     }
 }
 
+/// One `cache_fts` hit at *result* granularity (W5-03 `search_archive`):
+/// a `SearchResult` inside a `cache_entries.payload_json` whose
+/// title/snippet covers the query terms. `cache_fts`'s `titles`/`snippets`
+/// columns are index-only, so unlike [`PageHit::snippet`] there is no
+/// FTS `snippet()` excerpt — the stored snippet is returned verbatim and
+/// carries no `PAGE_MARK_*` delimiters.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CacheResultHit {
+    /// The stored result URL.
+    pub url: Url,
+    /// The stored result title.
+    pub title: String,
+    /// The stored result snippet (plain text, never marked).
+    pub snippet: String,
+    /// The engine that originally produced the result.
+    pub engine: EngineId,
+    /// The stored query the result answered (`cache_entries.query`) —
+    /// provenance for the agent reading the hit.
+    pub query: String,
+    /// `expires_at` of the containing cache entry: a `cached_result`
+    /// can be stale, and the caller (not the store) decides whether
+    /// that matters.
+    pub expires_at: DateTime<Utc>,
+    /// bm25 rank of the containing entry (more negative is a better
+    /// match); `None` when a store cannot rank.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub score: Option<f64>,
+}
+
 /// Breaker state persisted in `engine_health` (scheduler section 4.4.6).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -746,6 +775,21 @@ pub trait Store: Send + Sync {
 
     /// Tier-2 lexical lookup: FTS over stored queries and titles.
     async fn get_lexical(&self, q: &str, limit: u8) -> Result<Vec<CachedSearch>, StoreError>;
+
+    /// FTS5 over `cache_fts` exploded to *result* granularity (W5-03
+    /// `search_archive`), bm25 rank order, capped at `limit` hits.
+    /// `cache_fts`'s `titles`/`snippets` columns are index-only, so
+    /// implementations match entries through the FTS index and then
+    /// filter the decoded `payload_json` results to those whose
+    /// title+snippet covers every query term — a `query`-column-only
+    /// match contributes nothing. `q` is raw user text run through the
+    /// shared `fts_query` escaping convention (all-punctuation yields
+    /// `[]`); expired rows are included — staleness is the caller's call.
+    async fn search_cache_fts(
+        &self,
+        q: &str,
+        limit: u32,
+    ) -> Result<Vec<CacheResultHit>, StoreError>;
 
     /// Insert or replace the entry for `key` (`ttl` caps are applied by the
     /// pipeline, not the store).

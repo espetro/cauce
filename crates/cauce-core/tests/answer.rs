@@ -5,7 +5,8 @@
 //! `ungrounded=true` and no `answers` row; a mid-stream provider error →
 //! partial deltas then `error`; the confident grounded path writing an
 //! `answers` row and the second call replaying `sources` then
-//! `done{cached:true}` with no provider call.
+//! `done{cached:true}` with no provider call; a `search_archive`
+//! (W5-03) tool call → the archive URLs as `sources`.
 //!
 //! This Source Code Form is subject to the terms of the Mozilla Public
 //! License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -16,8 +17,9 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use cauce_core::{
-    AiConfig, AnswerFrame, AnswerKey, AnswerLoop, AnswerRequest, ChatProvider, ClientKind, Engine,
-    EngineError, EngineId, OpenAiClient, SearchPipeline, SearchRequest, SearchResult, Store, Tier,
+    AiConfig, AnswerFrame, AnswerKey, AnswerLoop, AnswerRequest, CacheKey, ChatProvider,
+    ClientKind, Engine, EngineError, EngineId, OpenAiClient, PageRow, SearchPipeline,
+    SearchRequest, SearchResult, Source, Store, Tier,
 };
 use url::Url;
 use uuid::Uuid;
@@ -32,6 +34,7 @@ const MODEL: &str = "test-answer-loop";
 
 const SSE_TOOLCALL: &str = include_str!("../fixtures/ai/sse_toolcall.raw");
 const SSE_TOOLCALL_2: &str = include_str!("../fixtures/ai/sse_toolcall_2.raw");
+const SSE_TOOLCALL_ARCHIVE: &str = include_str!("../fixtures/ai/sse_toolcall_archive.raw");
 const SSE_ANSWER: &str = include_str!("../fixtures/ai/sse_answer.raw");
 const SSE_NOTOOLS: &str = include_str!("../fixtures/ai/sse_notools.raw");
 const SSE_ERROR: &str = include_str!("../fixtures/ai/sse_error.raw");
@@ -252,6 +255,114 @@ async fn tool_loop_yields_steps_deltas_sources_and_done() {
     assert!(
         store.get_answer(&key).await.unwrap().is_none(),
         "sub-floor confidence must not be cached"
+    );
+}
+
+/// W5-03: a `search_archive` tool call runs the archive fusion — the
+/// step frame names the tool and the hit URLs join the cited-source
+/// pool (the `sources` frame dedupes by URL across calls).
+#[tokio::test]
+async fn archive_tool_call_reads_the_local_archive() {
+    let server = MockServer::start().await;
+    mount_sse(&server, SSE_TOOLCALL_ARCHIVE, 1).await;
+    mount_sse(&server, SSE_ANSWER, 1).await;
+
+    let store = Arc::new(StubStore::default());
+    // An indexed page and a cached result both cover the tool's query.
+    store
+        .put_page(&PageRow {
+            url: Url::parse("https://shared.example/doc").unwrap(),
+            fetched_at: chrono::Utc::now(),
+            title: "quixotic page".to_string(),
+            markdown: "quixotic grebe body".to_string(),
+            byte_len: 10,
+            source_query_hash: None,
+        })
+        .await
+        .unwrap();
+    let search_resp = cauce_core::SearchResponse {
+        query: "archive probe".to_string(),
+        meta: cauce_core::SearchMeta {
+            source: Source::Network,
+            engines_used: vec![],
+            engines_skipped: vec![],
+            deadline_hit: false,
+            hedged: false,
+            hedge_at_ms: None,
+            elapsed_ms: 1,
+            request_id: Uuid::now_v7(),
+        },
+        results: vec![SearchResult {
+            url: Url::parse("https://cached-extra.example/c").unwrap(),
+            title: "cached extra".to_string(),
+            snippet: "quixotic grebe cached".to_string(),
+            engine: EngineId::from("replay"),
+            published: None,
+            score: 1.0,
+        }],
+    };
+    store
+        .put(
+            &CacheKey::from(&SearchRequest {
+                q: "archive probe".to_string(),
+                page: 1,
+                lang: None,
+                time_range: None,
+                safesearch: Default::default(),
+                engines: None,
+                client: ClientKind::Api,
+            }),
+            &search_resp,
+            Duration::from_secs(60),
+        )
+        .await
+        .unwrap();
+
+    let loop_ = answer_loop(&server, store);
+    let frames = drain(loop_.stream_answer(&req("archive?", Uuid::now_v7()))).await;
+
+    let steps = steps(&frames);
+    assert_eq!(steps.len(), 1, "one tool call = one step: {frames:?}");
+    assert_eq!(steps[0].0, "search_archive");
+    assert_eq!(steps[0].1, "quixotic grebe");
+
+    let sources = frames
+        .iter()
+        .find_map(|f| match f {
+            AnswerFrame::Sources { sources } => Some(sources.clone()),
+            _ => None,
+        })
+        .expect("a sources frame must precede done");
+    let urls: Vec<_> = sources.iter().map(|s| s.url.as_str()).collect();
+    assert_eq!(
+        urls,
+        [
+            "https://shared.example/doc",
+            "https://cached-extra.example/c"
+        ],
+        "archive hits are the cited sources: {frames:?}"
+    );
+
+    // The tool payload carries the settled wire shape back to the model.
+    let requests = server.received_requests().await.expect("request log");
+    let second: serde_json::Value = serde_json::from_slice(&requests[1].body).unwrap();
+    let tool_msg = &second["messages"][3];
+    assert_eq!(tool_msg["role"], "tool");
+    let payload: serde_json::Value =
+        serde_json::from_str(tool_msg["content"].as_str().unwrap()).unwrap();
+    assert_eq!(payload["query"], "quixotic grebe");
+    assert!(
+        payload["request_id"]
+            .as_str()
+            .unwrap()
+            .parse::<Uuid>()
+            .is_ok(),
+        "request_id: {payload}"
+    );
+    assert_eq!(payload["results"][0]["source"], "page", "{payload}");
+    assert!(
+        payload["results"][0]["score"].as_f64().unwrap() > 0.0,
+        "{payload}"
     );
 }
 

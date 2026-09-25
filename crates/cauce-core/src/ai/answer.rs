@@ -27,6 +27,7 @@ use tracing::{Instrument, info_span, warn};
 use uuid::Uuid;
 
 use crate::cache::normalize_query;
+use crate::engine::EngineId;
 use crate::pipeline::SearchPipeline;
 use crate::request::{ClientKind, SafeSearch, SearchRequest};
 use crate::response::SearchResult;
@@ -60,19 +61,20 @@ const TOOL_RESULT_LIMIT: usize = 10;
 const RELATED_LIMIT: usize = 5;
 const RELATED_MAX_LEN: usize = 200;
 
-/// System prompt of every answer request (v2 `SYSTEM_PROMPT`, narrowed to
-/// the one tool this wave ships): cite inline as `[n]`, append the
+/// System prompt of every answer request (v2 `SYSTEM_PROMPT`, extended
+/// to both shipped tools): cite inline as `[n]`, append the
 /// metadata JSON tail, report high confidence only when grounded.
 const SYSTEM_PROMPT: &str = "You are a metasearch answer engine. Answer the user's question \
 briefly and cite sources inline as [n], where n is the 1-based index of the source in the \
 search results you drew it from. Use the search_web tool whenever the question needs \
-current or external information. After your answer text, append a metadata JSON object in \
-exactly this form: {\"confidence\": <1-10>, \"related_questions\": [...]}. Report \
+current or external information, and search_archive for what the local archive already \
+holds (indexed pages and cached results). After your answer text, append a metadata JSON \
+object in exactly this form: {\"confidence\": <1-10>, \"related_questions\": [...]}. Report \
 confidence >= 8 only when the sources well support the answer; report lower when the \
 answer is partially grounded. Never fabricate sources or citations.";
 
-/// The `search_web` tool the model may call this wave (`search_archive`
-/// lands with W5): same argument shape as the MCP surface's `search_web`.
+/// The `search_web` tool: same argument shape as the MCP surface's
+/// `search_web`.
 fn search_web_spec() -> ToolSpec {
     ToolSpec {
         name: "search_web".to_string(),
@@ -84,6 +86,30 @@ fn search_web_spec() -> ToolSpec {
             "type": "object",
             "properties": {
                 "query": {"type": "string", "description": "the search query"},
+            },
+            "required": ["query"],
+        }),
+    }
+}
+
+/// The `search_archive` tool (W5-03): the pipeline's hybrid RRF read
+/// over `pages_fts` + `cache_fts`. Advertised unconditionally —
+/// `SearchPipeline::search_archive` works on any build (the `pages` and
+/// `cache_fts` tables exist on every migration), so a server built
+/// without the `archive` feature still answers archive queries.
+fn search_archive_spec() -> ToolSpec {
+    ToolSpec {
+        name: "search_archive".to_string(),
+        description: "Search the local archive: indexed pages and cached result snippets fused \
+                      by RRF. Args: query (required), limit (max results, default 10). Returns \
+                      {query, results: [{url, title, snippet, source ('page'|'cached_result'), \
+                      score}], request_id}."
+            .to_string(),
+        parameters: json!({
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "the search query"},
+                "limit": {"type": "integer", "description": "max results (default 10, capped at 10)"},
             },
             "required": ["query"],
         }),
@@ -324,7 +350,7 @@ impl AnswerLoop {
             ChatMessage::system(SYSTEM_PROMPT),
             ChatMessage::user(req.q.as_str()),
         ];
-        let tools = vec![search_web_spec()];
+        let tools = vec![search_web_spec(), search_archive_spec()];
         // Cited sources across all tool calls: deduped by URL in the
         // first-seen (citation) order the model saw them in.
         let mut sources: Vec<AnswerSource> = Vec::new();
@@ -488,10 +514,11 @@ impl AnswerLoop {
     }
 
     /// One tool call: `search_web` runs the shared pipeline (cache,
-    /// admission and politeness come free); anything else is an
+    /// admission and politeness come free), `search_archive` (W5-03)
+    /// reads the local archive's hybrid RRF; anything else is an
     /// `{"error": ...}` result the model can read and retry.
     async fn run_tool(&self, call: &ToolCall, client: &ClientKind) -> ToolOutcome {
-        if call.name != "search_web" {
+        if call.name != "search_web" && call.name != "search_archive" {
             return ToolOutcome {
                 json: json!({"error": format!("unknown tool: {}", call.name)}).to_string(),
                 results: Vec::new(),
@@ -503,6 +530,9 @@ impl AnswerLoop {
                 json: json!({"error": "missing 'query' argument"}).to_string(),
                 results: Vec::new(),
             };
+        }
+        if call.name == "search_archive" {
+            return self.run_search_archive(call, query).await;
         }
         let req = SearchRequest {
             q: query,
@@ -535,6 +565,55 @@ impl AnswerLoop {
             }
             Err(e) => ToolOutcome {
                 json: json!({"error": format!("search failed: {e}")}).to_string(),
+                results: Vec::new(),
+            },
+        }
+    }
+
+    /// `search_archive` (W5-03): the `pages_fts` + `cache_fts` RRF
+    /// fusion, `limit` honored up to `TOOL_RESULT_LIMIT`. The response
+    /// payload mirrors the MCP wire shape including a fresh
+    /// `request_id`; the hits join the cited-source pool with the
+    /// `"archive"` engine label.
+    async fn run_search_archive(&self, call: &ToolCall, query: String) -> ToolOutcome {
+        let limit = tool_limit(call);
+        match self.pipeline.search_archive(&query, limit).await {
+            Ok(hits) => {
+                let payload: Vec<serde_json::Value> = hits
+                    .iter()
+                    .map(|h| {
+                        json!({
+                            "url": h.url.as_str(),
+                            "title": h.title,
+                            "snippet": h.snippet,
+                            "source": h.source,
+                            "score": h.score,
+                        })
+                    })
+                    .collect();
+                let results: Vec<SearchResult> = hits
+                    .into_iter()
+                    .map(|h| SearchResult {
+                        url: h.url,
+                        title: h.title,
+                        snippet: h.snippet,
+                        engine: EngineId::from("archive"),
+                        published: None,
+                        score: h.score,
+                    })
+                    .collect();
+                ToolOutcome {
+                    json: json!({
+                        "query": query,
+                        "results": payload,
+                        "request_id": Uuid::now_v7(),
+                    })
+                    .to_string(),
+                    results,
+                }
+            }
+            Err(e) => ToolOutcome {
+                json: json!({"error": format!("archive search failed: {e}")}).to_string(),
                 results: Vec::new(),
             },
         }
@@ -574,6 +653,17 @@ fn tool_query(call: &ToolCall) -> String {
         .ok()
         .and_then(|v| v.get("query")?.as_str().map(str::to_string))
         .unwrap_or_default()
+}
+
+/// The optional `limit` argument of a `search_archive` call — absent or
+/// malformed defaults to `TOOL_RESULT_LIMIT`, and the cap applies
+/// either way so the model cannot widen its own source pool.
+fn tool_limit(call: &ToolCall) -> u32 {
+    serde_json::from_str::<serde_json::Value>(&call.arguments)
+        .ok()
+        .and_then(|v| v.get("limit")?.as_u64())
+        .map(|n| n.clamp(1, TOOL_RESULT_LIMIT as u64) as u32)
+        .unwrap_or(TOOL_RESULT_LIMIT as u32)
 }
 
 /// Emit the streamable prefix of `text` as deltas — everything but the

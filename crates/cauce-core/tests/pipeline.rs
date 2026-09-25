@@ -17,8 +17,9 @@ use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 
 use cauce_core::{
-    CacheKey, EngineError, EngineId, EngineStatus, LexicalConfig, LogSource, PipelineError,
-    SearchOpts, SearchPipeline, SearchResult, Source, StreamEvent, Tier, normalize_url,
+    ArchiveSource, CacheKey, EngineError, EngineId, EngineStatus, LexicalConfig, LogSource,
+    PageRow, PipelineError, SearchOpts, SearchPipeline, SearchResult, Source, Store, StreamEvent,
+    Tier, normalize_url,
 };
 use cauce_engines::{Cassette, cassette_path};
 use support::{StubStore, replay_at, req};
@@ -742,4 +743,93 @@ async fn cache_lookup_failure_is_a_miss() {
     let resp = pipe.search(&req("degraded")).await.unwrap();
     assert!(matches!(resp.meta.source, Source::Network));
     assert_eq!(resp.results.len(), 10);
+}
+
+/// W5-03: `search_archive` fuses the `pages` and `cache` ranked lists by
+/// URL — a URL in both lists is one hit boosted past single-list entries
+/// and reports the `source` of its best-ranked contribution (`page` wins
+/// the equal-rank tie). Page snippets arrive de-marked.
+#[tokio::test]
+async fn search_archive_fuses_page_and_cache_lists_by_url() {
+    let store = Arc::new(StubStore::default());
+    let pipe = SearchPipeline::new(store.clone(), vec![]);
+
+    let shared = Url::parse("https://shared.example/doc").unwrap();
+    store
+        .put_page(&PageRow {
+            url: shared.clone(),
+            fetched_at: chrono::Utc::now(),
+            title: "quixotic page".to_string(),
+            markdown: "quixotic grebe body".to_string(),
+            byte_len: 10,
+            source_query_hash: None,
+        })
+        .await
+        .unwrap();
+
+    let extra = Url::parse("https://cached-extra.example/c").unwrap();
+    let resp = cauce_core::SearchResponse {
+        query: "archive fuse".to_string(),
+        meta: cauce_core::SearchMeta {
+            source: Source::Network,
+            engines_used: vec![cauce_core::EngineReport {
+                engine: EngineId::from("replay"),
+                status: EngineStatus::Ok,
+                latency_ms: 1,
+                result_count: 2,
+            }],
+            engines_skipped: vec![],
+            deadline_hit: false,
+            hedged: false,
+            hedge_at_ms: None,
+            elapsed_ms: 1,
+            request_id: Uuid::now_v7(),
+        },
+        results: vec![
+            SearchResult {
+                url: shared.clone(),
+                title: "cached shared".to_string(),
+                snippet: "quixotic grebe cached".to_string(),
+                engine: EngineId::from("replay"),
+                published: None,
+                score: 1.0,
+            },
+            SearchResult {
+                url: extra.clone(),
+                title: "cached extra".to_string(),
+                snippet: "quixotic grebe extra".to_string(),
+                engine: EngineId::from("replay"),
+                published: None,
+                score: 0.5,
+            },
+        ],
+    };
+    store
+        .put(
+            &CacheKey::from(&req("archive fuse")),
+            &resp,
+            Duration::from_secs(60),
+        )
+        .await
+        .unwrap();
+
+    let hits = pipe.search_archive("quixotic grebe", 10).await.unwrap();
+    assert_eq!(hits.len(), 2, "shared URL fuses to one hit: {hits:?}");
+    // Rank 1 in both lists: 1/(60+1) twice beats the rank-2 cached hit.
+    let k = 60.0_f32;
+    assert_eq!(hits[0].url, shared);
+    assert_eq!(hits[0].source, ArchiveSource::Page);
+    assert!((hits[0].score - 2.0 / (k + 1.0)).abs() < 1e-6, "{hits:?}");
+    assert!(
+        !hits[0].snippet.contains(cauce_core::PAGE_MARK_OPEN),
+        "page snippet de-marked: {hits:?}"
+    );
+    assert_eq!(hits[1].url, extra);
+    assert_eq!(hits[1].source, ArchiveSource::CachedResult);
+    assert!((hits[1].score - 1.0 / (k + 2.0)).abs() < 1e-6, "{hits:?}");
+
+    // `limit` caps the fused list.
+    let hits = pipe.search_archive("quixotic grebe", 1).await.unwrap();
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0].url, shared);
 }

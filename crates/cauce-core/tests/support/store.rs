@@ -12,9 +12,10 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use cauce_core::{
-    AnswerKey, AnswerRow, AuditFilter, AuditRow, CacheKey, CacheState, CachedAnswer, CachedSearch,
-    ClickRow, DeleteSearchLog, EngineHealthRow, EngineStatus, HistoryFilter, HistoryItem,
-    HistoryStats, PageHit, PageRow, SearchLogRow, SearchResponse, StatsSnapshot, Store, StoreError,
+    AnswerKey, AnswerRow, AuditFilter, AuditRow, CacheKey, CacheResultHit, CacheState,
+    CachedAnswer, CachedSearch, ClickRow, DeleteSearchLog, EngineHealthRow, EngineStatus,
+    HistoryFilter, HistoryItem, HistoryStats, PageHit, PageRow, SearchLogRow, SearchResponse,
+    StatsSnapshot, Store, StoreError,
 };
 use chrono::{DateTime, Utc};
 
@@ -123,6 +124,50 @@ impl Store for StubStore {
         rows.sort_by(|a, b| a.key.cmp(&b.key));
         rows.truncate(usize::from(limit));
         Ok(rows)
+    }
+
+    /// `search_cache_fts` stand-in: results whose title+snippet shares a
+    /// whitespace token with `q` (the stub's looser cover check),
+    /// expired entries included like `get_lexical`.
+    async fn search_cache_fts(
+        &self,
+        q: &str,
+        limit: u32,
+    ) -> Result<Vec<CacheResultHit>, StoreError> {
+        let want: HashSet<String> = q.split_whitespace().map(|t| t.to_lowercase()).collect();
+        let mut rows: Vec<(String, CachedSearch)> = self
+            .entries
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|(key, entry)| (key.clone(), to_cached(key, entry)))
+            .collect();
+        rows.sort_by(|a, b| a.0.cmp(&b.0));
+        let mut hits = Vec::new();
+        for (_, entry) in rows {
+            for res in &entry.response.results {
+                if hits.len() >= limit as usize {
+                    return Ok(hits);
+                }
+                let covers = res
+                    .title
+                    .split_whitespace()
+                    .chain(res.snippet.split_whitespace())
+                    .any(|t| want.contains(&t.to_lowercase()));
+                if covers {
+                    hits.push(CacheResultHit {
+                        url: res.url.clone(),
+                        title: res.title.clone(),
+                        snippet: res.snippet.clone(),
+                        engine: res.engine.clone(),
+                        query: entry.query.clone(),
+                        expires_at: entry.expires_at,
+                        score: Some(-1.0),
+                    });
+                }
+            }
+        }
+        Ok(hits)
     }
 
     async fn put(

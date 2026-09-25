@@ -9,8 +9,9 @@
 //! lookups, stale overflow serve and background refresh; [`waves`] —
 //! breaker gating and the primary/deferred split; [`fanout`] — wave
 //! spawning, the hedge permit race and deadline enforcement; [`merge`]
-//! — the RRF merge; [`persistence`] — shared response shaping, `put`
-//! and the search log.
+//! — the RRF merge; [`archive`] — `search_archive`'s hybrid RRF over
+//! `pages_fts` and `cache_fts` (W5-03); [`persistence`] — shared
+//! response shaping, `put` and the search log.
 //!
 //! Request flow for [`SearchPipeline::search`] /
 //! [`SearchPipeline::search_opts`]:
@@ -100,6 +101,7 @@
 //! License, v. 2.0. If a copy of the MPL was not distributed with this
 //! file, You can obtain one at <https://mozilla.org/MPL/2.0/>.
 
+mod archive;
 mod cache;
 mod fanout;
 mod merge;
@@ -107,6 +109,7 @@ mod persistence;
 use persistence::LogRow;
 mod waves;
 
+pub use archive::{ArchiveHit, ArchiveSource};
 pub use merge::{DEFAULT_COLLAPSE_SAME_HOST_AFTER, DEFAULT_RRF_K, RrfMerge};
 
 use std::sync::Arc;

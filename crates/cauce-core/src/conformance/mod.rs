@@ -13,7 +13,8 @@
 //! Module map: `mod.rs` holds the shared fixture builders ([`request`],
 //! [`response`], [`log_row`]) plus [`run_all`], which invokes every cluster in
 //! order. The per-area suites live beside it: [`cache`] — exact round-trip,
-//! expiry/eviction and the admin surface; [`lexical`] — the tier-2 FTS lookup;
+//! expiry/eviction and the admin surface; [`lexical`] — the tier-2 FTS lookup and the W5-03 `cache_fts` result
+//! search;
 //! [`history`] — search log, clicks, the merged feed and `suggest`
 //! completions; [`stats`] —
 //! dashboard aggregates; [`health`] — engine health upserts; [`audit`] — the
@@ -39,7 +40,7 @@ pub use audit::audit_trail;
 pub use cache::{cache_admin, cache_exact_roundtrip, cache_expiry_and_eviction};
 pub use health::engine_health;
 pub use history::{log_clicks_history, suggest};
-pub use lexical::lexical_search;
+pub use lexical::{cache_fts_search, lexical_search};
 pub use pages::{pages_roundtrip, pages_search_and_delete};
 pub use stats::stats_aggregates;
 
@@ -142,6 +143,7 @@ pub async fn run_all(store: &impl Store) {
     cache_exact_roundtrip(store).await;
     cache_expiry_and_eviction(store).await;
     lexical_search(store).await;
+    cache_fts_search(store).await;
     log_clicks_history(store).await;
     suggest(store).await;
     stats_aggregates(store).await;
