@@ -11,6 +11,10 @@
 //!   category?)` — the frozen Exa wire shape from `v2-legacy:oxe/api/exa.py`
 //!   (`{requestId, searchType, results, costDollars, tool_source}`); the v2
 //!   `source = "history"` short-circuit maps to the `clicks` table.
+//! - `fetch_and_index(url, query_hash?)` — W5-01 fetch-and-index: fetch the
+//!   page, extract the article to markdown, store the `pages` row, return
+//!   it. Only registered in `archive` builds; its `#[tool_router]` impl
+//!   merges into the base router in `CauceMcp::new`.
 //!
 //! Transports: streamable HTTP mounted at `/mcp` ([`streamable_service`]) and
 //! stdio for `cauce mcp` ([`serve_stdio`]), both against the same [`AppState`]
@@ -100,10 +104,13 @@ pub struct CauceMcp {
 
 impl CauceMcp {
     pub fn new(state: AppState) -> Self {
-        Self {
-            state,
-            tool_router: Self::tool_router(),
-        }
+        #[allow(unused_mut)]
+        let mut tool_router = Self::tool_router();
+        // `fetch_and_index` lives in its own `#[tool_router]` impl so the
+        // whole tool compiles out of archive-less (minimal `mcp`) builds.
+        #[cfg(feature = "archive")]
+        tool_router.merge(Self::archive_tool_router());
+        Self { state, tool_router }
     }
 
     /// `ClientKind::Mcp(<client_info.name>)`; `"unknown"` when the client did
@@ -189,6 +196,19 @@ pub struct CacheInvalidateArgs {
     pub expired: Option<bool>,
     /// Remove every cache entry.
     pub all: Option<bool>,
+}
+
+/// `fetch_and_index` arguments (W5-01). `query_hash` stays a plain
+/// string — `CacheKey` carries no `JsonSchema` — and is validated via
+/// `FromStr` in the tool body.
+#[cfg(feature = "archive")]
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct FetchAndIndexArgs {
+    /// http(s) URL to fetch, extract to markdown and index.
+    pub url: String,
+    /// Optional 64-hex `CacheKey` of the search that surfaced the page;
+    /// stored as `pages.source_query_hash`.
+    pub query_hash: Option<String>,
 }
 
 /// `exa_search` arguments (settled input shape; frozen v2 surface).
@@ -564,11 +584,70 @@ impl CauceMcp {
     }
 }
 
+/// `fetch_and_index(url, query_hash?)` — the W5-01 archive writer: fetch
+/// through the shared `HttpClient`, readability extraction to markdown,
+/// `pages` upsert. Returns the stored `PageRow` so the agent gets the
+/// markdown back. Its own `#[tool_router]` impl (merged in
+/// `CauceMcp::new`) keeps the tool out of archive-less builds.
+#[cfg(feature = "archive")]
+#[tool_router(router = archive_tool_router)]
+impl CauceMcp {
+    #[tool(
+        description = "Fetch a page, extract its article to markdown and index it in the local archive. Args: url (http/https, required), query_hash (optional 64-hex cache key of the search that surfaced it). Returns the stored page row — url, fetched_at, title, markdown, byte_len, source_query_hash — including the extracted markdown."
+    )]
+    async fn fetch_and_index(
+        &self,
+        Parameters(args): Parameters<FetchAndIndexArgs>,
+        ctx: RequestContext<RoleServer>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let request_id = Uuid::now_v7();
+        let client = Self::client_kind(&ctx);
+        let span = info_span!(
+            "mcp.tool",
+            tool = "fetch_and_index",
+            request_id = %request_id,
+            client = %client.label(),
+        );
+        async move {
+            let source_query_hash = args
+                .query_hash
+                .map(|h| h.parse::<CacheKey>())
+                .transpose()
+                .map_err(|e: String| invalid_params(e, request_id))?;
+            let archiver = self.state.archive().ok_or_else(|| {
+                ErrorData::internal_error(
+                    "archive pipeline unavailable",
+                    Some(json!({ "error": "archive_disabled", "request_id": request_id })),
+                )
+            })?;
+            let row = archiver
+                .fetch_and_index(&args.url, source_query_hash)
+                .await
+                .map_err(|e| errors::archive_error(&e, request_id))?;
+            self.audit_tool(
+                &client,
+                "fetch_and_index",
+                request_id,
+                json!({
+                    "url": row.url.to_string(),
+                    "byte_len": row.byte_len,
+                    "title": row.title,
+                }),
+                false,
+            )
+            .await?;
+            structured(&row, request_id)
+        }
+        .instrument(span)
+        .await
+    }
+}
+
 #[tool_handler(
     name = "cauce",
     version = "0.0.0",
     router = self.tool_router.clone(),
-    instructions = "Local metasearch backed by a TTL cache. `search_web` returns the canonical cauce SearchResponse (meta.request_id, meta.source cache/network); `exa_search` returns the Exa-compatible shape for existing wiring; `cache_status`/`cache_invalidate` manage the shared cache. While iterating, pin engines=[\"replay\"] (deterministic, offline) or engines=[\"wikipedia\"] (keyless, gentle rate limits; ships enabled=false so it needs a [[engines]] config entry first)."
+    instructions = "Local metasearch backed by a TTL cache. `search_web` returns the canonical cauce SearchResponse (meta.request_id, meta.source cache/network); `exa_search` returns the Exa-compatible shape for existing wiring; `cache_status`/`cache_invalidate` manage the shared cache; `fetch_and_index` fetches a page to markdown and indexes it in the archive (archive builds only). While iterating, pin engines=[\"replay\"] (deterministic, offline) or engines=[\"wikipedia\"] (keyless, gentle rate limits; ships enabled=false so it needs a [[engines]] config entry first)."
 )]
 impl ServerHandler for CauceMcp {}
 

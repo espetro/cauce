@@ -1,0 +1,5 @@
+We arrived at the flats just after dawn, when the surface still holds the night's cool and the crust crunches underfoot like packed snow. By ten it is a mirror. The horizon doubles itself and distance stops meaning anything — the survey stakes a kilometer out look close enough to touch.
+
+The work is slow: grid, drill, tag, photograph. The crust load-bears until it does not, and the rule is that the person who breaks through marks the spot with a flag and a GPS point, not pride. July sun pushes surface temperature past fifty degrees by midday; we retreat to shade and tally samples.
+
+What the flats teach is patience as a method. Nothing here happens quickly — not the crust growth, not the brine movement underneath it, and certainly not the measurements that would tell us either is changing.

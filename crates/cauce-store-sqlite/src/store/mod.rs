@@ -14,7 +14,8 @@
 //! answer cache (`answers` TTL read + upsert); [`history`] — `search_log`,
 //! `clicks`, the merged feed and `history_stats`; [`stats`] — the
 //! `/api/stats` aggregate groups; [`health`] — `engine_health` read/upsert;
-//! [`audit`] — `audit` append, filtered list and facets.
+//! [`pages`] — the W5-01 `pages` archive read + upsert; [`audit`] — `audit`
+//! append, filtered list and facets.
 //!
 //! This Source Code Form is subject to the terms of the Mozilla Public
 //! License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -25,6 +26,7 @@ mod audit;
 mod cache;
 mod health;
 mod history;
+mod pages;
 mod stats;
 #[cfg(test)]
 mod tests;
@@ -38,7 +40,8 @@ use async_trait::async_trait;
 use cauce_core::{
     AnswerKey, AnswerRow, AuditFacets, AuditFilter, AuditRow, CacheKey, CacheState, CachedAnswer,
     CachedSearch, ClickRow, DeleteSearchLog, EngineHealthRow, HistoryFilter, HistoryItem,
-    HistoryStats, SearchLogRow, SearchResponse, StatsSnapshot, Store, StoreError, StoreTuning,
+    HistoryStats, PageRow, SearchLogRow, SearchResponse, StatsSnapshot, Store, StoreError,
+    StoreTuning,
 };
 use rusqlite::Connection;
 use tokio::task::{JoinError, spawn_blocking};
@@ -270,6 +273,16 @@ impl Store for SqliteStore {
         ttl: Duration,
     ) -> Result<(), StoreError> {
         self.put_answer(key, row, ttl).await
+    }
+
+    // ---- pages --------------------------------------------------------------
+
+    async fn put_page(&self, row: &PageRow) -> Result<(), StoreError> {
+        self.put_page(row).await
+    }
+
+    async fn get_page(&self, url: &url::Url) -> Result<Option<PageRow>, StoreError> {
+        self.get_page(url).await
     }
 
     // ---- search log, clicks, history ----------------------------------------
