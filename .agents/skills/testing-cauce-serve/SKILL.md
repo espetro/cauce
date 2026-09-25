@@ -96,6 +96,37 @@ process — you cannot give tier-1 and tier-2 different latencies from env. Mult
   A fixture answer without a `{"confidence":…}` JSON tail ends `confidence=0` and is NOT
   cached (grounded cache needs ≥4), so repeat runs stay clean.
 
+## Archive / click-beacon e2e (`/api/pages`, W5-01+)
+
+- `archive.index_on_click` defaults true; `CAUCE_ARCHIVE_INDEX_ON_CLICK=false` removes the
+  `fetch("/api/pages")` block from the results template — grep the rendered `/search` HTML to
+  verify the beacon is present/absent. The beacon is a delegated `document` click listener on
+  `#results a` (SSR, streaming and pagination alike); the `<article>` `hx-post="/api/click"`
+  rows write the `clicks` table independently of the flag — a click with the flag off records
+  `clicks` but no `pages` row (easy negative test).
+- The archive `Fetcher` has **no HostGuard** — loopback fetch targets work. Synthetic replay
+  results point at real hosts with fabricated paths (`https://en.wikipedia.org/guide/q-0`),
+  so click-beacon indexing is non-deterministic against them. For a deterministic click →
+  `pages` row, serve `crates/cauce-core/tests/fixtures/archive/` on a loopback port
+  (`python3 -m http.server 8123 --bind 127.0.0.1 --directory crates/cauce-core/tests/fixtures/archive`)
+  and hand-author a cassette whose result URLs point at it:
+  `CAUCE_REPLAY_FIXTURES_DIR=<dir> CAUCE_REPLAY_CASSETTE_ENGINE=replay` with
+  `<dir>/replay/<sha8(normalized query)>.json` in the Cassette schema
+  (`{query,engine,recorded_at,results:[{url,title,snippet,engine,published,score}]}` —
+  every field incl. `published:null` and `score` required). sha8 = first 8 hex of
+  sha256(`" ".join(q.split()).lower()`).
+- `sqlite3` CLI is NOT installed on the box — use `python3 -c "import sqlite3; ..."` against
+  `$CAUCE_DATA_DIR/cauce.db` (`SELECT url,title,length(markdown),byte_len FROM pages`;
+  `clicks` for the hx-post). `put_page` upserts: a second click on the same URL refreshes
+  `fetched_at`, `count(*)` stays 1.
+- HTTP surface: `POST /api/pages {"url"}` → 201 `PageRow` (`source_query_hash` null for direct
+  calls, set for beacon calls); `GET /api/pages/{percent-encoded-url-as-one-segment}` →
+  200 row or `{"error":{"code":"not_found",...}}`; non-http(s) url → 400 `bad_request`
+  envelope. Browser URL-bar GETs render raw JSON fine.
+- stderr log stays empty; request evidence is in `$CAUCE_DATA_DIR/logs/cauce-YYYY-MM-DD.jsonl`
+  (`path`, `client`, `method` per request — shows the `ui` POST /api/click and POST /api/pages
+  pair ~5 ms apart on a click).
+
 ## Devin Secrets Needed
 
 None — all local, no auth.
