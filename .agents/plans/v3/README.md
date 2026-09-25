@@ -11,7 +11,7 @@ wave is one issue, one branch, one PR.
 | W1 | `wave-1-engines-and-agents.md` | 2 | 10-06 to 10-19 | P0 | Bing + Brave native; MCP over HTTP and stdio; `~/SEARCH.md` wiring cut over to v3 on 4479 |
 | W2 | `wave-2-ui-and-observability.md` | 3 | 10-20 to 11-02 | P1 | all HTMX pages usable; owner uses it daily for a week |
 | W3 | `wave-3-tail-tolerance.md` | 4 | 11-03 to 11-16 | P1 | hedging, stale-while-revalidate, nightly relevance evals (6 steps) |
-| W4 | `wave-4-ai-mode.md` | 5 | 11-17 to 11-30 | P2 | streamed, grounded answers via Bifrost; AI evals with baseline |
+| W4 | `wave-4-ai-mode.md` | 5 | 11-17 to 11-30 | P2 | streamed, grounded answers via OpenAI-compatible providers; AI evals with baseline |
 | W5 | `wave-5-archive-and-semantic.md` | 6 | 12-01 to 12-14 | P2 | `fetch_and_index`, `search_archive` (3 steps) |
 | W6 | `wave-6-postgres-and-multi-instance.md` | 7 | 12-15 to 12-28 | P2 | conformance suite green on SQLite, parameterised for a second impl (1 step) |
 | later | `later/*.md` | none | none | P3 | stubs only; not v3.0 |

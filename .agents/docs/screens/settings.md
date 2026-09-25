@@ -41,9 +41,9 @@ page; v3 gives settings a route.
 |   [delete expired]  [delete all]            browse entries ->    |
 |                                                                  |
 | AI answers                                    lands in wave 4    |
-|   Base URL   [ http://localhost:8317/v1              ]           |
-|   API key    [ ${env:BIFROST_API_KEY}                ]           |
-|              BIFROST_API_KEY is set                              |
+|   Base URL   [ http://localhost:4000/v1              ]           |
+|   API key    [ ${env:PROVIDER_API_KEY}                ]           |
+|              PROVIDER_API_KEY is set                              |
 |   Model      [ claude-sonnet-4-5          v]                     |
 |   [ ] enabled  (the answer pipeline arrives in wave 4)           |
 |                                                                  |
@@ -74,7 +74,7 @@ Validation error (inline, next to the field, form stays filled):
   find fields by key.
 - Templates are never resolved: an `${env:NAME}` value renders verbatim in
   its input and is written back byte for byte on save. Acceptance (W2-07):
-  the `${env:BIFROST_API_KEY}` template survives a save round trip
+  the `${env:PROVIDER_API_KEY}` template survives a save round trip
   unchanged; editing `search.deadline_ms`, saving and reloading shows the
   new value.
 - Environment overrides: a field whose value is pinned by an env var
@@ -95,7 +95,7 @@ Validation error (inline, next to the field, form stays filled):
 - AI answers section is visibly greyed (reduced opacity, `lands in wave 4`
   in the legend) but its inputs are live so the config can be prepared:
   base URL, API key (template shown verbatim, plus an env status line
-  `BIFROST_API_KEY is set` or `is not set` when the value is an env
+  `PROVIDER_API_KEY is set` or `is not set` when the value is an env
   template), model picker (text input with a `<datalist>` filled from
   `GET {base_url}/models` using the resolved key; when the list cannot be
   fetched the hint `model list unreachable; type a model name` appears and

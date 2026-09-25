@@ -215,10 +215,10 @@ CI runs the golden path against the `replay` engine. Nothing else.
   defaults < TOML < `OXE_*` env; interpolation per settled inputs; `Config::save` writes the
   raw (template) tree back, never resolved values; `Resources::detect()` (sysinfo) ->
   `StoreTuning`, `upstream_concurrency`, `test_threads`; `oxe config show` (redacted) and
-  `oxe config path`. Defaults: `ai.base_url = "http://localhost:8317/v1"`,
-  `ai.api_key = "${env:BIFROST_API_KEY}"`, `ai.enabled = false` until W4.
+  `oxe config path`. Defaults: `ai.base_url = ""`, `ai.api_key = ""` (an
+  `${env:...}`/`${file:...}` template), `ai.enabled = false` until W4.
 - Acceptance: unit tests for every interpolation form incl. `:?` failing startup and `$$`
-  escape; save/load round-trip preserves `${env:BIFROST_API_KEY}` literally; a 4 GB machine
+  escape; save/load round-trip preserves `${env:PROVIDER_API_KEY}` literally; a 4 GB machine
   yields a smaller `cache_size` than a 32 GB one (inject the numbers).
 - Follow-up: W0-08 (consumes `StoreTuning`), W0-12.
 

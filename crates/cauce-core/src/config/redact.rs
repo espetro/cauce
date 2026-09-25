@@ -47,7 +47,7 @@ fn redact_leaf(tree: &mut toml::Value, path: &[String], templates: &BTreeMap<Vec
 /// Redact every secret-bearing leaf the template overlay did not already
 /// cover: the fixed `SECRET_PATHS` plus every `engines.<i>.env.*` value
 /// (child-process env vars are where engine credentials live). This is the
-/// guard for secrets that entered the resolved config as literals — an
+/// guard for secrets that entered the resolved config as literals — a
 /// `CAUCE_*` override such as `CAUCE_AI_API_KEY` or a plain string in the file.
 pub(super) fn redact_secret_paths(
     tree: &mut toml::Value,
@@ -148,20 +148,20 @@ mod tests {
     fn display_redact_cases() {
         let cases = &[
             RedactCase {
-                env: &[("BIFROST_API_KEY", "sk-bf-live-secret")],
-                file: "[ai]\napi_key = \"${env:BIFROST_API_KEY}\"\n[server]\nport = 4480\n",
+                env: &[("PROVIDER_API_KEY", "sk-live-secret")],
+                file: "[ai]\napi_key = \"${env:PROVIDER_API_KEY}\"\n[server]\nport = 4480\n",
                 resolved: &[],
-                present: &["${env:BIFROST_API_KEY}"],
+                present: &["${env:PROVIDER_API_KEY}"],
                 present_toml: &["4480"],
-                absent: &["sk-bf-live-secret"],
+                absent: &["sk-live-secret"],
             },
             RedactCase {
-                env: &[("BIFROST_API_KEY", "sk-bf-live-secret")],
-                file: "[ai]\napi_key = \"${env:BIFROST_API_KEY}\"\n",
-                resolved: &[Probe::ApiKey("sk-bf-live-secret")],
-                present: &["${env:BIFROST_API_KEY}"],
+                env: &[("PROVIDER_API_KEY", "sk-live-secret")],
+                file: "[ai]\napi_key = \"${env:PROVIDER_API_KEY}\"\n",
+                resolved: &[Probe::ApiKey("sk-live-secret")],
+                present: &["${env:PROVIDER_API_KEY}"],
                 present_toml: &[],
-                absent: &["sk-bf-live-secret"],
+                absent: &["sk-live-secret"],
             },
             RedactCase {
                 env: &[("CAUCE_AI_API_KEY", "s3cret-from-env")],
