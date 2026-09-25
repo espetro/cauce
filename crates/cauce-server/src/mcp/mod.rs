@@ -645,7 +645,6 @@ impl CauceMcp {
 
 #[tool_handler(
     name = "cauce",
-    version = "0.0.0",
     router = self.tool_router.clone(),
     instructions = "Local metasearch backed by a TTL cache. `search_web` returns the canonical cauce SearchResponse (meta.request_id, meta.source cache/network); `exa_search` returns the Exa-compatible shape for existing wiring; `cache_status`/`cache_invalidate` manage the shared cache; `fetch_and_index` fetches a page to markdown and indexes it in the archive (archive builds only). While iterating, pin engines=[\"replay\"] (deterministic, offline) or engines=[\"wikipedia\"] (keyless, gentle rate limits; ships enabled=false so it needs a [[engines]] config entry first)."
 )]
