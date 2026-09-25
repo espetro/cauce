@@ -39,7 +39,10 @@ that catch regressions offline. Anthropic Messages protocol as the last step.
 
 ### W4-01 OpenAI streaming client and `/models`
 - Issue #50 · Effort M · Label feature · Team Systems · Branch `v3/w4-01-openai-client`
-- Depends on: W2-07, W2-10, W3-06
+- Depends on: W2-07, W3-06
+- Amended 2026-09-24: the W2-10 gate is lifted — the usage week runs alongside W4 and
+  its findings feed W4-04 eval cases and refinement instead (issue #42). Nothing in
+  this step consumes usage-week output; AI mode is itself the multiplier for it.
 - Do: `cauce-core::ai::openai`: SSE-streamed chat completions with tool-call delta
   assembly, usage extraction, typed errors (auth, rate limit with retry-after, context
   length), `GET {base_url}/models` listing with a 60 s cache; `wiremock` fixtures recorded
