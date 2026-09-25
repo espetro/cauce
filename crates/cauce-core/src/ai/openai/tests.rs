@@ -34,6 +34,7 @@ fn client_for(server: &MockServer, model: &str) -> OpenAiClient {
         api_key: "sk-test".to_string(),
         model: model.to_string(),
         enabled: true,
+        protocol: crate::config::AiProtocol::OpenAi,
     })
     .unwrap()
 }
@@ -354,6 +355,7 @@ async fn empty_model_and_messages_rejected() {
         api_key: String::new(),
         model: String::new(),
         enabled: true,
+        protocol: crate::config::AiProtocol::OpenAi,
     })
     .unwrap();
     assert!(matches!(

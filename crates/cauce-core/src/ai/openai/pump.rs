@@ -8,35 +8,20 @@
 //! file, You can obtain one at <https://mozilla.org/MPL/2.0/>.
 
 use std::collections::BTreeMap;
-use std::sync::Arc;
 use std::time::Instant;
 
-use chrono::Utc;
 use futures_util::StreamExt;
 use tokio::sync::mpsc;
 use tracing::Instrument;
-use tracing::{debug, info_span};
-use uuid::Uuid;
+use tracing::debug;
 
-use crate::ai::{
-    AiError, AiStreamEvent, ChatCompletion, DEFAULT_ACTOR, PROVIDER_CALL_ACTION, ToolCall, Usage,
-};
-use crate::metrics::Metrics;
-use crate::store::{AuditRow, Store};
+use crate::ai::http::{ERROR_BODY_CAP, map_reqwest_error, read_capped};
+use crate::ai::pump::PumpCtx;
+use crate::ai::sse::{extract_event, trim_ascii_start, trim_cr};
+use crate::ai::{AiError, AiStreamEvent, ChatCompletion, ToolCall, Usage};
 
-use super::errors::{ERROR_BODY_CAP, map_error, map_reqwest_error, map_stream_error, read_capped};
+use super::errors::{map_error, map_stream_error};
 use super::wire::{Chunk, ToolCallDelta};
-
-/// Everything the spawned pump task needs once the request is built.
-pub(super) struct PumpCtx {
-    pub(super) client: reqwest::Client,
-    pub(super) model: String,
-    pub(super) provider_host: String,
-    pub(super) metrics: Metrics,
-    pub(super) audit: Option<Arc<dyn Store>>,
-    pub(super) actor: Option<String>,
-    pub(super) request_id: Option<Uuid>,
-}
 
 /// Stream state folded across chunks.
 #[derive(Default)]
@@ -102,23 +87,11 @@ pub(super) async fn drive(
     tx: mpsc::UnboundedSender<AiStreamEvent>,
 ) {
     let started = Instant::now();
-    let span = info_span!(
-        "ai_http",
-        model = %pump.model,
-        url = %request.url(),
-        status = tracing::field::Empty,
-        ms = tracing::field::Empty,
-        outcome = tracing::field::Empty,
-    );
+    let span = pump.span(request.url());
     let (outcome, usage) = exchange(&pump, request, &tx, &span)
         .instrument(span.clone())
         .await;
-    let ms = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
-    span.record("ms", ms);
-    span.record("outcome", outcome);
-    pump.metrics
-        .record_ai_request(&pump.model, outcome, started.elapsed(), usage);
-    pump.write_audit(ms, outcome, usage).await;
+    pump.record(started, &span, outcome, usage).await;
 }
 
 /// The HTTP exchange itself; returns the `outcome` label and usage for
@@ -254,93 +227,4 @@ fn handle_event(
         }
     }
     Ok(false)
-}
-
-fn trim_cr(line: &[u8]) -> &[u8] {
-    line.strip_suffix(b"\r").unwrap_or(line)
-}
-
-fn trim_ascii_start(mut bytes: &[u8]) -> &[u8] {
-    while let Some((b, rest)) = bytes.split_first() {
-        if !b.is_ascii_whitespace() {
-            break;
-        }
-        bytes = rest;
-    }
-    bytes
-}
-
-/// Pop one complete SSE event (terminated by a blank line) off `buf`.
-fn extract_event(buf: &mut Vec<u8>) -> Option<Vec<u8>> {
-    for i in 0..buf.len() {
-        if buf[i] != b'\n' {
-            continue;
-        }
-        let end = match (buf.get(i + 1), buf.get(i + 2)) {
-            (Some(b'\n'), _) => i + 2,
-            (Some(b'\r'), Some(b'\n')) => i + 3,
-            _ => continue,
-        };
-        let event = buf[..i].to_vec();
-        buf.drain(..end);
-        return Some(event);
-    }
-    None
-}
-
-impl PumpCtx {
-    /// Emit the `cauce.audit` event and write the `ai.provider_call`
-    /// row — same emit-then-persist contract as cauce-server's
-    /// `observability::audit`, minus the handler layer. The row carries
-    /// model/tokens/ms/request_id; never the prompt.
-    async fn write_audit(&self, ms: u64, outcome: &'static str, usage: Option<Usage>) {
-        let Some(store) = &self.audit else {
-            return;
-        };
-        let row = AuditRow {
-            id: None,
-            ts: Utc::now(),
-            actor: self.actor.clone().unwrap_or_else(|| DEFAULT_ACTOR.into()),
-            action: PROVIDER_CALL_ACTION.to_string(),
-            target: self.model.clone(),
-            details: serde_json::json!({
-                "provider": self.provider_host,
-                "tokens": usage.map(|u| serde_json::json!({
-                    "prompt": u.prompt_tokens,
-                    "completion": u.completion_tokens,
-                    "total": u.total_tokens,
-                })),
-                "ms": ms,
-                "outcome": outcome,
-            }),
-            request_id: self.request_id,
-        };
-        match row.request_id {
-            Some(request_id) => tracing::info!(
-                target: "cauce.audit",
-                audit = true,
-                actor = %row.actor,
-                action = %row.action,
-                audit_target = %row.target,
-                request_id = %request_id,
-                "audit"
-            ),
-            None => tracing::info!(
-                target: "cauce.audit",
-                audit = true,
-                actor = %row.actor,
-                action = %row.action,
-                audit_target = %row.target,
-                "audit"
-            ),
-        }
-        if let Err(e) = store.audit(row).await {
-            tracing::error!(
-                target: "cauce.audit",
-                audit = true,
-                error = %e,
-                "audit write failed"
-            );
-        }
-    }
 }

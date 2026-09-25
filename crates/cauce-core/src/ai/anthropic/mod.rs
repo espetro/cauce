@@ -1,30 +1,34 @@
-//! OpenAI-compatible provider client (W4-01): `POST
-//! {base_url}/chat/completions` with `stream: true`, parsed as SSE and
-//! fanned out to a channel of [`AiStreamEvent`]s — text deltas as they
-//! arrive, then one [`ChatCompletion`] with the tool calls assembled
-//! from `tool_calls` deltas and the stream's `usage` block. `GET
-//! {base_url}/models` is served from a 60 s in-process cache.
+//! Anthropic Messages API provider client (W4-05): `POST
+//! {base_url}/v1/messages` with `stream: true`, parsed as SSE and
+//! fanned out to a channel of [`AiStreamEvent`]s — `text_delta`s as
+//! they arrive, `input_json_delta` fragments folded into [`ToolCall`]s,
+//! one terminal [`ChatCompletion`]. `GET {base_url}/v1/models` is
+//! served from a 60 s in-process cache, same convention as
+//! [`OpenAiClient`](super::OpenAiClient).
 //!
-//! Module map: `mod.rs` is the public [`OpenAiClient`] — construction,
-//! `/models` and `chat_stream`. [`wire`] holds the request/response
-//! JSON shapes; [`pump`] is the spawned task that runs the HTTP
-//! exchange, parses SSE and folds chunks into a [`ChatCompletion`],
-//! then records metrics and the audit row; [`errors`] classifies
-//! provider failures into [`AiError`].
+//! Module map: `mod.rs` is the public [`AnthropicClient`] —
+//! construction, `/v1/models` and `chat_stream`. [`wire`] holds the
+//! request/stream JSON shapes and the [`ChatMessage`] → Messages-API
+//! mapping (system texts join into the top-level `system` field,
+//! assistant `tool_calls` become `tool_use` blocks, `tool` results ride
+//! back inside a `user` turn as `tool_result` blocks). [`pump`] is the
+//! spawned task that runs the HTTP exchange, parses SSE and folds
+//! events into a [`ChatCompletion`], then records metrics and the audit
+//! row; [`errors`] classifies provider failures into [`AiError`].
 //!
-//! Typed errors ([`AiError`]) classify the failure modes the answer
-//! loop reacts to: 401/403 → `Auth`, 429 → `RateLimited` (the
-//! `Retry-After` header wins, then the OpenRouter-style
-//! `error.metadata.retry_after_seconds`/`headers.Retry-After`
-//! envelope), a provider context-length error → `ContextLength`,
-//! timeouts → `Timeout`, the rest → `Provider`/`Transport`/`Parse`.
+//! Typed errors classify the failure modes the answer loop reacts to:
+//! 401/403 or `authentication_error`/`permission_error` → `Auth`, 429
+//! `rate_limit_error` and 529 `overloaded_error` → `RateLimited` (the
+//! `Retry-After` header is the only hint source), a provider
+//! context-length error → `ContextLength`, timeouts → `Timeout`, the
+//! rest → `Provider`/`Transport`/`Parse`.
 //!
 //! Every chat call records `cauce_ai_requests_total{model,outcome}`,
 //! `cauce_ai_tokens_total{model,kind}` and `cauce_ai_duration_ms`, and
-//! — when the client was built with [`OpenAiClient::with_audit`] — an
-//! `audit` row (`ai.provider_call`): model, tokens, ms, request_id. The
-//! prompt text never leaves the request body. `/models` is a cached
-//! discovery call and is deliberately uninstrumented.
+//! — when the client was built with [`AnthropicClient::with_audit`] —
+//! an `audit` row (`ai.provider_call`): model, tokens, ms, request_id.
+//! The prompt text never leaves the request body. `/v1/models` is a
+//! cached discovery call and is deliberately uninstrumented.
 //!
 //! This Source Code Form is subject to the terms of the Mozilla Public
 //! License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -39,7 +43,7 @@ mod wire;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use reqwest::header::{AUTHORIZATION, CONTENT_TYPE, HeaderMap, HeaderValue};
+use reqwest::header::{CONTENT_TYPE, HeaderMap, HeaderValue};
 use tokio::sync::mpsc;
 use url::Url;
 
@@ -53,23 +57,31 @@ use super::{AiCallCtx, AiError, AiStreamEvent, ChatRequest, ModelInfo};
 
 use errors::map_error;
 use pump::drive;
-use wire::{ModelsPage, WireRequest, WireStreamOptions, WireTool};
+use wire::{ModelsPage, WireRequest, WireTool, map_tool_choice, wire_messages};
 
-/// `GET /models` listing cache TTL (W4-01 settled: 60 s).
+/// `GET /v1/models` listing cache TTL (the W4-01 convention).
 const MODELS_CACHE_TTL: Duration = Duration::from_secs(60);
 
 /// `(fetched_at, listing)` — cloned-out `Arc`s keep the lock short.
 type ModelsCache = Arc<Mutex<Option<(Instant, Arc<Vec<ModelInfo>>)>>>;
 
-/// `/models` responses are legitimately large (OpenRouter's full list is
-/// ~1 MB); cap at 16 MiB so a misbehaving endpoint cannot exhaust memory.
+/// `/v1/models` responses are legitimately large; cap at 16 MiB so a
+/// misbehaving endpoint cannot exhaust memory.
 const MODELS_BODY_CAP: usize = 16 * 1024 * 1024;
 
-/// OpenAI-compatible streaming client over `chat/completions` +
-/// `/models`. Cheap to clone — the reqwest pool, models cache and audit
-/// handle are shared.
+/// `anthropic-version` the client pins — the Messages API GA version.
+const ANTHROPIC_VERSION: &str = "2023-06-01";
+
+/// `max_tokens` is required on `/v1/messages`; when `ChatRequest`
+/// doesn't carry one (the answer loop never does), the client sends
+/// this ceiling — the model may still stop earlier.
+const DEFAULT_MAX_TOKENS: u32 = 4096;
+
+/// Anthropic Messages API streaming client over `/v1/messages` +
+/// `/v1/models`. Cheap to clone — the reqwest pool, models cache and
+/// audit handle are shared.
 #[derive(Clone)]
-pub struct OpenAiClient {
+pub struct AnthropicClient {
     client: reqwest::Client,
     /// `AiConfig::base_url`, trailing slash trimmed.
     base_url: String,
@@ -84,10 +96,10 @@ pub struct OpenAiClient {
     audit: Option<Arc<dyn Store>>,
 }
 
-impl OpenAiClient {
+impl AnthropicClient {
     /// Build the client from `[ai]` config. `api_key` is already
-    /// interpolated at config load (`${env:...}` resolved); an empty key
-    /// means no `Authorization` header (loopback providers, Bifrost
+    /// interpolated at config load (`${env:...}` resolved); an empty
+    /// key means no `x-api-key` header (loopback gateways, proxies
     /// without auth). Fails on a non-http(s) or unparsable `base_url`
     /// or a key that cannot be a header value.
     pub fn new(cfg: &AiConfig) -> Result<Self, AiError> {
@@ -108,10 +120,14 @@ impl OpenAiClient {
             reqwest::header::USER_AGENT,
             HeaderValue::from_static(concat!("cauce/", env!("CARGO_PKG_VERSION"))),
         );
+        headers.insert(
+            "anthropic-version",
+            HeaderValue::from_static(ANTHROPIC_VERSION),
+        );
         if !cfg.api_key.is_empty() {
-            let value = HeaderValue::from_str(&format!("Bearer {}", cfg.api_key))
+            let value = HeaderValue::from_str(&cfg.api_key)
                 .map_err(|e| AiError::Parse(format!("invalid [ai].api_key header value: {e}")))?;
-            headers.insert(AUTHORIZATION, value);
+            headers.insert("x-api-key", value);
         }
 
         let client = reqwest::Client::builder()
@@ -142,7 +158,7 @@ impl OpenAiClient {
         self
     }
 
-    /// Override the 60 s `/models` cache TTL (tests).
+    /// Override the 60 s `/v1/models` cache TTL (tests).
     pub fn with_models_ttl(mut self, ttl: Duration) -> Self {
         self.models_ttl = ttl;
         self
@@ -153,8 +169,8 @@ impl OpenAiClient {
         &self.model
     }
 
-    /// `GET {base_url}/models`, served from the 60 s cache while fresh.
-    /// Errors are the same typed [`AiError`] set as chat calls.
+    /// `GET {base_url}/v1/models`, served from the 60 s cache while
+    /// fresh. Errors are the same typed [`AiError`] set as chat calls.
     pub async fn models(&self, budget: Duration) -> Result<Arc<Vec<ModelInfo>>, AiError> {
         {
             let cache = self.models_cache.lock().unwrap();
@@ -167,7 +183,7 @@ impl OpenAiClient {
 
         let res = self
             .client
-            .get(format!("{}/models", self.base_url))
+            .get(format!("{}/v1/models", self.base_url))
             .timeout(budget)
             .send()
             .await
@@ -182,25 +198,27 @@ impl OpenAiClient {
             && len > MODELS_BODY_CAP as u64
         {
             return Err(AiError::Parse(format!(
-                "/models body exceeds the {MODELS_BODY_CAP} byte cap ({len} bytes announced)"
+                "/v1/models body exceeds the {MODELS_BODY_CAP} byte cap ({len} bytes announced)"
             )));
         }
         let body = res.bytes().await.map_err(map_reqwest_error)?;
         if body.len() > MODELS_BODY_CAP {
             return Err(AiError::Parse(format!(
-                "/models body exceeds the {MODELS_BODY_CAP} byte cap ({} bytes)",
+                "/v1/models body exceeds the {MODELS_BODY_CAP} byte cap ({} bytes)",
                 body.len()
             )));
         }
         let page: ModelsPage = serde_json::from_slice(&body)
-            .map_err(|e| AiError::Parse(format!("/models decode failed: {e}")))?;
+            .map_err(|e| AiError::Parse(format!("/v1/models decode failed: {e}")))?;
         let models = Arc::new(
             page.data
                 .into_iter()
                 .map(|e| ModelInfo {
                     id: e.id,
-                    name: e.name,
-                    context_length: e.context_length,
+                    name: e.display_name,
+                    // The Anthropic listing doesn't carry a context
+                    // length.
+                    context_length: None,
                 })
                 .collect::<Vec<_>>(),
         );
@@ -208,18 +226,19 @@ impl OpenAiClient {
         Ok(models)
     }
 
-    /// `POST {base_url}/chat/completions` with `stream: true` +
-    /// `stream_options.include_usage`. Returns immediately with the
-    /// event channel; a spawned task runs the HTTP exchange, pushes
-    /// [`AiStreamEvent::Delta`]s as content arrives, one terminal
-    /// [`AiStreamEvent::Done`] or [`AiStreamEvent::Error`], then records
-    /// metrics and the audit row. `budget` bounds the whole call —
-    /// headers *and* the streamed body.
+    /// `POST {base_url}/v1/messages` with `stream: true`. Returns
+    /// immediately with the event channel; a spawned task runs the
+    /// HTTP exchange, pushes [`AiStreamEvent::Delta`]s as `text_delta`s
+    /// arrive, folds `input_json_delta` fragments into the
+    /// [`ChatCompletion`]'s tool calls, sends one terminal
+    /// [`AiStreamEvent::Done`] or [`AiStreamEvent::Error`], then
+    /// records metrics and the audit row. `budget` bounds the whole
+    /// call — headers *and* the streamed body.
     ///
     /// Validation failures (no model, empty `messages`, unbuildable
-    /// request) return `Err` synchronously; everything after connect is
-    /// an in-band `Error` event, mirroring the pipeline's
-    /// `StreamEvent::Error` convention.
+    /// request, non-object tool-call arguments) return `Err`
+    /// synchronously; everything after connect is an in-band `Error`
+    /// event, mirroring the pipeline's `StreamEvent::Error` convention.
     pub fn chat_stream(
         &self,
         req: &ChatRequest,
@@ -238,31 +257,31 @@ impl OpenAiClient {
             return Err(AiError::Parse("ChatRequest.messages is empty".to_string()));
         }
 
+        let (system, messages) = wire_messages(&req.messages)?;
         let tools: Vec<WireTool<'_>> = req
             .tools
             .iter()
             .map(|spec| WireTool {
-                kind: "function",
-                function: spec,
+                name: &spec.name,
+                description: &spec.description,
+                input_schema: &spec.parameters,
             })
             .collect();
         let body = WireRequest {
             model: &model,
             stream: true,
-            messages: &req.messages,
+            max_tokens: req.max_tokens.unwrap_or(DEFAULT_MAX_TOKENS),
+            system,
+            messages,
             tools,
-            tool_choice: req.tool_choice.as_ref(),
-            max_tokens: req.max_tokens,
+            tool_choice: req.tool_choice.as_ref().map(map_tool_choice),
             temperature: req.temperature,
-            stream_options: WireStreamOptions {
-                include_usage: true,
-            },
         };
         let payload = serde_json::to_vec(&body)
             .map_err(|e| AiError::Parse(format!("request serialise failed: {e}")))?;
         let request = self
             .client
-            .post(format!("{}/chat/completions", self.base_url))
+            .post(format!("{}/v1/messages", self.base_url))
             .header(CONTENT_TYPE, "application/json")
             .timeout(budget)
             .body(payload)

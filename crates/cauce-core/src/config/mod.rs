@@ -128,6 +128,7 @@ const ENV_OVERRIDES: &[(&str, &[&str], bool)] = &[
     ("CAUCE_AI_API_KEY", &["ai", "api_key"], false),
     ("CAUCE_AI_MODEL", &["ai", "model"], false),
     ("CAUCE_AI_ENABLED", &["ai", "enabled"], true),
+    ("CAUCE_AI_PROTOCOL", &["ai", "protocol"], false),
     (
         "CAUCE_CONFIG_INTERPOLATION",
         &["config", "interpolation"],
@@ -675,6 +676,39 @@ pub struct AiConfig {
     /// Master switch; `false` until W4.
     #[serde(default)]
     pub enabled: bool,
+    /// Wire protocol the provider client speaks (W4 settled inputs):
+    /// `openai` (default, `chat/completions`) or `anthropic` (`/v1/messages`).
+    #[serde(default)]
+    pub protocol: AiProtocol,
+}
+
+/// The `[ai].protocol` vocabulary (W4-05): which provider client the
+/// AI surface builds. An unknown value fails config load.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum AiProtocol {
+    /// OpenAI-compatible `POST {base_url}/chat/completions` (W4-01).
+    #[default]
+    #[serde(rename = "openai")]
+    OpenAi,
+    /// Anthropic Messages API `POST {base_url}/v1/messages` (W4-05).
+    #[serde(rename = "anthropic")]
+    Anthropic,
+}
+
+impl AiProtocol {
+    /// The config-file spelling — also the eval transcript suffix.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::OpenAi => "openai",
+            Self::Anthropic => "anthropic",
+        }
+    }
+}
+
+impl std::fmt::Display for AiProtocol {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
 }
 
 /// `[config]`: meta settings about the config file itself.

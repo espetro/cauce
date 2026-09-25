@@ -67,7 +67,34 @@ process — you cannot give tier-1 and tier-2 different latencies from env. Mult
 - `/settings` form PUTs to `/api/config` (hx-put); **"changes apply on restart"** — a saved
   value does not affect the running process, only the on-disk `config.toml`.
 - Shell kills: never `pkill -f "port 4479"` — the pattern also matches your own wrapping
-  shell command and kills it. Kill by PID from `ss -ltnp | grep :PORT`.
+  shell command and kills it (same for `pkill -f stub.py` etc). Kill by PID from
+  `ss -ltnp | grep :PORT`.
+
+## AI provider e2e (`/answer`, `[ai]`)
+
+- **Devin session secrets inject `CAUCE_AI_*` env vars into every shell**
+  (`CAUCE_AI_BASE_URL`, `CAUCE_AI_API_KEY`, `CAUCE_AI_MODEL`, `CAUCE_AI_ENABLED`), and env
+  overrides beat `config.toml`. A serve launched without explicit values silently talks to
+  the secret base_url (e.g. `https://openrouter.ai/api/v1/v1/messages` → 404). Always set
+  all four (plus `CAUCE_AI_PROTOCOL`) explicitly on the serve command.
+- Protocol: `[ai] protocol = "openai"` (default, `POST {base}/chat/completions` + Bearer)
+  or `"anthropic"` (`POST {base}/v1/messages`, `x-api-key` + `anthropic-version: 2023-06-01`
+  headers, no Bearer). `CAUCE_AI_PROTOCOL` env overrides. Unknown values fail `Config::load`
+  → `cauce serve: invalid config: unknown variant …` + exit 2 (server never binds).
+- Stub the provider instead of real egress: a ~100-line Python `http.server` replaying
+  `crates/cauce-core/fixtures/ai/<proto>/sse_*.raw` bodies (`text/event-stream`) in call
+  order works; add `GET /v1/models` → `models.json` and a `/log` endpoint so the request
+  log (method, headers, fixture index) can be opened in the browser as evidence. Count
+  POSTs separately for fixture ordering — any GET probe otherwise shifts the order.
+- Search side of the answer loop: pin `CAUCE_ENGINES=replay` and point cassettes at
+  `CAUCE_REPLAY_FIXTURES_DIR=<repo>/evals/ai/cassettes CAUCE_REPLAY_CASSETTE_ENGINE=replay`
+  (files are `<dir>/<engine>/<sha8(normalized query)>.json`; the eval tokyo-weather pair
+  covers the two fixture queries in `sse_toolcall*.raw`).
+- `/answer?q=…` auto-POSTs `/api/answer` via inline fetch-SSE: `step` frames →
+  `#answer-steps` `<li>`s, `delta` → `#answer-text` (literal text — markdown is NOT
+  rendered), `sources` → numbered `.source-card`s, `done` → status + `confidence: N`.
+  A fixture answer without a `{"confidence":…}` JSON tail ends `confidence=0` and is NOT
+  cached (grounded cache needs ≥4), so repeat runs stay clean.
 
 ## Devin Secrets Needed
 
