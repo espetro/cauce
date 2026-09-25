@@ -110,7 +110,7 @@
 {{ cache_block|safe }}
 
 <fieldset class="greyed">
-  <legend>{{ crate::strings::settings::SECTION_AI }} ({{ crate::strings::settings::AI_WAVE }})</legend>
+  <legend>{{ crate::strings::settings::SECTION_AI }}</legend>
   <label>{{ crate::strings::settings::AI_BASE_URL }}
     <input type="text" name="ai.base_url" value="{{ ai_base_url.value }}" {% if !ai_base_url.env.is_empty() %}disabled{% endif %}>
   </label>
