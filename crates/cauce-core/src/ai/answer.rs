@@ -165,6 +165,21 @@ impl ChatProvider for OpenAiClient {
     }
 }
 
+impl ChatProvider for crate::ai::AnthropicClient {
+    fn model(&self) -> &str {
+        self.model()
+    }
+
+    fn chat_stream(
+        &self,
+        req: &ChatRequest,
+        budget: Duration,
+        ctx: AiCallCtx,
+    ) -> Result<mpsc::UnboundedReceiver<AiStreamEvent>, AiError> {
+        crate::ai::AnthropicClient::chat_stream(self, req, budget, ctx)
+    }
+}
+
 /// Inbound parameters of one `stream_answer` call. `request_id`/`actor`
 /// follow the `RequestCtx`/audit conventions of `cauce-server` handlers:
 /// the inbound surface's id is stamped on `done.request_id` and on the

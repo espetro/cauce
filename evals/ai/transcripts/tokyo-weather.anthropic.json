@@ -1,0 +1,46 @@
+{
+ "model": "claude-sonnet-4-20250514",
+ "provider": "https://api.anthropic.com",
+ "protocol": "anthropic",
+ "recorded_at": "2026-09-25T00:00:00Z",
+ "turns": [
+  {
+   "deltas": [],
+   "completion": {
+    "id": "msg_01ZqRcvf9Kx2LpTmNbHyWdSj",
+    "model": "claude-sonnet-4-20250514",
+    "content": "",
+    "tool_calls": [
+     {
+      "id": "toolu_01A09q90qw90lq917835lq9",
+      "name": "search_web",
+      "arguments": "{\"query\": \"current weather in Tokyo right now\"}"
+     }
+    ],
+    "finish_reason": "tool_calls",
+    "usage": {
+     "prompt_tokens": 480,
+     "completion_tokens": 32,
+     "total_tokens": 512
+    }
+   }
+  },
+  {
+   "deltas": [
+    "Tokyo's current weather is **22°C** with **clear skies** and **light wind** [1][2].\n",
+    "{\"confidence\": 8, \"related_questions\": [\"What is the hourly forecast for Tokyo?\", \"Is it humid in Tokyo today?\", \"What should I wear in Tokyo right now?\"]}"
+   ],
+   "completion": {
+    "id": "msg_03CtTexh1Mz4NrVoPdJaYfUl",
+    "model": "claude-sonnet-4-20250514",
+    "content": "Tokyo's current weather is **22°C** with **clear skies** and **light wind** [1][2].\n{\"confidence\": 8, \"related_questions\": [\"What is the hourly forecast for Tokyo?\", \"Is it humid in Tokyo today?\", \"What should I wear in Tokyo right now?\"]}",
+    "finish_reason": "stop",
+    "usage": {
+     "prompt_tokens": 620,
+     "completion_tokens": 55,
+     "total_tokens": 675
+    }
+   }
+  }
+ ]
+}

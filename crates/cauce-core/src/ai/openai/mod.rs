@@ -47,10 +47,12 @@ use crate::config::AiConfig;
 use crate::metrics::Metrics;
 use crate::store::Store;
 
+use super::http::{ERROR_BODY_CAP, map_reqwest_error, read_capped};
+use super::pump::PumpCtx;
 use super::{AiCallCtx, AiError, AiStreamEvent, ChatRequest, ModelInfo};
 
-use errors::{ERROR_BODY_CAP, map_error, map_reqwest_error, read_capped};
-use pump::{PumpCtx, drive};
+use errors::map_error;
+use pump::drive;
 use wire::{ModelsPage, WireRequest, WireStreamOptions, WireTool};
 
 /// `GET /models` listing cache TTL (W4-01 settled: 60 s).

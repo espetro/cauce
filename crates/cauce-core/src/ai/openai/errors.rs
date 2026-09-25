@@ -1,29 +1,17 @@
 //! Provider failure classification into the typed [`AiError`] set:
 //! the HTTP status first, then the `{"error": ...}` envelope's `code`,
-//! `message` and OpenRouter-style `metadata` retry hints. Also the
-//! capped error-body read shared by `/models` and the chat pump.
+//! `message` and OpenRouter-style `metadata` retry hints.
 //!
 //! This Source Code Form is subject to the terms of the Mozilla Public
 //! License, v. 2.0. If a copy of the MPL was not distributed with this
 //! file, You can obtain one at <https://mozilla.org/MPL/2.0/>.
 
-use futures_util::StreamExt;
 use reqwest::header::{HeaderMap, RETRY_AFTER};
 
 use crate::ai::AiError;
+use crate::ai::http::truncate;
 
 use super::wire::{ErrorBody, ProviderError};
-
-/// Provider error bodies are small; cap the read at 64 KiB.
-pub(super) const ERROR_BODY_CAP: usize = 64 * 1024;
-
-pub(super) fn map_reqwest_error(e: reqwest::Error) -> AiError {
-    if e.is_timeout() {
-        AiError::Timeout
-    } else {
-        AiError::Transport(e.to_string())
-    }
-}
 
 /// Non-2xx response → typed error: envelope message if the body is a
 /// `{"error": ...}` object, else the truncated body text.
@@ -150,31 +138,4 @@ fn is_context_length(status: u16, err: Option<&ProviderError>, message: &str) ->
     ]
     .iter()
     .any(|needle| lower.contains(needle))
-}
-
-fn truncate(s: &str, cap: usize) -> String {
-    if s.len() <= cap {
-        return s.to_string();
-    }
-    let mut end = cap;
-    while !s.is_char_boundary(end) {
-        end -= 1;
-    }
-    format!("{}…", &s[..end])
-}
-
-/// Read an error body under the cap; a body we cannot read maps to an
-/// empty message rather than masking the HTTP status.
-pub(super) async fn read_capped(res: reqwest::Response, cap: usize) -> Vec<u8> {
-    let mut body = Vec::new();
-    let mut stream = res.bytes_stream();
-    while let Some(chunk) = stream.next().await {
-        let Ok(chunk) = chunk else { break };
-        if body.len() + chunk.len() > cap {
-            body.extend_from_slice(&chunk[..cap - body.len()]);
-            break;
-        }
-        body.extend_from_slice(&chunk);
-    }
-    body
 }

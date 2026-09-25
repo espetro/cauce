@@ -38,6 +38,7 @@ fn tokyo_transcript() -> Transcript {
     Transcript {
         model: "eval-model".to_string(),
         provider: None,
+        protocol: None,
         recorded_at: None,
         turns: vec![
             TranscriptTurn {

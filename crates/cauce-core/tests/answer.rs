@@ -114,6 +114,7 @@ fn answer_loop(server: &MockServer, store: Arc<StubStore>) -> AnswerLoop {
             api_key: "sk-test".to_string(),
             model: MODEL.to_string(),
             enabled: true,
+            protocol: cauce_core::AiProtocol::OpenAi,
         })
         .expect("client builds"),
     );

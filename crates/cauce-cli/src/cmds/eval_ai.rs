@@ -28,11 +28,12 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use cauce_core::ai::{AnswerLoop, AnswerRequest, ChatProvider, OpenAiClient};
-use cauce_core::config::Config;
+use cauce_core::ai::{AnswerLoop, AnswerRequest, ChatProvider, provider_client};
+use cauce_core::config::{AiProtocol, Config};
 use cauce_core::evals::ai::{
     AiCaseOutcome, AiEvalCase, AiEvalReport, AiThresholds, RecordingProvider, TranscriptProvider,
-    load_cases, load_transcript, save_transcript, score_frames, tagged, write_report,
+    load_cases, load_transcript, record_stem, save_transcript, score_frames, tagged,
+    transcript_variants, write_report,
 };
 use cauce_core::evals::{Thresholds, results_dir};
 use cauce_core::{ClientKind, Engine, EngineId, SearchPipeline, Store, StoreTuning};
@@ -104,8 +105,9 @@ fn run_inner(opts: EvalAiArgs) -> Result<i32, String> {
     })?;
 
     // A live provider exists only under --record; transcript replays
-    // need none.
-    let record_client: Option<(Arc<OpenAiClient>, String)> = if opts.record {
+    // need none. `[ai].protocol` picks the client (W4-05); an
+    // anthropic recording writes `<stem>.anthropic.json`.
+    let record_client: Option<(Arc<dyn ChatProvider>, String, AiProtocol)> = if opts.record {
         let cfg = Config::load().map_err(|e| format!("config load: {e}"))?;
         if !cfg.ai.enabled {
             eprintln!(
@@ -113,11 +115,11 @@ fn run_inner(opts: EvalAiArgs) -> Result<i32, String> {
             );
         }
         let client =
-            OpenAiClient::new(&cfg.ai).map_err(|e| format!("[ai] provider config: {e}"))?;
+            provider_client(&cfg.ai, None).map_err(|e| format!("[ai] provider config: {e}"))?;
         if client.model().is_empty() {
             return Err("[ai].model is empty — set it before recording transcripts".to_string());
         }
-        Some((Arc::new(client), cfg.ai.base_url.clone()))
+        Some((client, cfg.ai.base_url.clone(), cfg.ai.protocol))
     } else {
         None
     };
@@ -162,10 +164,10 @@ async fn run_cases(
     cases: &[AiEvalCase],
     opts: Arc<EvalAiArgs>,
     replay: Arc<dyn Engine>,
-    record_client: Option<(Arc<OpenAiClient>, String)>,
+    record_client: Option<(Arc<dyn ChatProvider>, String, AiProtocol)>,
 ) -> Vec<AiCaseOutcome> {
-    // One shared temp dir; each case gets a private `case-<i>` subdir so
-    // `answers` cache writes never leak across cases.
+    // One shared temp dir; each run gets a private `case-<i>-<v>`
+    // subdir so `answers` cache writes never leak across runs.
     let work_dir = match tempfile::tempdir() {
         Ok(d) => d,
         Err(e) => {
@@ -176,29 +178,53 @@ async fn run_cases(
         }
     };
 
+    // One run per case per transcript variant on disk (W4-05):
+    // `<stem>.json` plus each `<stem>.<proto>.json`. Under --record the
+    // configured protocol runs once per case and writes its variant.
+    let mut units: Vec<(usize, usize, AiEvalCase, String, String)> = Vec::new();
+    for (ci, case) in cases.iter().enumerate() {
+        match &record_client {
+            Some((_, _, proto)) => units.push((
+                ci,
+                0,
+                case.clone(),
+                record_stem(&case.transcript, proto.as_str()),
+                proto.as_str().to_string(),
+            )),
+            None => {
+                for (vi, (stem, proto)) in
+                    transcript_variants(&opts.transcripts_dir, &case.transcript)
+                        .into_iter()
+                        .enumerate()
+                {
+                    units.push((ci, vi, case.clone(), stem, proto));
+                }
+            }
+        }
+    }
+
     let mut set = JoinSet::new();
-    for (idx, case) in cases.iter().enumerate() {
+    for (ci, vi, case, stem, proto) in units {
         let opts = Arc::clone(&opts);
         let replay = Arc::clone(&replay);
         let record_client = record_client.clone();
-        let case = case.clone();
-        let db_dir = work_dir.path().join(format!("case-{idx}"));
+        let db_dir = work_dir.path().join(format!("case-{ci}-{vi}"));
         set.spawn(async move {
             (
-                idx,
-                run_case(case, opts, replay, record_client, db_dir).await,
+                (ci, vi),
+                run_case(case, stem, proto, opts, replay, record_client, db_dir).await,
             )
         });
     }
 
-    let mut outcomes: Vec<(usize, AiCaseOutcome)> = Vec::with_capacity(set.len());
+    let mut outcomes: Vec<((usize, usize), AiCaseOutcome)> = Vec::with_capacity(set.len());
     while let Some(joined) = set.join_next().await {
         match joined {
             Ok(pair) => outcomes.push(pair),
             // A panicked case is still a case — score it 0 with the panic
             // as the note rather than dropping it (a short report would
             // inflate the mean).
-            Err(e) => outcomes.push((usize::MAX, panic_outcome(&e))),
+            Err(e) => outcomes.push(((usize::MAX, usize::MAX), panic_outcome(&e))),
         }
     }
     outcomes.sort_by_key(|(idx, _)| *idx);
@@ -220,25 +246,36 @@ fn panic_outcome(e: &tokio::task::JoinError) -> AiCaseOutcome {
         leaked_strings: vec![],
         ungrounded: true,
         note: Some(format!("case task panicked: {e}")),
+        protocol: "openai".to_string(),
     }
 }
 
-/// Run one case end to end: transcript (or the live provider under
-/// `--record`) → `stream_answer` → scored frames.
+/// Run one case end to end on one transcript variant: transcript
+/// `<stem>.json` (or the live provider under `--record`) →
+/// `stream_answer` → scored frames. `stem`/`proto` name the variant —
+/// `("tokyo-weather", "openai")` or `("tokyo-weather.anthropic",
+/// "anthropic")` — and are stamped on the outcome.
 async fn run_case(
     case: AiEvalCase,
+    stem: String,
+    proto: String,
     opts: Arc<EvalAiArgs>,
     replay: Arc<dyn Engine>,
-    record_client: Option<(Arc<OpenAiClient>, String)>,
+    record_client: Option<(Arc<dyn ChatProvider>, String, AiProtocol)>,
     db_dir: PathBuf,
 ) -> AiCaseOutcome {
+    let stamp = |mut o: AiCaseOutcome| {
+        o.transcript = stem.clone();
+        o.protocol = proto.clone();
+        o
+    };
     if let Err(e) = std::fs::create_dir_all(&db_dir) {
-        return AiCaseOutcome::skipped(&case, format!("temp dir: {e}"));
+        return stamp(AiCaseOutcome::skipped(&case, format!("temp dir: {e}")));
     }
     let store: Arc<dyn Store> =
         match SqliteStore::open(db_dir.join("eval.db"), StoreTuning::default()) {
             Ok(s) => Arc::new(s),
-            Err(e) => return AiCaseOutcome::skipped(&case, format!("store open: {e}")),
+            Err(e) => return stamp(AiCaseOutcome::skipped(&case, format!("store open: {e}"))),
         };
 
     // Record wraps the live client; replay loads the transcript. A case
@@ -246,16 +283,19 @@ async fn run_case(
     // its note — never a silent skip.
     let (provider, recorder): (Arc<dyn ChatProvider>, Option<Arc<RecordingProvider>>) =
         match &record_client {
-            Some((client, base_url)) => {
+            Some((client, base_url, proto)) => {
                 let rec = Arc::new(
-                    RecordingProvider::new(client.clone() as Arc<dyn ChatProvider>)
-                        .with_provider_label(base_url.clone()),
+                    RecordingProvider::new(client.clone())
+                        .with_provider_label(base_url.clone())
+                        .with_protocol(proto.as_str()),
                 );
                 (rec.clone() as Arc<dyn ChatProvider>, Some(rec))
             }
-            None => match load_transcript(&opts.transcripts_dir, &case.transcript) {
+            None => match load_transcript(&opts.transcripts_dir, &stem) {
                 Ok(t) => (Arc::new(TranscriptProvider::new(t)), None),
-                Err(e) => return AiCaseOutcome::skipped(&case, format!("transcript: {e}")),
+                Err(e) => {
+                    return stamp(AiCaseOutcome::skipped(&case, format!("transcript: {e}")));
+                }
             },
         };
 
@@ -273,7 +313,7 @@ async fn run_case(
         frames.push(frame);
     }
 
-    let mut outcome = score_frames(&case, &frames);
+    let mut outcome = stamp(score_frames(&case, &frames));
 
     // A tool query with no cassette silently falls back to synthetic
     // replay results — flag those on the outcome so a case that only
@@ -298,7 +338,7 @@ async fn run_case(
     }
 
     if let Some(rec) = recorder
-        && let Err(e) = save_transcript(&opts.transcripts_dir, &case.transcript, &rec.transcript())
+        && let Err(e) = save_transcript(&opts.transcripts_dir, &stem, &rec.transcript())
     {
         outcome.note = Some(match outcome.note.take() {
             Some(prev) => format!("{prev}; transcript save: {e}"),
@@ -310,14 +350,20 @@ async fn run_case(
 
 fn print_summary(report: &AiEvalReport, thresholds: &AiThresholds) {
     for o in &report.outcomes {
+        // Non-default protocol variants are marked on the line.
+        let variant = match o.protocol.as_str() {
+            "openai" => String::new(),
+            proto => format!(" [{proto}]"),
+        };
         println!(
-            "{:<40} score {:.2} cited {:.2} contain {:.2} clean {:.2} {}{}",
+            "{:<40} score {:.2} cited {:.2} contain {:.2} clean {:.2} {}{}{}",
             truncate(&o.query, 40),
             o.score,
             o.cited_recall,
             o.contain_rate,
             o.clean_rate,
             if o.ok { "ok" } else { "FAIL" },
+            variant,
             o.note
                 .as_deref()
                 .map(|n| format!(" ({n})"))

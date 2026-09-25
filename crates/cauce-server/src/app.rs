@@ -101,10 +101,11 @@ impl AppState {
 }
 
 /// Build the grounded-answer loop out of `[ai]` (W4-03): `ai.enabled`
-/// plus a successfully constructed [`cauce_core::OpenAiClient`]. The
-/// client carries `with_audit` so every provider call lands in the
-/// audit feed (W4-01 contract). `None` means the `/answer` page renders
-/// its disabled notice and `POST /api/answer` rejects as `ai_disabled`.
+/// plus a successfully constructed provider client (`[ai].protocol`
+/// selects OpenAI or Anthropic, W4-05). The client carries `with_audit`
+/// so every provider call lands in the audit feed (W4-01 contract).
+/// `None` means the `/answer` page renders its disabled notice and
+/// `POST /api/answer` rejects as `ai_disabled`.
 #[cfg(feature = "ai")]
 fn build_answer_loop(
     pipeline: &Arc<SearchPipeline>,
@@ -114,10 +115,10 @@ fn build_answer_loop(
     if !config.ai.enabled {
         return None;
     }
-    match cauce_core::OpenAiClient::new(&config.ai) {
+    match cauce_core::ai::provider_client(&config.ai, Some(store.clone())) {
         Ok(client) => Some(AnswerLoop::new(
             pipeline.as_ref().clone(),
-            Arc::new(client.with_audit(store.clone())),
+            client,
             store.clone(),
         )),
         Err(e) => {
