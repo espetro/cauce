@@ -11,6 +11,7 @@
 //! file, You can obtain one at <https://mozilla.org/MPL/2.0/>.
 
 mod admission;
+pub mod ai;
 mod cache;
 pub mod config;
 #[cfg(feature = "conformance")]
@@ -27,6 +28,10 @@ mod response;
 mod store;
 
 pub use admission::{Admission, AdmissionLimits, FlightResult};
+pub use ai::{
+    AiCallCtx, AiError, AiStreamEvent, ChatCompletion, ChatMessage, ChatRequest, ModelInfo,
+    OpenAiClient, ToolCall, ToolSpec, Usage,
+};
 pub use cache::{CacheKey, CachedSearch, normalize_query};
 pub use config::{
     AdmissionConfig, AiConfig, AuthConfig, CacheConfig, Config, ConfigError, Dirs, EgressConfig,
