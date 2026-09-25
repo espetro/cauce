@@ -10,7 +10,8 @@
 //! `percentile`) and the `Store` impl — each trait method a thin delegation
 //! to a `pub(super)` inherent method in a sibling. [`cache`] —
 //! `cache_entries` lookups, upsert, eviction, admin CRUD and the batched
-//! `cache_states`/`search_hashes` history joins; [`history`] — `search_log`,
+//! `cache_states`/`search_hashes` history joins; [`answers`] — the W4-02 AI
+//! answer cache (`answers` TTL read + upsert); [`history`] — `search_log`,
 //! `clicks`, the merged feed and `history_stats`; [`stats`] — the
 //! `/api/stats` aggregate groups; [`health`] — `engine_health` read/upsert;
 //! [`audit`] — `audit` append, filtered list and facets.
@@ -19,6 +20,7 @@
 //! License, v. 2.0. If a copy of the MPL was not distributed with this
 //! file, You can obtain one at <https://mozilla.org/MPL/2.0/>.
 
+mod answers;
 mod audit;
 mod cache;
 mod health;
@@ -34,9 +36,9 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use cauce_core::{
-    AuditFacets, AuditFilter, AuditRow, CacheKey, CacheState, CachedSearch, ClickRow,
-    DeleteSearchLog, EngineHealthRow, HistoryFilter, HistoryItem, HistoryStats, SearchLogRow,
-    SearchResponse, StatsSnapshot, Store, StoreError, StoreTuning,
+    AnswerKey, AnswerRow, AuditFacets, AuditFilter, AuditRow, CacheKey, CacheState, CachedAnswer,
+    CachedSearch, ClickRow, DeleteSearchLog, EngineHealthRow, HistoryFilter, HistoryItem,
+    HistoryStats, SearchLogRow, SearchResponse, StatsSnapshot, Store, StoreError, StoreTuning,
 };
 use rusqlite::Connection;
 use tokio::task::{JoinError, spawn_blocking};
@@ -253,6 +255,21 @@ impl Store for SqliteStore {
 
     async fn clear_cache(&self) -> Result<u64, StoreError> {
         self.clear_cache().await
+    }
+
+    // ---- answers ------------------------------------------------------------
+
+    async fn get_answer(&self, key: &AnswerKey) -> Result<Option<CachedAnswer>, StoreError> {
+        self.get_answer(key).await
+    }
+
+    async fn put_answer(
+        &self,
+        key: &AnswerKey,
+        row: &AnswerRow,
+        ttl: Duration,
+    ) -> Result<(), StoreError> {
+        self.put_answer(key, row, ttl).await
     }
 
     // ---- search log, clicks, history ----------------------------------------
