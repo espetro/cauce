@@ -193,6 +193,13 @@ struct RegistryInner {
     /// `cauce_stale_served_total{reason}` (W3-02: `grace` |
     /// `admission` | `engines_unhealthy`).
     stale_served_series: BTreeMap<Labels, u64>,
+    /// `cauce_ai_requests_total{model,outcome}` (W4-01).
+    ai_requests: BTreeMap<Labels, u64>,
+    /// `cauce_ai_tokens_total{model,kind}` — `kind` is `prompt` |
+    /// `completion` | `total` as the provider's `usage` block reported.
+    ai_tokens: BTreeMap<Labels, u64>,
+    /// `cauce_ai_duration_ms` — whole streamed call, unlabelled.
+    ai_duration: Hist,
 }
 
 impl Default for RegistryInner {
@@ -216,6 +223,9 @@ impl Default for RegistryInner {
             admission_rejected_series: BTreeMap::new(),
             hedge: BTreeMap::new(),
             stale_served_series: BTreeMap::new(),
+            ai_requests: BTreeMap::new(),
+            ai_tokens: BTreeMap::new(),
+            ai_duration: Hist::new(MS_BUCKETS),
         }
     }
 }
@@ -570,6 +580,24 @@ pub fn render_prometheus() -> String {
         "Responses served from an expired cache row",
         &reg.stale_served_series,
     );
+    render_counter(
+        &mut out,
+        "cauce_ai_requests_total",
+        "AI provider calls",
+        &reg.ai_requests,
+    );
+    render_counter(
+        &mut out,
+        "cauce_ai_tokens_total",
+        "Tokens reported by the AI provider",
+        &reg.ai_tokens,
+    );
+    render_hist_one(
+        &mut out,
+        "cauce_ai_duration_ms",
+        "AI provider call latency",
+        &reg.ai_duration,
+    );
     out
 }
 
@@ -740,5 +768,43 @@ impl Metrics {
         *reg.hedge
             .entry(labels(&[("reason", reason.to_string())]))
             .or_insert(0) += 1;
+    }
+
+    /// One completed AI provider call (W4-01):
+    /// `cauce_ai_requests_total{model,outcome}` — `outcome` is `"ok"`,
+    /// `"abandoned"` (receiver dropped mid-stream) or
+    /// [`crate::ai::AiError::outcome_label`] — `cauce_ai_duration_ms` —
+    /// and, when the stream carried a `usage` block, the three
+    /// `cauce_ai_tokens_total{model,kind}` series (`prompt`,
+    /// `completion`, `total`).
+    pub fn record_ai_request(
+        &self,
+        model: &str,
+        outcome: &'static str,
+        elapsed: Duration,
+        usage: Option<crate::ai::Usage>,
+    ) {
+        let mut reg = registry();
+        *reg.ai_requests
+            .entry(labels(&[
+                ("model", model.to_string()),
+                ("outcome", outcome.to_string()),
+            ]))
+            .or_insert(0) += 1;
+        reg.ai_duration.observe(ms_f64(elapsed));
+        if let Some(u) = usage {
+            for (kind, n) in [
+                ("prompt", u.prompt_tokens),
+                ("completion", u.completion_tokens),
+                ("total", u.total_tokens),
+            ] {
+                *reg.ai_tokens
+                    .entry(labels(&[
+                        ("model", model.to_string()),
+                        ("kind", kind.to_string()),
+                    ]))
+                    .or_insert(0) += n;
+            }
+        }
     }
 }
