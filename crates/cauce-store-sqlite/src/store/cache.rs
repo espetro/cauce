@@ -6,9 +6,13 @@
 //! License, v. 2.0. If a copy of the MPL was not distributed with this
 //! file, You can obtain one at <https://mozilla.org/MPL/2.0/>.
 
+use std::collections::HashSet;
 use std::time::Duration;
 
-use cauce_core::{CacheKey, CacheState, CachedSearch, EngineStatus, SearchResponse, StoreError};
+use cauce_core::{
+    CacheKey, CacheResultHit, CacheState, CachedSearch, EngineStatus, SearchResponse, SearchResult,
+    StoreError,
+};
 use rusqlite::{OptionalExtension, params};
 
 use crate::rows;
@@ -69,6 +73,73 @@ impl SqliteStore {
                     rows::cached(r).map_err(rows::as_sql)
                 })
                 .and_then(|m| m.collect::<Result<Vec<_>, _>>())
+            })
+            .map_err(sql_err)
+        })
+        .await
+    }
+
+    /// `search_archive`'s `cached_result` arm (W5-03): `cache_fts` MATCH
+    /// picks candidate entries (bm25 order, expired rows included) and
+    /// each contributes the stored results whose title+snippet tokens
+    /// cover every query term — `titles`/`snippets` are index-only
+    /// columns, so the per-result filter runs on the decoded
+    /// `payload_json`. A query-column-only match contributes nothing;
+    /// the output may be shorter than `limit` when filtering drops hits.
+    pub(super) async fn search_cache_fts(
+        &self,
+        q: &str,
+        limit: u32,
+    ) -> Result<Vec<CacheResultHit>, StoreError> {
+        let Some(fts) = fts_query(q) else {
+            return Ok(Vec::new());
+        };
+        let terms = cache_fts_query_terms(q);
+        let want = usize::try_from(limit).unwrap_or(usize::MAX);
+        self.with_reader(move |conn| {
+            let cols = rows::CACHE_COLS
+                .split(", ")
+                .map(|c| format!("cache_entries.{c}"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            conn.prepare(&format!(
+                "SELECT {cols}, bm25(cache_fts) AS rank FROM cache_fts
+                  JOIN cache_entries ON cache_entries.rowid = cache_fts.rowid
+                  WHERE cache_fts MATCH ?1
+                  ORDER BY rank
+                  LIMIT ?2"
+            ))
+            .and_then(|mut stmt| {
+                stmt.query_map(params![fts, i64::from(limit)], |r| {
+                    let entry = rows::cached(r).map_err(rows::as_sql)?;
+                    let rank: f64 = r
+                        .get(rows::CACHE_COLS.split(", ").count())
+                        .map_err(|e| rows::as_sql(StoreError::Corrupt(format!("rank: {e}"))))?;
+                    Ok((entry, rank))
+                })
+                .and_then(|m| m.collect::<Result<Vec<_>, _>>())
+            })
+            .map(|entries| {
+                let mut hits = Vec::new();
+                'entries: for (entry, rank) in entries {
+                    for res in &entry.response.results {
+                        if hits.len() >= want {
+                            break 'entries;
+                        }
+                        if cache_result_covers(&terms, res) {
+                            hits.push(CacheResultHit {
+                                url: res.url.clone(),
+                                title: res.title.clone(),
+                                snippet: res.snippet.clone(),
+                                engine: res.engine.clone(),
+                                query: entry.query.clone(),
+                                expires_at: entry.expires_at,
+                                score: Some(rank),
+                            });
+                        }
+                    }
+                }
+                hits
             })
             .map_err(sql_err)
         })
@@ -290,4 +361,33 @@ impl SqliteStore {
         })
         .await
     }
+}
+
+/// Alphanumeric token set of `text`, lowercased — the Rust mirror of
+/// FTS5's unicode61 tokenizer (split on non-alphanumerics), used for the
+/// result-level cover check the index-only `titles`/`snippets` columns
+/// cannot answer.
+fn cache_fts_tokens(text: &str) -> HashSet<String> {
+    text.split(|c: char| !c.is_alphanumeric())
+        .filter(|t| !t.is_empty())
+        .map(str::to_lowercase)
+        .collect()
+}
+
+/// The query's token set: whitespace terms → their unicode61-equivalent
+/// tokens, dropping terms with no alphanumeric character (the same rule
+/// `fts_query` applies before quoting them).
+fn cache_fts_query_terms(q: &str) -> HashSet<String> {
+    q.split_whitespace()
+        .filter(|t| t.chars().any(char::is_alphanumeric))
+        .flat_map(cache_fts_tokens)
+        .collect()
+}
+
+/// The `search_cache_fts` per-result cover check: every query token
+/// appears in the result's title+snippet token set — the set-cover
+/// approximation of the FTS5 phrase match the entry already passed.
+fn cache_result_covers(terms: &HashSet<String>, res: &SearchResult) -> bool {
+    let hay = cache_fts_tokens(&format!("{} {}", res.title, res.snippet));
+    terms.iter().all(|t| hay.contains(t))
 }

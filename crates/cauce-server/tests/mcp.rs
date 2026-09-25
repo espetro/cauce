@@ -7,7 +7,8 @@
 //! in `ClientKind::Mcp(name)` on the `search_log` row, `exa_search` must
 //! validate against the frozen v2 wire shape (`fixtures/exa_schema.json`),
 //! and `fetch_and_index` must yield a `pages` row carrying the extracted
-//! markdown (W5-01, `archive` builds).
+//! markdown (W5-01, `archive` builds); `search_archive` must fuse
+//! `pages_fts` + `cache_fts` hits by RRF (W5-03, `archive` builds).
 //!
 //! This Source Code Form is subject to the terms of the Mozilla Public
 //! License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -46,6 +47,8 @@ const TOOL_NAMES: &[&str] = &[
     "exa_search",
     #[cfg(feature = "archive")]
     "fetch_and_index",
+    #[cfg(feature = "archive")]
+    "search_archive",
 ];
 
 const CLIENT_NAME: &str = "cauce-mcp-http-test";
@@ -494,5 +497,113 @@ async fn mcp_fetch_and_index_writes_page() {
         "error names the input: {err}"
     );
 
+    server.abort();
+}
+
+/// W5-03 acceptance: `search_archive` finds an indexed page and a cached
+/// result for the same phrase, fused by RRF — the URL present in both
+/// ranked lists is one hit boosted past the single-list entries.
+#[cfg(feature = "archive")]
+#[tokio::test]
+async fn mcp_search_archive_rrf_fusion() {
+    let (state, _tmp) = test_state();
+
+    // The indexed page and the first cached result share a URL, so RRF
+    // fuses them into the top hit; the second cached result is the
+    // single-list entry.
+    state
+        .store()
+        .put_page(&cauce_core::PageRow {
+            url: "https://shared.example.com/doc".parse().unwrap(),
+            fetched_at: chrono::Utc::now(),
+            title: "Quixotic grebe page".to_string(),
+            markdown: "quixotic grebe".to_string(),
+            byte_len: 64,
+            source_query_hash: None,
+        })
+        .await
+        .expect("seed page");
+    let req = cauce_core::conformance::request("archive probe");
+    let key = cauce_core::CacheKey::from(&req);
+    let resp = cauce_core::conformance::response(
+        "archive probe",
+        &[
+            (
+                "Shared cached doc",
+                "https://shared.example.com/doc",
+                "a quixotic grebe record",
+            ),
+            (
+                "Cached extra",
+                "https://cached-extra.example.com/c",
+                "another quixotic grebe sighting",
+            ),
+        ],
+    );
+    state
+        .store()
+        .put(&key, &resp, std::time::Duration::from_secs(3600))
+        .await
+        .expect("seed cache entry");
+
+    let (addr, server) = spawn_server(state.clone()).await;
+    let client = mcp_client(addr).await;
+
+    let result = client
+        .call_tool(
+            CallToolRequestParams::new("search_archive")
+                .with_arguments(args(json!({"query": "quixotic grebe"}))),
+        )
+        .await
+        .expect("call search_archive");
+    let body = structured(&result);
+    request_id_of(body, "request_id");
+    assert_eq!(body["query"], json!("quixotic grebe"), "{body}");
+
+    let rows = body["results"].as_array().expect("results");
+    assert_eq!(rows.len(), 2, "shared URL fuses to one hit: {body}");
+    // Rank 1 in both lists: 1/(60+1) twice beats the rank-2 cached hit.
+    let k = 60.0_f64;
+    assert_eq!(
+        rows[0]["url"],
+        json!("https://shared.example.com/doc"),
+        "{body}"
+    );
+    assert_eq!(rows[0]["source"], json!("page"), "{body}");
+    assert!(
+        (rows[0]["score"].as_f64().unwrap() - 2.0 / (k + 1.0)).abs() < 1e-6,
+        "RRF-boosted score: {body}"
+    );
+    assert_eq!(
+        rows[1]["url"],
+        json!("https://cached-extra.example.com/c"),
+        "{body}"
+    );
+    assert_eq!(rows[1]["source"], json!("cached_result"), "{body}");
+    assert!(
+        (rows[1]["score"].as_f64().unwrap() - 1.0 / (k + 2.0)).abs() < 1e-6,
+        "single-list score: {body}"
+    );
+
+    // A blank query is invalid_params, not a panic; the tool is audited.
+    let err = client
+        .call_tool(
+            CallToolRequestParams::new("search_archive")
+                .with_arguments(args(json!({"query": "   "}))),
+        )
+        .await
+        .expect_err("blank query rejected");
+    assert!(err.to_string().contains("non-empty"), "error: {err}");
+    let audits = state
+        .store()
+        .list_audit(&AuditFilter {
+            action: Some("mcp.search_archive".to_string()),
+            ..AuditFilter::default()
+        })
+        .await
+        .unwrap();
+    assert_eq!(audits.len(), 1, "mcp.search_archive audit row: {audits:?}");
+
+    client.cancel().await.expect("cancel");
     server.abort();
 }

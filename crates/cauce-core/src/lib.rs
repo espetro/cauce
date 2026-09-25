@@ -51,8 +51,9 @@ pub use health::{
 pub use metrics::{EngineMetricStats, EnginePhase, Metrics};
 pub use normalize::normalize_url;
 pub use pipeline::{
-    CachePolicy, DEFAULT_COLLAPSE_SAME_HOST_AFTER, DEFAULT_DEADLINE, DEFAULT_RRF_K, DEFAULT_TTL,
-    DEFAULT_TTL_CAP, HedgePolicy, MergePolicy, PipelineError, RrfMerge, SearchOpts, SearchPipeline,
+    ArchiveHit, ArchiveSource, CachePolicy, DEFAULT_COLLAPSE_SAME_HOST_AFTER, DEFAULT_DEADLINE,
+    DEFAULT_RRF_K, DEFAULT_TTL, DEFAULT_TTL_CAP, HedgePolicy, MergePolicy, PipelineError, RrfMerge,
+    SearchOpts, SearchPipeline,
 };
 pub use request::{ClientKind, SafeSearch, SearchRequest, TimeRange};
 pub use response::{
@@ -61,8 +62,8 @@ pub use response::{
 };
 pub use store::{
     AdmissionStats, AnswerKey, AnswerPayload, AnswerRow, AnswerSource, AuditFacets, AuditFilter,
-    AuditRow, BreakerState, CacheState, CachedAnswer, ClickRow, ClientCount, DayCount,
-    DeleteSearchLog, EngineHealthRow, EngineStatsRow, HistoryFilter, HistoryItem, HistoryStats,
-    LatencyPercentiles, LogSource, PAGE_MARK_CLOSE, PAGE_MARK_OPEN, PageHit, PageRow, PhaseStats,
-    QueryCount, SearchLogRow, StatsSnapshot, Store, StoreError, StoreTuning, TierHit,
+    AuditRow, BreakerState, CacheResultHit, CacheState, CachedAnswer, ClickRow, ClientCount,
+    DayCount, DeleteSearchLog, EngineHealthRow, EngineStatsRow, HistoryFilter, HistoryItem,
+    HistoryStats, LatencyPercentiles, LogSource, PAGE_MARK_CLOSE, PAGE_MARK_OPEN, PageHit, PageRow,
+    PhaseStats, QueryCount, SearchLogRow, StatsSnapshot, Store, StoreError, StoreTuning, TierHit,
 };
