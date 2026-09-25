@@ -1,0 +1,2 @@
+{"query": "obscure fact nobody knows", "transcript": "low-confidence", "must_cite_domains": ["en.wikipedia.org"], "must_contain": ["unclear"], "must_not_contain": ["related_questions"], "tags": ["edge"]}
+{"query": "tokyo weather without metadata tail", "transcript": "no-tail", "must_cite_domains": ["jma.go.jp"], "must_contain": ["22", "clear skies"], "must_not_contain": ["related_questions"], "tags": ["edge", "no_tail"]}

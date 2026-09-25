@@ -9,3 +9,12 @@ default = 0.8
 bing = 0.8
 brave = 0.8
 ddgs = 0.6
+
+# AI answer evals (W4-04): the CI smoke gate (`cauce eval ai --tag smoke
+# --gate`) fails when the mean case score drops below
+# `baseline - tolerance`, or the ungrounded-case rate tops
+# `ungrounded_max`. The committed transcripts score 1.0 today.
+[ai]
+baseline = 1.0
+tolerance = 0.2
+ungrounded_max = 0.5

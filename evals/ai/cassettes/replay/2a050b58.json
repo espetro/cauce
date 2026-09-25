@@ -1,0 +1,21 @@
+{
+  "query": "cauce metasearch engine github",
+  "engine": "replay",
+  "recorded_at": "2026-09-24T00:00:00Z",
+  "results": [
+    {
+      "url": "https://github.com/espetro/cauce",
+      "title": "espetro/cauce",
+      "snippet": "Metasearch for humans and agents with a shared TTL cache",
+      "engine": "replay",
+      "score": 1.0
+    },
+    {
+      "url": "https://docs.rs/cauce",
+      "title": "cauce \u2014 docs.rs",
+      "snippet": "Rust crate documentation for cauce",
+      "engine": "replay",
+      "score": 0.5
+    }
+  ]
+}

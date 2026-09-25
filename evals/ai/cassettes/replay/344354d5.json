@@ -1,0 +1,28 @@
+{
+  "query": "rust vs go error handling",
+  "engine": "replay",
+  "recorded_at": "2026-09-24T00:00:00Z",
+  "results": [
+    {
+      "url": "https://doc.rust-lang.org/book/ch09-00-error-handling.html",
+      "title": "Error Handling \u2014 The Rust Book",
+      "snippet": "Result and the ? operator in Rust",
+      "engine": "replay",
+      "score": 1.0
+    },
+    {
+      "url": "https://go.dev/doc/effective_go#errors",
+      "title": "Errors \u2014 Effective Go",
+      "snippet": "Explicit error values in Go",
+      "engine": "replay",
+      "score": 0.5
+    },
+    {
+      "url": "https://stackoverflow.com/questions/tagged/error-handling+rust+go",
+      "title": "error handling rust vs go \u2014 Stack Overflow",
+      "snippet": "Comparison questions on Rust vs Go errors",
+      "engine": "replay",
+      "score": 0.3333333333333333
+    }
+  ]
+}
