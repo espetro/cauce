@@ -9,8 +9,9 @@
 //! the `config.put` diff walker [`changed_config_paths`], the SSE error
 //! envelope [`search_error_payload`] and the engines-page [`engine_error_class`]
 //! — plus the `MAX_LIMIT` page cap. The route handlers live beside it by
-//! family: [`search`] — `/api/search` and the SSE stream; [`suggest`] —
-//! `/api/suggest` OpenSearch completions; [`cache`] —
+//! family: [`search`] — `/api/search` and the SSE stream; [`answer`] —
+//! `POST /api/answer`, the W4-03 grounded-answer SSE route (`ai` builds);
+//! [`suggest`] — `/api/suggest` OpenSearch completions; [`cache`] —
 //! `/api/cache` listing, get and deletes; [`engines`] — `/api/engines`,
 //! reset and enable/disable; [`history`] — `/api/history`, click, stats,
 //! metrics, health and audit; [`config`] — `/api/config` get/put.
@@ -30,6 +31,8 @@ use crate::error::ApiError;
 use crate::middleware::RequestCtx;
 use crate::observability::audit;
 
+#[cfg(feature = "ai")]
+mod answer;
 mod cache;
 mod config;
 mod engines;
@@ -37,6 +40,8 @@ mod history;
 mod search;
 mod suggest;
 
+#[cfg(feature = "ai")]
+pub use answer::answer;
 pub(crate) use cache::cache_list_data;
 pub use cache::{cache_bulk_delete, cache_delete, cache_get, cache_list};
 pub use config::{config_get, config_put};
