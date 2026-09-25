@@ -9,8 +9,8 @@
 //! file, You can obtain one at <https://mozilla.org/MPL/2.0/>.
 
 use cauce_core::{
-    AuditRow, BreakerState, CacheKey, CachedSearch, ClickRow, ClientKind, EngineHealthRow,
-    EngineId, LogSource, SearchLogRow, SearchResponse, StoreError, Tier,
+    AuditRow, BreakerState, CacheKey, CachedAnswer, CachedSearch, ClickRow, ClientKind,
+    EngineHealthRow, EngineId, LogSource, SearchLogRow, SearchResponse, StoreError, Tier,
 };
 use chrono::{DateTime, Utc};
 use rusqlite::Row;
@@ -21,6 +21,10 @@ use uuid::Uuid;
 /// Column list shared by every `cache_entries` read.
 pub const CACHE_COLS: &str =
     "key, query, params_json, payload_json, created_at, expires_at, hits, engines_json";
+
+/// Column list shared by every `answers` read.
+pub const ANSWER_COLS: &str =
+    "key, query, model, payload_json, sources_json, created_at, expires_at";
 
 /// Wrap a `StoreError` for a rusqlite row closure; `as_store` unwraps it again
 /// at the outer boundary so `Corrupt` is not flattened into `Backend`.
@@ -153,6 +157,19 @@ pub fn cached(row: &Row) -> Result<CachedSearch, StoreError> {
         expires_at: from_ms(int(row, 5, "expires_at")?)?,
         hits: int(row, 6, "hits")? as u64,
         engines: json(row, 7, "engines_json")?,
+    })
+}
+
+/// Decode one `answers` row selected with [`ANSWER_COLS`].
+pub fn answer(row: &Row) -> Result<CachedAnswer, StoreError> {
+    Ok(CachedAnswer {
+        key: text(row, 0, "key")?.parse().map_err(StoreError::Corrupt)?,
+        query: text(row, 1, "query")?,
+        model: text(row, 2, "model")?,
+        payload: json(row, 3, "payload_json")?,
+        sources: json(row, 4, "sources_json")?,
+        created_at: from_ms(int(row, 5, "created_at")?)?,
+        expires_at: from_ms(int(row, 6, "expires_at")?)?,
     })
 }
 

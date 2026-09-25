@@ -1,0 +1,14 @@
+data: {"id":"gen-1790320300-AbCdEfGhIjKlMnOp","object":"chat.completion.chunk","created":1790320300,"model":"liquid/lfm-2.5-2.6b:free","provider":"Liquid","choices":[{"index":0,"delta":{"content":"Rust is a","role":"assistant"},"finish_reason":null,"native_finish_reason":null}]}
+
+data: {"id":"gen-1790320300-AbCdEfGhIjKlMnOp","object":"chat.completion.chunk","created":1790320300,"model":"liquid/lfm-2.5-2.6b:free","provider":"Liquid","choices":[{"index":0,"delta":{"content":" systems programming","role":"assistant"},"finish_reason":null,"native_finish_reason":null}]}
+
+data: {"id":"gen-1790320300-AbCdEfGhIjKlMnOp","object":"chat.completion.chunk","created":1790320300,"model":"liquid/lfm-2.5-2.6b:free","provider":"Liquid","choices":[{"index":0,"delta":{"content":" language focused on safety and concurrency.","role":"assistant"},"finish_reason":null,"native_finish_reason":null}]}
+
+data: {"id":"gen-1790320300-AbCdEfGhIjKlMnOp","object":"chat.completion.chunk","created":1790320300,"model":"liquid/lfm-2.5-2.6b:free","provider":"Liquid","choices":[{"index":0,"delta":{"content":"\n{\"confidence\": 6, \"related_questions\": [\"What is ownership in Rust?\", \"How does Rust prevent data races?\"]}","role":"assistant"},"finish_reason":null,"native_finish_reason":null}]}
+
+data: {"id":"gen-1790320300-AbCdEfGhIjKlMnOp","object":"chat.completion.chunk","created":1790320300,"model":"liquid/lfm-2.5-2.6b:free","provider":"Liquid","system_fingerprint":"vllm-0.29.1rc1.dev9+g2671fedfc-dafbf1d2","choices":[{"index":0,"delta":{"content":"","role":"assistant"},"finish_reason":"stop","native_finish_reason":"stop"}]}
+
+data: {"id":"gen-1790320300-AbCdEfGhIjKlMnOp","object":"chat.completion.chunk","created":1790320300,"model":"liquid/lfm-2.5-2.6b:free","provider":"Liquid","system_fingerprint":"vllm-0.29.1rc1.dev9+g2671fedfc-dafbf1d2","service_tier":null,"choices":[{"index":0,"delta":{"content":"","role":"assistant"},"finish_reason":"stop","native_finish_reason":"stop"}],"usage":{"prompt_tokens":60,"completion_tokens":41,"total_tokens":101}}
+
+data: [DONE]
+

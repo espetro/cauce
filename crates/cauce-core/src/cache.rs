@@ -157,7 +157,7 @@ impl FromStr for CacheKey {
     }
 }
 
-fn push_str(buf: &mut Vec<u8>, s: &str) {
+pub(crate) fn push_str(buf: &mut Vec<u8>, s: &str) {
     buf.extend_from_slice(&(s.len() as u32).to_le_bytes());
     buf.extend_from_slice(s.as_bytes());
 }

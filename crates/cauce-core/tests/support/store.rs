@@ -12,14 +12,29 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use cauce_core::{
-    AuditFilter, AuditRow, CacheKey, CacheState, CachedSearch, ClickRow, DeleteSearchLog,
-    EngineHealthRow, EngineStatus, HistoryFilter, HistoryItem, HistoryStats, SearchLogRow,
-    SearchResponse, StatsSnapshot, Store, StoreError,
+    AnswerKey, AnswerRow, AuditFilter, AuditRow, CacheKey, CacheState, CachedAnswer, CachedSearch,
+    ClickRow, DeleteSearchLog, EngineHealthRow, EngineStatus, HistoryFilter, HistoryItem,
+    HistoryStats, SearchLogRow, SearchResponse, StatsSnapshot, Store, StoreError,
 };
 use chrono::{DateTime, Utc};
 
 /// What `put` stored: response, write time and TTL.
 type StoredEntry = (SearchResponse, DateTime<Utc>, Duration);
+
+/// What `put_answer` stored: row, write time and TTL.
+type StoredAnswer = (AnswerRow, DateTime<Utc>, Duration);
+
+fn to_cached_answer(key: &str, (row, created, ttl): &StoredAnswer) -> CachedAnswer {
+    CachedAnswer {
+        key: key.parse().expect("stored keys are AnswerKey hex"),
+        query: row.query.clone(),
+        model: row.model.clone(),
+        payload: row.payload.clone(),
+        sources: row.sources.clone(),
+        created_at: *created,
+        expires_at: *created + chrono::Duration::from_std(*ttl).unwrap(),
+    }
+}
 
 /// Rebuild the `CachedSearch` a real store would decode for a `put` row
 /// (expired rows included; `get_exact` filters them itself).
@@ -55,6 +70,8 @@ pub struct StubStore {
     /// Every `put_health` call, in order (debounce assertions).
     pub health_writes: Mutex<Vec<EngineHealthRow>>,
     pub audits: Mutex<Vec<AuditRow>>,
+    /// `answers` table stand-in (W4-02): rows by `AnswerKey` hex.
+    pub answers: Mutex<HashMap<String, StoredAnswer>>,
     pub fail_get: AtomicBool,
     pub fail_lexical: AtomicBool,
     /// Extra delay inside `get_lexical` — simulates slow pre-fan-out
@@ -150,6 +167,28 @@ impl Store for StubStore {
     }
     async fn clear_cache(&self) -> Result<u64, StoreError> {
         unimplemented!()
+    }
+
+    /// `get_exact`-style TTL honouring for `answers`.
+    async fn get_answer(&self, key: &AnswerKey) -> Result<Option<CachedAnswer>, StoreError> {
+        let answers = self.answers.lock().unwrap();
+        Ok(answers.get(key.as_str()).and_then(|row| {
+            (to_cached_answer(key.as_str(), row).expires_at > Utc::now())
+                .then(|| to_cached_answer(key.as_str(), row))
+        }))
+    }
+
+    async fn put_answer(
+        &self,
+        key: &AnswerKey,
+        row: &AnswerRow,
+        ttl: Duration,
+    ) -> Result<(), StoreError> {
+        self.answers
+            .lock()
+            .unwrap()
+            .insert(key.as_str().to_string(), (row.clone(), Utc::now(), ttl));
+        Ok(())
     }
 
     async fn log_search(&self, row: SearchLogRow) -> Result<(), StoreError> {
