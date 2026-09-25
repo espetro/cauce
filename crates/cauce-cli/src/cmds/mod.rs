@@ -7,6 +7,7 @@
 pub mod config;
 pub mod engine;
 pub mod eval;
+pub mod eval_ai;
 #[cfg(feature = "mcp")]
 pub mod mcp;
 pub mod record;
