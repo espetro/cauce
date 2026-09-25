@@ -40,10 +40,10 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use cauce_core::{
-    AnswerKey, AnswerRow, AuditFacets, AuditFilter, AuditRow, CacheKey, CacheState, CachedAnswer,
-    CachedSearch, ClickRow, DeleteSearchLog, EngineHealthRow, HistoryFilter, HistoryItem,
-    HistoryStats, PageHit, PageRow, SearchLogRow, SearchResponse, StatsSnapshot, Store, StoreError,
-    StoreTuning,
+    AnswerKey, AnswerRow, AuditFacets, AuditFilter, AuditRow, CacheKey, CacheResultHit, CacheState,
+    CachedAnswer, CachedSearch, ClickRow, DeleteSearchLog, EngineHealthRow, HistoryFilter,
+    HistoryItem, HistoryStats, PageHit, PageRow, SearchLogRow, SearchResponse, StatsSnapshot,
+    Store, StoreError, StoreTuning,
 };
 use rusqlite::Connection;
 use tokio::task::{JoinError, spawn_blocking};
@@ -229,6 +229,14 @@ impl Store for SqliteStore {
 
     async fn get_lexical(&self, q: &str, limit: u8) -> Result<Vec<CachedSearch>, StoreError> {
         self.get_lexical(q, limit).await
+    }
+
+    async fn search_cache_fts(
+        &self,
+        q: &str,
+        limit: u32,
+    ) -> Result<Vec<CacheResultHit>, StoreError> {
+        self.search_cache_fts(q, limit).await
     }
 
     async fn put(

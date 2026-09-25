@@ -33,7 +33,7 @@ use tokio::time::timeout;
 use crate::common;
 
 /// The settled tool surface: the four W1-08 tools plus W5-01's
-/// `fetch_and_index` in `archive` builds.
+/// `fetch_and_index` and W5-03's `search_archive` in `archive` builds.
 const TOOL_NAMES: &[&str] = &[
     "search_web",
     "cache_status",
@@ -41,6 +41,8 @@ const TOOL_NAMES: &[&str] = &[
     "exa_search",
     #[cfg(feature = "archive")]
     "fetch_and_index",
+    #[cfg(feature = "archive")]
+    "search_archive",
 ];
 
 #[tokio::test]

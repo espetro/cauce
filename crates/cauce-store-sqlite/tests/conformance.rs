@@ -38,6 +38,12 @@ async fn lexical_search() {
 }
 
 #[tokio::test]
+async fn cache_fts_search() {
+    let (store, _dir) = open();
+    cauce_core::conformance::cache_fts_search(&store).await;
+}
+
+#[tokio::test]
 async fn cache_admin() {
     let (store, _dir) = open();
     cauce_core::conformance::cache_admin(&store).await;

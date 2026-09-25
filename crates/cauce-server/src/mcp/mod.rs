@@ -15,6 +15,10 @@
 //!   page, extract the article to markdown, store the `pages` row, return
 //!   it. Only registered in `archive` builds; its `#[tool_router]` impl
 //!   merges into the base router in `CauceMcp::new`.
+//! - `search_archive(query, limit?)` — W5-03 hybrid RRF over `pages_fts`
+//!   and `cache_fts`: `{url, title, snippet, source, score}` rows plus
+//!   `request_id`. Same `archive`-only registration as
+//!   `fetch_and_index`.
 //!
 //! Transports: streamable HTTP mounted at `/mcp` ([`streamable_service`]) and
 //! stdio for `cauce mcp` ([`serve_stdio`]), both against the same [`AppState`]
@@ -209,6 +213,16 @@ pub struct FetchAndIndexArgs {
     /// Optional 64-hex `CacheKey` of the search that surfaced the page;
     /// stored as `pages.source_query_hash`.
     pub query_hash: Option<String>,
+}
+
+/// `search_archive` arguments (W5-03).
+#[cfg(feature = "archive")]
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct SearchArchiveArgs {
+    /// Query text.
+    pub query: String,
+    /// Max results (default 10, capped at 100).
+    pub limit: Option<u32>,
 }
 
 /// `exa_search` arguments (settled input shape; frozen v2 surface).
@@ -641,13 +655,67 @@ impl CauceMcp {
         .instrument(span)
         .await
     }
+
+    /// `search_archive(query, limit?)` — the W5-03 hybrid archive read:
+    /// `pages_fts` and `cache_fts` result snippets as two ranked lists
+    /// fused by the pipeline's RRF merge (`merge.rrf_k`), deduped on the
+    /// normalized URL — a URL both indexed and cached is one hit boosted
+    /// by both lists and reported `source: "page"` (the first list).
+    #[tool(
+        description = "Search the local archive: indexed pages and cached result snippets fused by RRF. Args: query (required), limit (max results, default 10, capped at 100). Returns {query, results: [{url, title, snippet, source ('page'|'cached_result'), score}], request_id}; a URL found in both lists is one boosted hit reported as 'page'."
+    )]
+    async fn search_archive(
+        &self,
+        Parameters(args): Parameters<SearchArchiveArgs>,
+        ctx: RequestContext<RoleServer>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let request_id = Uuid::now_v7();
+        let client = Self::client_kind(&ctx);
+        let span = info_span!(
+            "mcp.tool",
+            tool = "search_archive",
+            request_id = %request_id,
+            client = %client.label(),
+        );
+        async move {
+            if args.query.trim().is_empty() {
+                return Err(invalid_params("query must be non-empty", request_id));
+            }
+            let limit = args.limit.unwrap_or(10).clamp(1, 100);
+            let results = self
+                .state
+                .pipeline()
+                .search_archive(&args.query, limit)
+                .await
+                .map_err(|e| store_error(&e, request_id))?;
+            self.audit_tool(
+                &client,
+                "search_archive",
+                request_id,
+                json!({
+                    "query": args.query,
+                    "limit": limit,
+                    "result_count": results.len(),
+                }),
+                false,
+            )
+            .await?;
+            Ok(CallToolResult::structured(json!({
+                "query": args.query,
+                "results": results,
+                "request_id": request_id,
+            })))
+        }
+        .instrument(span)
+        .await
+    }
 }
 
 #[tool_handler(
     name = "cauce",
     version = "0.0.0",
     router = self.tool_router.clone(),
-    instructions = "Local metasearch backed by a TTL cache. `search_web` returns the canonical cauce SearchResponse (meta.request_id, meta.source cache/network); `exa_search` returns the Exa-compatible shape for existing wiring; `cache_status`/`cache_invalidate` manage the shared cache; `fetch_and_index` fetches a page to markdown and indexes it in the archive (archive builds only). While iterating, pin engines=[\"replay\"] (deterministic, offline) or engines=[\"wikipedia\"] (keyless, gentle rate limits; ships enabled=false so it needs a [[engines]] config entry first)."
+    instructions = "Local metasearch backed by a TTL cache. `search_web` returns the canonical cauce SearchResponse (meta.request_id, meta.source cache/network); `exa_search` returns the Exa-compatible shape for existing wiring; `cache_status`/`cache_invalidate` manage the shared cache; `fetch_and_index` fetches a page to markdown and indexes it in the archive and `search_archive` searches indexed pages plus cached result snippets fused by RRF (both archive builds only). While iterating, pin engines=[\"replay\"] (deterministic, offline) or engines=[\"wikipedia\"] (keyless, gentle rate limits; ships enabled=false so it needs a [[engines]] config entry first)."
 )]
 impl ServerHandler for CauceMcp {}
 

@@ -135,3 +135,113 @@ pub async fn lexical_search(store: &impl Store) {
         "deleted rows must leave the lexical index"
     );
 }
+
+/// `search_cache_fts` (W5-03): the `cache_fts` index exploded to result
+/// granularity for `search_archive`. The per-result cover check keeps
+/// query-column-only matches and sibling results out.
+pub async fn cache_fts_search(store: &impl Store) {
+    let key = CacheKey::from(&request("conformance cachefts"));
+    store
+        .put(
+            &key,
+            &response(
+                "conformance cachefts",
+                &[
+                    (
+                        "TanStack Query guide",
+                        "https://tanstack.com/query",
+                        "caching server state in react",
+                    ),
+                    ("Noise result", "https://example.com/noise", "nothing"),
+                ],
+            ),
+            Duration::from_secs(3600),
+        )
+        .await
+        .expect("put failed");
+
+    // A title term finds the result it belongs to.
+    let hits = store
+        .search_cache_fts("tanstack", 10)
+        .await
+        .expect("search_cache_fts failed");
+    assert!(
+        hits.iter()
+            .any(|h| h.url.as_str() == "https://tanstack.com/query"),
+        "search_cache_fts must explode the matched entry to result granularity"
+    );
+    // The sibling result covering no query token stays out.
+    assert!(
+        hits.iter()
+            .all(|h| h.url.as_str() != "https://example.com/noise"),
+        "results not covering the query must not emit hits"
+    );
+
+    // A snippet-only term matches too.
+    let hits = store
+        .search_cache_fts("react", 10)
+        .await
+        .expect("search_cache_fts failed");
+    assert!(
+        hits.iter()
+            .any(|h| h.url.as_str() == "https://tanstack.com/query"),
+        "result snippets must be searchable"
+    );
+
+    // "cachefts" is only in the stored query column — it must emit no hits.
+    let hits = store
+        .search_cache_fts("cachefts", 10)
+        .await
+        .expect("search_cache_fts failed");
+    assert!(
+        hits.is_empty(),
+        "query-column-only matches must contribute no hits"
+    );
+
+    // Punctuation-only input is an empty result, not an FTS syntax error.
+    let hits = store
+        .search_cache_fts("*", 10)
+        .await
+        .expect("search_cache_fts('*') failed");
+    assert!(hits.is_empty(), "operator-only input must not error");
+
+    // Expired rows are still indexed (the caller's stale policy, pinned
+    // the same way get_lexical pins it).
+    let expired_key = CacheKey::from(&request("conformance cachefts expired"));
+    store
+        .put(
+            &expired_key,
+            &response(
+                "conformance cachefts expired",
+                &[(
+                    "stale kelp hit",
+                    "https://kelp.example.com/",
+                    "kelp forests",
+                )],
+            ),
+            Duration::ZERO,
+        )
+        .await
+        .expect("put expired");
+    let hits = store
+        .search_cache_fts("kelp", 10)
+        .await
+        .expect("search_cache_fts failed");
+    assert!(
+        hits.iter()
+            .any(|h| h.url.as_str() == "https://kelp.example.com/" && h.expires_at <= Utc::now()),
+        "expired cached results must still be searchable"
+    );
+
+    // Deleted rows leave the index.
+    assert!(store.delete_cache(&key).await.expect("delete_cache failed"));
+    let hits = store
+        .search_cache_fts("tanstack", 10)
+        .await
+        .expect("search_cache_fts failed");
+    assert!(
+        hits.iter()
+            .all(|h| h.url.as_str() != "https://tanstack.com/query"),
+        "deleted rows must leave the cache_fts index"
+    );
+}
