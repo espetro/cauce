@@ -104,7 +104,11 @@ process — you cannot give tier-1 and tier-2 different latencies from env. Mult
   `#results a` (SSR, streaming and pagination alike); the `<article>` `hx-post="/api/click"`
   rows write the `clicks` table independently of the flag — a click with the flag off records
   `clicks` but no `pages` row (easy negative test).
-- The archive `Fetcher` has **no HostGuard** — loopback fetch targets work. Synthetic replay
+- The archive `Fetcher` has an **egress guard** (#189): private/reserved targets (loopback,
+  RFC 1918, link-local, CGNAT, multicast, `localhost`) are refused with a 4xx before any
+  connect, on every redirect hop. Loopback fetch targets need the documented opt-in
+  `CAUCE_ARCHIVE_ALLOW_PRIVATE=true` (`[archive] allow_private`); the scheme allowlist
+  (`http`/`https` only) always applies. Synthetic replay
   results point at real hosts with fabricated paths (`https://en.wikipedia.org/guide/q-0`),
   so click-beacon indexing is non-deterministic against them. For a deterministic click →
   `pages` row, serve `crates/cauce-core/tests/fixtures/archive/` on a loopback port
@@ -121,8 +125,25 @@ process — you cannot give tier-1 and tier-2 different latencies from env. Mult
   `fetched_at`, `count(*)` stays 1.
 - HTTP surface: `POST /api/pages {"url"}` → 201 `PageRow` (`source_query_hash` null for direct
   calls, set for beacon calls); `GET /api/pages/{percent-encoded-url-as-one-segment}` →
-  200 row or `{"error":{"code":"not_found",...}}`; non-http(s) url → 400 `bad_request`
-  envelope. Browser URL-bar GETs render raw JSON fine.
+  200 row or `{"error":{"code":"not_found",...}}`; unparseable url → 400 `bad_request`
+  envelope, non-http(s) scheme → 403 `url_blocked`. Browser URL-bar GETs render raw JSON fine.
+- Egress-guard wire detail (#189): 403 `url_blocked` covers BOTH refusal classes —
+  private/reserved *addresses* (literal IPs `127.0.0.1`, `169.254.169.254`, ... in `check_url`
+  pre-connect, and DNS names resolving to them — `localhost` — inside `GuardedResolver`)
+  AND non-http(s) *schemes* (`file:///etc/passwd` → `Blocked` up front in `fetch_and_index`;
+  a redirect hop to `file:` hits `check_scheme`). 400 `bad_request` is only for URLs that
+  don't parse at all (`"not a url"` → `InvalidUrl`). On MCP both refusal classes are
+  `invalid_params` (-32602). `CAUCE_ARCHIVE_ALLOW_PRIVATE=true` disarms only the range
+  check — the scheme refusal stays. Side evidence for "guard refused before connect":
+  the origin's access log shows no request (fixture `http.server` log = only
+  allow_private-instance GETs).
+- MCP probe without rmcp: `POST /mcp` works over plain curl. initialize with
+  `accept: application/json, text/event-stream` and body
+  `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"probe","version":"0.0.0"}}}`
+  → response headers carry `mcp-session-id: <uuid>`. Send `notifications/initialized` then
+  `tools/call` with header `mcp-session-id: <uuid>`; replies are SSE frames (`data: {json}`).
+  A guard refusal on `fetch_and_index` surfaces as a JSON-RPC `error` object
+  `{"code":-32602,"message":"blocked by egress guard: ..."}` — not a tool-level `isError`.
 - stderr log stays empty; request evidence is in `$CAUCE_DATA_DIR/logs/cauce-YYYY-MM-DD.jsonl`
   (`path`, `client`, `method` per request — shows the `ui` POST /api/click and POST /api/pages
   pair ~5 ms apart on a click).

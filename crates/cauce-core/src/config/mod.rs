@@ -141,6 +141,11 @@ const ENV_OVERRIDES: &[(&str, &[&str], bool)] = &[
     ),
     ("CAUCE_ARCHIVE_BURST", &["archive", "burst"], true),
     (
+        "CAUCE_ARCHIVE_ALLOW_PRIVATE",
+        &["archive", "allow_private"],
+        true,
+    ),
+    (
         "CAUCE_CONFIG_INTERPOLATION",
         &["config", "interpolation"],
         true,
@@ -740,6 +745,13 @@ pub struct ArchiveConfig {
     /// Host-keyed token-bucket burst capacity (>= 1).
     #[serde(default = "default_archive_burst")]
     pub burst: u32,
+    /// Skip the SSRF egress guard (default false): when true the fetcher
+    /// may dial private/reserved addresses (loopback, RFC 1918,
+    /// link-local). A documented opt-in for indexing local services —
+    /// `POST /api/pages` and MCP `fetch_and_index` stay open to
+    /// server-side request forgery while it is on.
+    #[serde(default)]
+    pub allow_private: bool,
 }
 
 impl Default for ArchiveConfig {
@@ -748,6 +760,7 @@ impl Default for ArchiveConfig {
             index_on_click: true,
             requests_per_second: default_requests_per_second(),
             burst: default_archive_burst(),
+            allow_private: false,
         }
     }
 }

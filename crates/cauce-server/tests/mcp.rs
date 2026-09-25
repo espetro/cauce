@@ -437,7 +437,11 @@ async fn mcp_fetch_and_index_writes_page() {
         .mount(&origin)
         .await;
 
-    let (state, _tmp) = test_state();
+    // The mock origin is loopback: opt into `[archive] allow_private` —
+    // #189's egress guard refuses private targets otherwise.
+    let mut config = cauce_core::config::Config::default();
+    config.archive.allow_private = true;
+    let (state, _tmp) = test_state_with_config(config);
     let (addr, server) = spawn_server(state.clone()).await;
     let client = mcp_client(addr).await;
 

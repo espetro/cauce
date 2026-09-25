@@ -47,7 +47,8 @@ pub(super) fn store_error(e: &StoreError, request_id: Uuid) -> ErrorData {
 #[cfg(feature = "archive")]
 pub(super) fn archive_error(e: &ArchiveError, request_id: Uuid) -> ErrorData {
     let label = match e {
-        ArchiveError::InvalidUrl(_) => {
+        // Egress-guard refusals are caller faults like a bad URL.
+        ArchiveError::InvalidUrl(_) | ArchiveError::Blocked(_) => {
             return invalid_params(e.to_string(), request_id);
         }
         ArchiveError::Fetch(EngineError::Timeout) => "upstream_timeout",

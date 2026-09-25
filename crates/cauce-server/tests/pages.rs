@@ -44,7 +44,12 @@ async fn post_indexes_and_get_reads_back() {
         .mount(&server)
         .await;
 
-    let (router, state, _tmp) = app();
+    // The mock origin is loopback: opt into `[archive] allow_private` —
+    // #189's egress guard refuses private targets otherwise.
+    let mut config = cauce_core::config::Config::default();
+    config.archive.allow_private = true;
+    let (state, _tmp) = test_state_with_config(config);
+    let router = build_router(state.clone());
     let page_url = format!("{}/article", server.uri());
     let (status, _headers, body) = call_json(
         &router,
@@ -123,6 +128,24 @@ async fn caller_faults_map_to_4xx() {
     assert_envelope(&body, "not_found");
 }
 
+/// #189: a private/reserved fetch target or a non-http(s) scheme is a
+/// caller fault — the egress guard's refusal maps to `403 url_blocked`,
+/// not `502`.
+#[tokio::test]
+async fn blocked_target_maps_to_403() {
+    let (router, _state, _tmp) = app();
+
+    for url in [
+        "http://169.254.169.254/latest/meta-data",
+        "file:///etc/passwd",
+    ] {
+        let (status, _h, body) =
+            call_json(&router, post_pages("/api/pages", json!({ "url": url }))).await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "{url}: {body}");
+        assert_envelope(&body, "url_blocked");
+    }
+}
+
 /// An upstream failure is `502 upstream_error`, not a 4xx and not a
 /// written row.
 #[tokio::test]
@@ -134,7 +157,10 @@ async fn upstream_error_maps_to_502() {
         .mount(&server)
         .await;
 
-    let (router, state, _tmp) = app();
+    let mut config = cauce_core::config::Config::default();
+    config.archive.allow_private = true;
+    let (state, _tmp) = test_state_with_config(config);
+    let router = build_router(state.clone());
     let page_url = format!("{}/broken", server.uri());
     let (status, _h, body) = call_json(
         &router,
