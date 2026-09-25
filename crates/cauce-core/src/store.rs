@@ -124,6 +124,26 @@ fn u32_or_string<'de, D: serde::Deserializer<'de>>(d: D) -> Result<u32, D::Error
     }
 }
 
+/// One `pages` row (W5-01): a fetched page, readability-extracted to
+/// markdown. The only writer is `archive::Archiver::fetch_and_index`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PageRow {
+    /// Normalized final URL (the `pages` primary key).
+    pub url: Url,
+    /// When the page was fetched and indexed.
+    pub fetched_at: DateTime<Utc>,
+    /// Readability title; may be empty when the page carries none.
+    pub title: String,
+    /// Article body as markdown (at most `archive::MAX_MARKDOWN_BYTES`).
+    pub markdown: String,
+    /// Bytes of HTML read from the network (post-cap: `<= MAX_FETCH_BYTES`).
+    pub byte_len: u64,
+    /// `CacheKey` of the search the page was clicked from (UI click
+    /// beacon); `None` for direct `POST /api/pages` and MCP calls.
+    #[serde(default)]
+    pub source_query_hash: Option<CacheKey>,
+}
+
 /// Breaker state persisted in `engine_health` (scheduler section 4.4.6).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -708,6 +728,15 @@ pub trait Store: Send + Sync {
         row: &AnswerRow,
         ttl: Duration,
     ) -> Result<(), StoreError>;
+
+    // ---- pages (W5-01 fetch-and-index archive) -------------------------------
+
+    /// Insert or replace the `pages` row for `row.url` (`pages_fts` stays
+    /// in step via its triggers).
+    async fn put_page(&self, row: &PageRow) -> Result<(), StoreError>;
+
+    /// Fetch one archived page by its stored (normalized) URL.
+    async fn get_page(&self, url: &Url) -> Result<Option<PageRow>, StoreError>;
 
     // ---- search log, clicks, history -----------------------------------------
 

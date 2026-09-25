@@ -87,6 +87,12 @@ const EXPECTED_WAVE2_UI_MOUNTED: &[(&str, &str)] = &[
 const EXPECTED_WAVE4_AI_MOUNTED: &[(&str, &str)] = &[("POST", "/api/answer")];
 const EXPECTED_WAVE4_UI_MOUNTED: &[(&str, &str)] = &[("GET", "/answer")];
 
+/// Wave-5 rows mounted so far (W5-01): the archive index/read pair rides
+/// the `archive` gate. `GET /api/archive` (W5-02) is declared but not yet
+/// mounted.
+const EXPECTED_WAVE5_ARCHIVE_MOUNTED: &[(&str, &str)] =
+    &[("POST", "/api/pages"), ("GET", "/api/pages/{url}")];
+
 // ---------------------------------------------------------------------------
 // Plan-table parsing (parent plan section 6)
 // ---------------------------------------------------------------------------
@@ -283,6 +289,13 @@ fn mounted_routes_match_declaration() {
                 .map(|(m, p)| (m.to_string(), p.to_string())),
         );
     }
+    if cfg!(feature = "archive") {
+        expected.extend(
+            EXPECTED_WAVE5_ARCHIVE_MOUNTED
+                .iter()
+                .map(|(m, p)| (m.to_string(), p.to_string())),
+        );
+    }
     assert_eq!(mounted, expected);
 }
 
@@ -377,6 +390,25 @@ async fn live_router_matches_routes_table() {
         .as_str()
         .expect("seeded cache entry")
         .to_string();
+
+    // Seed one `pages` row so the `{url}` probe hits a real entry
+    // (`GET /api/pages/{url}` 404s on a miss, which reads as "not mounted").
+    #[cfg(feature = "archive")]
+    {
+        let probe_url = url::Url::parse("https://example.com").unwrap();
+        state
+            .store()
+            .put_page(&cauce_core::PageRow {
+                url: probe_url,
+                fetched_at: chrono::Utc::now(),
+                title: "probe".to_string(),
+                markdown: "probe body".to_string(),
+                byte_len: 64,
+                source_query_hash: None,
+            })
+            .await
+            .expect("seed pages row");
+    }
 
     for spec in ROUTES {
         // Thin inputs are fine: a 400 still proves the route exists; a

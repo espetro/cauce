@@ -2,8 +2,8 @@
 //!
 //! Spawns the real `cauce` binary with `mcp` and tempdir data/config dirs +
 //! `CAUCE_ENGINES=replay`, then drives the MCP protocol over the child's
-//! stdin/stdout with an rmcp client: initialize, `tools/list` (exactly four
-//! tools), `search_web` (replay results + `request_id`). Also asserts the
+//! stdin/stdout with an rmcp client: initialize, `tools/list` (exactly the
+//! settled tools), `search_web` (replay results + `request_id`). Also asserts the
 //! mode is stdio-only: the child logs "serving stdio" and never binds a
 //! listener, and exits cleanly when the client closes the transport.
 //!
@@ -32,12 +32,15 @@ use tokio::time::timeout;
 
 use crate::common;
 
-/// The settled W1-08 tool surface: exactly these four names.
-const TOOL_NAMES: [&str; 4] = [
+/// The settled tool surface: the four W1-08 tools plus W5-01's
+/// `fetch_and_index` in `archive` builds.
+const TOOL_NAMES: &[&str] = &[
     "search_web",
     "cache_status",
     "cache_invalidate",
     "exa_search",
+    #[cfg(feature = "archive")]
+    "fetch_and_index",
 ];
 
 #[tokio::test]
@@ -92,7 +95,7 @@ async fn mcp_stdio_search() {
         .expect("mcp initialize timed out")
         .expect("mcp initialize");
 
-    // Exactly the four settled tools.
+    // Exactly the settled tools.
     let tools = timeout(Duration::from_secs(10), client.list_all_tools())
         .await
         .expect("tools/list timed out")

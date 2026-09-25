@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<!-- W5-01 archive fixture: technical blog post with code blocks and callouts. -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Why I Stopped Using ORMs for Reporting Queries — Pavel's Devlog</title>
+  <style>body{font-family:sans-serif}</style>
+</head>
+<body>
+<header>
+  <a href="/">Pavel's Devlog</a>
+  <nav><a href="/archive">Archive</a> · <a href="/about">About</a> · <a href="/rss.xml">RSS</a></nav>
+</header>
+<article>
+  <h1>Why I Stopped Using ORMs for Reporting Queries</h1>
+  <p><time datetime="2025-09-28">September 28, 2025</time> · 8 min read</p>
+  <p>For five years I wrote every database query in our codebase through the ORM, because "consistency." Last month I deleted 400 lines of the reporting module and replaced it with 90 lines of hand-written SQL. This post is about why that was the right call.</p>
+  <h2>The problem nobody mentions</h2>
+  <p>ORMs are excellent at object-shaped reads: fetch a user, fetch their orders, hydrate the rows. Reporting queries are not object-shaped. They aggregate across six tables, pivot on a date column, and produce a flat table of numbers that maps to no model. Forcing that through an ORM gives you code like this:</p>
+  <pre><code class="language-python">rows = (
+    session.query(Order)
+    .join(Order.items)
+    .filter(Order.created_at &gt;= start)
+    .group_by(func.date_trunc("month", Order.created_at))
+    .with_entities(func.date_trunc("month", Order.created_at), func.sum(OrderItem.price))
+    .all()
+)</code></pre>
+  <p>That generates a query the ORM had to be coaxed into — and when it is slow, you end up reading the SQL it produced anyway. The abstraction did not save you; it added an indirection layer to debug through.</p>
+  <h2>What replaced it</h2>
+  <p>The replacement is a folder of <code>.sql</code> files loaded at startup, each returning a typed dataclass row:</p>
+  <pre><code class="language-sql">-- monthly_revenue.sql
+SELECT date_trunc('month', o.created_at) AS month,
+       sum(oi.price_cents) / 100.0        AS revenue_usd
+FROM orders o
+JOIN order_items oi ON oi.order_id = o.id
+WHERE o.created_at &gt;= :start
+GROUP BY 1
+ORDER BY 1;</code></pre>
+  <aside class="note"><strong>Note:</strong> This is not a plea to abandon ORMs for everything. Writes, validations, and unit-of-work semantics are exactly what they are good at.</aside>
+  <p>The measurable result: the monthly revenue query went from 800 ms to 90 ms, and the code review diff was almost entirely deletions. Readability went up — the SQL is the spec, not an artefact you dump from a query builder and paste into a comment.</p>
+  <h2>The rule I landed on</h2>
+  <p>My rule now: if the query's output shape has a model name, use the ORM; if the output is a report row, write SQL. ORMs earned their place; they just never belonged in the reporting module.</p>
+</article>
+<footer>
+  <p>More posts: <a href="/posts/tag-orm">orm</a> <a href="/posts/tag-sql">sql</a> <a href="/posts/tag-python">python</a></p>
+  <p>© 2025 Pavel Kristan. Built with a static generator.</p>
+</footer>
+</body>
+</html>

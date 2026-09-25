@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<!-- W5-01 archive fixture: forum thread with posts and quotes. -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>[SOLVED] btrfs scrub reports uncorrectable errors but SMART is clean — Kernel Korner Forums</title>
+</head>
+<body>
+<header>
+  <span class="logo">Kernel Korner</span>
+  <nav><a href="/">Forums</a> <a href="/search">Search</a> <a href="/login">Log in</a> <a href="/register">Register</a></nav>
+</header>
+<div class="crumbs"><a href="/forums/storage">Storage</a> » <span>[SOLVED] btrfs scrub reports uncorrectable errors but SMART is clean</span></div>
+<main>
+<section class="thread">
+  <article class="post" id="p1">
+    <div class="post-meta"><strong>wren42</strong> · Member · posted 2025-08-02 14:12</div>
+    <div class="post-body">
+      <p>My monthly scrub just reported <code>uncorrectable_errors: 2</code> on <code>/dev/sda</code>, but <code>smartctl -a</code> shows a completely clean bill — zero reallocations, zero pending sectors, zero CRC errors. The filesystem still mounts and reads fine. Do I panic-buy a new SSD tonight or is this a known scrub quirk?</p>
+      <p>System: kernel 6.10.3, btrfs-progs 6.9, single-device profile on a 2 TB SATA SSD about 18 months old.</p>
+    </div>
+  </article>
+  <article class="post" id="p2">
+    <div class="post-meta"><strong>iodine</strong> · Moderator · posted 2025-08-02 15:40</div>
+    <div class="post-body">
+      <p><blockquote>Do I panic-buy a new SSD tonight or is this a known scrub quirk?</blockquote></p>
+      <p>Neither, probably. First check whether the errors are in metadata or data: <code>btrfs scrub status -R /mount/point</code>. If it is metadata and you run <code>DUP</code> or RAID1 metadata, the good copy already healed it. The counter is cumulative — <code>btrfs scrub status</code> keeps showing the last run until the next scrub finishes.</p>
+    </div>
+  </article>
+  <article class="post" id="p3">
+    <div class="post-meta"><strong>wren42</strong> · Member · posted 2025-08-02 16:05</div>
+    <div class="post-body">
+      <p>That was it — <code>scrub status -R</code> shows the two errors were in <code>metadata_bytes</code>, and the counter says <code>corrected: 2</code> for DUP. I had read the summary line and panicked. Re-ran the scrub this morning; zero errors. SMART stays clean.</p>
+      <p>Lesson learned: "uncorrectable" in the summary means "uncorrectable at read time", and the <code>-R</code> breakdown is what you actually want to look at. Marking solved.</p>
+    </div>
+  </article>
+  <article class="post" id="p4">
+    <div class="post-meta"><strong>iodine</strong> · Moderator · posted 2025-08-02 16:11</div>
+    <div class="post-body">
+      <p>For the record: if it ever is <em>data</em> errors on a single-device profile, <code>btrfs restore</code> plus a file-level scrub is the recovery path — but schedule a replacement anyway, since a growing error count usually precedes visible failure by weeks, not years.</p>
+    </div>
+  </article>
+</section>
+<aside class="similar">
+  <h4>Similar threads</h4>
+  <ul>
+    <li><a href="/t/1">btrfs vs ext4 on NVMe</a></li>
+    <li><a href="/t/2">SMART thresholds explained</a></li>
+    <li><a href="/t/3">Automating monthly scrubs</a></li>
+  </ul>
+</aside>
+</main>
+<footer><p>Kernel Korner Forums · <a href="/rules">Rules</a> · <a href="/faq">FAQ</a></p></footer>
+</body>
+</html>
