@@ -8,8 +8,11 @@
 //! the [`Usage`] token counts, [`AiCallCtx`] audit context and the
 //! typed [`AiError`]. [`openai`] is the OpenAI-compatible client
 //! (`POST {base_url}/chat/completions` streamed over SSE, plus a
-//! 60 s-cached `GET {base_url}/models`); W4-05's Anthropic protocol maps
-//! onto the same types. [`answer`] (W4-02) is the grounded-answer tool
+//! 60 s-cached `GET {base_url}/models`); [`anthropic`] (W4-05) is the
+//! Messages API client (`POST {base_url}/v1/messages`) onto the same
+//! types — `[ai].protocol` picks between them. `sse`/`http`/`pump` are
+//! the framing, error-read and bookkeeping helpers both clients share.
+//! [`answer`] (W4-02) is the grounded-answer tool
 //! loop: [`AnswerLoop::stream_answer`](answer::AnswerLoop::stream_answer)
 //! + the [`AnswerFrame`](answer::AnswerFrame) wire union.
 //!
@@ -18,14 +21,51 @@
 //! file, You can obtain one at <https://mozilla.org/MPL/2.0/>.
 
 pub mod answer;
+pub mod anthropic;
+mod http;
 pub mod openai;
+mod pump;
+mod sse;
+
+use std::sync::Arc;
 
 use serde::Serialize;
 use thiserror::Error;
 use uuid::Uuid;
 
 pub use answer::{AnswerFrame, AnswerLoop, AnswerRequest, ChatProvider};
+pub use anthropic::AnthropicClient;
 pub use openai::OpenAiClient;
+
+use crate::config::{AiConfig, AiProtocol};
+use crate::store::Store;
+
+/// Build the `[ai]` provider client [`AiConfig::protocol`] selects
+/// (W4-05): [`OpenAiClient`] for `openai` (default), [`AnthropicClient`]
+/// for `anthropic`. `audit` attaches the `Store` each provider call
+/// writes its `ai.provider_call` row to — the same contract whatever
+/// the protocol.
+pub fn provider_client(
+    cfg: &AiConfig,
+    audit: Option<Arc<dyn Store>>,
+) -> Result<Arc<dyn ChatProvider>, AiError> {
+    match cfg.protocol {
+        AiProtocol::OpenAi => {
+            let client = OpenAiClient::new(cfg)?;
+            Ok(Arc::new(match audit {
+                Some(store) => client.with_audit(store),
+                None => client,
+            }))
+        }
+        AiProtocol::Anthropic => {
+            let client = AnthropicClient::new(cfg)?;
+            Ok(Arc::new(match audit {
+                Some(store) => client.with_audit(store),
+                None => client,
+            }))
+        }
+    }
+}
 
 /// Fallback `audit.actor` when a provider call has no inbound request
 /// context (`ui | api | mcp:<client> | cli` is the convention

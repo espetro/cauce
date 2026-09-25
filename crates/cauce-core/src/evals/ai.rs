@@ -18,6 +18,13 @@
 //! [`TranscriptProvider`]. `cauce eval ai --record` regenerates those
 //! files from the live `[ai]` provider via [`RecordingProvider`].
 //!
+//! Protocol variants (W4-05): `<stem>.json` is the default (OpenAI)
+//! transcript; a `<stem>.<proto>.json` file alongside it (e.g.
+//! `tokyo-weather.anthropic.json`) adds a variant run of the same case
+//! — one outcome per existing variant, marked by
+//! [`AiCaseOutcome::protocol`]. `--record` writes `<stem>.json` for
+//! `protocol = "openai"` and `<stem>.<proto>.json` otherwise.
+//!
 //! Scoring is the mean of three per-case rates: cited-domain recall
 //! (`must_cite_domains` against the `sources` frame hosts),
 //! `must_contain` hits and `must_not_contain` cleanliness on
@@ -129,6 +136,11 @@ pub struct Transcript {
     /// Provider base URL the recording was taken against (provenance).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider: Option<String>,
+    /// Wire protocol the recording was taken with (`"openai"` when
+    /// absent — every pre-W4-05 transcript). Provenance only: replay is
+    /// protocol-agnostic, the filename carries the variant.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub protocol: Option<String>,
     /// When `--record` wrote the file.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub recorded_at: Option<DateTime<Utc>>,
@@ -302,6 +314,42 @@ pub fn load_transcript(dir: &Path, stem: &str) -> Result<Transcript, EvalError> 
     })
 }
 
+/// One `(file stem, protocol)` pair per transcript variant of `stem`
+/// on disk: `("<stem>", "openai")` first — the default file, present
+/// or not (a missing transcript is a scored skip, never a silent
+/// drop) — then each `<stem>.<proto>.json` in the directory, sorted.
+pub fn transcript_variants(dir: &Path, stem: &str) -> Vec<(String, String)> {
+    let mut variants = vec![(stem.to_string(), "openai".to_string())];
+    let prefix = format!("{stem}.");
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        let mut extra: Vec<(String, String)> = entries
+            .flatten()
+            .filter_map(|entry| {
+                let name = entry.file_name();
+                let name = name.to_str()?;
+                let file_stem = name.strip_suffix(".json")?;
+                let proto = file_stem.strip_prefix(&prefix)?;
+                if proto.is_empty() {
+                    return None;
+                }
+                Some((file_stem.to_string(), proto.to_string()))
+            })
+            .collect();
+        extra.sort();
+        variants.extend(extra);
+    }
+    variants
+}
+
+/// The stem `--record` writes for `proto`: `<stem>` for `"openai"`
+/// (backward compatible), `<stem>.<proto>` for any other protocol.
+pub fn record_stem(stem: &str, proto: &str) -> String {
+    match proto {
+        "" | "openai" => stem.to_string(),
+        other => format!("{stem}.{other}"),
+    }
+}
+
 /// Write `transcript` to `<dir>/<stem>.json` (pretty JSON, trailing
 /// newline); the `--record` side of [`load_transcript`].
 pub fn save_transcript(
@@ -385,6 +433,9 @@ pub struct RecordingProvider {
     inner: Arc<dyn ChatProvider>,
     model: String,
     provider: Option<String>,
+    /// Wire protocol (`"openai"`/`"anthropic"`) the recording came
+    /// from — provenance stamped on the transcript.
+    protocol: Option<String>,
     turns: Arc<Mutex<Vec<TranscriptTurn>>>,
     pending: Arc<Mutex<Vec<String>>>,
 }
@@ -394,6 +445,7 @@ impl RecordingProvider {
         Self {
             model: inner.model().to_string(),
             provider: None,
+            protocol: None,
             inner,
             turns: Arc::new(Mutex::new(Vec::new())),
             pending: Arc::new(Mutex::new(Vec::new())),
@@ -407,11 +459,19 @@ impl RecordingProvider {
         self
     }
 
+    /// Record the wire protocol into the transcript's `protocol`
+    /// provenance field (the `[ai].protocol` of the recording run).
+    pub fn with_protocol(mut self, protocol: impl Into<String>) -> Self {
+        self.protocol = Some(protocol.into());
+        self
+    }
+
     /// The recorded turns so far as a [`Transcript`] (consumes them).
     pub fn transcript(&self) -> Transcript {
         Transcript {
             model: self.model.clone(),
             provider: self.provider.clone(),
+            protocol: self.protocol.clone(),
             recorded_at: Some(Utc::now()),
             turns: std::mem::take(&mut *self.turns.lock().expect("turns mutex")),
         }
@@ -469,8 +529,13 @@ impl ChatProvider for RecordingProvider {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AiCaseOutcome {
     pub query: String,
-    /// Transcript stem the case ran on.
+    /// Transcript file stem the case ran on (`<stem>` or
+    /// `<stem>.<proto>`).
     pub transcript: String,
+    /// Wire protocol of the replayed transcript (`"openai"` for the
+    /// default `<stem>.json`).
+    #[serde(default = "default_protocol")]
+    pub protocol: String,
     /// Mean of `cited_recall`, `contain_rate`, `clean_rate`.
     pub score: f64,
     /// Every check passed (all three rates are 1.0).
@@ -516,8 +581,15 @@ impl AiCaseOutcome {
             leaked_strings: vec![],
             ungrounded: true,
             note: Some(note.into()),
+            protocol: default_protocol(),
         }
     }
+}
+
+/// `AiCaseOutcome::protocol` when absent — `"openai"` is the
+/// pre-W4-05 convention (`<stem>.json` files).
+fn default_protocol() -> String {
+    "openai".to_string()
 }
 
 fn rate(hits: usize, expected: usize) -> f64 {
@@ -611,6 +683,7 @@ pub fn score_frames(case: &AiEvalCase, frames: &[crate::ai::AnswerFrame]) -> AiC
         leaked_strings,
         ungrounded: *ungrounded,
         note: None,
+        protocol: default_protocol(),
     }
 }
 
@@ -811,6 +884,7 @@ mod tests {
             let provider = TranscriptProvider::new(Transcript {
                 model: "m".to_string(),
                 provider: None,
+                protocol: None,
                 recorded_at: None,
                 turns: vec![
                     TranscriptTurn {
@@ -901,6 +975,7 @@ mod tests {
         let t = Transcript {
             model: "m".to_string(),
             provider: Some("https://example.test/v1".to_string()),
+            protocol: None,
             recorded_at: Some(Utc::now()),
             turns: vec![TranscriptTurn {
                 deltas: vec!["a".to_string()],

@@ -29,14 +29,15 @@ mod store;
 
 pub use admission::{Admission, AdmissionLimits, FlightResult};
 pub use ai::{
-    AiCallCtx, AiError, AiStreamEvent, AnswerFrame, AnswerLoop, AnswerRequest, ChatCompletion,
-    ChatMessage, ChatProvider, ChatRequest, ModelInfo, OpenAiClient, ToolCall, ToolSpec, Usage,
+    AiCallCtx, AiError, AiStreamEvent, AnswerFrame, AnswerLoop, AnswerRequest, AnthropicClient,
+    ChatCompletion, ChatMessage, ChatProvider, ChatRequest, ModelInfo, OpenAiClient, ToolCall,
+    ToolSpec, Usage,
 };
 pub use cache::{CacheKey, CachedSearch, normalize_query};
 pub use config::{
-    AdmissionConfig, AiConfig, AuthConfig, CacheConfig, Config, ConfigError, Dirs, EgressConfig,
-    EngineEntry, EngineKind, LexicalConfig, LogsConfig, MergeConfig, MetaConfig, Resources,
-    SearchConfig, ServerConfig, is_loopback_host,
+    AdmissionConfig, AiConfig, AiProtocol, AuthConfig, CacheConfig, Config, ConfigError, Dirs,
+    EgressConfig, EngineEntry, EngineKind, LexicalConfig, LogsConfig, MergeConfig, MetaConfig,
+    Resources, SearchConfig, ServerConfig, is_loopback_host,
 };
 pub use engine::{ENGINE_ID_PATTERN, Engine, EngineError, EngineId, Tier};
 pub use evals::{EvalReport, Thresholds};

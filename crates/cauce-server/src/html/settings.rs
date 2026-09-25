@@ -14,7 +14,7 @@ use axum::Json;
 use axum::extract::{Query, State};
 use axum::http::HeaderMap;
 use axum::response::{Html, IntoResponse, Response};
-use cauce_core::config::{AiConfig, EngineKind};
+use cauce_core::config::{AiConfig, AiProtocol, EngineKind};
 use cauce_core::http::HttpClient;
 use cauce_core::{EngineError, EngineId};
 use serde_json::Value;
@@ -425,37 +425,63 @@ fn kind_label(kind: EngineKind) -> &'static str {
     }
 }
 
-/// `GET {base_url}/models` for the model picker: `(ids, failed)`. An empty
-/// `base_url` is `([], false)`; any fetch/parse failure is `([], true)` and
-/// the input falls back to free text. W4-01 replaces this with the real
-/// provider client (60 s cache).
+/// `GET {base_url}/models` (OpenAI) or `{base_url}/v1/models`
+/// (Anthropic) for the model picker: `(ids, failed)`. An empty
+/// `base_url` is `([], false)`; any fetch/parse failure is `([], true)`
+/// and the input falls back to free text.
 async fn list_models(ai: &AiConfig) -> (Vec<String>, bool) {
     let base = ai.base_url.trim();
     if base.is_empty() {
         return (Vec::new(), false);
     }
-    match fetch_models(
-        &format!("{}/models", base.trim_end_matches('/')),
-        &ai.api_key,
-    )
-    .await
-    {
+    // Same auth + path the provider client uses (W4-05).
+    let (url, headers) = match ai.protocol {
+        AiProtocol::OpenAi => (
+            format!("{}/models", base.trim_end_matches('/')),
+            models_headers("Bearer", &ai.api_key),
+        ),
+        AiProtocol::Anthropic => (
+            format!("{}/v1/models", base.trim_end_matches('/')),
+            models_headers("x-api-key", &ai.api_key),
+        ),
+    };
+    match fetch_models(&url, headers).await {
         Ok(ids) => (ids, false),
         Err(e) => {
-            tracing::debug!(error = %e, "settings: {base}/models listing failed");
+            tracing::debug!(error = %e, "settings: {base} models listing failed");
             (Vec::new(), true)
         }
     }
 }
 
-async fn fetch_models(url: &str, api_key: &str) -> Result<Vec<String>, EngineError> {
-    let client = HttpClient::from_egress_config(EngineId::new("ai"), None)?;
+/// Build the auth headers for the models listing. `scheme` is
+/// `"Bearer"` (Authorization) or `"x-api-key"` (Anthropic, which also
+/// pins `anthropic-version`).
+fn models_headers(scheme: &str, api_key: &str) -> reqwest::header::HeaderMap {
     let mut headers = reqwest::header::HeaderMap::new();
-    if !api_key.is_empty() {
-        let value = reqwest::header::HeaderValue::from_str(&format!("Bearer {api_key}"))
-            .map_err(|e| EngineError::Transport(format!("invalid ai.api_key: {e}")))?;
-        headers.insert(reqwest::header::AUTHORIZATION, value);
+    if scheme == "x-api-key" {
+        headers.insert(
+            "anthropic-version",
+            reqwest::header::HeaderValue::from_static("2023-06-01"),
+        );
     }
+    if !api_key.is_empty() {
+        let (name, value) = match scheme {
+            "x-api-key" => ("x-api-key", api_key.to_string()),
+            _ => ("authorization", format!("Bearer {api_key}")),
+        };
+        if let Ok(value) = reqwest::header::HeaderValue::from_str(&value) {
+            headers.insert(name, value);
+        }
+    }
+    headers
+}
+
+async fn fetch_models(
+    url: &str,
+    headers: reqwest::header::HeaderMap,
+) -> Result<Vec<String>, EngineError> {
+    let client = HttpClient::from_egress_config(EngineId::new("ai"), None)?;
     let res = client.get_with_headers(url, MODELS_BUDGET, headers).await?;
     if res.status != 200 {
         return Err(EngineError::Transport(format!(

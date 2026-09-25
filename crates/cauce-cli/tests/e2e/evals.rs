@@ -210,9 +210,11 @@ fn engine_evals_workflow_is_cron_only() {
 }
 
 /// The CI gate's exact invocation: the five `smoke`-tagged committed
-/// cases over recorded transcripts + replay cassettes. Exit 0 at score
-/// 1.0 and the report lands as `<date>-ai.json` — this is what
-/// `.github/workflows/validate.yml` runs after `mise run validate`.
+/// cases over recorded transcripts + replay cassettes — six outcomes
+/// because `tokyo-weather` also has an `anthropic` protocol variant
+/// (W4-05). Exit 0 at score 1.0 and the report lands as
+/// `<date>-ai.json` — this is what `.github/workflows/validate.yml`
+/// runs after `mise run validate`.
 #[tokio::test]
 async fn eval_ai_smoke_gate_passes_on_committed_cases() {
     let root = workspace_root();
@@ -250,19 +252,27 @@ async fn eval_ai_smoke_gate_passes_on_committed_cases() {
         serde_json::from_str(&std::fs::read_to_string(results_dir.path().join(entry)).unwrap())
             .unwrap();
     assert_eq!(report["kind"], "ai");
-    assert_eq!(report["cases"], 5, "five smoke cases: {report}");
+    assert_eq!(
+        report["cases"], 6,
+        "five smoke cases, six outcomes (tokyo-weather runs both protocols): {report}"
+    );
     assert_eq!(report["score"], 1.0, "committed cases score 1.0: {report}");
     assert_eq!(report["gate_ok"], true);
-    // Deterministic ordering: outcomes stay in case-file order.
-    let queries: Vec<_> = report["outcomes"]
-        .as_array()
-        .unwrap()
+    // Deterministic ordering: outcomes stay in case-file order, with a
+    // case's protocol variants adjacent (openai first).
+    let outcomes = report["outcomes"].as_array().unwrap();
+    let queries: Vec<_> = outcomes
         .iter()
         .map(|o| o["query"].as_str().unwrap().to_string())
         .collect();
     assert_eq!(
         queries.first().unwrap(),
         "current weather in Tokyo right now"
+    );
+    assert_eq!(outcomes[0]["protocol"], "openai");
+    assert_eq!(
+        outcomes[1]["protocol"], "anthropic",
+        "the anthropic transcript variant runs as a second outcome: {report}"
     );
     // The ungrounded metric reports the no-tools case without gating.
     assert_eq!(
