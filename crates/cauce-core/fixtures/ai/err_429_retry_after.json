@@ -1,0 +1,1 @@
+{"error":{"message":"Rate limit reached for gpt-4o-mini in organization org-test on requests per min (RPM): Limit 60, Used 60, Requested 1. Please try again in 30s.","type":"rate_limit_error","param":null,"code":"rate_limit_exceeded"}}
