@@ -37,23 +37,6 @@
     {{ crate::strings::common::REQUEST_LABEL }} <code class="request-id">{{ request_id }}</code>
   </div>
   </main>
-  <script>
-    (function () {
-      var btn = document.getElementById("copy-traced");
-      var el = document.getElementById("traced-id");
-      if (!btn || !el) return;
-      btn.addEventListener("click", function () {
-        if (navigator.clipboard && navigator.clipboard.writeText) {
-          navigator.clipboard.writeText(el.textContent);
-        } else {
-          var r = document.createRange();
-          r.selectNodeContents(el);
-          var s = window.getSelection();
-          s.removeAllRanges();
-          s.addRange(r);
-        }
-      });
-    })();
-  </script>
+  <script>{{ crate::html::app_js()|safe }}</script>
 </body>
 </html>

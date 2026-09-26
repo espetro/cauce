@@ -395,7 +395,7 @@ async fn search_page_renders_assist_trigger() {
     let (status, body) = get_html(&router, "/search?q=tokyo+weather&stream=1").await;
     assert_eq!(status, StatusCode::OK, "{body}");
     assert!(body.contains(r#"id="assist-btn""#), "{body}");
-    assert!(body.contains("assistSetContext"), "{body}");
+    assert!(body.contains("var AS = {"), "{body}");
     let btn = body.find(r#"id="assist-btn""#).unwrap();
     let tag_end = body[btn..].find('>').unwrap();
     assert!(
@@ -409,7 +409,7 @@ async fn search_page_renders_assist_trigger() {
     let (status, body) = get_html(&router, "/search?q=tokyo+weather").await;
     assert_eq!(status, StatusCode::OK, "{body}");
     assert!(
-        !body.contains(r#"id="assist""#) && !body.contains("assistSetContext"),
+        !body.contains(r#"id="assist""#) && !body.contains("var AS = {"),
         "no assist while ai is disabled: {body}"
     );
 }
@@ -460,8 +460,10 @@ async fn search_page_ask_link_follows_ai() {
     let (router, _state, _tmp) = app();
     let (status, body) = get_html(&router, "/search?q=tokyo+weather").await;
     assert_eq!(status, StatusCode::OK, "{body}");
+    // "/answer?q=" strings also appear inside the bundled app.js, so
+    // this asserts on the ask link's id rather than its href text.
     assert!(
-        !body.contains("/answer?q="),
+        !body.contains(r#"id="ask-link""#),
         "no ask link while ai is disabled: {body}"
     );
 }
@@ -528,8 +530,9 @@ async fn ai_entry_points_follow_the_answer_loop() {
             !body.contains(r#"href="/answer""#),
             "{uri}: no answer nav link while ai is disabled"
         );
+        // "ai-mode" alone also matches the bundled app.js — pin the markup.
         assert!(
-            !body.contains("ai-mode"),
+            !body.contains(r#"id="ai-mode""#),
             "{uri}: no AI-mode pill while ai is disabled"
         );
     }

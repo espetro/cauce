@@ -1,0 +1,18 @@
+{
+  "name": "cauce-server-web",
+  "private": true,
+  "type": "module",
+  "description": "Web UI toolchain for cauce-server: bundles web/src/ into assets/app.js (esbuild) and unit-tests the modules (vitest + happy-dom).",
+  "scripts": {
+    "build": "node web/build.mjs",
+    "watch": "node web/build.mjs --watch",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2",
+    "happy-dom": "20.14.5",
+    "vitest": "5.0.1",
+    "vite": "8.2.2"
+  }
+}
