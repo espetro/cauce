@@ -62,6 +62,9 @@ pub async fn index(
         stream_strings: stream_strings(),
         ask_url: String::new(),
         index_on_click: state.archive_index_on_click(),
+        assist: false,
+        assist_context: "[]".to_string(),
+        assist_strings: String::new(),
     };
     render_html(page, ctx.request_id.as_uuid())
 }
@@ -124,6 +127,11 @@ pub async fn search(
             stream_strings: stream_strings(),
             ask_url: ask_url(&state, &req.q),
             index_on_click: state.archive_index_on_click(),
+            // Streaming pages render the trigger disabled; the `meta`
+            // frame's merged order arms it and fills the context.
+            assist: state.answer().is_some(),
+            assist_context: "[]".to_string(),
+            assist_strings: assist_strings(),
         };
         return Ok(Html(
             page.render()
@@ -175,6 +183,10 @@ pub async fn search(
             stream_strings: stream_strings(),
             ask_url: ask_url(&state, &req.q),
             index_on_click: state.archive_index_on_click(),
+            // An assist answer needs something on the page to ground in.
+            assist: state.answer().is_some() && !resp.results.is_empty(),
+            assist_context: assist_context(&resp),
+            assist_strings: assist_strings(),
         };
         Ok(Html(
             page.render()
@@ -352,6 +364,40 @@ fn ask_url(state: &AppState, q: &str) -> String {
     } else {
         String::new()
     }
+}
+
+/// W7-02: the top-K SERP rows serialized in the `AnswerSource` wire
+/// shape (`{url,title,snippet,engine}`) — what the Assist button POSTs
+/// as `context_results`. `AnswerLoop::stream_assist` re-caps at
+/// `ASSIST_MAX_SOURCES` (10) server-side; matching it here keeps the
+/// prompt's `[n]` indices aligned with the visible top rows.
+fn assist_context(resp: &SearchResponse) -> String {
+    let rows: Vec<serde_json::Value> = resp
+        .results
+        .iter()
+        .take(10)
+        .map(|r| {
+            json!({
+                "url": r.url.as_str(),
+                "title": r.title,
+                "snippet": r.snippet,
+                "engine": r.engine.as_str(),
+            })
+        })
+        .collect();
+    serde_json::to_string(&rows).expect("assist context serializes")
+}
+
+/// The `strings::assist` copy the assist JS interpolates, serialized
+/// into the page as `var AS = {...}` (the `stream_strings` convention).
+fn assist_strings() -> String {
+    use crate::strings::assist as s;
+    serde_json::to_string(&json!({
+        "stream_failed": s::STREAM_FAILED,
+        "invalid_stream": s::INVALID_STREAM,
+        "retry_after": s::RETRY_AFTER,
+    }))
+    .expect("assist strings serialize")
 }
 
 fn stream_url(params: &QueryParams, req: &SearchRequest) -> String {

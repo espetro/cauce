@@ -93,6 +93,17 @@ struct Page {
     /// W5-01: render the click beacon that `POST`s `/api/pages` on result
     /// clicks (`archive.index_on_click` and a live archive pipeline).
     index_on_click: bool,
+    /// W7-02: render the on-demand Search Assist trigger + card host —
+    /// an answer loop exists and the SERP has (or will stream) results.
+    assist: bool,
+    /// W7-02: the top-K `{url,title,snippet,engine}` rows as a JSON
+    /// literal — the `context_results` the assist POST carries. Empty
+    /// `[]` on `?stream=1` pages (the streaming JS fills it from the
+    /// `results`/`meta` frames) and whenever `assist` is false.
+    assist_context: String,
+    /// `crate::strings::assist` copy the assist JS uses, as a JSON
+    /// literal (the `stream_strings` pattern).
+    assist_strings: String,
 }
 
 /// `Accept` prefers JSON (shared by every `ui` page's content negotiation).

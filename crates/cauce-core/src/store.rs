@@ -392,6 +392,24 @@ impl AnswerKey {
         Self(format!("{digest:x}"))
     }
 
+    /// The W7-02 Search Assist row for `q` answered by `model` over this
+    /// exact result set: the `"assist"` domain prefix plus the ordered
+    /// source URLs keeps an assist answer for `q` out of the tool-loop
+    /// key space, and a changed result set (different top-K) misses the
+    /// row instead of replaying an answer grounded in stale results.
+    pub fn assist(q: &str, model: &str, results: &[AnswerSource]) -> Self {
+        let mut buf = Vec::with_capacity(64);
+        push_str(&mut buf, "assist");
+        push_str(&mut buf, &normalize_query(q));
+        push_str(&mut buf, model);
+        buf.extend_from_slice(&(results.len() as u32).to_le_bytes());
+        for result in results {
+            push_str(&mut buf, result.url.as_str());
+        }
+        let digest = Sha256::digest(&buf);
+        Self(format!("{digest:x}"))
+    }
+
     /// Hex digest (64 lowercase chars), the `key` column of `answers`.
     pub fn as_str(&self) -> &str {
         &self.0
