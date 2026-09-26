@@ -266,7 +266,7 @@ pub struct AnswerRequest {
 /// The `role` of a client-replayed [`AnswerTurn`] — only completed
 /// user/assistant exchanges exist; tool-call and system turns are never
 /// part of the wire shape.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, serde::Deserialize, TS)]
 #[serde(rename_all = "lowercase")]
 pub enum AnswerRole {
     User,
@@ -277,7 +277,7 @@ pub enum AnswerRole {
 /// the page echoes it back — `content` is the submitted question for
 /// `User`, the `done.answer` text (metadata tail already stripped) for
 /// `Assistant`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, serde::Deserialize, TS)]
 #[serde(deny_unknown_fields)]
 pub struct AnswerTurn {
     pub role: AnswerRole,
