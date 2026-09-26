@@ -92,6 +92,14 @@ object in exactly this form: {\"confidence\": <1-10>, \"related_questions\": [..
 confidence >= 8 only when the sources well support the answer; report lower when the \
 answer is partially grounded. Never fabricate sources or citations.";
 
+/// W7-04: appended to [`SYSTEM_PROMPT`] when the request carries prior
+/// turns. Earlier answers' `[n]` markers index THEIR turn's source
+/// list, not this turn's — without the clause the model happily cites
+/// numbers that point at the wrong cards.
+const THREAD_PROMPT_SUFFIX: &str = " Earlier messages are prior turns of this conversation — \
+use them as context, but their [n] markers referred to those turns' own source lists. In \
+your reply, cite only the sources your tool calls return this turn.";
+
 /// The `search_web` tool: same argument shape as the MCP surface's
 /// `search_web`.
 fn search_web_spec() -> ToolSpec {
@@ -233,6 +241,15 @@ impl ChatProvider for crate::ai::AnthropicClient {
 pub struct AnswerRequest {
     /// The user's question, as submitted.
     pub q: String,
+    /// W7-04 conversation threads: the prior completed turns, oldest
+    /// first — the client owns the thread and replays it verbatim
+    /// (ephemeral page state; there is no server-side threads table
+    /// yet). Each turn becomes one `user`/`assistant` message ahead of
+    /// `q`. A request with history skips the `answers` cache on both
+    /// sides: a replay keyed on `q` alone would answer follow-ups with
+    /// the first turn's text, and a history-keyed row would only hit on
+    /// a byte-identical replayed context. Ignored by `stream_assist`.
+    pub history: Vec<AnswerTurn>,
     /// The inbound surface; stamped on the `search_web` tool's
     /// `search_log.client` rows.
     pub client: ClientKind,
@@ -240,6 +257,37 @@ pub struct AnswerRequest {
     pub request_id: Option<Uuid>,
     /// `audit.actor` override for provider calls (`None` → `DEFAULT_ACTOR`).
     pub actor: Option<String>,
+}
+
+/// The `role` of a client-replayed [`AnswerTurn`] — only completed
+/// user/assistant exchanges exist; tool-call and system turns are never
+/// part of the wire shape.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AnswerRole {
+    User,
+    Assistant,
+}
+
+/// One prior turn of an `/answer` thread (W7-04): `{role, content}` as
+/// the page echoes it back — `content` is the submitted question for
+/// `User`, the `done.answer` text (metadata tail already stripped) for
+/// `Assistant`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AnswerTurn {
+    pub role: AnswerRole,
+    pub content: String,
+}
+
+impl AnswerTurn {
+    /// The [`ChatMessage`] this turn replays as.
+    fn to_chat(&self) -> ChatMessage {
+        match self.role {
+            AnswerRole::User => ChatMessage::user(&self.content),
+            AnswerRole::Assistant => ChatMessage::assistant(&self.content),
+        }
+    }
 }
 
 /// The grounded-answer tool loop: provider + pipeline + store.
@@ -361,44 +409,59 @@ impl AnswerLoop {
         tx: mpsc::UnboundedSender<AnswerFrame>,
     ) {
         let model = self.provider.model().to_string();
+        // W7-04: multi-turn requests never touch the `answers` cache —
+        // the key preimage is `q` alone, so a lookup could replay the
+        // first turn's answer at a follow-up, and a write would poison
+        // single-turn lookups with context-dependent text.
+        let cacheable = req.history.is_empty();
         let key = AnswerKey::new(&req.q, &model);
-        match self.store.get_answer(&key).await {
-            Ok(Some(hit)) => {
-                if send(
-                    &tx,
-                    AnswerFrame::Sources {
-                        sources: hit.sources,
-                    },
-                ) {
-                    send(
+        if cacheable {
+            match self.store.get_answer(&key).await {
+                Ok(Some(hit)) => {
+                    if send(
                         &tx,
-                        AnswerFrame::Done {
-                            answer: hit.payload.answer,
-                            confidence: hit.payload.confidence,
-                            model: hit.model,
-                            related_questions: hit.payload.related_questions,
-                            cached: true,
-                            request_id,
-                            ungrounded: false,
+                        AnswerFrame::Sources {
+                            sources: hit.sources,
                         },
-                    );
+                    ) {
+                        send(
+                            &tx,
+                            AnswerFrame::Done {
+                                answer: hit.payload.answer,
+                                confidence: hit.payload.confidence,
+                                model: hit.model,
+                                related_questions: hit.payload.related_questions,
+                                cached: true,
+                                request_id,
+                                ungrounded: false,
+                            },
+                        );
+                    }
+                    return;
                 }
-                return;
+                Ok(None) => {}
+                // A failed lookup must not fail the answer — fail open like a
+                // cache miss.
+                Err(e) => warn!(error = %e, "answers lookup failed; continuing uncached"),
             }
-            Ok(None) => {}
-            // A failed lookup must not fail the answer — fail open like a
-            // cache miss.
-            Err(e) => warn!(error = %e, "answers lookup failed; continuing uncached"),
         }
 
         let ctx = AiCallCtx {
             actor: req.actor.clone(),
             request_id: Some(request_id),
         };
-        let mut messages = vec![
-            ChatMessage::system(SYSTEM_PROMPT),
-            ChatMessage::user(req.q.as_str()),
-        ];
+        // W7-04: replay the client-owned thread ahead of `q` so the
+        // provider sees the whole exchange; the suffix keeps this
+        // turn's `[n]` citations pointing at this turn's sources.
+        let system = if req.history.is_empty() {
+            SYSTEM_PROMPT.to_string()
+        } else {
+            format!("{SYSTEM_PROMPT}{THREAD_PROMPT_SUFFIX}")
+        };
+        let mut messages = Vec::with_capacity(req.history.len() + 2);
+        messages.push(ChatMessage::system(system));
+        messages.extend(req.history.iter().map(AnswerTurn::to_chat));
+        messages.push(ChatMessage::user(req.q.as_str()));
         let tools = vec![search_web_spec(), search_archive_spec()];
         // Cited sources across all tool calls: deduped by URL in the
         // first-seen (citation) order the model saw them in.
@@ -531,8 +594,9 @@ impl AnswerLoop {
                 },
             );
             // Grounded-only caching (settled input): >= 1 source,
-            // confidence >= CACHE_MIN_CONFIDENCE, no error.
-            if !sources.is_empty() && confidence >= CACHE_MIN_CONFIDENCE {
+            // confidence >= CACHE_MIN_CONFIDENCE, no error — and only
+            // for single-turn requests (see `cacheable` above).
+            if cacheable && !sources.is_empty() && confidence >= CACHE_MIN_CONFIDENCE {
                 let row = AnswerRow {
                     query: normalize_query(&req.q),
                     model: model.clone(),
