@@ -65,8 +65,6 @@
   {% include "results.html" %}
   {% endif %}
   </main>
-  <script>{{ htmx_js|safe }}</script>
-  <script>{{ json_enc_js|safe }}</script>
   {% if is_streaming %}
   <script>var S = {{ stream_strings|safe }};</script>
   {% endif %}

@@ -28,8 +28,6 @@ fn asset_string(name: &str) -> String {
         .unwrap_or_default()
 }
 
-pub(crate) static HTMX_JS: LazyLock<String> = LazyLock::new(|| asset_string("htmx.min.js"));
-pub(crate) static JSON_ENC_JS: LazyLock<String> = LazyLock::new(|| asset_string("json-enc.js"));
 /// Shared page stylesheet; the other `ui` pages (W2) inject it too.
 pub(crate) static STYLE_CSS: LazyLock<String> = LazyLock::new(|| asset_string("style.css"));
 
