@@ -3,10 +3,11 @@
 ## What landed
 
 All per-page inline `<script>` logic moved to ES modules under `crates/cauce-server/web/src/`
-(format, sse, theme, search, answer, clipboard, engines, app), bundled+minified by esbuild
+(format, sse, theme, search, answer, assist, clipboard, engines, app) — the W7-02 assist card
+landed mid-task via #206 and was folded into the same pattern during the rebase — bundled+minified by esbuild
 (`web/build.mjs`) into `crates/cauce-server/assets/app.js` — committed, inlined by
 `crate::html::app_js()` on every template (same rust-embed delivery as htmx/json-enc/style;
-no static-assets route exists). Unit tests: vitest + happy-dom under `web/tests/` (57 tests).
+no static-assets route exists). Unit tests: vitest + happy-dom under `web/tests/` (76 tests).
 `mise run web` = pnpm install --frozen-lockfile + build + test + bundle-freshness diff;
 wired into `validate`.
 
