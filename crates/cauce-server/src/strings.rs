@@ -576,3 +576,23 @@ pub mod answer {
     pub const NOSCRIPT: &str =
         "Answering needs JavaScript; the answer stream cannot run without it.";
 }
+
+/// W7-02 Search Assist card on the SERP (the DDG/Kagi shape).
+pub mod assist {
+    /// The on-demand trigger button between the meta line and results.
+    pub const TRIGGER: &str = "Assist";
+    /// Card header label once the panel opens.
+    pub const LABEL: &str = "Assist";
+    /// Handoff link into the full AI surface (`/answer?q=`).
+    pub const ASK_AI: &str = "Ask in AI mode";
+    /// Always-visible disclaimer under the answer (settled input).
+    pub const DISCLAIMER: &str = "auto-generated — may contain inaccuracies";
+    /// Inline error lead for HTTP-level and provider `error` frames.
+    pub const STREAM_FAILED: &str = "answer stream failed";
+    /// An SSE frame whose data did not parse.
+    pub const INVALID_STREAM: &str = "unreadable answer stream";
+    /// `error.retry_after_s` suffix; `{n}` is the seconds hint.
+    pub const RETRY_AFTER: &str = "retry after {n}s";
+    /// `<noscript>` line inside the assist section.
+    pub const NOSCRIPT: &str = "Assist needs JavaScript; the answer stream cannot run without it.";
+}

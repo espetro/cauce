@@ -14,7 +14,7 @@ use axum::response::{
     IntoResponse, Response, Sse,
     sse::{Event, KeepAlive},
 };
-use cauce_core::{AnswerFrame, AnswerRequest};
+use cauce_core::{AnswerFrame, AnswerRequest, AnswerSource};
 use serde::Deserialize;
 use tokio_stream::StreamExt;
 
@@ -28,17 +28,26 @@ use crate::middleware::RequestCtx;
 #[serde(deny_unknown_fields)]
 struct AnswerBody {
     q: String,
+    /// W7-02 Search Assist: the result set the caller already has (the
+    /// SERP's top rows). Present — even empty — selects
+    /// [`cauce_core::AnswerLoop::stream_assist`]: a single no-tools turn
+    /// grounded in these results, never an engine re-fetch. Absent runs
+    /// the full tool loop.
+    context_results: Option<Vec<AnswerSource>>,
 }
 
-/// `POST /api/answer` — JSON `{"q": "..."}` in, SSE frames out.
+/// `POST /api/answer` — JSON `{"q": "..."}` in, SSE frames out; a body
+/// carrying `context_results` (W7-02) takes the no-tools assist turn
+/// instead of the tool loop.
 ///
 /// Every [`AnswerFrame`] from [`cauce_core::AnswerLoop::stream_answer`]
-/// streams as a named event matching its serde tag (`step` / `delta` /
-/// `sources` / `done` / `error`), the `/api/search/stream` convention.
-/// Pre-stream rejections keep their real status — 400 `bad_request` for
-/// an unparsable body or a blank `q`, 503 `ai_disabled` when `[ai]` is
-/// off or the provider client failed at startup — while provider
-/// failures mid-loop ride the stream as a terminal `error` event.
+/// or `stream_assist` streams as a named event matching its serde tag
+/// (`step` / `delta` / `sources` / `done` / `error`), the
+/// `/api/search/stream` convention. Pre-stream rejections keep their
+/// real status — 400 `bad_request` for an unparsable body or a blank
+/// `q`, 503 `ai_disabled` when `[ai]` is off or the provider client
+/// failed at startup — while provider failures mid-loop ride the
+/// stream as a terminal `error` event.
 ///
 /// `EventSource` cannot POST, so the `/answer` page drives this route
 /// with `fetch` and pins `X-Cauce-Client: ui` itself; every other
@@ -62,12 +71,16 @@ pub async fn answer(
     if q.is_empty() {
         return Err(ctx.bad_request("missing required parameter \"q\""));
     }
-    let receiver = loop_.stream_answer(&AnswerRequest {
+    let req = AnswerRequest {
         q: q.to_string(),
         client: ctx.client.clone(),
         request_id: Some(ctx.request_id.as_uuid()),
         actor: Some(ctx.actor(&headers)),
-    });
+    };
+    let receiver = match body.context_results {
+        Some(results) => loop_.stream_assist(&req, results),
+        None => loop_.stream_answer(&req),
+    };
     let events = tokio_stream::wrappers::UnboundedReceiverStream::new(receiver).map(|frame| {
         let name = match &frame {
             AnswerFrame::Step { .. } => "step",

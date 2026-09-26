@@ -305,6 +305,115 @@ async fn answer_route_rejects_bad_bodies() {
     }
 }
 
+/// W7-02: a body carrying `context_results` takes the no-tools assist
+/// turn — `sources` (the supplied set) leads, deltas and `done` follow,
+/// no `step` frames, and the provider request goes out with
+/// `tool_choice: "none"` and no tools.
+#[tokio::test]
+async fn answer_with_context_results_runs_the_assist_turn() {
+    let (router, _state, _tmp, server) = ai_app().await;
+    mount_sse(&server, SSE_ANSWER, 1).await;
+
+    let body = r#"{"q":"tokyo weather","context_results":[
+        {"url":"https://www.jma.go.jp/tokyo","title":"Tokyo Weather - JMA","snippet":"Tokyo: 22C, clear","engine":"replay"},
+        {"url":"https://weather.com/tokyo","title":"Weather Tokyo","snippet":"22 degrees, clear","engine":"replay"}
+    ]}"#;
+    let (status, _, body) = post_answer(&router, body).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let events = sse_events(&body);
+    let names = event_names(&events);
+    assert_eq!(names.first(), Some(&"sources"), "{names:?}");
+    assert!(
+        names.contains(&"delta") && names.contains(&"done"),
+        "{names:?}"
+    );
+    assert!(
+        !names.contains(&"step"),
+        "an assist turn emits no step frames: {names:?}"
+    );
+    let sources = &events[0].1["sources"];
+    assert_eq!(sources.as_array().unwrap().len(), 2, "{sources}");
+    assert_eq!(sources[0]["url"], "https://www.jma.go.jp/tokyo");
+
+    let requests = server.received_requests().await.expect("request log");
+    assert_eq!(requests.len(), 1, "assist is a single provider call");
+    let sent: Value = serde_json::from_slice(&requests[0].body).unwrap();
+    assert_eq!(sent["tool_choice"], "none", "{sent}");
+    assert!(
+        sent.get("tools").is_none() || sent["tools"].as_array().unwrap().is_empty(),
+        "assist offers no tools: {sent}"
+    );
+}
+
+/// Malformed `context_results` reject as `bad_request` like every other
+/// field — before the stream opens.
+#[tokio::test]
+async fn answer_rejects_bad_context_results() {
+    let (router, _state, _tmp, _server) = ai_app().await;
+    for (body, why) in [
+        (r#"{"q":"x","context_results":"all of them"}"#, "not a list"),
+        (
+            r#"{"q":"x","context_results":[{"title":"no url"}]}"#,
+            "item missing url",
+        ),
+        (
+            r#"{"q":"x","context_results":[{"url":"not a url"}]}"#,
+            "bad url",
+        ),
+    ] {
+        let (status, _, text) = post_answer(&router, body).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{why}: {text}");
+        let env: Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(env["error"]["code"], "bad_request", "{why}");
+    }
+}
+
+/// W7-02 acceptance: the SERP renders the on-demand Assist trigger and
+/// card chrome (label, disclaimer, 'Ask in AI mode' handoff) while an
+/// answer loop exists, and ships none of it when `ai` is off. The
+/// `stream=1` variant renders the trigger disabled until the `meta`
+/// frame arms it.
+#[cfg(feature = "ui")]
+#[tokio::test]
+async fn search_page_renders_assist_trigger() {
+    let (router, _state, _tmp, _server) = ai_app().await;
+    let (status, body) = get_html(&router, "/search?q=tokyo+weather").await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    for marker in [
+        r#"id="assist""#,
+        r#"id="assist-btn""#,
+        r#"id="assist-card""#,
+        ">Assist<",
+        "auto-generated — may contain inaccuracies",
+        "Ask in AI mode",
+        "context_results",
+    ] {
+        assert!(body.contains(marker), "assist chrome missing {marker}");
+    }
+
+    // The streaming page's trigger waits for the `meta` frame.
+    let (status, body) = get_html(&router, "/search?q=tokyo+weather&stream=1").await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert!(body.contains(r#"id="assist-btn""#), "{body}");
+    assert!(body.contains("assistSetContext"), "{body}");
+    let btn = body.find(r#"id="assist-btn""#).unwrap();
+    let tag_end = body[btn..].find('>').unwrap();
+    assert!(
+        body[btn..btn + tag_end].contains("disabled"),
+        "stream=1 renders the trigger disabled: {}",
+        &body[btn..btn + tag_end]
+    );
+
+    // Disabled AI ships no assist markup or wiring at all.
+    let (router, _state, _tmp) = app();
+    let (status, body) = get_html(&router, "/search?q=tokyo+weather").await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert!(
+        !body.contains(r#"id="assist""#) && !body.contains("assistSetContext"),
+        "no assist while ai is disabled: {body}"
+    );
+}
+
 /// `ai.enabled=false` renders the disabled notice with the `/settings`
 /// link and no stream shell; the bare form page always renders.
 #[cfg(feature = "ui")]
