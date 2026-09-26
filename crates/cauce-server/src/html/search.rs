@@ -20,7 +20,7 @@ use crate::error::ApiError;
 use crate::handlers::{QueryParams, search_inner};
 use crate::middleware::RequestCtx;
 
-use super::assets::{HTMX_JS, JSON_ENC_JS, SSE_JS, STYLE_CSS};
+use super::assets::{HTMX_JS, JSON_ENC_JS, STYLE_CSS};
 use super::{Page, Row, is_htmx, prefers_json, render_err, render_html, short_id};
 
 /// Results partial swapped in by HTMX `hx-get` on the more button.
@@ -58,7 +58,6 @@ pub async fn index(
         is_streaming: false,
         stream_url: String::new(),
         query_hash: String::new(),
-        sse_js: SSE_JS.clone(),
         stream_strings: stream_strings(),
         ask_url: String::new(),
         index_on_click: state.archive_index_on_click(),
@@ -123,7 +122,6 @@ pub async fn search(
             is_streaming: true,
             stream_url: stream_url(&params, &req),
             query_hash: CacheKey::from(&req).as_str().to_string(),
-            sse_js: SSE_JS.clone(),
             stream_strings: stream_strings(),
             ask_url: ask_url(&state, &req.q),
             index_on_click: state.archive_index_on_click(),
@@ -179,7 +177,6 @@ pub async fn search(
             is_streaming: false,
             stream_url: String::new(),
             query_hash: CacheKey::from(&req).as_str().to_string(),
-            sse_js: SSE_JS.clone(),
             stream_strings: stream_strings(),
             ask_url: ask_url(&state, &req.q),
             index_on_click: state.archive_index_on_click(),
