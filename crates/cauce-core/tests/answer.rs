@@ -127,6 +127,7 @@ fn answer_loop(server: &MockServer, store: Arc<StubStore>) -> AnswerLoop {
 fn req(q: &str, request_id: Uuid) -> AnswerRequest {
     AnswerRequest {
         q: q.to_string(),
+        history: Vec::new(),
         client: ClientKind::Api,
         request_id: Some(request_id),
         actor: None,
