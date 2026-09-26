@@ -38,6 +38,24 @@
   </div>
   <p id="new-results-above" class="new-results-above" role="status" hidden></p>
   {% endif %}
+  {% if assist %}
+  <section id="assist" class="assist" data-q="{{ q }}">
+    <button type="button" id="assist-btn" class="assist-trigger"
+      aria-controls="assist-card" aria-expanded="false"{% if is_streaming %} disabled{% endif %}>
+      {{ crate::strings::assist::TRIGGER }}</button>
+    <div id="assist-card" class="assist-card" hidden aria-live="polite" aria-busy="false">
+      <div class="assist-head">
+        <span class="assist-label">{{ crate::strings::assist::LABEL }}</span>
+        <a class="assist-ask" href="{{ ask_url }}">{{ crate::strings::assist::ASK_AI }}</a>
+      </div>
+      <div id="assist-text" class="answer-text"></div>
+      <div id="assist-sources" class="assist-sources"></div>
+      <p class="assist-note">{{ crate::strings::assist::DISCLAIMER }}</p>
+      <p id="assist-error" class="field-error" role="alert" hidden></p>
+    </div>
+    <noscript><p>{{ crate::strings::assist::NOSCRIPT }}</p></noscript>
+  </section>
+  {% endif %}
   {% include "results.html" %}
   {% endif %}
   </main>
@@ -132,6 +150,9 @@
       var queryHash = stream.dataset.queryHash;
       var arrivals = [];
       var seen = new Set();
+      // W7-02: result objects by their `key`, so the `meta` frame's
+      // merged order can arm the Assist panel with the final top-K.
+      var byKey = new Map();
 
       function appendBatch(batch) {
         batch.results.forEach(function (result) {
@@ -141,6 +162,7 @@
           var key = result.key || url;
           if (seen.has(key)) return;
           seen.add(key);
+          byKey.set(key, result);
           arrivals.push(key);
 
           var article = document.createElement("article");
@@ -206,6 +228,12 @@
         status.textContent = S.complete;
         stream.setAttribute("aria-busy", "false");
 
+        {% if assist %}
+        // W7-02: the merged order is final now — arm Assist with the
+        // top rows (or hide it when the page answered with nothing).
+        assistSetContext(meta.order.map(function (key) { return byKey.get(key); }).filter(function (r) { return !!r; }));
+        {% endif %}
+
         var rank = new Map(meta.order.map(function (key, index) { return [key, index]; }));
         // Hide anything the final merge did not keep (e.g. a duplicate
         // spelling that streamed before its canonical sibling).
@@ -243,6 +271,162 @@
           status.textContent = payload.error.message;
           stream.setAttribute("aria-busy", "false");
         }
+      });
+      {% endif %}
+
+      {% if assist %}
+      // W7-02 Search Assist (the DDG 'Search Assist' / Kagi 'Quick
+      // Answer' shape): an on-demand card above the results that
+      // answers from the already-returned set — the POST carries those
+      // rows as `context_results`, so no engine re-fetch happens. On
+      // ?stream=1 pages the trigger renders disabled and the `meta`
+      // frame calls assistSetContext with the merged order.
+      var AS = {{ assist_strings|safe }};
+      var assistContext = {{ assist_context|safe }};
+      var assistSources = [];
+      var assistFired = false;
+      var assistSection = document.getElementById("assist");
+      var assistBtn = document.getElementById("assist-btn");
+      var assistCard = document.getElementById("assist-card");
+      var assistText = document.getElementById("assist-text");
+      var assistSrcEl = document.getElementById("assist-sources");
+      var assistErr = document.getElementById("assist-error");
+
+      function assistSetContext(list) {
+        assistContext = list.slice(0, 10);
+        if (assistContext.length) {
+          assistBtn.disabled = false;
+        } else if (assistSection) {
+          assistSection.hidden = true;
+        }
+      }
+
+      function assistFail(message) {
+        assistErr.textContent = message;
+        assistErr.hidden = false;
+        assistCard.setAttribute("aria-busy", "false");
+      }
+
+      // Always-visible chips (favicon + domain), one per grounded
+      // source — they render on the up-front `sources` frame, before
+      // any answer text lands.
+      function renderAssistSources(list) {
+        assistSources = list;
+        assistSrcEl.textContent = "";
+        list.forEach(function (src, i) {
+          var chip = document.createElement("a");
+          chip.className = "assist-chip";
+          chip.id = "asrc-" + (i + 1);
+          chip.href = src.url;
+          chip.target = "_blank";
+          chip.rel = "noopener";
+          var host = "";
+          try { host = new URL(src.url).hostname; } catch (_) {}
+          if (host) {
+            var icon = document.createElement("img");
+            icon.src = "https://icons.duckduckgo.com/ip3/" + encodeURIComponent(host) + ".ico";
+            icon.width = 16;
+            icon.height = 16;
+            icon.alt = "";
+            icon.loading = "lazy";
+            chip.appendChild(icon);
+            var name = document.createElement("span");
+            name.textContent = host;
+            chip.appendChild(name);
+          } else {
+            chip.textContent = src.title || src.url;
+          }
+          assistSrcEl.appendChild(chip);
+        });
+      }
+
+      // Re-render the accumulated answer with [n] markers as anchor
+      // links into the numbered chips (the /answer page's convention).
+      function renderAssistAnswer(body) {
+        assistText.textContent = "";
+        var re = /\[(\d+)\]/g, last = 0, m;
+        while ((m = re.exec(body)) !== null) {
+          assistText.appendChild(document.createTextNode(body.slice(last, m.index)));
+          var n = parseInt(m[1], 10);
+          if (n >= 1 && n <= assistSources.length && document.getElementById("asrc-" + n)) {
+            var a = document.createElement("a");
+            a.className = "cite";
+            a.href = "#asrc-" + n;
+            a.textContent = m[0];
+            assistText.appendChild(a);
+          } else {
+            assistText.appendChild(document.createTextNode(m[0]));
+          }
+          last = re.lastIndex;
+        }
+        assistText.appendChild(document.createTextNode(body.slice(last)));
+      }
+
+      function handleAssistFrame(raw) {
+        var name = "message", data = "";
+        raw.split("\n").forEach(function (line) {
+          if (line.indexOf("event:") === 0) name = line.slice(6).trim();
+          else if (line.indexOf("data:") === 0) data += line.slice(5).trim();
+        });
+        if (!data) return;
+        var payload;
+        try { payload = JSON.parse(data); }
+        catch (_) { return assistFail(AS.invalid_stream); }
+        if (name === "sources") renderAssistSources(payload.sources || []);
+        else if (name === "delta") assistText.appendChild(document.createTextNode(payload.text || ""));
+        else if (name === "done") {
+          renderAssistAnswer(payload.answer || "");
+          assistCard.setAttribute("aria-busy", "false");
+        } else if (name === "error") {
+          var message = payload.message || AS.stream_failed;
+          if (payload.retry_after_s) message += " (" + AS.retry_after.replace("{n}", payload.retry_after_s) + ")";
+          assistFail(message);
+        }
+      }
+
+      assistBtn.addEventListener("click", function () {
+        if (assistFired || !assistContext.length) return;
+        assistFired = true;
+        assistBtn.hidden = true;
+        assistBtn.setAttribute("aria-expanded", "true");
+        assistCard.hidden = false;
+        assistCard.setAttribute("aria-busy", "true");
+        fetch("/api/answer", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Accept": "text/event-stream",
+            "X-Cauce-Client": "ui"
+          },
+          body: JSON.stringify({ q: assistSection.dataset.q, context_results: assistContext })
+        }).then(function (res) {
+          if (!res.ok) {
+            return res.json().then(function (env) {
+              assistFail((env && env.error && env.error.message) || AS.stream_failed + ": HTTP " + res.status);
+            }, function () {
+              assistFail(AS.stream_failed + ": HTTP " + res.status);
+            });
+          }
+          var reader = res.body.getReader();
+          var decoder = new TextDecoder();
+          var buffer = "";
+          function pump() {
+            return reader.read().then(function (chunk) {
+              buffer += decoder.decode(chunk.value, { stream: !chunk.done });
+              var i;
+              while ((i = buffer.indexOf("\n\n")) >= 0) {
+                handleAssistFrame(buffer.slice(0, i));
+                buffer = buffer.slice(i + 2);
+              }
+              if (!chunk.done) return pump();
+              if (buffer.trim()) handleAssistFrame(buffer);
+              // A stream that closes without a terminal frame must not
+              // leave the card "answering" forever.
+              if (assistCard.getAttribute("aria-busy") === "true") assistFail(AS.stream_failed);
+            });
+          }
+          return pump();
+        }).catch(function () { assistFail(AS.stream_failed); });
       });
       {% endif %}
     })();
