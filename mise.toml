@@ -4,6 +4,7 @@
 [tools]
 rust = { version = "1.98.0", components = ["rustfmt", "clippy"] }
 node = "24.19.0"
+pnpm = "11.21.0"
 "cargo:cargo-deny" = "0.20.2"
 "cargo:cargo-nextest" = "0.9.146"
 
@@ -57,15 +58,15 @@ run = "cargo check -p cauce-cli -p cauce-server --all-targets --no-default-featu
 # the task rebuilds it and diffs the output — a stale or missing app.js
 # fails the gate instead of silently shipping the old script.
 [tasks.web]
-description = "npm ci + esbuild bundle + vitest + committed-bundle freshness"
+description = "pnpm install + esbuild bundle + vitest + committed-bundle freshness"
 dir = "crates/cauce-server"
 run = """
 #!/usr/bin/env bash
 set -euo pipefail
-npm ci
-npm run build
-npm test
-git diff --exit-code -- assets/app.js package-lock.json
+pnpm install --frozen-lockfile
+pnpm run build
+pnpm run test
+git diff --exit-code -- assets/app.js pnpm-lock.yaml
 """
 
 [tasks.validate]

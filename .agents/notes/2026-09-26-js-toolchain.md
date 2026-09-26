@@ -7,13 +7,20 @@ All per-page inline `<script>` logic moved to ES modules under `crates/cauce-ser
 (`web/build.mjs`) into `crates/cauce-server/assets/app.js` — committed, inlined by
 `crate::html::app_js()` on every template (same rust-embed delivery as htmx/json-enc/style;
 no static-assets route exists). Unit tests: vitest + happy-dom under `web/tests/` (57 tests).
-`mise run web` = npm ci + build + test + bundle-freshness diff; wired into `validate`.
+`mise run web` = pnpm install --frozen-lockfile + build + test + bundle-freshness diff;
+wired into `validate`.
 
 ## Gotchas worth remembering
 
-- **npm 10.8.3 crashes** (`edgesOut` TypeError) resolving vitest 5.0.1's peer tree under
-  default mode. `crates/cauce-server/.npmrc` with `legacy-peer-deps=true` fixes it; all
-  required peers (vite) are explicit devDeps so `npm ci` stays deterministic.
+- **pnpm, not npm**: npm 10.8.3 crashes (`edgesOut`) on vitest 5.0.1's peer tree; pnpm's
+  auto-install-peers handles it with no flags. pnpm's global content-addressable store
+  (`~/.local/share/pnpm/store`) means worktrees share one copy — node_modules entries are
+  hardlinks (nlink=2), so a second worktree costs ~0 extra disk. bun was ruled out: vitest
+  needs the Node runtime anyway.
+- **pnpm 11 build-script approval lives in `pnpm-workspace.yaml`** (`allowBuilds:
+  {esbuild: true}`), NOT `package.json#pnpm.onlyBuiltDependencies` (ignored — install exits
+  ERR_PNPM_IGNORED_BUILDS). esbuild's postinstall only validates the optional-dep binary,
+  but the nonzero exit would break the gate.
 - **happy-dom leaks `dataset` between tests** and follows anchor `href="#"` with a network
   call — tests delete dataset keys and use a `clickNoNav()` helper that preventDefaults.
 - **Tests that pin inline-JS strings break when JS moves to a bundle**: `answer.rs`/`pages.rs`
