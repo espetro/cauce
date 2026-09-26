@@ -14,6 +14,7 @@ wave is one issue, one branch, one PR.
 | W4 | `wave-4-ai-mode.md` | 5 | 11-17 to 11-30 | P2 | streamed, grounded answers via OpenAI-compatible providers; AI evals with baseline |
 | W5 | `wave-5-archive-and-semantic.md` | 6 | 12-01 to 12-14 | P2 | `fetch_and_index`, `search_archive` (3 steps) |
 | W6 | `wave-6-postgres-and-multi-instance.md` | 7 | 12-15 to 12-28 | P2 | conformance suite green on SQLite, parameterised for a second impl (1 step) |
+| W7 | `wave-7-ai-ux.md` | 8 | — | P1 | first-class AI mode entry + SERP Search Assist + visible confidence + threads (4 steps) |
 | later | `later/*.md` | none | none | P3 | stubs only; not v3.0 |
 
 ## Dependency graph
@@ -33,6 +34,8 @@ W1 ─► W2-* (UI pages, each needs its route from W0/W1) ─► W3-*
    └► W2-10 usage week (runs alongside W3; gates W4-01)
 W3 ─► W4 (AI) ─► W5 (archive); W3-07 (needs W1-06)
 W5 ─► W6 (conformance suite only; Postgres impl is `later/postgres-and-multi-instance.md`)
+W4 ─► W7 (AI-mode UX: entry points, SERP assist, confidence surfacing, threads; needs the
+       W4 answer loop + SSE, independent of W6)
 ```
 
 Rule: a step whose dependencies are not `Completed` on the board is not picked up. If you
