@@ -393,6 +393,11 @@ fn assist_strings() -> String {
         "stream_failed": s::STREAM_FAILED,
         "invalid_stream": s::INVALID_STREAM,
         "retry_after": s::RETRY_AFTER,
+        // W7-03: grounded/confidence chips in the card meta row.
+        "grounded": s::GROUNDED,
+        "ungrounded": s::UNGROUNDED,
+        "confidence": s::CONFIDENCE,
+        "cached": s::CACHED,
     }))
     .expect("assist strings serialize")
 }

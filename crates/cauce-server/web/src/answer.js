@@ -32,9 +32,25 @@ export function parseSseFrame(raw) {
  * `Q` the `var Q` query literal the template injects.
  */
 export function createAnswerSession(refs, S, Q, { fetchImpl = window.fetch?.bind(window) } = {}) {
-  const { stream, status, meta, requestId, steps, text, sourcesEl, relatedEl, ungrounded, errorEl } =
-    refs;
+  const {
+    stream,
+    status,
+    meta,
+    requestId,
+    steps,
+    text,
+    sourcesEl,
+    relatedEl,
+    ungrounded,
+    ungroundedBadge,
+    pathEl,
+    confEl,
+    errorEl,
+  } = refs;
   let sources = [];
+  // W7-03: tool names from the `step` frames, in run order — the
+  // retrieval path the path chip renders on `done`.
+  let toolsRun = [];
 
   function fail(message) {
     errorEl.textContent = message;
@@ -127,8 +143,35 @@ export function createAnswerSession(refs, S, Q, { fetchImpl = window.fetch?.bind
 
   function renderDone(done) {
     renderAnswer(done.answer || "");
-    if (done.ungrounded) ungrounded.hidden = false;
-    const parts = [fmt(S.confidence, { n: done.confidence })];
+    if (done.ungrounded) {
+      ungrounded.hidden = false;
+      ungroundedBadge.hidden = false;
+    }
+    // W7-03: the retrieval path as an always-visible chip — which
+    // tools ran (search_web/search_archive step frames) plus the
+    // cited-source count; a cached replay saw no tool calls this
+    // request, so it names only the count; neither means the model
+    // answered directly.
+    const tools = [];
+    for (const t of toolsRun) {
+      const word = t === "search_web" ? S.tool_web : t === "search_archive" ? S.tool_archive : t;
+      if (!tools.includes(word)) tools.push(word);
+    }
+    if (tools.length) {
+      pathEl.dataset.path = "searched";
+      pathEl.textContent = fmt(S.path_searched, { tools: tools.join(" + "), n: sources.length });
+    } else if (sources.length) {
+      pathEl.dataset.path = "searched";
+      pathEl.textContent = fmt(S.path_replay, { n: sources.length });
+    } else {
+      pathEl.dataset.path = "direct";
+      pathEl.textContent = S.path_direct;
+    }
+    pathEl.hidden = false;
+    confEl.dataset.confidence = done.confidence;
+    confEl.textContent = fmt(S.confidence, { n: done.confidence });
+    confEl.hidden = false;
+    const parts = [];
     if (done.model) parts.push(done.model);
     if (done.cached) parts.push(S.cached);
     meta.textContent = parts.join(" · ");
@@ -165,7 +208,10 @@ export function createAnswerSession(refs, S, Q, { fetchImpl = window.fetch?.bind
     } catch {
       return fail(S.invalid_stream);
     }
-    if (name === "step") renderStep(payload.label || payload.query || payload.tool);
+    if (name === "step") {
+      renderStep(payload.label || payload.query || payload.tool);
+      if (payload.tool) toolsRun.push(payload.tool);
+    }
     else if (name === "delta") text.appendChild(document.createTextNode(payload.text || ""));
     else if (name === "sources") {
       sources = payload.sources || [];
@@ -249,6 +295,9 @@ export function initAnswerPage(doc = document, deps) {
       sourcesEl: doc.getElementById("answer-sources"),
       relatedEl: doc.getElementById("answer-related"),
       ungrounded: doc.getElementById("answer-ungrounded"),
+      ungroundedBadge: doc.getElementById("answer-ungrounded-badge"),
+      pathEl: doc.getElementById("answer-path"),
+      confEl: doc.getElementById("answer-confidence"),
       errorEl: doc.getElementById("answer-error"),
     },
     window.S,

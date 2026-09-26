@@ -9,6 +9,10 @@ const AS = {
   stream_failed: "answer stream failed",
   invalid_stream: "unreadable answer stream",
   retry_after: "retry after {n}s",
+  grounded: "grounded · {n} sources",
+  ungrounded: "ungrounded",
+  confidence: "confidence {n}/10",
+  cached: "cached",
 };
 
 /** The DOM shell page.html renders inside `{% if assist %}`. */
@@ -17,6 +21,12 @@ function assistShell({ streaming = false } = {}) {
     <section id="assist" class="assist" data-q="tokyo weather">
       <button type="button" id="assist-btn"${streaming ? " disabled" : ""}>Assist</button>
       <div id="assist-card" hidden aria-busy="false">
+        <div id="assist-meta" hidden>
+          <span id="assist-grounded" hidden></span>
+          <span id="assist-confidence" hidden></span>
+          <span id="assist-ungrounded" hidden></span>
+          <span id="assist-cached" hidden></span>
+        </div>
         <div id="assist-text"></div>
         <div id="assist-sources"></div>
         <p id="assist-error" hidden></p>
@@ -26,6 +36,11 @@ function assistShell({ streaming = false } = {}) {
     section: document.getElementById("assist"),
     btn: document.getElementById("assist-btn"),
     card: document.getElementById("assist-card"),
+    meta: document.getElementById("assist-meta"),
+    grounded: document.getElementById("assist-grounded"),
+    conf: document.getElementById("assist-confidence"),
+    ung: document.getElementById("assist-ungrounded"),
+    cachedChip: document.getElementById("assist-cached"),
     text: document.getElementById("assist-text"),
     sources: document.getElementById("assist-sources"),
     err: document.getElementById("assist-error"),
@@ -198,6 +213,47 @@ describe("assist SSE frames", () => {
     expect(cites[1].getAttribute("href")).toBe("#asrc-2");
     // [9] has no chip: left as plain text.
     expect(refs.card.getAttribute("aria-busy")).toBe("false");
+  });
+
+  it("arms the grounded chip on the sources frame, before answer text", async () => {
+    const refs = assistShell();
+    const fetchImpl = fetchWithChunks([
+      'event: sources\ndata: {"sources":[{"url":"https://a.example.com/x"},{"url":"https://b.example.com/y"}]}\n\n',
+    ]);
+    initAssist(document, AS, ROWS, fetchImpl);
+    refs.btn.click();
+    await flush();
+    expect(refs.meta.hidden).toBe(false);
+    expect(refs.grounded.hidden).toBe(false);
+    expect(refs.grounded.textContent).toBe("grounded · 2 sources");
+  });
+
+  it("adds confidence + cached chips on done", async () => {
+    const refs = assistShell();
+    const fetchImpl = fetchWithChunks([
+      'event: sources\ndata: {"sources":[{"url":"https://a.example.com/x"}]}\n\n',
+      'event: done\ndata: {"answer":"ok","confidence":8,"cached":true}\n\n',
+    ]);
+    initAssist(document, AS, ROWS, fetchImpl);
+    refs.btn.click();
+    await flush();
+    expect(refs.conf.textContent).toBe("confidence 8/10");
+    expect(refs.conf.dataset.confidence).toBe("8");
+    expect(refs.cachedChip.hidden).toBe(false);
+    expect(refs.ung.hidden).toBe(true);
+  });
+
+  it("swaps grounded for the ungrounded badge on an ungrounded done", async () => {
+    const refs = assistShell();
+    const fetchImpl = fetchWithChunks([
+      'event: done\ndata: {"answer":"ok","ungrounded":true,"confidence":3}\n\n',
+    ]);
+    initAssist(document, AS, ROWS, fetchImpl);
+    refs.btn.click();
+    await flush();
+    expect(refs.grounded.hidden).toBe(true);
+    expect(refs.ung.hidden).toBe(false);
+    expect(refs.meta.hidden).toBe(false);
   });
 
   it("splits frames on \\n\\n boundaries even mid-chunk", async () => {
