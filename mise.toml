@@ -3,6 +3,8 @@
 
 [tools]
 rust = { version = "1.98.0", components = ["rustfmt", "clippy"] }
+node = "24.19.0"
+pnpm = "11.21.0"
 "cargo:cargo-deny" = "0.20.2"
 "cargo:cargo-nextest" = "0.9.146"
 
@@ -52,9 +54,24 @@ description = "Check cauce-cli --no-default-features --features mcp"
 env = { CARGO_INCREMENTAL = "0" }
 run = "cargo check -p cauce-cli -p cauce-server --all-targets --no-default-features --features mcp"
 
+# The web bundle is committed (rust-embed reads assets/ at build time), so
+# the task rebuilds it and diffs the output — a stale or missing app.js
+# fails the gate instead of silently shipping the old script.
+[tasks.web]
+description = "pnpm install + esbuild bundle + vitest + committed-bundle freshness"
+dir = "crates/cauce-server"
+run = """
+#!/usr/bin/env bash
+set -euo pipefail
+pnpm install --frozen-lockfile
+pnpm run build
+pnpm run test
+git diff --exit-code -- assets/app.js pnpm-lock.yaml
+"""
+
 [tasks.validate]
-description = "Full local gate: fmt + lint + test + deny + feature-matrix check"
-depends = ["fmt", "lint", "test", "deny", "check:features"]
+description = "Full local gate: fmt + lint + test + deny + web + feature-matrix check"
+depends = ["fmt", "lint", "test", "deny", "check:features", "web"]
 
 [tasks."validate:nightly"]
 description = "Nightly budget, live canary, and full gate"

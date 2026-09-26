@@ -11,7 +11,7 @@
   <style>{{ style_css|safe }}</style>
   {% include "theme_head.html" %}
 </head>
-<body>
+<body data-page="history" data-copied-label="{{ crate::strings::history::COPIED }}">
   {% include "header.html" %}
   <main>
   <h1>{{ crate::strings::history::TITLE }}</h1>
@@ -118,41 +118,6 @@
   </div>
   </main>
   <script>{{ htmx_js|safe }}</script>
-  <script>
-    // `copy json`: fetch the cached /api/search payload into the clipboard;
-    // fall back to a selectable <code> with the URL when the clipboard API
-    // is unavailable or the fetch fails. The footer request id copies its
-    // text on click (selection fallback when the clipboard API is absent).
-    document.addEventListener('click', async (e) => {
-      const rid = e.target.closest('.request-id');
-      if (rid) {
-        try {
-          await navigator.clipboard.writeText(rid.textContent.trim());
-        } catch (_) {
-          const r = document.createRange();
-          r.selectNodeContents(rid);
-          const s = window.getSelection();
-          s.removeAllRanges();
-          s.addRange(r);
-        }
-        return;
-      }
-      const a = e.target.closest('a.copy-json');
-      if (!a) return;
-      e.preventDefault();
-      const code = a.closest('td').querySelector('.copy-fallback');
-      try {
-        const resp = await fetch(a.getAttribute('href'));
-        if (!resp.ok) throw new Error('status ' + resp.status);
-        await navigator.clipboard.writeText(await resp.text());
-        const label = a.dataset.label || a.textContent;
-        a.dataset.label = label;
-        a.textContent = '{{ crate::strings::history::COPIED }}';
-        setTimeout(() => { a.textContent = label; }, 1500);
-      } catch (err) {
-        if (code) { code.hidden = false; code.textContent = a.href; }
-      }
-    });
-  </script>
+  <script>{{ crate::html::app_js()|safe }}</script>
 </body>
 </html>

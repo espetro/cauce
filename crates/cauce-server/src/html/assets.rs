@@ -42,7 +42,16 @@ static FAVICON_SVG: LazyLock<Cow<'static, [u8]>> = LazyLock::new(|| {
         .map(|f| f.data)
         .unwrap_or_default()
 });
-pub(super) static SSE_JS: LazyLock<String> = LazyLock::new(|| asset_string("sse.js"));
+/// The bundled page script (`web/src/` → `assets/app.js`; built by
+/// `npm run build`, kept in sync by the `web` mise task). It replaces
+/// the per-template inline `<script>` blocks; templates inline it via
+/// `crate::html::app_js()`.
+static APP_JS: LazyLock<String> = LazyLock::new(|| asset_string("app.js"));
+
+/// `app.js` for template injection (`{{ crate::html::app_js()|safe }}`).
+pub(crate) fn app_js() -> &'static str {
+    APP_JS.as_str()
+}
 
 /// `GET /favicon.ico`: the embedded SVG site icon. Browsers request this
 /// path on every page load; wave-0 verification saw it 404 each time (#87).
