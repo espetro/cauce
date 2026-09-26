@@ -101,6 +101,8 @@ struct EngineRow {
 struct Dashboard {
     /// The shared header's active nav item.
     nav_active: &'static str,
+    /// W7-01: an answer loop exists — the header shows `/answer`.
+    answer_available: bool,
     days: u32,
     has_data: bool,
     hit_rate_pct: String,
@@ -156,11 +158,12 @@ pub async fn dashboard(
             .map(|j| j.into_response());
     }
 
+    let answer_available = state.answer().is_some();
     // The page reads the canonical stats handler, so the page and
     // `/api/stats` can never disagree (the v2 "two data planes" defect).
     let Json(snap) = handlers::stats(State(state), Extension(ctx.clone()), uri).await?;
     let rid = ctx.request_id.as_uuid().to_string();
-    let page = Dashboard::from_snapshot(&snap, rid);
+    let page = Dashboard::from_snapshot(&snap, rid, answer_available);
     Ok(Html(
         page.render()
             .map_err(|e| render_err(e, ctx.request_id.as_uuid()))?,
@@ -212,7 +215,7 @@ fn f1(v: f64) -> String {
 }
 
 impl Dashboard {
-    fn from_snapshot(snap: &StatsSnapshot, request_id: String) -> Self {
+    fn from_snapshot(snap: &StatsSnapshot, request_id: String, answer_available: bool) -> Self {
         let searches = snap.searches;
 
         let bars = day_bars(&snap.per_day);
@@ -313,6 +316,7 @@ impl Dashboard {
 
         Self {
             nav_active: "dashboard",
+            answer_available,
             days: snap.window_days,
             has_data: searches > 0,
             hit_rate_pct: format!("{:.0}%", snap.hit_rate * 100.0),

@@ -56,6 +56,8 @@ struct EngineSettings {
 struct SettingsPage {
     /// The shared header's active nav item.
     nav_active: &'static str,
+    /// W7-01: an answer loop exists — the header shows `/answer`.
+    answer_available: bool,
     config_path: String,
     deadline: Field,
     ttl: Field,
@@ -192,6 +194,7 @@ pub async fn settings(
         .map_err(|e| render_err(e, rid))?;
     let page = SettingsPage {
         nav_active: "settings",
+        answer_available: state.answer().is_some(),
         config_path,
         deadline: field("search.deadline_ms"),
         ttl: field("search.ttl_s"),

@@ -70,6 +70,8 @@ struct Row {
 struct CachePage {
     /// The shared header's active nav item.
     nav_active: &'static str,
+    /// W7-01: an answer loop exists — the header shows `/answer`.
+    answer_available: bool,
     /// Active `q` filter (empty when unfiltered).
     q: String,
     searching: bool,
@@ -148,6 +150,7 @@ pub async fn cache(
     let rid = ctx.request_id.as_uuid().to_string();
     let page = CachePage {
         nav_active: "cache",
+        answer_available: state.answer().is_some(),
         q: q.clone(),
         searching,
         count_line: count_line(shown, searching),

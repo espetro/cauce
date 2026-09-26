@@ -211,6 +211,22 @@ form {
     margin-bottom: 1rem;
 }
 
+/* W7-01: the search form's AI-mode pill — a quiet outline toggle that
+   fills with accent while armed (aria-pressed mirrors data-mode). */
+.mode-pill {
+    padding: 0.5rem 0.9rem;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: transparent;
+    color: var(--muted);
+}
+
+.mode-pill[aria-pressed="true"] {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: white;
+}
+
 input[type="search"] {
     flex: 1;
     padding: 0.5rem 0.75rem;
