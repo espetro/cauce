@@ -106,6 +106,33 @@ process — you cannot give tier-1 and tier-2 different latencies from env. Mult
   `cargo build` — but Askama template or Rust changes still need `cargo build -p cauce-cli`.
   Canary: `curl localhost:PORT/ | grep -o <bundled-fn-name>` proves the new bundle is served.
 
+### Live provider runs (real OpenRouter egress)
+
+- **Model choice decides whether the tool loop converges.** `openrouter/free` and most
+  free-tier models emit tool calls every turn until the 5-iteration cap
+  (`"exceeded max iterations (5) without a final answer"` error frame) — reasoning models
+  (`nvidia/nemotron-3.5-lightning:free`) additionally hit the fixed 60 s per-call provider
+  budget on the answer turn (`"provider request timed out"`), and popular free pools
+  429 mid-loop. `liquid/lfm-2.5-2.6b:free` (the model in `evals/ai/transcripts/`) converges
+  when its upstream isn't rate-limited but sometimes hallucinates tools (`visit_url`). A
+  small paid model (`openai/gpt-4o-mini`, ~$0.000003/call) converged every time — check the
+  key has credits via `GET {base}/credits`, and override with `CAUCE_AI_MODEL=` on the serve
+  command (env beats config; disclose the override in the report).
+- **Synthetic replay results make models keep searching.** Seed cassettes for the queries
+  the model actually sends: watch the `step` frames' `query` fields on a first live run,
+  then drop cassettes at `<fixtures>/replay/<sha8(normalized query)>.json` covering those
+  phrasings (`evals/ai/cassettes/replay/` has a seed set). Once the first search returns
+  realistic results the model usually answers on the next turn.
+- **Cached answers are deterministic chip-state proof.** A grounded done
+  (≥1 source, confidence ≥4) writes an `answers` row; reloading the same `?q=` replays
+  `sources` + `done{cached:true}` with **no provider call** — immune to rate limits.
+  The cache key includes the model, so the row persists across restarts under the same
+  `CAUCE_MODEL` inside `CAUCE_DATA_DIR`.
+- If the model wraps the metadata tail in a ```` ```json ```` fence, `parse_final_answer`
+  misses it → `done.confidence=0` and the fenced JSON renders as literal answer text.
+  Pre-existing parser behavior; pick a better-behaved model when a nonzero confidence
+  chip matters for evidence.
+
 ## Archive / click-beacon e2e (`/api/pages`, W5-01+)
 
 - `archive.index_on_click` defaults true; `CAUCE_ARCHIVE_INDEX_ON_CLICK=false` removes the
