@@ -95,6 +95,16 @@ process — you cannot give tier-1 and tier-2 different latencies from env. Mult
   rendered), `sources` → numbered `.source-card`s, `done` → status + `confidence: N`.
   A fixture answer without a `{"confidence":…}` JSON tail ends `confidence=0` and is NOT
   cached (grounded cache needs ≥4), so repeat runs stay clean.
+- Two answer modes share `/api/answer` (W7-02+): the tool loop sends a `"tools"` array
+  (serve `sse_toolcall.raw` then `sse_answer.raw` per pair); the SERP **Assist** card
+  POSTs `{q, context_results}` with NO tools key — dispatch on `'"tools"' in body` and
+  serve a no-tools fixture (`sse_confident.raw` gives `[1]`/`[2]` cites + confidence).
+  Assist reuses the answer cache keyed by query, so a second Assist click on the same
+  query may serve instantly without hitting the stub — use a fresh query per click.
+- In debug builds `rust-embed` reads `crates/cauce-server/assets/` from disk at runtime,
+  so a rebuilt `app.js` (esbuild/`pnpm` in `crates/cauce-server`) is picked up without
+  `cargo build` — but Askama template or Rust changes still need `cargo build -p cauce-cli`.
+  Canary: `curl localhost:PORT/ | grep -o <bundled-fn-name>` proves the new bundle is served.
 
 ## Archive / click-beacon e2e (`/api/pages`, W5-01+)
 
@@ -151,3 +161,21 @@ process — you cannot give tier-1 and tier-2 different latencies from env. Mult
 ## Devin Secrets Needed
 
 None — all local, no auth.
+
+## Verified runtime details (JS-bundle refactor era)
+
+- In **debug builds**, rust-embed reads `crates/cauce-server/assets/` from disk at
+  runtime — a rebuilt `assets/app.js` needs no `cargo build`; Askama templates and Rust
+  code DO need one. Quick embed check: `curl localhost:PORT/ | grep -o cauceEventSource`.
+- Deterministic `/answer` e2e without cassettes: pin `CAUCE_ENGINES=replay` (synthetic
+  results cover any query) and stub the provider so `POST /chat/completions` returns
+  `sse_toolcall.raw` on the first call and `sse_answer.raw` thereafter — exercises the
+  full step→tool-search→sources→delta→done loop in the UI.
+- Clipboard verify without permissions prompts: click a `.request-id`/copy control, then
+  Ctrl+V into a visible input — the pasted text proves `navigator.clipboard.writeText`
+  fired. The `copy-json` link also flashes the `data-copied-label` text for ~1.5 s.
+- Engines-page i18n error path: the "Run" test form hx-GETs `/api/search`; a second
+  serve instance with `CAUCE_REPLAY_FAIL_EVERY=1` makes it 502 → `htmx:responseError` →
+  `data-i18n-test-failed` text in `.test-results`. Success path returns a results fragment.
+- UI canary for "bundle didn't run": submitting the search form must land on
+  `/search?q=…&stream=1` — a dead bundle falls back to a plain GET `/search?q=…`.
