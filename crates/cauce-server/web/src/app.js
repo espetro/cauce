@@ -8,7 +8,16 @@
  * templates). Every `init*` is a no-op when its page's elements/flags are
  * absent, so one bundle serves all pages; each feature preserves the
  * inline script's gating.
+ *
+ * htmx and the json-enc extension are bundled deps now (previously
+ * vendored `htmx.min.js`/`json-enc.js` inline scripts). The htmx ESM
+ * build never assigns `window.htmx`, so app.js does — the inline `hx-on`
+ * handlers (`settings_cache.html` calls `htmx.ajax`) and the sse
+ * extension resolve it. Import order matters: json-enc must run after
+ * htmx.org (it self-registers via `htmx.defineExtension`).
  */
+import htmx from "htmx.org";
+import "htmx-ext-json-enc";
 import { registerSseExtension } from "./sse.js";
 import { initThemeToggle } from "./theme.js";
 import {
@@ -26,6 +35,8 @@ import {
   initTracedCopy,
 } from "./clipboard.js";
 import { initEngineErrors } from "./engines.js";
+
+window.htmx = htmx;
 
 registerSseExtension();
 initThemeToggle();

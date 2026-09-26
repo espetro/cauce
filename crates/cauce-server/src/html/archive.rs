@@ -28,7 +28,7 @@ use crate::middleware::RequestCtx;
 #[cfg(feature = "archive")]
 use crate::strings::archive as copy;
 
-use super::{HTMX_JS, STYLE_CSS, render_err};
+use super::{STYLE_CSS, render_err};
 
 /// One rendered archive row: display strings plus the URL-keyed action
 /// endpoints (`/api/pages/{url}`, percent-encoded).
@@ -82,7 +82,6 @@ struct Archive {
     prev_url: String,
     next_url: String,
     request_id: String,
-    htmx_js: String,
     style_css: String,
 }
 
@@ -140,7 +139,6 @@ pub async fn archive(
         prev_url: String::new(),
         next_url: String::new(),
         request_id: ctx.request_id.as_uuid().to_string(),
-        htmx_js: HTMX_JS.clone(),
         style_css: STYLE_CSS.clone(),
     }
     .render()
@@ -195,7 +193,6 @@ pub(crate) async fn archive_page(
         prev_url,
         next_url,
         request_id: rid,
-        htmx_js: HTMX_JS.clone(),
         style_css: STYLE_CSS.clone(),
     };
     Ok(Html(

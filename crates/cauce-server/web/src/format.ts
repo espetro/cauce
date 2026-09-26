@@ -7,8 +7,11 @@
  * `"{engine} failed"` interpolation shared by the stream pages: server-side
  * copy arrives with `{name}` placeholders that the client fills in.
  */
-export function fmt(template, values) {
-  return template.replace(/\{(\w+)\}/g, (_, name) =>
-    values[name] != null ? values[name] : "",
+export function fmt(
+  template: string,
+  values: Record<string, string | number>,
+): string {
+  return template.replace(/\{(\w+)\}/g, (_, name: string) =>
+    values[name] != null ? String(values[name]) : "",
   );
 }
