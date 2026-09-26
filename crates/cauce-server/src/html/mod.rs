@@ -38,7 +38,7 @@ pub use answer::answer;
 pub use archive::archive;
 #[cfg(feature = "archive")]
 pub(crate) use archive::{archive_page, page_markdown, page_markdown_error};
-pub(crate) use assets::{HTMX_JS, JSON_ENC_JS, STYLE_CSS, VERSION_LABEL};
+pub(crate) use assets::{HTMX_JS, JSON_ENC_JS, STYLE_CSS, VERSION_LABEL, app_js};
 pub use assets::{favicon, opensearch};
 pub use history::history;
 pub(crate) use history::{history_page, prefers_html};
@@ -84,8 +84,7 @@ struct Page {
     is_streaming: bool,
     stream_url: String,
     query_hash: String,
-    sse_js: String,
-    /// `crate::strings::search` copy the inline JS uses, as a JSON literal.
+    /// `crate::strings::search` copy the bundled JS uses, as a JSON literal.
     stream_strings: String,
     /// W4-03: `/answer?q=...` the meta line links to when an answer loop
     /// exists (`ai` effectively on); empty otherwise and on `/`.

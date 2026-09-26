@@ -179,14 +179,19 @@ async fn upstream_error_maps_to_502() {
     );
 }
 
-/// `GET /` renders the click beacon only when the archive pipeline is up
-/// and `[archive] index_on_click` is on (the default).
+/// `GET /` arms the click beacon only when the archive pipeline is up
+/// and `[archive] index_on_click` is on (the default). Arming is the
+/// `data-index-on-click` attribute on `<body>` — the name also appears
+/// inside the bundled `app.js`, so pin the `<body` tag itself.
 #[cfg(feature = "ui")]
 #[tokio::test]
 async fn beacon_renders_only_when_enabled() {
     let (router, _state, _tmp) = app();
     let (_status, html) = get_html(&router, "/").await;
-    assert!(html.contains("/api/pages"), "beacon must render by default");
+    assert!(
+        html.contains("<body data-index-on-click"),
+        "beacon must render by default"
+    );
 
     let mut config = cauce_core::config::Config::default();
     config.archive.index_on_click = false;
@@ -194,7 +199,7 @@ async fn beacon_renders_only_when_enabled() {
     let router = build_router(state);
     let (_status, html) = get_html(&router, "/").await;
     assert!(
-        !html.contains("/api/pages"),
+        !html.contains("<body data-index-on-click"),
         "index_on_click = false must drop the beacon",
     );
 }
