@@ -390,6 +390,19 @@ async fn ai_entry_points_follow_the_answer_loop() {
     assert!(body.contains(r#"aria-pressed="false""#));
     assert!(body.contains(r#"data-submit="ask""#));
 
+    // `answer` sits between `search` and `history` in the primary nav.
+    let nav_start = body.find(r#"<nav class="nav-primary""#).unwrap();
+    let nav = &body[nav_start..nav_start + body[nav_start..].find("</nav>").unwrap()];
+    let (search, answer, history) = (
+        nav.find(">search<").unwrap(),
+        nav.find(">answer<").unwrap(),
+        nav.find(">history<").unwrap(),
+    );
+    assert!(
+        search < answer && answer < history,
+        "nav order should be search · answer · history"
+    );
+
     // `/answer` marks its own nav entry current.
     let (status, body) = get_html(&router, "/answer").await;
     assert_eq!(status, StatusCode::OK, "{body}");

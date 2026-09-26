@@ -11,10 +11,10 @@
   <a class="brand" href="/">{{ crate::strings::common::BRAND }}</a>
   <nav class="nav-primary" aria-label="{{ crate::strings::common::NAV_PRIMARY_LABEL }}">
     <a href="/"{% if nav_active == "search" %} aria-current="page"{% endif %}>{{ crate::strings::common::NAV_SEARCH }}</a>
+    {% if answer_available %}<a href="/answer"{% if nav_active == "answer" %} aria-current="page"{% endif %}>{{ crate::strings::common::NAV_ANSWER }}</a>{% endif %}
     <a href="/history"{% if nav_active == "history" %} aria-current="page"{% endif %}>{{ crate::strings::common::NAV_HISTORY }}</a>
     <a href="/dashboard"{% if nav_active == "dashboard" %} aria-current="page"{% endif %}>{{ crate::strings::common::NAV_DASHBOARD }}</a>
     <a href="/archive"{% if nav_active == "archive" %} aria-current="page"{% endif %}>{{ crate::strings::common::NAV_ARCHIVE }}</a>
-    {% if answer_available %}<a href="/answer"{% if nav_active == "answer" %} aria-current="page"{% endif %}>{{ crate::strings::common::NAV_ANSWER }}</a>{% endif %}
   </nav>
   <div class="nav-right">
     <nav class="nav-operator" aria-label="{{ crate::strings::common::NAV_OPERATOR_LABEL }}">
