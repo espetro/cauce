@@ -86,6 +86,8 @@ struct HistRow {
 struct History {
     /// The shared header's active nav item.
     nav_active: &'static str,
+    /// W7-01: an answer loop exists — the header shows `/answer`.
+    answer_available: bool,
     /// Selected `since` window (`24h` | `7d` | `30d` | `all`).
     since: String,
     /// Active `q` substring filter.
@@ -220,6 +222,7 @@ pub(crate) async fn history_page(
 
     let page = History {
         nav_active: "history",
+        answer_available: state.answer().is_some(),
         since: params.get("since").unwrap_or("all").to_string(),
         q: params.get("q").unwrap_or("").to_string(),
         cached: filter.cached,

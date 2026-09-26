@@ -41,6 +41,7 @@ pub async fn index(
     let rid = ctx.request_id.as_uuid().to_string();
     let page = Page {
         nav_active: "search",
+        answer_available: state.answer().is_some(),
         q: String::new(),
         has_results: false,
         show_empty: false,
@@ -102,6 +103,7 @@ pub async fn search(
         let rid = ctx.request_id.as_uuid().to_string();
         let page = Page {
             nav_active: "search",
+            answer_available: state.answer().is_some(),
             q,
             has_results: true,
             show_empty: false,
@@ -152,6 +154,7 @@ pub async fn search(
     } else {
         let page = Page {
             nav_active: "search",
+            answer_available: state.answer().is_some(),
             q,
             has_results: true,
             show_empty: true,
