@@ -61,6 +61,25 @@ const TOOL_RESULT_LIMIT: usize = 10;
 const RELATED_LIMIT: usize = 5;
 const RELATED_MAX_LEN: usize = 200;
 
+/// Sources serialized into the assist prompt and echoed as the
+/// `sources` frame: the SERP's top rows only — a client cannot widen
+/// the grounding set past this ceiling.
+const ASSIST_MAX_SOURCES: usize = 10;
+
+/// W7-02 Search Assist system prompt: same `[n]` citation + metadata
+/// tail contract as [`SYSTEM_PROMPT`], but the results are provided
+/// inline and no tools exist — the answer must come from the supplied
+/// set alone (a tool-mentioning prompt on a no-tools turn would invite
+/// the model to narrate searches it cannot run).
+const ASSIST_SYSTEM_PROMPT: &str = "You are a metasearch answer engine running in search-assist \
+mode. The user message contains a question and the search results already on the page, as a \
+numbered list. Answer the question briefly using ONLY those results, citing inline as [n], \
+where n is the 1-based index of the result you drew it from. If the results do not contain the \
+answer, say so in one sentence instead of guessing. After your answer text, append a metadata \
+JSON object in exactly this form: {\"confidence\": <1-10>, \"related_questions\": [...]}. Report \
+confidence >= 8 only when the results well support the answer; report lower when the answer is \
+partially grounded. Never fabricate sources or citations.";
+
 /// System prompt of every answer request (v2 `SYSTEM_PROMPT`, extended
 /// to both shipped tools): cite inline as `[n]`, append the
 /// metadata JSON tail, report high confidence only when grounded.
@@ -284,6 +303,36 @@ impl AnswerLoop {
     pub fn with_tail_parser(mut self, f: fn(&str) -> (String, u8, Vec<String>)) -> Self {
         self.tail_parser = f;
         self
+    }
+
+    /// W7-02 Search Assist: a single no-tools turn over the result set
+    /// the SERP already returned (`context_results` on
+    /// `POST /api/answer`). Frame order is `sources` (the supplied
+    /// results, up-front so the panel's chips render before text lands)
+    /// → `delta`s → `done`; caching follows the grounded-only rule under
+    /// an [`AnswerKey::assist`] key that folds in the result set, so an
+    /// assist row never collides with a tool-loop answer for the same
+    /// `q`. Nothing here touches the pipeline — no engine re-fetch.
+    pub fn stream_assist(
+        &self,
+        req: &AnswerRequest,
+        results: Vec<AnswerSource>,
+    ) -> mpsc::UnboundedReceiver<AnswerFrame> {
+        let request_id = req.request_id.unwrap_or_else(Uuid::now_v7);
+        let span = info_span!(
+            "answer.assist",
+            request_id = %request_id,
+            query = %normalize_query(&req.q),
+            client = %req.client,
+            sources = results.len(),
+        );
+        let (tx, rx) = mpsc::unbounded_channel();
+        let loop_ = self.clone();
+        let req = req.clone();
+        tokio::spawn(
+            async move { loop_.run_assist(req, results, request_id, tx).await }.instrument(span),
+        );
+        rx
     }
 
     /// Open the frame channel for one answer request. All failures ride
@@ -513,6 +562,165 @@ impl AnswerLoop {
         );
     }
 
+    /// The assist turn behind [`AnswerLoop::stream_assist`]: cache probe
+    /// under the result-set key, the supplied sources up-front, then one
+    /// `tool_choice: "none"` provider call through the same
+    /// `emit_deltas`/tail-parse/`send_error` machinery as the tool loop.
+    async fn run_assist(
+        &self,
+        req: AnswerRequest,
+        results: Vec<AnswerSource>,
+        request_id: Uuid,
+        tx: mpsc::UnboundedSender<AnswerFrame>,
+    ) {
+        let model = self.provider.model().to_string();
+        let results: Vec<AnswerSource> = results.into_iter().take(ASSIST_MAX_SOURCES).collect();
+        let key = AnswerKey::assist(&req.q, &model, &results);
+        match self.store.get_answer(&key).await {
+            Ok(Some(hit)) => {
+                if send(
+                    &tx,
+                    AnswerFrame::Sources {
+                        sources: hit.sources,
+                    },
+                ) {
+                    send(
+                        &tx,
+                        AnswerFrame::Done {
+                            answer: hit.payload.answer,
+                            confidence: hit.payload.confidence,
+                            model: hit.model,
+                            related_questions: hit.payload.related_questions,
+                            cached: true,
+                            request_id,
+                            ungrounded: false,
+                        },
+                    );
+                }
+                return;
+            }
+            Ok(None) => {}
+            // A failed lookup must not fail the answer — fail open like a
+            // cache miss.
+            Err(e) => warn!(error = %e, "answers lookup failed; continuing uncached"),
+        }
+
+        // The grounding set is known before the provider call, so the
+        // panel's source chips can render while text streams.
+        if !send(
+            &tx,
+            AnswerFrame::Sources {
+                sources: results.clone(),
+            },
+        ) {
+            return;
+        }
+
+        let ctx = AiCallCtx {
+            actor: req.actor.clone(),
+            request_id: Some(request_id),
+        };
+        let chat = ChatRequest {
+            messages: vec![
+                ChatMessage::system(ASSIST_SYSTEM_PROMPT),
+                ChatMessage::user(assist_user_prompt(&req.q, &results)),
+            ],
+            tools: Vec::new(),
+            tool_choice: Some(json!("none")),
+            ..ChatRequest::default()
+        };
+        let mut events = match self.provider.chat_stream(&chat, self.provider_budget, ctx) {
+            Ok(rx) => rx,
+            Err(e) => {
+                send_error(&tx, &e);
+                return;
+            }
+        };
+        let mut completion: Option<ChatCompletion> = None;
+        let mut text = String::new();
+        // Bytes of `text` already emitted as deltas.
+        let mut emitted = 0usize;
+        while let Some(event) = events.recv().await {
+            match event {
+                AiStreamEvent::Delta(d) => {
+                    text.push_str(&d);
+                    if !emit_deltas(&tx, &text, &mut emitted) {
+                        return;
+                    }
+                }
+                AiStreamEvent::Done(c) => {
+                    completion = Some(*c);
+                    break;
+                }
+                AiStreamEvent::Error(e) => {
+                    // Mid-stream failure: flush what the model already
+                    // produced (no tail parse runs on a failed turn),
+                    // then the terminal error frame.
+                    flush(&tx, &text, &mut emitted);
+                    send_error(&tx, &e);
+                    return;
+                }
+            }
+        }
+        let Some(completion) = completion else {
+            send(
+                &tx,
+                AnswerFrame::Error {
+                    message: "provider stream ended without a completion".to_string(),
+                    retry_after_s: None,
+                },
+            );
+            return;
+        };
+
+        // Single turn, no tools: whatever text the turn produced is the
+        // answer; a provider that ignores `tool_choice` cannot re-enter
+        // the loop from here.
+        let (answer, confidence, related) = (self.tail_parser)(&completion.content);
+        if let Some(rest) = answer.get(emitted..)
+            && !rest.is_empty()
+            && !send(
+                &tx,
+                AnswerFrame::Delta {
+                    text: rest.to_string(),
+                },
+            )
+        {
+            return;
+        }
+        send(
+            &tx,
+            AnswerFrame::Done {
+                answer: answer.clone(),
+                confidence,
+                model: completion.model.clone().unwrap_or_else(|| model.clone()),
+                related_questions: related.clone(),
+                cached: false,
+                request_id,
+                ungrounded: results.is_empty(),
+            },
+        );
+        // Grounded-only caching (settled input): >= 1 source,
+        // confidence >= CACHE_MIN_CONFIDENCE, no error — under the
+        // assist key, so a tool-loop answer for the same `q` cannot be
+        // replayed as an assist answer or vice versa.
+        if !results.is_empty() && confidence >= CACHE_MIN_CONFIDENCE {
+            let row = AnswerRow {
+                query: normalize_query(&req.q),
+                model: model.clone(),
+                payload: AnswerPayload {
+                    answer,
+                    confidence,
+                    related_questions: related,
+                },
+                sources: results,
+            };
+            if let Err(e) = self.store.put_answer(&key, &row, self.answers_ttl).await {
+                warn!(error = %e, "answers write failed");
+            }
+        }
+    }
+
     /// One tool call: `search_web` runs the shared pipeline (cache,
     /// admission and politeness come free), `search_archive` (W5-03)
     /// reads the local archive's hybrid RRF; anything else is an
@@ -644,6 +852,29 @@ fn send_error(tx: &mpsc::UnboundedSender<AnswerFrame>, e: &AiError) {
             },
         },
     );
+}
+
+/// The assist user message: the question plus the supplied results as a
+/// numbered JSON list — the `[n]` citation indices in
+/// [`ASSIST_SYSTEM_PROMPT`] point into this ordering.
+fn assist_user_prompt(q: &str, results: &[AnswerSource]) -> String {
+    let list: Vec<serde_json::Value> = results
+        .iter()
+        .enumerate()
+        .map(|(i, r)| {
+            json!({
+                "n": i + 1,
+                "title": r.title,
+                "url": r.url.as_str(),
+                "snippet": r.snippet,
+                "engine": r.engine.as_str(),
+            })
+        })
+        .collect();
+    format!(
+        "Question: {q}\n\nSearch results:\n{}",
+        serde_json::to_string_pretty(&list).expect("results serialize")
+    )
 }
 
 /// The `query` argument of a tool call (`""` on absent or malformed
