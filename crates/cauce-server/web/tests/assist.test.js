@@ -89,6 +89,11 @@ describe("initAssist", () => {
     const fetchImpl = fetchWithChunks([]);
     initAssist(document, AS, ROWS, fetchImpl);
     refs.btn.click();
+    // Synchronous state (the fetch promise has not resolved yet).
+    expect(refs.btn.hidden).toBe(true);
+    expect(refs.btn.getAttribute("aria-expanded")).toBe("true");
+    expect(refs.card.hidden).toBe(false);
+    expect(refs.card.getAttribute("aria-busy")).toBe("true");
     await flush();
     expect(fetchImpl).toHaveBeenCalledTimes(1);
     const [url, init] = fetchImpl.mock.calls[0];
@@ -96,10 +101,6 @@ describe("initAssist", () => {
     expect(init.method).toBe("POST");
     expect(init.headers.Accept).toBe("text/event-stream");
     expect(JSON.parse(init.body)).toEqual({ q: "tokyo weather", context_results: ROWS });
-    expect(refs.btn.hidden).toBe(true);
-    expect(refs.btn.getAttribute("aria-expanded")).toBe("true");
-    expect(refs.card.hidden).toBe(false);
-    expect(refs.card.getAttribute("aria-busy")).toBe("true");
   });
 
   it("fires only once — a second click does not re-POST", async () => {
