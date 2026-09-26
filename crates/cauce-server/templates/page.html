@@ -48,6 +48,12 @@
         <span class="assist-label">{{ crate::strings::assist::LABEL }}</span>
         <a class="assist-ask" href="{{ ask_url }}">{{ crate::strings::assist::ASK_AI }}</a>
       </div>
+      <div id="assist-meta" class="meta" hidden>
+        <span id="assist-grounded" class="meta-chip" hidden></span>
+        <span id="assist-confidence" class="meta-chip" hidden></span>
+        <span id="assist-ungrounded" class="meta-chip warn" hidden>{{ crate::strings::assist::UNGROUNDED }}</span>
+        <span id="assist-cached" class="meta-chip" hidden>{{ crate::strings::assist::CACHED }}</span>
+      </div>
       <div id="assist-text" class="answer-text"></div>
       <div id="assist-sources" class="assist-sources"></div>
       <p class="assist-note">{{ crate::strings::assist::DISCLAIMER }}</p>

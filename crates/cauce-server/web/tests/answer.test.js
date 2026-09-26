@@ -15,6 +15,11 @@ const S = {
   related: "Related",
   complete: "Done",
   retry_after: "retry in {n}s",
+  path_direct: "answered directly — no search needed",
+  path_searched: "searched {tools} · {n} sources",
+  path_replay: "searched · {n} sources",
+  tool_web: "web",
+  tool_archive: "archive",
 };
 
 /** The DOM shell answer.html renders while `has_query && enabled`. */
@@ -24,6 +29,9 @@ function answerShell() {
          data-endpoint="/api/answer" data-accept="text/event-stream"
          data-headers='{"X-Cauce-Client":"ui"}'>
       <span id="answer-status"></span>
+      <span id="answer-path" hidden></span>
+      <span id="answer-confidence" hidden></span>
+      <span id="answer-ungrounded-badge" hidden></span>
       <span id="answer-meta"></span>
       <span id="request-id"></span>
       <ol id="answer-steps"></ol>
@@ -44,6 +52,9 @@ function answerShell() {
     sourcesEl: $("answer-sources"),
     relatedEl: $("answer-related"),
     ungrounded: $("answer-ungrounded"),
+    ungroundedBadge: $("answer-ungrounded-badge"),
+    pathEl: $("answer-path"),
+    confEl: $("answer-confidence"),
     errorEl: $("answer-error"),
   };
 }
@@ -124,7 +135,12 @@ describe("createAnswerSession — frame dispatch", () => {
     expect(cite.textContent).toBe("[1]");
     expect(refs.text.textContent).toBe("Rust is a language [1].");
     expect(refs.ungrounded.hidden).toBe(false);
-    expect(refs.meta.textContent).toBe("confidence 6/10 · liquid/lfm · cached");
+    // W7-03 chips carry grounded/confidence; the meta line keeps
+    // model + cache state.
+    expect(refs.ungroundedBadge.hidden).toBe(false);
+    expect(refs.confEl.textContent).toBe("confidence 6/10");
+    expect(refs.confEl.dataset.confidence).toBe("6");
+    expect(refs.meta.textContent).toBe("liquid/lfm · cached");
     expect(refs.requestId.textContent).toBe("01234567");
     const rel = refs.relatedEl.querySelector(".related-question a");
     expect(rel.getAttribute("href")).toBe("/answer?q=why%20rust");
@@ -154,6 +170,51 @@ describe("createAnswerSession — frame dispatch", () => {
     expect(refs.errorEl.hidden).toBe(true);
     handleFrame("event: delta\ndata: {nope");
     expect(refs.errorEl.textContent).toBe("invalid stream");
+  });
+});
+
+describe("createAnswerSession — W7-03 path/confidence chips", () => {
+  it("a searched answer names the deduped tools and cited-source count", () => {
+    const { refs, handleFrame } = session();
+    handleFrame('event: step\ndata: {"tool":"search_web","label":"searching"}');
+    handleFrame('event: step\ndata: {"tool":"search_archive","label":"checking archive"}');
+    handleFrame('event: step\ndata: {"tool":"search_web","label":"searching again"}');
+    handleFrame(
+      'event: sources\ndata: {"sources":[{"url":"https://a.com/x"},{"url":"https://b.com/y"},{"url":"https://c.com/z"}]}',
+    );
+    handleFrame('event: done\ndata: {"answer":"ok","confidence":8}');
+    expect(refs.pathEl.hidden).toBe(false);
+    expect(refs.pathEl.dataset.path).toBe("searched");
+    expect(refs.pathEl.textContent).toBe("searched web + archive · 3 sources");
+    expect(refs.confEl.hidden).toBe(false);
+    expect(refs.confEl.textContent).toBe("confidence 8/10");
+  });
+
+  it("a cached replay names the source count but no tools", () => {
+    const { refs, handleFrame } = session();
+    // Replays emit sources + done{cached:true} with no step frames.
+    handleFrame(
+      'event: sources\ndata: {"sources":[{"url":"https://a.com/x"},{"url":"https://b.com/y"}]}',
+    );
+    handleFrame('event: done\ndata: {"answer":"ok","confidence":9,"cached":true}');
+    expect(refs.pathEl.dataset.path).toBe("searched");
+    expect(refs.pathEl.textContent).toBe("searched · 2 sources");
+    expect(refs.meta.textContent).toBe("cached");
+  });
+
+  it("a no-tool answer reads 'answered directly' and still shows confidence", () => {
+    const { refs, handleFrame } = session();
+    handleFrame('event: done\ndata: {"answer":"4","confidence":10}');
+    expect(refs.pathEl.dataset.path).toBe("direct");
+    expect(refs.pathEl.textContent).toBe("answered directly — no search needed");
+    expect(refs.confEl.textContent).toBe("confidence 10/10");
+  });
+
+  it("an ungrounded done reveals both the notice and the warn chip", () => {
+    const { refs, handleFrame } = session();
+    handleFrame('event: done\ndata: {"answer":"ok","ungrounded":true,"confidence":5}');
+    expect(refs.ungrounded.hidden).toBe(false);
+    expect(refs.ungroundedBadge.hidden).toBe(false);
   });
 });
 
