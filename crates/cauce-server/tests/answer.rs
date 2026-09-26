@@ -356,3 +356,59 @@ async fn search_page_ask_link_follows_ai() {
         "no ask link while ai is disabled: {body}"
     );
 }
+
+/// W7-01: the first-class AI entry points — the `answer` nav link and
+/// the in-form `ai-mode` pill — render only while an answer loop exists
+/// (the same `state.answer().is_none()` gate as the ask link, so the
+/// disabled build ships neither the markup nor the JS wiring).
+#[cfg(feature = "ui")]
+#[tokio::test]
+async fn ai_entry_points_follow_the_answer_loop() {
+    let (router, _state, _tmp, _server) = ai_app().await;
+    for uri in [
+        "/",
+        "/search?q=tokyo+weather",
+        "/search?q=tokyo+weather&stream=1",
+    ] {
+        let (status, body) = get_html(&router, uri).await;
+        assert_eq!(status, StatusCode::OK, "{uri}");
+        assert!(
+            body.contains(r#"<a href="/answer""#),
+            "{uri}: nav is missing the answer link"
+        );
+        assert!(
+            body.contains(r#"id="ai-mode""#),
+            "{uri}: search form is missing the AI-mode pill"
+        );
+        assert!(
+            body.contains("/answer?q="),
+            "{uri}: the submit hijack must route AI mode to /answer"
+        );
+    }
+    // The pill arms as a toggle and carries the ask copy for its swap.
+    let (_status, body) = get_html(&router, "/").await;
+    assert!(body.contains(r#"aria-pressed="false""#));
+    assert!(body.contains(r#"data-submit="ask""#));
+
+    // `/answer` marks its own nav entry current.
+    let (status, body) = get_html(&router, "/answer").await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert!(
+        body.contains(r#"href="/answer" aria-current="page""#),
+        "answer nav link should be current on /answer: {body}"
+    );
+
+    let (router, _state, _tmp) = app();
+    for uri in ["/", "/search?q=tokyo+weather", "/answer"] {
+        let (status, body) = get_html(&router, uri).await;
+        assert_eq!(status, StatusCode::OK, "{uri}");
+        assert!(
+            !body.contains(r#"href="/answer""#),
+            "{uri}: no answer nav link while ai is disabled"
+        );
+        assert!(
+            !body.contains("ai-mode"),
+            "{uri}: no AI-mode pill while ai is disabled"
+        );
+    }
+}

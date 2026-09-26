@@ -26,6 +26,9 @@ pub mod common {
     pub const NAV_DASHBOARD: &str = "dashboard";
     /// Primary nav link to `/archive`.
     pub const NAV_ARCHIVE: &str = "archive";
+    /// Primary nav link to `/answer`; the link renders only while an
+    /// answer loop exists (W7-01).
+    pub const NAV_ANSWER: &str = "answer";
     /// Operator nav link to `/engines`.
     pub const NAV_ENGINES: &str = "engines";
     /// Operator nav link to `/cache`.
@@ -70,6 +73,10 @@ pub mod search {
     pub const PLACEHOLDER: &str = "Search...";
     /// Search-box submit label.
     pub const SUBMIT: &str = "Search";
+    /// In-form AI-mode pill (W7-01): toggles the form's submit target
+    /// between `/search` and `/answer`; renders only while an answer
+    /// loop exists.
+    pub const AI_MODE: &str = "AI mode";
     /// Result-count suffix (`12 results`).
     pub const RESULTS: &str = "results";
     /// Empty-state lead-in (`No results` / `No results · <statuses>`).

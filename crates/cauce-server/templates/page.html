@@ -18,6 +18,9 @@
   <h1 class="vh">{{ crate::strings::common::BRAND }}</h1>
   <form id="search-form" action="/search" method="get">
     <input type="search" name="q" value="{{ q }}" placeholder="{{ crate::strings::search::PLACEHOLDER }}" autofocus>
+    {% if answer_available %}<button type="button" id="ai-mode" class="mode-pill" aria-pressed="false"
+      data-placeholder="{{ crate::strings::answer::PLACEHOLDER }}"
+      data-submit="{{ crate::strings::answer::SUBMIT }}">{{ crate::strings::search::AI_MODE }}</button>{% endif %}
     <button type="submit">{{ crate::strings::search::SUBMIT }}</button>
   </form>
   {% if has_results %}
@@ -45,10 +48,40 @@
     (function () {
       var form = document.getElementById("search-form");
       if (form) {
+        var input = form.querySelector('input[name="q"]');
+        {% if answer_available %}
+        // W7-01 AI-mode pill (Google AI Mode pattern): a mode switch
+        // inside the form, rendered only while the answer loop exists.
+        // Arming it swaps the placeholder/submit copy for the ask form's
+        // (carried on data- attributes so strings stay in `strings.rs`)
+        // and retargets submit at `/answer?q=` — one gesture: type,
+        // pick AI, Enter. Without JS it is inert, like the theme toggle.
+        var aiMode = document.getElementById("ai-mode");
+        var submitBtn = form.querySelector('button[type="submit"]');
+        if (aiMode && input) {
+          var searchPlaceholder = input.placeholder;
+          var searchSubmit = submitBtn ? submitBtn.textContent : "";
+          aiMode.addEventListener("click", function () {
+            var ai = form.dataset.mode !== "ai";
+            form.dataset.mode = ai ? "ai" : "search";
+            aiMode.setAttribute("aria-pressed", String(ai));
+            input.placeholder = ai ? aiMode.dataset.placeholder : searchPlaceholder;
+            if (submitBtn) {
+              submitBtn.textContent = ai ? aiMode.dataset.submit : searchSubmit;
+            }
+            input.focus();
+          });
+        }
+        {% endif %}
         form.addEventListener("submit", function (event) {
-          var input = form.querySelector('input[name="q"]');
           if (!input || !input.value.trim()) return;
           event.preventDefault();
+          {% if answer_available %}
+          if (form.dataset.mode === "ai") {
+            window.location.assign("/answer?q=" + encodeURIComponent(input.value));
+            return;
+          }
+          {% endif %}
           var url = new URL(form.action, window.location.origin);
           url.searchParams.set("q", input.value);
           url.searchParams.set("stream", "1");

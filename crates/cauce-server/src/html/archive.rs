@@ -12,17 +12,16 @@
 
 use askama::Template;
 use axum::Extension;
+use axum::extract::State;
 use axum::response::Html;
 #[cfg(feature = "archive")]
 use axum::{
-    extract::State,
     http::{HeaderMap, StatusCode, Uri},
     response::{IntoResponse, Response},
 };
 #[cfg(feature = "archive")]
 use cauce_core::{PageHit, PageRow};
 
-#[cfg(feature = "archive")]
 use crate::app::AppState;
 use crate::error::ApiError;
 use crate::middleware::RequestCtx;
@@ -63,6 +62,9 @@ struct SnippetPart {
 struct Archive {
     /// The shared header's active nav item.
     nav_active: &'static str,
+    /// W7-01: an answer loop exists — the header shows its `/answer`
+    /// nav link (hidden rather than greyed when absent).
+    answer_available: bool,
     /// The `archive` feature is on (a `build_archive` pipeline exists):
     /// the search form and rows render only then; otherwise the disabled
     /// notice links `/settings` (`/answer`'s convention).
@@ -122,9 +124,13 @@ pub async fn archive(
 /// `GET /archive` without the `archive` feature: the page shell with the
 /// disabled notice (no data path — `/api/archive` is unmounted).
 #[cfg(not(feature = "archive"))]
-pub async fn archive(Extension(ctx): Extension<RequestCtx>) -> Result<Html<String>, ApiError> {
+pub async fn archive(
+    State(state): State<AppState>,
+    Extension(ctx): Extension<RequestCtx>,
+) -> Result<Html<String>, ApiError> {
     Archive {
         nav_active: "archive",
+        answer_available: state.answer().is_some(),
         enabled: false,
         q: String::new(),
         searching: false,
@@ -168,6 +174,7 @@ pub(crate) async fn archive_page(
     let rid = ctx.request_id.as_uuid().to_string();
     let page = Archive {
         nav_active: "archive",
+        answer_available: state.answer().is_some(),
         // The search/delete data path needs the store, not the fetch
         // pipeline — but `/answer`'s convention shows the notice when
         // the pipeline could not be built (indexing is down).

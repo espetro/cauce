@@ -1,10 +1,12 @@
 {# The shared page header (W2-08): brand, the primary nav
-   (`search · history · dashboard · archive`), the quieter operator group
+   (`search · history · dashboard · archive`, plus `answer` while an
+   answer loop exists — W7-01), the quieter operator group
    (`engines · cache · audit`), then `settings`, the version label and
    the theme toggle. Below 700 px the operator group collapses into the
    `more` <details> menu (CSS-only, works without JS). `nav_active`
    marks the current page's link with `aria-current`; pass "" when the
-   page has no nav entry (e.g. /trace). #}
+   page has no nav entry (e.g. /trace). `answer_available` gates the AI
+   entry points (the W4-03 disabled treatment hides rather than greys). #}
 <header class="site">
   <a class="brand" href="/">{{ crate::strings::common::BRAND }}</a>
   <nav class="nav-primary" aria-label="{{ crate::strings::common::NAV_PRIMARY_LABEL }}">
@@ -12,6 +14,7 @@
     <a href="/history"{% if nav_active == "history" %} aria-current="page"{% endif %}>{{ crate::strings::common::NAV_HISTORY }}</a>
     <a href="/dashboard"{% if nav_active == "dashboard" %} aria-current="page"{% endif %}>{{ crate::strings::common::NAV_DASHBOARD }}</a>
     <a href="/archive"{% if nav_active == "archive" %} aria-current="page"{% endif %}>{{ crate::strings::common::NAV_ARCHIVE }}</a>
+    {% if answer_available %}<a href="/answer"{% if nav_active == "answer" %} aria-current="page"{% endif %}>{{ crate::strings::common::NAV_ANSWER }}</a>{% endif %}
   </nav>
   <div class="nav-right">
     <nav class="nav-operator" aria-label="{{ crate::strings::common::NAV_OPERATOR_LABEL }}">
