@@ -19,6 +19,7 @@ build/
 dist/
 dist-ssr/
 node_modules/
+*.tsbuildinfo
 
 # caches / local state
 .playwright-cli/
