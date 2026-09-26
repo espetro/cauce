@@ -10,17 +10,18 @@
  * reset/toggle get the neutral wording. The two strings arrive as
  * `data-i18n-*` attributes on `<body>` so they stay in `strings.rs`.
  */
-export function initEngineErrors(doc = document) {
+export function initEngineErrors(doc: Document = document): void {
   const body = doc.body;
-  if (!body || body.dataset.i18nTestFailed === undefined) return;
+  if (!body) return;
   const testFailed = body.dataset.i18nTestFailed;
+  if (testFailed === undefined) return;
   const requestFailed = body.dataset.i18nRequestFailed || "";
   body.addEventListener("htmx:responseError", (ev) => {
     const card = ev.detail.elt.closest(".engine-card");
     const slot = card && card.querySelector(".test-results");
     if (slot) {
       const tpl = ev.detail.elt.tagName === "FORM" ? testFailed : requestFailed;
-      slot.textContent = tpl.replace("{status}", ev.detail.xhr.status);
+      slot.textContent = tpl.replace("{status}", String(ev.detail.xhr.status));
     }
   });
 }
