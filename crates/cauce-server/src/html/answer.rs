@@ -1,9 +1,15 @@
-//! The `/answer` page (W4-03): the ask form plus the streamed-answer
-//! shell. The shell's inline script POSTs `/api/answer` itself — SSE over
+//! The `/answer` page (W4-03, threads in W7-04): the ask form plus a
+//! chat thread — one `.answer-turn` per exchange (the user line, the
+//! streamed reply, that turn's sources/related links) cloned from
+//! `#answer-turn-tpl`, and a bottom-pinned follow-up form revealed once
+//! a turn settles. The page's JS POSTs `/api/answer` itself — SSE over
 //! `fetch`, since `EventSource` cannot POST — and renders `step` frames
-//! as a progress line, `delta` text live, `sources` as numbered cards the
-//! `[n]` citation markers link to, and the terminal `done`/`error` frame
-//! as metadata or an inline error.
+//! as a progress line, `delta` text live, `sources` as numbered cards
+//! the `[n]` citation markers link to, and the terminal `done`/`error`
+//! frame as metadata or an inline error. Threads are ephemeral page
+//! state: each follow-up POST replays the prior turns as `history`;
+//! a reload starts a fresh thread (a resumable `threads` table is a
+//! documented follow-up).
 //!
 //! This Source Code Form is subject to the terms of the Mozilla Public
 //! License, v. 2.0. If a copy of the MPL was not distributed with this

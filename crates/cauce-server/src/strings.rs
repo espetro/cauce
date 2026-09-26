@@ -590,6 +590,10 @@ pub mod answer {
     pub const DISABLED: &str = "AI mode is disabled.";
     /// Disabled notice link text to `/settings`.
     pub const DISABLED_LINK: &str = "configure it in settings";
+    /// W7-04 follow-up input placeholder/aria-label on the thread.
+    pub const FOLLOWUP_PLACEHOLDER: &str = "Ask a follow-up...";
+    /// W7-04 follow-up submit label.
+    pub const FOLLOWUP_SUBMIT: &str = "ask";
     /// `<noscript>` line inside the stream shell.
     pub const NOSCRIPT: &str =
         "Answering needs JavaScript; the answer stream cannot run without it.";

@@ -27,22 +27,53 @@
   <div id="answer-stream" aria-live="polite" aria-busy="true"
        data-endpoint="/api/answer" data-accept="text/event-stream"
        data-headers='{"X-Cauce-Client":"ui"}'>
-    <div class="meta">
-      <span id="answer-status" role="status">{{ crate::strings::answer::WAITING }}</span>
-      <span id="answer-path" class="meta-chip" hidden></span>
-      <span id="answer-confidence" class="meta-chip" hidden></span>
-      <span id="answer-ungrounded-badge" class="meta-chip warn" hidden>{{ crate::strings::answer::UNGROUNDED_BADGE }}</span>
-      <span id="answer-meta"></span>
-      <span id="request-id" class="request-id" title="{{ request_id }}">{{ short_request_id }}</span>
-    </div>
-    <ol id="answer-steps" class="answer-steps"></ol>
-    <p id="answer-ungrounded" class="ungrounded" role="note" hidden>{{ crate::strings::answer::UNGROUNDED }}</p>
-    <div id="answer-text" class="answer-text"></div>
-    <div id="answer-sources"></div>
-    <div id="answer-related"></div>
-    <p id="answer-error" class="field-error" role="alert" hidden></p>
+    <!-- W7-04: one .answer-turn per exchange — the user line (.turn-q)
+         plus the streamed-answer shell. Turn 1 ships in the SSR markup
+         (ids kept for its elements); follow-ups clone
+         #answer-turn-tpl and carry the same classes, no ids. -->
+    <section class="answer-turn">
+      <p class="turn-q">{{ q }}</p>
+      <div class="meta">
+        <span id="answer-status" class="answer-status" role="status">{{ crate::strings::answer::WAITING }}</span>
+        <span id="answer-path" class="meta-chip answer-path" hidden></span>
+        <span id="answer-confidence" class="meta-chip answer-confidence" hidden></span>
+        <span id="answer-ungrounded-badge" class="meta-chip warn answer-ungrounded-badge" hidden>{{ crate::strings::answer::UNGROUNDED_BADGE }}</span>
+        <span id="answer-meta" class="answer-meta"></span>
+        <span id="request-id" class="request-id" title="{{ request_id }}">{{ short_request_id }}</span>
+      </div>
+      <ol id="answer-steps" class="answer-steps"></ol>
+      <p id="answer-ungrounded" class="ungrounded" role="note" hidden>{{ crate::strings::answer::UNGROUNDED }}</p>
+      <div id="answer-text" class="answer-text"></div>
+      <div id="answer-sources" class="answer-sources"></div>
+      <div id="answer-related" class="answer-related"></div>
+      <p id="answer-error" class="field-error answer-error" role="alert" hidden></p>
+    </section>
     <noscript><p>{{ crate::strings::answer::NOSCRIPT }}</p></noscript>
   </div>
+  <template id="answer-turn-tpl">
+    <section class="answer-turn">
+      <p class="turn-q"></p>
+      <div class="meta">
+        <span class="answer-status" role="status">{{ crate::strings::answer::WAITING }}</span>
+        <span class="meta-chip answer-path" hidden></span>
+        <span class="meta-chip answer-confidence" hidden></span>
+        <span class="meta-chip warn answer-ungrounded-badge" hidden>{{ crate::strings::answer::UNGROUNDED_BADGE }}</span>
+        <span class="answer-meta"></span>
+        <span class="request-id" hidden></span>
+      </div>
+      <ol class="answer-steps"></ol>
+      <p class="ungrounded" role="note" hidden>{{ crate::strings::answer::UNGROUNDED }}</p>
+      <div class="answer-text"></div>
+      <div class="answer-sources"></div>
+      <div class="answer-related"></div>
+      <p class="field-error answer-error" role="alert" hidden></p>
+    </section>
+  </template>
+  <form id="answer-followup" hidden>
+    <input type="search" id="followup-q" placeholder="{{ crate::strings::answer::FOLLOWUP_PLACEHOLDER }}"
+           aria-label="{{ crate::strings::answer::FOLLOWUP_PLACEHOLDER }}" autocomplete="off">
+    <button type="submit">{{ crate::strings::answer::FOLLOWUP_SUBMIT }}</button>
+  </form>
   {% endif %}
   </main>
   <script>{{ htmx_js|safe }}</script>
