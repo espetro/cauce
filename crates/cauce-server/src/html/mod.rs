@@ -65,6 +65,9 @@ struct Page {
     /// The shared header's active nav item (`"search"` on `/` and
     /// `/search`; `templates/header.html` compares against it).
     nav_active: &'static str,
+    /// W7-01: an answer loop exists — the header shows its `/answer`
+    /// nav link and the search form its AI-mode pill.
+    answer_available: bool,
     q: String,
     has_results: bool,
     show_empty: bool,

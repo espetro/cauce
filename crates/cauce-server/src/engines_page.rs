@@ -94,6 +94,8 @@ pub(crate) struct EngineCard {
 struct EnginesPage {
     /// The shared header's active nav item.
     nav_active: &'static str,
+    /// W7-01: an answer loop exists — the header shows `/answer`.
+    answer_available: bool,
     cards: Vec<EngineCard>,
     /// `N configured · N enabled[ · N breaker open]` under the heading.
     summary: String,
@@ -141,6 +143,7 @@ pub(crate) async fn page(state: &AppState, ctx: &RequestCtx) -> Result<Html<Stri
 
     EnginesPage {
         nav_active: "engines",
+        answer_available: state.answer().is_some(),
         cards,
         summary,
         engines_pinned: pinned,

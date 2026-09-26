@@ -60,6 +60,8 @@ struct Opt {
 struct AuditPage {
     /// The shared header's active nav item.
     nav_active: &'static str,
+    /// W7-01: an answer loop exists — the header shows `/answer`.
+    answer_available: bool,
     /// Distinct actors/actions from `Store::audit_facets`, for the selects.
     actor_options: Vec<Opt>,
     action_options: Vec<Opt>,
@@ -103,6 +105,8 @@ struct TracePage {
     /// The shared header's active nav item; `/trace/{id}` has no nav
     /// entry of its own, so nothing renders `aria-current`.
     nav_active: &'static str,
+    /// W7-01: an answer loop exists — the header shows `/answer`.
+    answer_available: bool,
     /// The traced request id (page subject), full form.
     traced_id: String,
     traced_short: String,
@@ -154,6 +158,7 @@ pub async fn audit(
 
     let page = AuditPage {
         nav_active: "audit",
+        answer_available: state.answer().is_some(),
         actor_options: facets
             .actors
             .iter()
@@ -244,6 +249,7 @@ pub async fn trace(
     let rid = ctx.request_id.as_uuid().to_string();
     let page = TracePage {
         nav_active: "",
+        answer_available: state.answer().is_some(),
         traced_short: short_id(&traced),
         traced_id: traced,
         kind: summary.kind,
@@ -268,7 +274,7 @@ pub async fn trace(
 
 /// Render the trace page frame with a `notice` line (404/400 states).
 fn trace_frame(
-    _state: &AppState,
+    state: &AppState,
     ctx: &RequestCtx,
     traced_id: &str,
     notice: &str,
@@ -276,6 +282,7 @@ fn trace_frame(
 ) -> Result<Response, ApiError> {
     let page = TracePage {
         nav_active: "",
+        answer_available: state.answer().is_some(),
         traced_short: short_id(traced_id),
         traced_id: traced_id.to_string(),
         kind: String::new(),

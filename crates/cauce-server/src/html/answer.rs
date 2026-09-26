@@ -30,9 +30,13 @@ use super::{render_err, short_id};
 #[derive(Template)]
 #[template(path = "answer.html")]
 struct AnswerPage {
-    /// The shared header's active nav item; `/answer` is reachable from
-    /// the search page, not the nav — keep `search` current.
+    /// The shared header's active nav item; W7-01 promotes `/answer`
+    /// into the primary nav, so this page marks `answer` current.
     nav_active: &'static str,
+    /// The header's `/answer` nav link renders only while this is true
+    /// (same gate as `enabled` below — kept a separate field because
+    /// the include contract wants the header-scoped name).
+    answer_available: bool,
     q: String,
     /// `ai` is effectively on: an [`AppState`] answer loop exists, so
     /// `POST /api/answer` will stream. Otherwise the page renders the
@@ -67,12 +71,14 @@ pub async fn answer(
     params.allow(&ctx, &["q"])?;
     let q = params.get("q").unwrap_or_default().to_string();
     let rid = ctx.request_id.as_uuid().to_string();
+    let answer_available = state.answer().is_some();
     let page = AnswerPage {
-        nav_active: "search",
+        nav_active: "answer",
+        answer_available,
         q_json: serde_json::to_string(&q).expect("query string serializes"),
         has_query: !q.trim().is_empty(),
         q,
-        enabled: state.answer().is_some(),
+        enabled: answer_available,
         request_id: rid.clone(),
         short_request_id: short_id(&rid),
         style_css: STYLE_CSS.clone(),
