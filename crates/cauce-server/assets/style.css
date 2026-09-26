@@ -1177,6 +1177,30 @@ body.engines-page {
     margin: 0.5rem 0 0;
 }
 
+/* W7-03: retrieval-path / confidence / grounded badges — small chips
+   inside the .meta row on /answer and in the assist card. Chips skip
+   .meta's `span + span` " · " separator and space themselves. */
+.meta-chip {
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 0.0625rem 0.5rem;
+    font-size: 0.75rem;
+}
+
+.meta .meta-chip::before {
+    content: none;
+}
+
+.meta .meta-chip + .meta-chip {
+    margin-left: 0.25rem;
+}
+
+/* The chip form of the .ungrounded notice. */
+.meta-chip.warn {
+    border-color: #b91c1c;
+    color: #b91c1c;
+}
+
 .notice {
     color: var(--muted);
 }

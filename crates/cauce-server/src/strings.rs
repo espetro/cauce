@@ -558,6 +558,24 @@ pub mod answer {
     /// `done.ungrounded` notice — a zero-source answer is never cached
     /// (the core already enforces it) and gets this visible flag.
     pub const UNGROUNDED: &str = "this answer cites no sources — it may be ungrounded";
+    /// Short `ungrounded` badge word for the meta-row chip; the full
+    /// notice below the steps stays UNGROUNDED (W7-03).
+    pub const UNGROUNDED_BADGE: &str = "ungrounded";
+    /// W7-03 retrieval-path chip for a no-tool answer — the model
+    /// answered from what it already knew.
+    pub const PATH_DIRECT: &str = "answered directly — no search needed";
+    /// W7-03 retrieval-path chip for a searched answer; `{tools}` is
+    /// the joined tool list (`web`, `archive`, `web + archive`), `{n}`
+    /// the cited-source count.
+    pub const PATH_SEARCHED: &str = "searched {tools} · {n} sources";
+    /// W7-03 retrieval-path chip on a cached replay: the tools ran on
+    /// the original request, so only the cited-source count survives
+    /// (`{n}`); naming tools here would claim calls that did not happen.
+    pub const PATH_REPLAY: &str = "searched · {n} sources";
+    /// `search_web`'s display word inside PATH_SEARCHED.
+    pub const TOOL_WEB: &str = "web";
+    /// `search_archive`'s display word inside PATH_SEARCHED.
+    pub const TOOL_ARCHIVE: &str = "archive";
     /// `related_questions` section label.
     pub const RELATED: &str = "related";
     /// Sources section label (aria + heading).
@@ -587,6 +605,16 @@ pub mod assist {
     pub const ASK_AI: &str = "Ask in AI mode";
     /// Always-visible disclaimer under the answer (settled input).
     pub const DISCLAIMER: &str = "auto-generated — may contain inaccuracies";
+    /// W7-03 grounded chip in the card meta row, rendered on the
+    /// up-front `sources` frame; `{n}` is the cited-result count.
+    pub const GROUNDED: &str = "grounded · {n} sources";
+    /// W7-03 ungrounded badge — an assist turn that cited nothing
+    /// (reachable only with an empty `context_results`).
+    pub const UNGROUNDED: &str = "ungrounded";
+    /// `done.confidence` chip; `{n}` is the 1-10 score.
+    pub const CONFIDENCE: &str = "confidence {n}/10";
+    /// `done.cached` chip word.
+    pub const CACHED: &str = "cached";
     /// Inline error lead for HTTP-level and provider `error` frames.
     pub const STREAM_FAILED: &str = "answer stream failed";
     /// An SSE frame whose data did not parse.

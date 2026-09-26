@@ -17,6 +17,9 @@
  * script, so the feature is inert without them (same convention as
  * `var S`/`var Q`).
  */
+
+import { fmt } from "./format.js";
+
 export function initAssist(
   doc = document,
   AS = window.AS,
@@ -29,6 +32,12 @@ export function initAssist(
   const text = doc.getElementById("assist-text");
   const srcEl = doc.getElementById("assist-sources");
   const err = doc.getElementById("assist-error");
+  // W7-03 grounded/confidence chips in the card meta row.
+  const meta = doc.getElementById("assist-meta");
+  const grounded = doc.getElementById("assist-grounded");
+  const conf = doc.getElementById("assist-confidence");
+  const ung = doc.getElementById("assist-ungrounded");
+  const cachedChip = doc.getElementById("assist-cached");
   if (!section || !btn || !AS || !fetchImpl) return null;
 
   let context = (initialContext || []).slice(0, 10);
@@ -85,6 +94,13 @@ export function initAssist(
       }
       srcEl.appendChild(chip);
     });
+    // W7-03: the grounded chip renders the moment the up-front
+    // `sources` frame lands — before any answer text.
+    if (list.length) {
+      grounded.textContent = fmt(AS.grounded, { n: list.length });
+      grounded.hidden = false;
+      meta.hidden = false;
+    }
   }
 
   // Re-render the accumulated answer with [n] markers as anchor links
@@ -129,6 +145,18 @@ export function initAssist(
     else if (name === "delta") text.appendChild(doc.createTextNode(payload.text || ""));
     else if (name === "done") {
       renderAnswer(payload.answer || "");
+      // W7-03: confidence + grounded state from `done` — assist is
+      // grounded on the shown results by construction, so an
+      // `ungrounded` badge here means an empty context slipped in.
+      if (payload.ungrounded) {
+        grounded.hidden = true;
+        ung.hidden = false;
+      }
+      conf.textContent = fmt(AS.confidence, { n: payload.confidence });
+      conf.dataset.confidence = payload.confidence;
+      conf.hidden = false;
+      if (payload.cached) cachedChip.hidden = false;
+      meta.hidden = false;
       card.setAttribute("aria-busy", "false");
     } else if (name === "error") {
       let message = payload.message || AS.stream_failed;

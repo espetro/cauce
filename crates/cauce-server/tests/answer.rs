@@ -249,6 +249,66 @@ async fn answer_page_renders_ungrounded_notice() {
     );
 }
 
+/// W7-03 acceptance: the answer shell ships the retrieval-path and
+/// confidence chips plus the JS that derives them from the existing
+/// frames — tool names from `step` frames, the count from `sources`,
+/// `ungrounded`/`confidence`/`cached` from `done`. A no-tool stream
+/// therefore renders "answered directly" while a searched one names
+/// the tools it used.
+#[cfg(feature = "ui")]
+#[tokio::test]
+async fn answer_page_ships_path_and_confidence_chips() {
+    let (router, _state, _tmp, _server) = ai_app().await;
+    let (status, body) = get_html(&router, "/answer?q=what+is+rust").await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    for marker in [
+        // The chip carriers in the meta row.
+        r#"id="answer-path""#,
+        r#"id="answer-confidence""#,
+        r#"id="answer-ungrounded-badge""#,
+        "meta-chip warn",
+        // The derivation wiring ships in the bundled module (property
+        // names survive minification).
+        "dataset.path",
+        "dataset.confidence",
+        // The string bundle carries every chip label.
+        "path_direct",
+        "path_searched",
+        "path_replay",
+        "tool_web",
+        "tool_archive",
+        "answered directly — no search needed",
+        "searched {tools} · {n} sources",
+        "confidence {n}/10",
+    ] {
+        assert!(body.contains(marker), "answer shell missing {marker}");
+    }
+}
+
+/// W7-03: the SERP Assist card ships the same indicator treatment —
+/// grounded chip armed by the up-front `sources` frame, confidence and
+/// cached/ungrounded badges off `done`.
+#[cfg(feature = "ui")]
+#[tokio::test]
+async fn search_page_ships_assist_grounded_chips() {
+    let (router, _state, _tmp, _server) = ai_app().await;
+    let (status, body) = get_html(&router, "/search?q=tokyo+weather").await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    for marker in [
+        r#"id="assist-meta""#,
+        r#"id="assist-grounded""#,
+        r#"id="assist-confidence""#,
+        r#"id="assist-ungrounded""#,
+        r#"id="assist-cached""#,
+        "dataset.confidence",
+        // The assist string bundle's chip labels.
+        "grounded · {n} sources",
+        "confidence {n}/10",
+    ] {
+        assert!(body.contains(marker), "assist chrome missing {marker}");
+    }
+}
+
 /// A mid-stream provider error rides the wire as a terminal `error`
 /// event after the partial deltas — the page renders it inline.
 #[tokio::test]

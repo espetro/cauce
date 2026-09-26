@@ -101,6 +101,12 @@ fn answer_strings() -> String {
         "confidence": copy::CONFIDENCE,
         "cached": copy::CACHED,
         "ungrounded": copy::UNGROUNDED,
+        // W7-03: retrieval-path chip + tool display words.
+        "path_direct": copy::PATH_DIRECT,
+        "path_searched": copy::PATH_SEARCHED,
+        "path_replay": copy::PATH_REPLAY,
+        "tool_web": copy::TOOL_WEB,
+        "tool_archive": copy::TOOL_ARCHIVE,
         "related": copy::RELATED,
         "sources": copy::SOURCES,
         "retry_after": copy::RETRY_AFTER,
