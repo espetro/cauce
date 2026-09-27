@@ -59,6 +59,9 @@ tracing-appender = "0.2"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 url = "2"
 uuid = { version = "1", features = ["v7", "serde"] }
+# Compile-time string catalog (locales/en.yaml) — ungated: handlers use
+# `t!` outside the `ui` feature too.
+rust-i18n = "4.2.2"
 
 # `ui` feature: HTMX templates and embedded static assets.
 askama = { version = "0.13", optional = true }

@@ -28,8 +28,7 @@ use crate::handlers::{audit_list, audit_list_data};
 use crate::html::{STYLE_CSS, prefers_json, render_err, short_id};
 use crate::middleware::RequestCtx;
 use crate::observability::trace::{self, TraceError};
-use crate::strings;
-
+use rust_i18n::t;
 /// One audit row pre-rendered to plain strings for the template.
 #[derive(Debug)]
 struct AuditRowView {
@@ -215,7 +214,7 @@ pub async fn trace(
             &state,
             &ctx,
             &id,
-            strings::trace::BAD_ID,
+            &t!("trace.bad_id"),
             StatusCode::BAD_REQUEST,
         );
     };
@@ -237,7 +236,7 @@ pub async fn trace(
             return Err(ctx.not_found(format!("no trace for {traced}")));
         }
         let days = state.with_config(|c| c.logs.retention_days);
-        let notice = strings::trace::NO_TRACE.replace("{days}", &days.to_string());
+        let notice = t!("trace.no_trace").replace("{days}", &days.to_string());
         return trace_frame(&state, &ctx, &traced, &notice, StatusCode::NOT_FOUND);
     }
 
@@ -258,8 +257,8 @@ pub async fn trace(
         summary_ts: local_minute(summary.ts),
         summary_ms: summary
             .total_ms
-            .map(|ms| format!("{ms:.0} {}", strings::trace::MS))
-            .unwrap_or_else(|| strings::common::DASH.to_string()),
+            .map(|ms| format!("{ms:.0} {}", t!("trace.ms")))
+            .unwrap_or_else(|| t!("common.dash").to_string()),
         outcome: summary.outcome,
         timeline,
         spans,
@@ -353,8 +352,8 @@ fn span_view(span: &trace::TraceSpan) -> SpanView {
             .to_string(),
         elapsed: span
             .busy_ms
-            .map(|ms| format!("{ms:.0} {}", strings::trace::MS))
-            .unwrap_or_else(|| strings::common::DASH.to_string()),
+            .map(|ms| format!("{ms:.0} {}", t!("trace.ms")))
+            .unwrap_or_else(|| t!("common.dash").to_string()),
         status: status.to_string(),
         // Same success/error reading as the tail renderer (`ok` green,
         // `error`/`timeout` red, anything else neutral).
@@ -368,7 +367,7 @@ fn span_view(span: &trace::TraceSpan) -> SpanView {
             .fields
             .get("results")
             .and_then(|v| v.as_u64())
-            .map(|n| format!("{n} {}", strings::trace::RESULTS))
+            .map(|n| format!("{n} {}", t!("trace.results")))
             .unwrap_or_default(),
         fields_json: serde_json::to_string_pretty(&span.fields).unwrap_or_default(),
     }
@@ -390,17 +389,17 @@ fn local_minute(ts: Option<chrono::DateTime<chrono::Utc>>) -> String {
 fn filtered_empty_message(filter: &cauce_core::AuditFilter) -> String {
     let mut clauses = Vec::new();
     if let Some(actor) = &filter.actor {
-        clauses.push(format!("{} \"{actor}\"", strings::audit::ACTOR_LABEL));
+        clauses.push(format!("{} \"{actor}\"", t!("audit.actor_label")));
     }
     if let Some(action) = &filter.action {
-        clauses.push(format!("{} \"{action}\"", strings::audit::ACTION_LABEL));
+        clauses.push(format!("{} \"{action}\"", t!("audit.action_label")));
     }
     if let Some(since) = &filter.since {
         clauses.push(format!("since {}", since.to_rfc3339()));
     }
     format!(
         "{} {}.",
-        strings::audit::FILTERED_EMPTY_PREFIX,
-        clauses.join(&format!(" {} ", strings::audit::FILTERED_EMPTY_AND))
+        t!("audit.filtered_empty_prefix"),
+        clauses.join(&format!(" {} ", t!("audit.filtered_empty_and")))
     )
 }

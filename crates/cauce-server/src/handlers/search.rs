@@ -255,10 +255,10 @@ pub(crate) async fn search_inner_classed(
     state: &AppState,
     ctx: &RequestCtx,
     uri: &Uri,
-) -> Result<(SearchRequest, SearchResponse), (ApiError, &'static str)> {
-    use crate::strings::engines as copy;
-
-    let req = parse_search_request(ctx, uri, &[]).map_err(|e| (e, copy::TEST_BAD_REQUEST))?;
+) -> Result<(SearchRequest, SearchResponse), (ApiError, std::borrow::Cow<'static, str>)> {
+    use rust_i18n::t;
+    let req =
+        parse_search_request(ctx, uri, &[]).map_err(|e| (e, t!("engines.test_bad_request")))?;
     match state
         .pipeline()
         .search_with_id(&req, ctx.request_id.as_uuid())
@@ -278,16 +278,15 @@ pub(crate) fn search_error_classed(
     ctx: &RequestCtx,
     req: &SearchRequest,
     error: PipelineError,
-) -> (ApiError, &'static str) {
-    use crate::strings::engines as copy;
-
+) -> (ApiError, std::borrow::Cow<'static, str>) {
+    use rust_i18n::t;
     let class = match &error {
-        PipelineError::UnknownEngines { .. } => copy::TEST_UNKNOWN_ENGINES,
-        PipelineError::NoEngines if req.engines.is_some() => copy::TEST_UNKNOWN_ENGINES,
-        PipelineError::NoEngines => copy::TEST_NO_ENGINES,
+        PipelineError::UnknownEngines { .. } => t!("engines.test_unknown_engines"),
+        PipelineError::NoEngines if req.engines.is_some() => t!("engines.test_unknown_engines"),
+        PipelineError::NoEngines => t!("engines.test_no_engines"),
         PipelineError::AllEnginesFailed(failures) => engine_error_class(failures),
-        PipelineError::RateLimited { .. } => copy::TEST_RATE_LIMITED,
-        PipelineError::BreakerOpen(_) => copy::TEST_BREAKER_OPEN,
+        PipelineError::RateLimited { .. } => t!("engines.test_rate_limited"),
+        PipelineError::BreakerOpen(_) => t!("engines.test_breaker_open"),
     };
     (search_error(ctx, req, error), class)
 }

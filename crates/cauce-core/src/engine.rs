@@ -25,9 +25,7 @@ pub const ENGINE_ID_PATTERN: &str = "[A-Za-z0-9._-]+";
 /// Stable identifier of a search engine (`bing`, `brave`, `ddgs`, `replay`, ...).
 ///
 /// Serializes as a plain string on the wire and in `engines_json` columns.
-#[derive(
-    Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, TS,
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, TS)]
 #[serde(transparent)]
 pub struct EngineId(String);
 

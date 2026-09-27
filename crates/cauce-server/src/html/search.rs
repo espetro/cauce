@@ -7,12 +7,15 @@
 //! License, v. 2.0. If a copy of the MPL was not distributed with this
 //! file, You can obtain one at <https://mozilla.org/MPL/2.0/>.
 
+use std::borrow::Cow;
+
 use askama::Template;
 use axum::Extension;
 use axum::extract::State;
 use axum::http::{HeaderMap, StatusCode, Uri};
 use axum::response::{Html, IntoResponse, Response};
 use cauce_core::{CacheKey, EngineError, EngineStatus, SearchRequest, SearchResponse, Source};
+use rust_i18n::t;
 use serde_json::json;
 
 use crate::app::AppState;
@@ -109,7 +112,7 @@ pub async fn search(
             show_empty: false,
             empty_status: String::new(),
             result_count: 0,
-            badge: crate::strings::search::SEARCHING.to_string(),
+            badge: t!("search.searching").to_string(),
             request_id: rid.clone(),
             short_request_id: short_id(&rid),
             results: Vec::new(),
@@ -220,14 +223,12 @@ pub(crate) async fn search_fragment(
     uri: &Uri,
     headers: &HeaderMap,
 ) -> Result<Response, ApiError> {
-    use crate::strings::engines as copy;
-
     match crate::handlers::search_inner_classed(state, ctx, uri).await {
         Ok((req, resp)) => {
             let meta_line = if resp.results.is_empty() {
-                copy::TEST_NO_RESULTS.to_string()
+                t!("engines.test_no_results").to_string()
             } else {
-                copy::TEST_RESULTS
+                t!("engines.test_results")
                     .replace("{n}", &resp.results.len().to_string())
                     .replace("{ms}", &resp.meta.elapsed_ms.to_string())
             };
@@ -270,13 +271,14 @@ pub(crate) async fn search_fragment(
 }
 
 fn badge(resp: &SearchResponse) -> String {
-    use crate::strings::search as s;
     let base = match &resp.meta.source {
-        Source::Cache { stale: true, .. } => s::STALE_BADGE.to_string(),
-        Source::Cache { age_s, ttl_s, .. } => s::CACHED_BADGE
+        Source::Cache { stale: true, .. } => t!("search.stale_badge").to_string(),
+        Source::Cache { age_s, ttl_s, .. } => t!("search.cached_badge")
             .replace("{age}", &age_s.to_string())
             .replace("{ttl}", &ttl_s.to_string()),
-        Source::Network => s::LIVE_BADGE.replace("{ms}", &resp.meta.elapsed_ms.to_string()),
+        Source::Network => {
+            t!("search.live_badge").replace("{ms}", &resp.meta.elapsed_ms.to_string())
+        }
     };
     let statuses = engine_statuses(resp);
     if statuses.is_empty() {
@@ -287,63 +289,41 @@ fn badge(resp: &SearchResponse) -> String {
 }
 
 fn engine_statuses(resp: &SearchResponse) -> Vec<String> {
-    use crate::strings::search as s;
     let mut statuses = Vec::new();
     for report in &resp.meta.engines_used {
         statuses.push(match &report.status {
             EngineStatus::Ok => report.engine.to_string(),
-            EngineStatus::Failed(error) => s::ENGINE_FAILED
+            EngineStatus::Failed(error) => t!("search.engine_failed")
                 .replace("{engine}", report.engine.as_str())
-                .replace("{kind}", engine_error_kind(error)),
+                .replace("{kind}", &engine_error_kind(error)),
         });
     }
     statuses.extend(
         resp.meta
             .engines_skipped
             .iter()
-            .map(|engine| s::ENGINE_SKIPPED.replace("{engine}", engine.as_str())),
+            .map(|engine| t!("search.engine_skipped").replace("{engine}", engine.as_str())),
     );
     statuses
 }
 
-fn engine_error_kind(error: &EngineError) -> &'static str {
-    use crate::strings::search as s;
+fn engine_error_kind(error: &EngineError) -> Cow<'static, str> {
     match error {
-        EngineError::RateLimited => s::ERR_RATE_LIMITED,
-        EngineError::Blocked => s::ERR_BLOCKED,
-        EngineError::Timeout => s::ERR_TIMEOUT,
-        EngineError::Parse(_) => s::ERR_PARSE,
-        EngineError::Transport(_) => s::ERR_TRANSPORT,
-        EngineError::NoResults => s::ERR_NO_RESULTS,
+        EngineError::RateLimited => t!("search.err_rate_limited"),
+        EngineError::Blocked => t!("search.err_blocked"),
+        EngineError::Timeout => t!("search.err_timeout"),
+        EngineError::Parse(_) => t!("search.err_parse"),
+        EngineError::Transport(_) => t!("search.err_transport"),
+        EngineError::NoResults => t!("search.err_no_results"),
     }
 }
 
-/// The `strings::search` copy the streaming page's inline JS interpolates,
-/// serialized once into the page as `var S = {...}` so every user-visible
-/// string lives in `crate::strings` (the i18n seam), not in the script.
+/// The `search.*` catalog copy the streaming page's inline JS
+/// interpolates, serialized once into the page as `var S = {...}` so
+/// every user-visible string lives in the i18n catalog, not in the
+/// script. `gen_i18n` writes the same map to `web/src/i18n/search.json`.
 fn stream_strings() -> String {
-    use crate::strings::search as s;
-    serde_json::to_string(&json!({
-        "results": s::RESULTS,
-        "no_results": s::NO_RESULTS,
-        "waiting": s::WAITING,
-        "complete": s::COMPLETE,
-        "invalid_stream": s::INVALID_STREAM,
-        "new_above": s::NEW_ABOVE,
-        "live_badge": s::LIVE_BADGE,
-        "cached": s::CACHED,
-        "stale_badge": s::STALE_BADGE,
-        "engine_failed": s::ENGINE_FAILED,
-        "engine_skipped": s::ENGINE_SKIPPED,
-        "err_rate_limited": s::ERR_RATE_LIMITED,
-        "err_blocked": s::ERR_BLOCKED,
-        "err_timeout": s::ERR_TIMEOUT,
-        "err_parse": s::ERR_PARSE,
-        "err_transport": s::ERR_TRANSPORT,
-        "err_no_results": s::ERR_NO_RESULTS,
-        "err_unknown": s::ERR_UNKNOWN,
-    }))
-    .expect("search strings serialize")
+    serde_json::to_string(&crate::i18n::search_bundle()).expect("search strings serialize")
 }
 
 /// W4-03: the `/answer?q=` link the meta line shows when an answer
@@ -379,21 +359,11 @@ fn assist_context(resp: &SearchResponse) -> String {
     serde_json::to_string(&rows).expect("assist context serializes")
 }
 
-/// The `strings::assist` copy the assist JS interpolates, serialized
-/// into the page as `var AS = {...}` (the `stream_strings` convention).
+/// The `assist.*` catalog copy the assist JS interpolates, serialized
+/// into the page as `var AS = {...}` (the `stream_strings` convention;
+/// `gen_i18n` mirrors it to `web/src/i18n/assist.json`).
 fn assist_strings() -> String {
-    use crate::strings::assist as s;
-    serde_json::to_string(&json!({
-        "stream_failed": s::STREAM_FAILED,
-        "invalid_stream": s::INVALID_STREAM,
-        "retry_after": s::RETRY_AFTER,
-        // W7-03: grounded/confidence chips in the card meta row.
-        "grounded": s::GROUNDED,
-        "ungrounded": s::UNGROUNDED,
-        "confidence": s::CONFIDENCE,
-        "cached": s::CACHED,
-    }))
-    .expect("assist strings serialize")
+    serde_json::to_string(&crate::i18n::assist_bundle()).expect("assist strings serialize")
 }
 
 fn stream_url(params: &QueryParams, req: &SearchRequest) -> String {
