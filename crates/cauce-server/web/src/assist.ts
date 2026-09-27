@@ -9,7 +9,7 @@
  * already-returned set — the POST carries those rows as
  * `context_results`, so no engine re-fetch happens. On `?stream=1`
  * pages the trigger renders disabled and the stream's `meta` frame
- * calls `setContext` with the merged order (wired in app.js via the
+ * calls `setContext` with the merged order (wired in app.ts via the
  * search renderer's `onMeta` hook).
  *
  * `AS` is the `var AS = {...}` i18n bundle and `assistContext` the
@@ -19,41 +19,55 @@
  */
 
 import { fmt } from "./format.js";
+import { parseSseFrame, pumpSse } from "./sse.js";
+import type { SseFetch } from "./sse.js";
+import type { AnswerFrame } from "./types/AnswerFrame.js";
+import type { AnswerSource } from "./types/AnswerSource.js";
+import type { ApiError } from "./types/ApiError.js";
+
+/** What `initAssist` hands back to the search stream's `meta` hook. */
+export interface AssistHandle {
+  setContext(rows: AnswerSource[]): void;
+}
 
 export function initAssist(
-  doc = document,
-  AS = window.AS,
-  initialContext = window.assistContext,
-  fetchImpl = window.fetch?.bind(window),
-) {
-  const section = doc.getElementById("assist");
-  const btn = doc.getElementById("assist-btn");
-  const card = doc.getElementById("assist-card");
-  const text = doc.getElementById("assist-text");
-  const srcEl = doc.getElementById("assist-sources");
-  const err = doc.getElementById("assist-error");
+  doc: Document = document,
+  AS: AssistStrings | undefined = window.AS,
+  initialContext: AnswerSource[] | undefined = window.assistContext,
+  fetchImpl: SseFetch | undefined = window.fetch?.bind(window),
+): AssistHandle | null {
+  const sectionEl = doc.getElementById("assist");
+  const btnEl = doc.getElementById("assist-btn");
+  if (!sectionEl || !(btnEl instanceof HTMLButtonElement) || !AS || !fetchImpl) return null;
+  // The `{% if assist %}` template block renders the card's elements all
+  // or none — `section`/`btn` being present gates the rest.
+  const section = sectionEl;
+  const btn = btnEl;
+  const card = doc.getElementById("assist-card")!;
+  const text = doc.getElementById("assist-text")!;
+  const srcEl = doc.getElementById("assist-sources")!;
+  const err = doc.getElementById("assist-error")!;
   // W7-03 grounded/confidence chips in the card meta row.
-  const meta = doc.getElementById("assist-meta");
-  const grounded = doc.getElementById("assist-grounded");
-  const conf = doc.getElementById("assist-confidence");
-  const ung = doc.getElementById("assist-ungrounded");
-  const cachedChip = doc.getElementById("assist-cached");
-  if (!section || !btn || !AS || !fetchImpl) return null;
+  const meta = doc.getElementById("assist-meta")!;
+  const grounded = doc.getElementById("assist-grounded")!;
+  const conf = doc.getElementById("assist-confidence")!;
+  const ung = doc.getElementById("assist-ungrounded")!;
+  const cachedChip = doc.getElementById("assist-cached")!;
 
   let context = (initialContext || []).slice(0, 10);
-  let sources = [];
+  let sources: AnswerSource[] = [];
   let fired = false;
 
-  function setContext(list) {
+  function setContext(list: AnswerSource[]): void {
     context = list.slice(0, 10);
     if (context.length) {
       btn.disabled = false;
-    } else if (section) {
+    } else {
       section.hidden = true;
     }
   }
 
-  function fail(message) {
+  function fail(message: string): void {
     err.textContent = message;
     err.hidden = false;
     card.setAttribute("aria-busy", "false");
@@ -62,7 +76,7 @@ export function initAssist(
   // Always-visible chips (favicon + domain), one per grounded source —
   // they render on the up-front `sources` frame, before any answer text
   // lands.
-  function renderSources(list) {
+  function renderSources(list: AnswerSource[]): void {
     sources = list;
     srcEl.textContent = "";
     list.forEach((src, i) => {
@@ -105,7 +119,7 @@ export function initAssist(
 
   // Re-render the accumulated answer with [n] markers as anchor links
   // into the numbered chips (the /answer page's convention).
-  function renderAnswer(body) {
+  function renderAnswer(body: string): void {
     text.textContent = "";
     const re = /\[(\d+)\]/g;
     let last = 0;
@@ -127,41 +141,43 @@ export function initAssist(
     text.appendChild(doc.createTextNode(body.slice(last)));
   }
 
-  function handleFrame(raw) {
-    let name = "message";
-    let data = "";
-    raw.split("\n").forEach((line) => {
-      if (line.indexOf("event:") === 0) name = line.slice(6).trim();
-      else if (line.indexOf("data:") === 0) data += line.slice(5).trim();
-    });
+  /** Dispatch one raw SSE frame (text between `\n\n` delimiters). */
+  function handleFrame(raw: string): void {
+    const { name, data } = parseSseFrame(raw);
     if (!data) return;
-    let payload;
+    let payload: AnswerFrame;
     try {
       payload = JSON.parse(data);
     } catch {
       return fail(AS.invalid_stream);
     }
-    if (name === "sources") renderSources(payload.sources || []);
-    else if (name === "delta") text.appendChild(doc.createTextNode(payload.text || ""));
-    else if (name === "done") {
-      renderAnswer(payload.answer || "");
+    if (name === "sources") {
+      renderSources((payload as Extract<AnswerFrame, { type: "sources" }>).sources);
+    } else if (name === "delta") {
+      text.appendChild(
+        doc.createTextNode((payload as Extract<AnswerFrame, { type: "delta" }>).text),
+      );
+    } else if (name === "done") {
+      const done = payload as Extract<AnswerFrame, { type: "done" }>;
+      renderAnswer(done.answer);
       // W7-03: confidence + grounded state from `done` — assist is
       // grounded on the shown results by construction, so an
       // `ungrounded` badge here means an empty context slipped in.
-      if (payload.ungrounded) {
+      if (done.ungrounded) {
         grounded.hidden = true;
         ung.hidden = false;
       }
-      conf.textContent = fmt(AS.confidence, { n: payload.confidence });
-      conf.dataset.confidence = payload.confidence;
+      conf.textContent = fmt(AS.confidence, { n: done.confidence });
+      conf.dataset.confidence = String(done.confidence);
       conf.hidden = false;
-      if (payload.cached) cachedChip.hidden = false;
+      if (done.cached) cachedChip.hidden = false;
       meta.hidden = false;
       card.setAttribute("aria-busy", "false");
     } else if (name === "error") {
-      let message = payload.message || AS.stream_failed;
-      if (payload.retry_after_s) {
-        message += " (" + AS.retry_after.replace("{n}", payload.retry_after_s) + ")";
+      const error = payload as Extract<AnswerFrame, { type: "error" }>;
+      let message = error.message || AS.stream_failed;
+      if (error.retry_after_s) {
+        message += " (" + fmt(AS.retry_after, { n: error.retry_after_s }) + ")";
       }
       fail(message);
     }
@@ -188,7 +204,7 @@ export function initAssist(
           return res.json().then(
             (env) => {
               fail(
-                (env && env.error && env.error.message) ||
+                (env as Partial<ApiError> | undefined)?.error?.message ||
                   AS.stream_failed + ": HTTP " + res.status,
               );
             },
@@ -197,25 +213,11 @@ export function initAssist(
             },
           );
         }
-        const reader = res.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = "";
-        function pump() {
-          return reader.read().then((chunk) => {
-            buffer += decoder.decode(chunk.value, { stream: !chunk.done });
-            let i;
-            while ((i = buffer.indexOf("\n\n")) >= 0) {
-              handleFrame(buffer.slice(0, i));
-              buffer = buffer.slice(i + 2);
-            }
-            if (!chunk.done) return pump();
-            if (buffer.trim()) handleFrame(buffer);
-            // A stream that closes without a terminal frame must not
-            // leave the card "answering" forever.
-            if (card.getAttribute("aria-busy") === "true") fail(AS.stream_failed);
-          });
-        }
-        return pump();
+        return pumpSse(res, handleFrame).then(() => {
+          // A stream that closes without a terminal frame must not
+          // leave the card "answering" forever.
+          if (card.getAttribute("aria-busy") === "true") fail(AS.stream_failed);
+        });
       })
       .catch(() => {
         fail(AS.stream_failed);

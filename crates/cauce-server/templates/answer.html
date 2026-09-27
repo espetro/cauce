@@ -79,7 +79,7 @@
   {% if has_query && enabled %}
   <script>
     var Q = {{ q_json|safe }};
-    var S = {{ answer_strings|safe }};
+    var SA = {{ answer_strings|safe }};
   </script>
   {% endif %}
   <script>{{ crate::html::app_js()|safe }}</script>
