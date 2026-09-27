@@ -19,7 +19,11 @@ GitHub Project: https://github.com/users/espetro/projects/23/views/1
 All work is linked to a refined task there (EPIC per wave, one issue per subplan step) before
 implementation starts. A task is refined when it has Iteration, effort (S/M/L/XL), start and
 target dates, and a classification label (`feature` / `bug` / `cosmetic` / `infra` /
-`documentation`). Use `ghx` to manage it.
+`documentation`). Use `ghx` to manage it; when `ghx` isn't installed, fall back to `gh project`
+(e.g. `gh project item-list 23 --owner espetro`, `gh project item-edit`) — note that a GitHub
+App token (e.g. the devin-ai-integration bot) can read items but cannot add/edit them, so
+board mutations that fail with "Resource not accessible by integration" are escalated to the
+user.
 
 ## How to pick up a step
 
