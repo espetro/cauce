@@ -258,3 +258,24 @@ global store, and is never shared with or copied into another project.
   BTreeMap-sorted keys; the typed `ResultsFrame` emits struct declaration
   order and f32 shortest repr (`0.016393442`). Same JSON values — page/
   SSE parity checks must normalize these.
+
+## 2026-09-27 — TS migration step 3 (#214, branch v3/ts-stream-modules)
+
+- Rebased onto main mid-task when PR #216 (W7-04 threads) landed: it had
+  already migrated `answer.js`→`answer.ts` itself, so the rebase conflict
+  resolved as "theirs + re-apply our deltas" (shared `parseSseFrame`/
+  `pumpSse`, `SseFetch`, `AnswerStrings`, `var SA`). Check whether an
+  in-flight PR touches your target files before starting a migration.
+- `var S` on `/answer` was renamed to `var SA` (template-only) so each
+  Window global keeps one literal i18n shape — no union-narrowing needed.
+- `window.fetch` can't be handed wholesale to a `SseFetch`-typed param —
+  a callable `interface` (`(input, init) => Promise<SseResponse>`) is the
+  minimal surface tests can fake (status/json/body) without DOM Response.
+- vitest `vi.fn()` bare types `mock.calls` as `any[]`; give the impl real
+  param types (`(input: string, init: RequestInit)`) so `calls[0][1]`
+  destructures typed. `init.headers`/`init.body` still need `as
+  Record<string,string>`/`as string` at the use site.
+- tsconfig here has no `exactOptionalPropertyTypes` — `{value: undefined,
+  done: true}` satisfies a fake ReadableStream reader chunk.
+- `pkill -f "cauce serve"` kills the wrapping shell too — kill serve
+  instances by PID (ss -ltnp), as the serve skill already warns.
