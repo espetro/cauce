@@ -7,6 +7,8 @@
 //! License, v. 2.0. If a copy of the MPL was not distributed with this
 //! file, You can obtain one at <https://mozilla.org/MPL/2.0/>.
 
+use std::borrow::Cow;
+
 use askama::Template;
 use axum::Extension;
 use axum::extract::State;
@@ -14,13 +16,12 @@ use axum::http::{HeaderMap, Uri};
 use axum::response::{Html, IntoResponse, Response};
 use cauce_core::{CacheKey, ClickRow, HistoryItem};
 
+use super::{STYLE_CSS, render_err};
 use crate::app::AppState;
 use crate::error::ApiError;
 use crate::handlers::QueryParams;
 use crate::middleware::RequestCtx;
-use crate::strings::{common, history as hs};
-
-use super::{STYLE_CSS, render_err};
+use rust_i18n::t;
 
 /// `Accept: text/html` (without an explicit JSON ask) wants the page — the
 /// content-negotiation half of "the HTML page is the API handler".
@@ -55,7 +56,7 @@ struct HistRow {
     day_header: Option<String>,
     /// `HH:MM` local time.
     when: String,
-    /// The search query (click rows render `hs::CLICK_ONLY` instead).
+    /// The search query (click rows render `t!("history.click_only")` instead).
     query: String,
     /// `cached · <age>` | `cached · expired` | `network · t<N>`;
     /// `-` on click rows.
@@ -72,7 +73,7 @@ struct HistRow {
     clicks: Vec<ClickLine>,
     /// `click` | `clicks` for the `<summary>` count (singular stays
     /// grammatical at 1).
-    clicks_word: &'static str,
+    clicks_word: Cow<'static, str>,
     /// `hx-confirm` on the delete button; names the nested clicks so a
     /// destructive action never hides its blast radius.
     delete_confirm: String,
@@ -200,11 +201,11 @@ pub(crate) async fn history_page(
     let capped_line = if stats.matching as usize > rows.len() && !rows.is_empty() {
         format!(
             "{} {} {} {} · {}",
-            hs::CAPPED_SHOWING,
+            t!("history.capped_showing"),
             rows.len(),
-            hs::CAPPED_OF,
+            t!("history.capped_of"),
             stats.matching,
-            hs::CAPPED_HINT
+            t!("history.capped_hint")
         )
     } else {
         String::new()
@@ -212,11 +213,11 @@ pub(crate) async fn history_page(
     let stats_line = format!(
         "{} {} · {} {} · {} {}",
         stats.searches_24h,
-        hs::STAT_SEARCHES_24H,
+        t!("history.stat_searches_24h"),
         stats.searches_total,
-        hs::STAT_TOTAL,
+        t!("history.stat_total"),
         stats.clicks_today,
-        hs::STAT_CLICKS_TODAY,
+        t!("history.stat_clicks_today"),
     );
 
     let page = History {
@@ -244,22 +245,22 @@ pub(crate) async fn history_page(
 /// the filtered-empty sentence naming the active filters.
 fn empty_message(params: &QueryParams, filter: &cauce_core::HistoryFilter) -> String {
     if !filter.cached && filter.q.is_none() && filter.since.is_none() {
-        return hs::EMPTY.to_string();
+        return t!("history.empty").to_string();
     }
     let mut msg = match params.get("q").filter(|v| !v.trim().is_empty()) {
-        Some(q) => format!("{} \"{q}\"", hs::EF_MATCH),
-        None => hs::EF_NONE.to_string(),
+        Some(q) => format!("{} \"{q}\"", t!("history.ef_match")),
+        None => t!("history.ef_none").to_string(),
     };
     match params.get("since") {
-        Some("24h") => msg.push_str(&format!(" {}", hs::IN_24H)),
-        Some("7d") => msg.push_str(&format!(" {}", hs::IN_7D)),
-        Some("30d") => msg.push_str(&format!(" {}", hs::IN_30D)),
+        Some("24h") => msg.push_str(&format!(" {}", t!("history.in_24h"))),
+        Some("7d") => msg.push_str(&format!(" {}", t!("history.in_7d"))),
+        Some("30d") => msg.push_str(&format!(" {}", t!("history.in_30d"))),
         // `all` adds no time clause; an absolute timestamp is spelled out.
-        Some(v) if v != "all" => msg.push_str(&format!(" {} {v}", hs::IN_SINCE)),
+        Some(v) if v != "all" => msg.push_str(&format!(" {} {v}", t!("history.in_since"))),
         _ => {}
     }
     if filter.cached {
-        msg.push_str(&format!(" {}", hs::EF_CACHED));
+        msg.push_str(&format!(" {}", t!("history.ef_cached")));
     }
     msg.push('.');
     msg
@@ -338,38 +339,51 @@ fn history_rows(
                             st.key.as_str()
                         );
                         (
-                            format!("{} · {}", hs::SRC_CACHED, cache_age(st.created_at, now)),
+                            format!(
+                                "{} · {}",
+                                t!("history.src_cached"),
+                                cache_age(st.created_at, now)
+                            ),
                             url,
                             true,
                         )
                     }
                     Some(_) => (
-                        format!("{} · {}", hs::SRC_CACHED, hs::SRC_EXPIRED),
+                        format!(
+                            "{} · {}",
+                            t!("history.src_cached"),
+                            t!("history.src_expired")
+                        ),
                         String::new(),
                         false,
                     ),
                     None => (
                         match s_row.tier {
                             Some(t) => {
-                                format!("{} · {}{}", hs::SRC_NETWORK, hs::TIER_PREFIX, t.as_u8())
+                                format!(
+                                    "{} · {}{}",
+                                    t!("history.src_network"),
+                                    t!("history.tier_prefix"),
+                                    t.as_u8()
+                                )
                             }
-                            None => hs::SRC_NETWORK.to_string(),
+                            None => t!("history.src_network").to_string(),
                         },
                         String::new(),
                         false,
                     ),
                 };
                 let clicks_word = if clicks.len() == 1 {
-                    hs::CLICK_ONE
+                    t!("history.click_one")
                 } else {
-                    hs::CLICKS_WORD
+                    t!("history.clicks_word")
                 };
                 let delete_confirm = if clicks.is_empty() {
-                    hs::DELETE_CONFIRM.to_string()
+                    t!("history.delete_confirm").to_string()
                 } else {
                     format!(
                         "{} {} {}?",
-                        hs::DELETE_CONFIRM_CLICKS_PRE,
+                        t!("history.delete_confirm_clicks_pre"),
                         clicks.len(),
                         clicks_word
                     )
@@ -420,18 +434,18 @@ fn history_rows(
                         .format("%H:%M")
                         .to_string(),
                     query: String::new(),
-                    source: common::DASH.to_string(),
+                    source: t!("common.dash").to_string(),
                     source_url: String::new(),
                     cached_live: false,
-                    engines: common::DASH.to_string(),
-                    result_count: common::DASH.to_string(),
-                    latency: common::DASH.to_string(),
+                    engines: t!("common.dash").to_string(),
+                    result_count: t!("common.dash").to_string(),
+                    latency: t!("common.dash").to_string(),
                     client: c.client.label(),
                     clicks: vec![click_line(&c)],
                     // Click-only rows render no `<summary>`; the word is
                     // unused there.
-                    clicks_word: hs::CLICKS_WORD,
-                    delete_confirm: hs::DELETE_CONFIRM.to_string(),
+                    clicks_word: t!("history.clicks_word"),
+                    delete_confirm: t!("history.delete_confirm").to_string(),
                     rerun_url: String::new(),
                     json_url: String::new(),
                 });

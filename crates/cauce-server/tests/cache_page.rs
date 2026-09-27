@@ -111,7 +111,7 @@ async fn cache_page_lists_entries_with_admin_controls() {
     );
     // The count line is addressable and the row delete decrements it in
     // place (spec: "row removed in place, count line decrements"), with
-    // the singular/plural swap embedded from strings::cache.
+    // the singular/plural swap embedded from the `cache.*` catalog.
     assert!(
         body.contains(r#"<span id="cache-count">1 entry</span>"#),
         "count line carries the decrement target id: {body}"

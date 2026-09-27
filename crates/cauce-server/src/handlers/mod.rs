@@ -77,19 +77,20 @@ pub fn search_error_payload(ctx: &RequestCtx, req: &SearchRequest, error: Pipeli
 /// fan-out: the single engine's [`EngineError`] class when exactly one
 /// failed (a pinned test), `upstream failed` otherwise.
 #[cfg_attr(not(feature = "ui"), allow(dead_code))]
-pub(super) fn engine_error_class(failures: &[(EngineId, EngineError)]) -> &'static str {
-    use crate::strings::engines as copy;
-
+pub(super) fn engine_error_class(
+    failures: &[(EngineId, EngineError)],
+) -> std::borrow::Cow<'static, str> {
+    use rust_i18n::t;
     if failures.len() != 1 {
-        return copy::TEST_UPSTREAM;
+        return t!("engines.test_upstream");
     }
     match failures[0].1 {
-        EngineError::Blocked => copy::TEST_BLOCKED,
-        EngineError::Timeout => copy::TEST_TIMEOUT,
-        EngineError::NoResults => copy::TEST_NO_RESULTS,
-        EngineError::RateLimited => copy::TEST_RATE_LIMITED,
-        EngineError::Parse(_) => copy::TEST_PARSE,
-        EngineError::Transport(_) => copy::TEST_TRANSPORT,
+        EngineError::Blocked => t!("engines.test_blocked"),
+        EngineError::Timeout => t!("engines.test_timeout"),
+        EngineError::NoResults => t!("engines.test_no_results"),
+        EngineError::RateLimited => t!("engines.test_rate_limited"),
+        EngineError::Parse(_) => t!("engines.test_parse"),
+        EngineError::Transport(_) => t!("engines.test_transport"),
     }
 }
 

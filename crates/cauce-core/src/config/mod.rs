@@ -769,6 +769,30 @@ fn default_archive_burst() -> u32 {
     2
 }
 
+/// `[ui]`: page-shell settings. Only `locale` today — one embedded
+/// catalog per build, picked at startup; per-request `Accept-Language`
+/// negotiation is deliberately out of scope (TS migration step 2/3).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct UiConfig {
+    /// Catalog name under `crates/cauce-server/locales/` (`en` ships).
+    /// An unknown locale falls back to `en` at lookup time.
+    #[serde(default = "default_ui_locale")]
+    pub locale: String,
+}
+
+impl Default for UiConfig {
+    fn default() -> Self {
+        Self {
+            locale: default_ui_locale(),
+        }
+    }
+}
+
+fn default_ui_locale() -> String {
+    "en".to_string()
+}
+
 /// `[config]`: meta settings about the config file itself.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -965,6 +989,9 @@ pub struct Config {
     /// `[auth]` section.
     #[serde(default)]
     pub auth: AuthConfig,
+    /// `[ui]` section.
+    #[serde(default)]
+    pub ui: UiConfig,
     /// `[[engines]]` entries plus the built-ins (`replay`, `ddgs`).
     #[serde(default = "builtin_engines")]
     pub engines: Vec<EngineEntry>,
@@ -998,6 +1025,7 @@ struct ConfigSections<'a> {
     ai: &'a AiConfig,
     archive: &'a ArchiveConfig,
     auth: &'a AuthConfig,
+    ui: &'a UiConfig,
     engines: &'a [EngineEntry],
     config: &'a MetaConfig,
 }
@@ -1036,6 +1064,7 @@ impl Default for Config {
             ai: AiConfig::default(),
             archive: ArchiveConfig::default(),
             auth: AuthConfig::default(),
+            ui: UiConfig::default(),
             engines: builtin_engines(),
             config: MetaConfig::default(),
             dirs: Dirs::default(),
@@ -1068,6 +1097,7 @@ impl Config {
             ai: &self.ai,
             archive: &self.archive,
             auth: &self.auth,
+            ui: &self.ui,
             engines: &self.engines,
             config: &self.config,
         }

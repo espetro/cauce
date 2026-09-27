@@ -22,13 +22,12 @@ use axum::{
 #[cfg(feature = "archive")]
 use cauce_core::{PageHit, PageRow};
 
+use super::{STYLE_CSS, render_err};
 use crate::app::AppState;
 use crate::error::ApiError;
 use crate::middleware::RequestCtx;
 #[cfg(feature = "archive")]
-use crate::strings::archive as copy;
-
-use super::{STYLE_CSS, render_err};
+use rust_i18n::t;
 
 /// One rendered archive row: display strings plus the URL-keyed action
 /// endpoints (`/api/pages/{url}`, percent-encoded).
@@ -182,9 +181,9 @@ pub(crate) async fn archive_page(
         count_line: count_line(rows.len(), searching),
         empty_line: if rows.is_empty() {
             if searching {
-                copy::EMPTY_FILTERED.replace("{q}", &q)
+                t!("archive.empty_filtered").replace("{q}", &q)
             } else {
-                copy::EMPTY.to_string()
+                t!("archive.empty").to_string()
             }
         } else {
             String::new()
@@ -230,7 +229,7 @@ pub(crate) fn page_markdown(
 /// the real status otherwise (`cache_page::payload_error`'s contract).
 #[cfg(feature = "archive")]
 pub(crate) fn page_markdown_error(status: StatusCode, htmx_request: bool) -> Response {
-    let line = copy::MARKDOWN_FAILED.replace("{status}", &status.as_u16().to_string());
+    let line = t!("archive.markdown_failed").replace("{status}", &status.as_u16().to_string());
     let out_status = if htmx_request { StatusCode::OK } else { status };
     match (PageMarkdownError { line }).render() {
         Ok(html) => (out_status, Html(html)).into_response(),
@@ -275,9 +274,13 @@ fn pager_url(offset: u32, limit: u32) -> String {
 /// `34 pages` unfiltered, `3 matching pages` under an active `q`.
 #[cfg(feature = "archive")]
 fn count_line(shown: usize, searching: bool) -> String {
-    let word = plural(shown as u64, copy::PAGE_ONE, copy::PAGE_MANY);
+    let word = plural(
+        shown as u64,
+        t!("archive.page_one"),
+        t!("archive.page_many"),
+    );
     if searching {
-        format!("{shown} {} {word}", copy::MATCHING)
+        format!("{shown} {} {word}", t!("archive.matching"))
     } else {
         format!("{shown} {word}")
     }
@@ -285,6 +288,10 @@ fn count_line(shown: usize, searching: bool) -> String {
 
 /// Singular/plural word pick (`1 page` / `3 pages`).
 #[cfg(feature = "archive")]
-fn plural<'a>(n: u64, one: &'a str, many: &'a str) -> &'a str {
+fn plural(
+    n: u64,
+    one: std::borrow::Cow<'static, str>,
+    many: std::borrow::Cow<'static, str>,
+) -> std::borrow::Cow<'static, str> {
     if n == 1 { one } else { many }
 }

@@ -9,11 +9,13 @@
 //! plane ([`engine_views`]); the reset/enable/disable `POST`s answer the
 //! re-rendered card partial for `hx-swap="outerHTML"`, and the test form
 //! hits `GET /api/search` under `Accept: text/html` (the shared data
-//! path, not a bespoke endpoint). Copy lives in `strings::engines`.
+//! path, not a bespoke endpoint). Copy lives in the `engines.*` catalog.
 //!
 //! This Source Code Form is subject to the terms of the Mozilla Public
 //! License, v. 2.0. If a copy of the MPL was not distributed with this
 //! file, You can obtain one at <https://mozilla.org/MPL/2.0/>.
+
+use std::borrow::Cow;
 
 use askama::Template;
 use axum::response::{Html, IntoResponse, Response};
@@ -25,8 +27,7 @@ use crate::error::ApiError;
 use crate::handlers::{EngineView, engine_views};
 use crate::html::{STYLE_CSS, render_err};
 use crate::middleware::RequestCtx;
-use crate::strings::{common, engines as copy};
-
+use rust_i18n::t;
 /// One `/engines` card. Plain strings so Askama only needs `Display`; the
 /// card doubles as the `outerHTML` swap target for the card's actions.
 #[derive(Debug)]
@@ -45,14 +46,14 @@ pub(crate) struct EngineCard {
     /// renders just the known piece, both missing render `-`.
     kind_tier: String,
     /// `yes` | `no` for the stats list.
-    enabled_label: &'static str,
+    enabled_label: Cow<'static, str>,
     /// The resolved config names this engine (file entry or built-in).
     configured: bool,
     /// Live in the running pipeline's fan-out set.
     live: bool,
     /// `Closed` | `Open` | `HalfOpen` (the exact chip words the
     /// checkpoints assert on).
-    breaker: &'static str,
+    breaker: Cow<'static, str>,
     /// CSS class fragment of `breaker` (`closed`/`open`/`half-open`).
     breaker_class: &'static str,
     /// `retries in 42s` next to an open chip, `probing` next to a
@@ -76,7 +77,7 @@ pub(crate) struct EngineCard {
     can_reset: bool,
     /// `POST` target flipping `enabled`; label is the action that happens.
     toggle_url: String,
-    toggle_label: &'static str,
+    toggle_label: Cow<'static, str>,
     /// `CAUCE_ENGINES` pins the set: the toggle renders disabled with the
     /// `pinned by CAUCE_ENGINES` hint.
     pinned: bool,
@@ -132,11 +133,11 @@ pub(crate) async fn page(state: &AppState, ctx: &RequestCtx) -> Result<Html<Stri
         .iter()
         .filter(|v| v.health.breaker == BreakerState::Open)
         .count();
-    let mut summary = copy::SUMMARY
+    let mut summary = t!("engines.summary")
         .replace("{configured}", &configured.to_string())
         .replace("{enabled}", &enabled.to_string());
     if open > 0 {
-        summary.push_str(&copy::SUMMARY_OPEN.replace("{open}", &open.to_string()));
+        summary.push_str(&t!("engines.summary_open").replace("{open}", &open.to_string()));
     }
 
     EnginesPage {
@@ -161,7 +162,7 @@ pub(crate) async fn card(
     state: &AppState,
     id: &EngineId,
     request_id: uuid::Uuid,
-    notice: Option<&'static str>,
+    notice: Option<Cow<'static, str>>,
 ) -> Result<Response, ApiError> {
     let views = engine_views(state).await?;
     let Some(view) = views.iter().find(|v| v.health.engine == *id) else {
@@ -187,19 +188,19 @@ fn card_view(
     v: &EngineView,
     pinned: bool,
     request_id: &str,
-    notice: Option<&'static str>,
+    notice: Option<Cow<'static, str>>,
 ) -> EngineCard {
     let id = v.health.engine.to_string();
     let (breaker, breaker_class, mut breaker_note) = breaker_fields(&v.health);
     if !v.enabled && breaker_note.is_empty() {
         // The mockup's `[ Closed ] disabled`: a closed breaker on a
         // disabled engine still flags the off state at a glance.
-        breaker_note = copy::DISABLED.to_string();
+        breaker_note = t!("engines.disabled").to_string();
     }
     // `exec · t2` (the mockup's short form); a missing half renders just
     // the known piece, both missing render `-`.
     let kind_tier = match (v.kind.as_str(), v.tier) {
-        ("-", None) => common::DASH.to_string(),
+        ("-", None) => t!("common.dash").to_string(),
         (kind, Some(t)) => format!("{kind} · t{t}"),
         (kind, None) => kind.to_string(),
     };
@@ -212,14 +213,14 @@ fn card_view(
             if v.enabled { "disable" } else { "enable" }
         ),
         toggle_label: if v.enabled {
-            copy::ACTION_DISABLE
+            t!("engines.action_disable")
         } else {
-            copy::ACTION_ENABLE
+            t!("engines.action_enable")
         },
         enabled_label: if v.enabled {
-            copy::ENABLED_YES
+            t!("engines.enabled_yes")
         } else {
-            copy::ENABLED_NO
+            t!("engines.enabled_no")
         },
         sel: crate::settings::encode_id(&format!("engine.{id}")),
         test_sel: crate::settings::encode_id(&format!("test.{id}")),
@@ -237,7 +238,7 @@ fn card_view(
             .last_error
             .as_deref()
             .map(|e| e.chars().take(160).collect())
-            .unwrap_or_else(|| common::DASH.to_string()),
+            .unwrap_or_else(|| t!("common.dash").to_string()),
         // `p95_ms` is `Some` only once the engine has served a request,
         // so `Some(0)` is a real sub-millisecond sample (u32 truncation),
         // not "unseen" — render `<1 ms`, never `0 ms`.
@@ -245,31 +246,31 @@ fn card_view(
             .p95_ms
             .map(|ms| {
                 if ms == 0 {
-                    copy::SUB_MS.to_string()
+                    t!("engines.sub_ms").to_string()
                 } else {
                     format!("{} ms", thousands(ms as u64))
                 }
             })
-            .unwrap_or_else(|| common::DASH.to_string()),
+            .unwrap_or_else(|| t!("common.dash").to_string()),
         reliability: v
             .reliability_pct
             .map(|p| format!("{:.2}", p / 100.0))
-            .unwrap_or_else(|| common::DASH.to_string()),
+            .unwrap_or_else(|| t!("common.dash").to_string()),
         requests_today: v.requests_today,
         pinned,
         request_id: request_id.to_string(),
-        notice: notice.unwrap_or_default().to_string(),
+        notice: notice.unwrap_or_default().into_owned(),
     }
 }
 
 /// Chip label, CSS class and side note derived from a health row.
-fn breaker_fields(row: &EngineHealthRow) -> (&'static str, &'static str, String) {
+fn breaker_fields(row: &EngineHealthRow) -> (Cow<'static, str>, &'static str, String) {
     match row.breaker {
-        BreakerState::Closed => (copy::BREAKER_CLOSED, "closed", String::new()),
+        BreakerState::Closed => (t!("engines.breaker_closed"), "closed", String::new()),
         BreakerState::HalfOpen => (
-            copy::BREAKER_HALF_OPEN,
+            t!("engines.breaker_half_open"),
             "half-open",
-            copy::BREAKER_PROBING.to_string(),
+            t!("engines.breaker_probing").to_string(),
         ),
         BreakerState::Open => {
             let note = row
@@ -279,14 +280,14 @@ fn breaker_fields(row: &EngineHealthRow) -> (&'static str, &'static str, String)
                     if left.num_seconds() <= 0 {
                         // The lazy `Open -> HalfOpen` truth: an elapsed
                         // window admits the next call as the probe.
-                        copy::BREAKER_ELAPSED.to_string()
+                        t!("engines.breaker_elapsed").to_string()
                     } else {
-                        copy::BREAKER_RETRIES
+                        t!("engines.breaker_retries")
                             .replace("{rel}", &human_seconds(left.num_seconds() as u64))
                     }
                 })
                 .unwrap_or_default();
-            (copy::BREAKER_OPEN, "open", note)
+            (t!("engines.breaker_open"), "open", note)
         }
     }
 }
@@ -297,14 +298,14 @@ fn last_ok(row: &EngineHealthRow) -> String {
     row.last_ok_at
         .map(|t| {
             let age = (Utc::now() - t).num_seconds().max(0) as u64;
-            copy::LAST_OK_FMT
+            t!("engines.last_ok_fmt")
                 .replace(
                     "{hhmm}",
                     &t.with_timezone(&chrono::Local).format("%H:%M").to_string(),
                 )
                 .replace("{rel}", &human_seconds(age))
         })
-        .unwrap_or_else(|| common::DASH.to_string())
+        .unwrap_or_else(|| t!("common.dash").to_string())
 }
 
 /// EWMA cell: `1 840 ms`, or `-` while the tracker is at zero.
@@ -312,7 +313,7 @@ fn stat_ms(ms: f64) -> String {
     if ms > 0.0 {
         format!("{} ms", thousands(ms.round() as u64))
     } else {
-        common::DASH.to_string()
+        t!("common.dash").to_string()
     }
 }
 

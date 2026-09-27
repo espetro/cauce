@@ -8,35 +8,35 @@
    page has no nav entry (e.g. /trace). `answer_available` gates the AI
    entry points (the W4-03 disabled treatment hides rather than greys). #}
 <header class="site">
-  <a class="brand" href="/">{{ crate::strings::common::BRAND }}</a>
-  <nav class="nav-primary" aria-label="{{ crate::strings::common::NAV_PRIMARY_LABEL }}">
-    <a href="/"{% if nav_active == "search" %} aria-current="page"{% endif %}>{{ crate::strings::common::NAV_SEARCH }}</a>
-    {% if answer_available %}<a href="/answer"{% if nav_active == "answer" %} aria-current="page"{% endif %}>{{ crate::strings::common::NAV_ANSWER }}</a>{% endif %}
-    <a href="/history"{% if nav_active == "history" %} aria-current="page"{% endif %}>{{ crate::strings::common::NAV_HISTORY }}</a>
-    <a href="/dashboard"{% if nav_active == "dashboard" %} aria-current="page"{% endif %}>{{ crate::strings::common::NAV_DASHBOARD }}</a>
-    <a href="/archive"{% if nav_active == "archive" %} aria-current="page"{% endif %}>{{ crate::strings::common::NAV_ARCHIVE }}</a>
+  <a class="brand" href="/">{{ crate::i18n::tr("common.brand") }}</a>
+  <nav class="nav-primary" aria-label="{{ crate::i18n::tr("common.nav_primary_label") }}">
+    <a href="/"{% if nav_active == "search" %} aria-current="page"{% endif %}>{{ crate::i18n::tr("common.nav_search") }}</a>
+    {% if answer_available %}<a href="/answer"{% if nav_active == "answer" %} aria-current="page"{% endif %}>{{ crate::i18n::tr("common.nav_answer") }}</a>{% endif %}
+    <a href="/history"{% if nav_active == "history" %} aria-current="page"{% endif %}>{{ crate::i18n::tr("common.nav_history") }}</a>
+    <a href="/dashboard"{% if nav_active == "dashboard" %} aria-current="page"{% endif %}>{{ crate::i18n::tr("common.nav_dashboard") }}</a>
+    <a href="/archive"{% if nav_active == "archive" %} aria-current="page"{% endif %}>{{ crate::i18n::tr("common.nav_archive") }}</a>
   </nav>
   <div class="nav-right">
-    <nav class="nav-operator" aria-label="{{ crate::strings::common::NAV_OPERATOR_LABEL }}">
-      <a href="/engines"{% if nav_active == "engines" %} aria-current="page"{% endif %}>{{ crate::strings::common::NAV_ENGINES }}</a>
-      <a href="/cache"{% if nav_active == "cache" %} aria-current="page"{% endif %}>{{ crate::strings::common::NAV_CACHE }}</a>
-      <a href="/audit"{% if nav_active == "audit" %} aria-current="page"{% endif %}>{{ crate::strings::common::NAV_AUDIT }}</a>
+    <nav class="nav-operator" aria-label="{{ crate::i18n::tr("common.nav_operator_label") }}">
+      <a href="/engines"{% if nav_active == "engines" %} aria-current="page"{% endif %}>{{ crate::i18n::tr("common.nav_engines") }}</a>
+      <a href="/cache"{% if nav_active == "cache" %} aria-current="page"{% endif %}>{{ crate::i18n::tr("common.nav_cache") }}</a>
+      <a href="/audit"{% if nav_active == "audit" %} aria-current="page"{% endif %}>{{ crate::i18n::tr("common.nav_audit") }}</a>
     </nav>
-    <a href="/settings"{% if nav_active == "settings" %} aria-current="page"{% endif %}>{{ crate::strings::common::NAV_SETTINGS }}</a>
+    <a href="/settings"{% if nav_active == "settings" %} aria-current="page"{% endif %}>{{ crate::i18n::tr("common.nav_settings") }}</a>
     <span class="nav-version">{{ crate::html::VERSION_LABEL }}</span>
     <button type="button" id="theme-toggle"
-      data-label-system="{{ crate::strings::common::THEME_SYSTEM }}"
-      data-label-light="{{ crate::strings::common::THEME_LIGHT }}"
-      data-label-dark="{{ crate::strings::common::THEME_DARK }}"
-      data-aria-state="{{ crate::strings::common::THEME_ARIA_STATE }}"
-      aria-label="{{ crate::strings::common::THEME_ARIA }}"
-    >{{ crate::strings::common::THEME_SWITCH }}</button>
+      data-label-system="{{ crate::i18n::tr("common.theme_system") }}"
+      data-label-light="{{ crate::i18n::tr("common.theme_light") }}"
+      data-label-dark="{{ crate::i18n::tr("common.theme_dark") }}"
+      data-aria-state="{{ crate::i18n::tr("common.theme_aria_state") }}"
+      aria-label="{{ crate::i18n::tr("common.theme_aria") }}"
+    >{{ crate::i18n::tr("common.theme_switch") }}</button>
     <details class="nav-more">
-      <summary>{{ crate::strings::common::NAV_MORE }}</summary>
-      <nav class="nav-more-links" aria-label="{{ crate::strings::common::NAV_OPERATOR_LABEL }}">
-        <a href="/engines"{% if nav_active == "engines" %} aria-current="page"{% endif %}>{{ crate::strings::common::NAV_ENGINES }}</a>
-        <a href="/cache"{% if nav_active == "cache" %} aria-current="page"{% endif %}>{{ crate::strings::common::NAV_CACHE }}</a>
-        <a href="/audit"{% if nav_active == "audit" %} aria-current="page"{% endif %}>{{ crate::strings::common::NAV_AUDIT }}</a>
+      <summary>{{ crate::i18n::tr("common.nav_more") }}</summary>
+      <nav class="nav-more-links" aria-label="{{ crate::i18n::tr("common.nav_operator_label") }}">
+        <a href="/engines"{% if nav_active == "engines" %} aria-current="page"{% endif %}>{{ crate::i18n::tr("common.nav_engines") }}</a>
+        <a href="/cache"{% if nav_active == "cache" %} aria-current="page"{% endif %}>{{ crate::i18n::tr("common.nav_cache") }}</a>
+        <a href="/audit"{% if nav_active == "audit" %} aria-current="page"{% endif %}>{{ crate::i18n::tr("common.nav_audit") }}</a>
       </nav>
     </details>
   </div>

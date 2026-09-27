@@ -229,3 +229,32 @@ global store, and is never shared with or copied into another project.
 - TS narrowing does NOT flow into hoisted `function` declarations inside a
   function body — use arrow `const` or an alias for narrowed values (hit on
   `initThemeToggle`'s `btn`).
+
+## 2026-09-27 — TS migration step 2 (#213, branch v3/ts-wire-types)
+
+- ts-rs 12 + serde-compat: a field is optional in TS only with BOTH
+  `#[serde(default)]` and `skip_serializing_if`; `#[ts(optional)]` requires
+  `Option<T>` (IsOption bound). `#[serde(transparent)]` trips serde-compat's
+  parser → keep `no-serde-warnings` enabled or `clippy -D warnings` fails.
+  `TS::output_path()` is always `Some`, so `export_all(&cfg)` works without
+  `#[ts(export)]`; the MPL banner has to be prepended by the export test
+  itself (ts-rs emits no header).
+- rust-i18n 4.2: `t!` returns `Cow` whose lifetime is tied to the KEY —
+  a `tr(key: &'static str) -> Cow<'static, str>` wrapper covers Askama
+  templates (which can't call macros in `{{ }}`); `{{ crate::i18n::tr("m.k") }}`
+  parses as a path call. `&'static str` struct fields/fn returns holding
+  strings become `Cow<'static, str>`; `plural`/`&str` params take `&t!(..)`
+  via deref.
+- The `i18n!` proc macro embeds `locales/*.yaml` at expansion time but does
+  NOT track the files — `cargo build` after an `en.yaml` edit silently
+  reuses the stale catalog. cauce-server's `build.rs` prints
+  `rerun-if-changed=locales`; without it tests and gen_i18n both go stale.
+- YAML 1.1 bool trap in the catalog: a bare `n`, `yes`, `on`, `off`, `true`
+  value parses as boolean (`col_results: "n"` rendered `false` in a `<th>`
+  until quoted). PyYAML's safe_load does NOT treat `n`/`y` as bool —
+  pyyaml-based audits miss it; serde_yaml does.
+- serde_json `to_value` vs direct `to_string`: `to_value` round-trips f32
+  through `Value::Number` (f64, e.g. `0.016393441706895828`) and emits
+  BTreeMap-sorted keys; the typed `ResultsFrame` emits struct declaration
+  order and f32 shortest repr (`0.016393442`). Same JSON values — page/
+  SSE parity checks must normalize these.

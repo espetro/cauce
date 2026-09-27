@@ -6,7 +6,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{% if !q.is_empty() %}{{ q }} · {{ crate::strings::common::BRAND }}{% else %}{{ crate::strings::common::BRAND }}{% endif %}</title>
+  <title>{% if !q.is_empty() %}{{ q }} · {{ crate::i18n::tr("common.brand") }}{% else %}{{ crate::i18n::tr("common.brand") }}{% endif %}</title>
   <link rel="search" type="application/opensearchdescription+xml" title="cauce" href="/opensearch.xml">
   <link rel="icon" href="/favicon.ico" type="image/svg+xml">
   <style>{{ style_css|safe }}</style>
@@ -15,26 +15,26 @@
 <body{% if index_on_click %} data-index-on-click data-query-hash="{{ query_hash }}"{% endif %}>
   {% include "header.html" %}
   <main>
-  <h1 class="vh">{{ crate::strings::common::BRAND }}</h1>
+  <h1 class="vh">{{ crate::i18n::tr("common.brand") }}</h1>
   <form id="search-form" action="/search" method="get">
-    <input type="search" name="q" value="{{ q }}" placeholder="{{ crate::strings::search::PLACEHOLDER }}" autofocus>
+    <input type="search" name="q" value="{{ q }}" placeholder="{{ crate::i18n::tr("search.placeholder") }}" autofocus>
     {% if answer_available %}<button type="button" id="ai-mode" class="mode-pill" aria-pressed="false"
-      data-placeholder="{{ crate::strings::answer::PLACEHOLDER }}"
-      data-submit="{{ crate::strings::answer::SUBMIT }}">{{ crate::strings::search::AI_MODE }}</button>{% endif %}
-    <button type="submit">{{ crate::strings::search::SUBMIT }}</button>
+      data-placeholder="{{ crate::i18n::tr("answer.placeholder") }}"
+      data-submit="{{ crate::i18n::tr("answer.submit") }}">{{ crate::i18n::tr("search.ai_mode") }}</button>{% endif %}
+    <button type="submit">{{ crate::i18n::tr("search.submit") }}</button>
   </form>
   {% if has_results %}
   <div class="meta">
-    <span id="result-count">{{ result_count }} {{ crate::strings::search::RESULTS }}</span>
+    <span id="result-count">{{ result_count }} {{ crate::i18n::tr("search.results") }}</span>
     <span id="search-meta">{{ badge }}</span>
     <span id="request-id" class="request-id" title="{{ request_id }}">{{ short_request_id }}</span>
-    {% if !ask_url.is_empty() %}<span><a id="ask-link" href="{{ ask_url }}">{{ crate::strings::answer::ASK_LINK }}</a></span>{% endif %}
+    {% if !ask_url.is_empty() %}<span><a id="ask-link" href="{{ ask_url }}">{{ crate::i18n::tr("answer.ask_link") }}</a></span>{% endif %}
   </div>
   {% if is_streaming %}
   <div id="search-stream" hx-ext="sse" sse-connect="{{ stream_url }}" sse-close="meta,error"
        data-query-hash="{{ query_hash }}" aria-live="polite" aria-busy="true">
-    <span id="stream-status" role="status">{{ crate::strings::search::WAITING }}</span>
-    <noscript><p>{{ crate::strings::search::NOSCRIPT_STREAM }}</p></noscript>
+    <span id="stream-status" role="status">{{ crate::i18n::tr("search.waiting") }}</span>
+    <noscript><p>{{ crate::i18n::tr("search.noscript_stream") }}</p></noscript>
   </div>
   <p id="new-results-above" class="new-results-above" role="status" hidden></p>
   {% endif %}
@@ -42,24 +42,24 @@
   <section id="assist" class="assist" data-q="{{ q }}">
     <button type="button" id="assist-btn" class="assist-trigger"
       aria-controls="assist-card" aria-expanded="false"{% if is_streaming %} disabled{% endif %}>
-      {{ crate::strings::assist::TRIGGER }}</button>
+      {{ crate::i18n::tr("assist.trigger") }}</button>
     <div id="assist-card" class="assist-card" hidden aria-live="polite" aria-busy="false">
       <div class="assist-head">
-        <span class="assist-label">{{ crate::strings::assist::LABEL }}</span>
-        <a class="assist-ask" href="{{ ask_url }}">{{ crate::strings::assist::ASK_AI }}</a>
+        <span class="assist-label">{{ crate::i18n::tr("assist.label") }}</span>
+        <a class="assist-ask" href="{{ ask_url }}">{{ crate::i18n::tr("assist.ask_ai") }}</a>
       </div>
       <div id="assist-meta" class="meta" hidden>
         <span id="assist-grounded" class="meta-chip" hidden></span>
         <span id="assist-confidence" class="meta-chip" hidden></span>
-        <span id="assist-ungrounded" class="meta-chip warn" hidden>{{ crate::strings::assist::UNGROUNDED }}</span>
-        <span id="assist-cached" class="meta-chip" hidden>{{ crate::strings::assist::CACHED }}</span>
+        <span id="assist-ungrounded" class="meta-chip warn" hidden>{{ crate::i18n::tr("assist.ungrounded") }}</span>
+        <span id="assist-cached" class="meta-chip" hidden>{{ crate::i18n::tr("assist.cached") }}</span>
       </div>
       <div id="assist-text" class="answer-text"></div>
       <div id="assist-sources" class="assist-sources"></div>
-      <p class="assist-note">{{ crate::strings::assist::DISCLAIMER }}</p>
+      <p class="assist-note">{{ crate::i18n::tr("assist.disclaimer") }}</p>
       <p id="assist-error" class="field-error" role="alert" hidden></p>
     </div>
-    <noscript><p>{{ crate::strings::assist::NOSCRIPT }}</p></noscript>
+    <noscript><p>{{ crate::i18n::tr("assist.noscript") }}</p></noscript>
   </section>
   {% endif %}
   {% include "results.html" %}

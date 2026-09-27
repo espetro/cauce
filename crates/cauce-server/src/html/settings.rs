@@ -233,7 +233,7 @@ pub struct SettingsQuery {
 /// — the same stats the dashboard reads (`Store::stats` + the db file size
 /// + the newest `cache_entries` row).
 async fn cache_line(state: &AppState) -> String {
-    use crate::strings::settings as s;
+    use rust_i18n::t;
     let (total, unexpired) = match state.store().stats(7).await {
         Ok(st) => (
             st.cache_entries + st.cache_entries_expired,
@@ -255,13 +255,13 @@ async fn cache_line(state: &AppState) -> String {
                 .format("%H:%M")
                 .to_string()
         })
-        .unwrap_or_else(|| crate::strings::common::DASH.to_string());
+        .unwrap_or_else(|| t!("common.dash").to_string());
     format!(
         "{total} {entries} · {unexpired} {unexp} · {size} · {newest_label} {newest}",
-        entries = s::ENTRIES,
-        unexp = s::UNEXPIRED,
+        entries = t!("settings.entries"),
+        unexp = t!("settings.unexpired"),
         size = human_bytes(size),
-        newest_label = s::NEWEST,
+        newest_label = t!("settings.newest"),
     )
 }
 
@@ -288,21 +288,33 @@ pub(crate) fn settings_status(
     submitted: Vec<String>,
     engine_ids: &[String],
 ) -> Response {
-    use crate::strings::settings as s;
+    use rust_i18n::t;
     let (kind, text) = match &result {
         Ok(_) => (
             "ok",
-            format!("{} {}", s::SAVED, chrono::Local::now().format("%H:%M")),
+            format!(
+                "{} {}",
+                t!("settings.saved"),
+                chrono::Local::now().format("%H:%M")
+            ),
         ),
         Err(e) => {
             let n = field_errors.len();
             if n > 0 {
-                let word = if n == 1 { s::ERROR_ONE } else { s::ERROR_MANY };
-                ("error", format!("{} {n} {word}", s::NOT_SAVED))
+                let word = if n == 1 {
+                    t!("settings.error_one")
+                } else {
+                    t!("settings.error_many")
+                };
+                ("error", format!("{} {n} {word}", t!("settings.not_saved")))
             } else {
                 (
                     "error",
-                    format!("{} ({})", s::COULD_NOT_SAVE, e.status().as_u16()),
+                    format!(
+                        "{} ({})",
+                        t!("settings.could_not_save"),
+                        e.status().as_u16()
+                    ),
                 )
             }
         }
@@ -411,10 +423,14 @@ fn env_status(raw: &str) -> Option<String> {
         Ok(v) => !colon_form || !v.is_empty(),
         Err(_) => false,
     };
-    use crate::strings::settings as s;
+    use rust_i18n::t;
     Some(format!(
         "{name} {}",
-        if set { s::IS_SET } else { s::IS_NOT_SET }
+        if set {
+            t!("settings.is_set")
+        } else {
+            t!("settings.is_not_set")
+        }
     ))
 }
 

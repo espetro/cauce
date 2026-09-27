@@ -26,8 +26,7 @@ use rust_embed::Embed;
 use crate::app::AppState;
 use crate::error::ApiError;
 use crate::middleware::RequestCtx;
-use crate::strings::cache as copy;
-
+use rust_i18n::t;
 /// Static assets vendored under `crates/cauce-server/assets` (embedded
 /// per consumer module so pages stay independent of `html.rs`).
 #[derive(Embed)]
@@ -153,15 +152,15 @@ pub async fn cache(
         searching,
         count_line: count_line(shown, searching),
         filtered_cap: if searching {
-            copy::FILTERED_CAP.replace("{n}", &limit.to_string())
+            t!("cache.filtered_cap").replace("{n}", &limit.to_string())
         } else {
             String::new()
         },
         empty_line: if rows.is_empty() {
             if searching {
-                copy::EMPTY_FILTERED.replace("{q}", &q)
+                t!("cache.empty_filtered").replace("{q}", &q)
             } else {
-                copy::EMPTY.to_string()
+                t!("cache.empty").to_string()
             }
         } else {
             String::new()
@@ -208,7 +207,7 @@ pub(crate) fn payload(
 /// fallback for error statuses raised outside the handler (host guard,
 /// proxy, transport).
 pub(crate) fn payload_error(status: StatusCode, htmx_request: bool) -> Response {
-    let line = copy::PAYLOAD_ERROR.replace("{status}", &status.as_u16().to_string());
+    let line = t!("cache.payload_error").replace("{status}", &status.as_u16().to_string());
     let out_status = if htmx_request { StatusCode::OK } else { status };
     match (PayloadError { line }).render() {
         Ok(html) => (out_status, Html(html)).into_response(),
@@ -272,15 +271,15 @@ fn row(e: &CachedSearch) -> Row {
             .format("%Y-%m-%d %H:%M")
             .to_string(),
         expires: if expired {
-            copy::EXPIRED_AGO.replace("{rel}", &rel)
+            t!("cache.expired_ago").replace("{rel}", &rel)
         } else {
-            copy::EXPIRES_IN.replace("{rel}", &rel)
+            t!("cache.expires_in").replace("{rel}", &rel)
         },
         expired,
         hits_label: format!(
             "{} {}",
             e.hits,
-            plural(e.hits, copy::HIT_ONE, copy::HIT_MANY)
+            plural(e.hits, t!("cache.hit_one"), t!("cache.hit_many"))
         ),
         engines: e
             .engines
@@ -298,16 +297,20 @@ fn row(e: &CachedSearch) -> Row {
 
 /// `34 entries` unfiltered, `3 matching entries` under an active `q`.
 fn count_line(shown: usize, searching: bool) -> String {
-    let word = plural(shown as u64, copy::ENTRY_ONE, copy::ENTRY_MANY);
+    let word = plural(shown as u64, t!("cache.entry_one"), t!("cache.entry_many"));
     if searching {
-        format!("{shown} {} {word}", copy::MATCHING)
+        format!("{shown} {} {word}", t!("cache.matching"))
     } else {
         format!("{shown} {word}")
     }
 }
 
 /// Singular/plural word pick (`1 hit` / `3 hits`).
-fn plural<'a>(n: u64, one: &'a str, many: &'a str) -> &'a str {
+fn plural(
+    n: u64,
+    one: std::borrow::Cow<'static, str>,
+    many: std::borrow::Cow<'static, str>,
+) -> std::borrow::Cow<'static, str> {
     if n == 1 { one } else { many }
 }
 

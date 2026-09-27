@@ -9,6 +9,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 use crate::request::SearchRequest;
 use crate::response::SearchResult;
@@ -24,7 +25,7 @@ pub const ENGINE_ID_PATTERN: &str = "[A-Za-z0-9._-]+";
 /// Stable identifier of a search engine (`bing`, `brave`, `ddgs`, `replay`, ...).
 ///
 /// Serializes as a plain string on the wire and in `engines_json` columns.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, TS)]
 #[serde(transparent)]
 pub struct EngineId(String);
 
@@ -126,7 +127,7 @@ impl<'de> Deserialize<'de> for Tier {
 
 /// Errors an engine can return. Variants carrying a `String` hold a short,
 /// log-safe detail (no response bodies).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, thiserror::Error)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, thiserror::Error, TS)]
 #[serde(rename_all = "snake_case")]
 pub enum EngineError {
     #[error("rate limited by upstream")]

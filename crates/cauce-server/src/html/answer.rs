@@ -14,16 +14,13 @@ use axum::Extension;
 use axum::extract::State;
 use axum::http::Uri;
 use axum::response::Html;
-use serde_json::json;
 
+use super::assets::STYLE_CSS;
+use super::{render_err, short_id};
 use crate::app::AppState;
 use crate::error::ApiError;
 use crate::handlers::QueryParams;
 use crate::middleware::RequestCtx;
-use crate::strings::answer as copy;
-
-use super::assets::STYLE_CSS;
-use super::{render_err, short_id};
 
 /// Full page, rendered for `GET /answer` (ask form only) and
 /// `GET /answer?q=...` (form + stream shell or disabled notice).
@@ -50,7 +47,7 @@ struct AnswerPage {
     style_css: String,
     /// `serde_json`-encoded `q` — the inline script's POST body literal.
     q_json: String,
-    /// `crate::strings::answer` copy as a `var S = {...}` JSON literal.
+    /// `answer.*` catalog copy as a `var S = {...}` JSON literal.
     answer_strings: String,
 }
 
@@ -88,28 +85,9 @@ pub async fn answer(
         .map(Html)
 }
 
-/// The `strings::answer` copy the shell's inline JS interpolates,
-/// serialized into the page as `var S = {...}` so every user-visible
-/// string lives in `crate::strings` (the i18n seam), not in the script.
+/// The `answer.*` catalog copy the shell's inline JS interpolates,
+/// serialized into the page as `var S = {...}`; `gen_i18n` mirrors it
+/// to `web/src/i18n/answer.json`.
 fn answer_strings() -> String {
-    serde_json::to_string(&json!({
-        "waiting": copy::WAITING,
-        "complete": copy::COMPLETE,
-        "error_status": copy::ERROR_STATUS,
-        "confidence": copy::CONFIDENCE,
-        "cached": copy::CACHED,
-        "ungrounded": copy::UNGROUNDED,
-        // W7-03: retrieval-path chip + tool display words.
-        "path_direct": copy::PATH_DIRECT,
-        "path_searched": copy::PATH_SEARCHED,
-        "path_replay": copy::PATH_REPLAY,
-        "tool_web": copy::TOOL_WEB,
-        "tool_archive": copy::TOOL_ARCHIVE,
-        "related": copy::RELATED,
-        "sources": copy::SOURCES,
-        "retry_after": copy::RETRY_AFTER,
-        "stream_failed": copy::STREAM_FAILED,
-        "invalid_stream": copy::INVALID_STREAM,
-    }))
-    .expect("answer strings serialize")
+    serde_json::to_string(&crate::i18n::answer_bundle()).expect("answer strings serialize")
 }

@@ -6,41 +6,41 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{{ crate::strings::audit::PAGE_TITLE|lower }} · {{ crate::strings::common::BRAND }}</title>
+  <title>{{ crate::i18n::tr("audit.page_title")|lower }} · {{ crate::i18n::tr("common.brand") }}</title>
   <style>{{ style_css|safe }}</style>
   {% include "theme_head.html" %}
 </head>
 <body>
 {% include "header.html" %}
 <main>
-  <h1>{{ crate::strings::audit::PAGE_TITLE }}</h1>
+  <h1>{{ crate::i18n::tr("audit.page_title") }}</h1>
   <form action="/audit" method="get" class="filters">
-    <select name="actor" aria-label="{{ crate::strings::audit::ACTOR_LABEL }}">
-      <option value="">{{ crate::strings::audit::ANY }}</option>
+    <select name="actor" aria-label="{{ crate::i18n::tr("audit.actor_label") }}">
+      <option value="">{{ crate::i18n::tr("audit.any") }}</option>
       {% for o in actor_options %}
       <option value="{{ o.value }}"{% if o.selected %} selected{% endif %}>{{ o.value }}</option>
       {% endfor %}
     </select>
-    <select name="action" aria-label="{{ crate::strings::audit::ACTION_LABEL }}">
-      <option value="">{{ crate::strings::audit::ANY }}</option>
+    <select name="action" aria-label="{{ crate::i18n::tr("audit.action_label") }}">
+      <option value="">{{ crate::i18n::tr("audit.any") }}</option>
       {% for o in action_options %}
       <option value="{{ o.value }}"{% if o.selected %} selected{% endif %}>{{ o.value }}</option>
       {% endfor %}
     </select>
-    <button type="submit">{{ crate::strings::audit::FILTER }}</button>
-    {% if filtered %}<a href="/audit">{{ crate::strings::audit::CLEAR }}</a>{% endif %}
+    <button type="submit">{{ crate::i18n::tr("audit.filter") }}</button>
+    {% if filtered %}<a href="/audit">{{ crate::i18n::tr("audit.clear") }}</a>{% endif %}
   </form>
   <p class="meta">
-    {{ rows.len() }} {% if rows.len() == 1 %}{{ crate::strings::audit::ROW }}{% else %}{{ crate::strings::audit::ROWS }}{% endif %}{% if filtered %} {{ crate::strings::audit::MATCHING }}{% endif %}
-    {% if capped %} · {{ crate::strings::audit::CAP_NOTE_PREFIX }} {{ limit }} · {{ crate::strings::audit::CAP_NOTE_SUFFIX }}{% endif %}
+    {{ rows.len() }} {% if rows.len() == 1 %}{{ crate::i18n::tr("audit.row") }}{% else %}{{ crate::i18n::tr("audit.rows") }}{% endif %}{% if filtered %} {{ crate::i18n::tr("audit.matching") }}{% endif %}
+    {% if capped %} · {{ crate::i18n::tr("audit.cap_note_prefix") }} {{ limit }} · {{ crate::i18n::tr("audit.cap_note_suffix") }}{% endif %}
   </p>
   {% if rows.is_empty() %}
-  <p class="empty">{% if filtered %}{{ filtered_empty }}{% else %}{{ crate::strings::audit::EMPTY }}{% endif %}</p>
+  <p class="empty">{% if filtered %}{{ filtered_empty }}{% else %}{{ crate::i18n::tr("audit.empty") }}{% endif %}</p>
   {% else %}
-  <div class="audit-table-wrap" tabindex="0" role="region" aria-label="{{ crate::strings::audit::TABLE_REGION }}">
+  <div class="audit-table-wrap" tabindex="0" role="region" aria-label="{{ crate::i18n::tr("audit.table_region") }}">
   <table class="audit-table">
     <thead>
-      <tr><th>{{ crate::strings::audit::WHEN_COLUMN }}</th><th class="c-actor">{{ crate::strings::audit::ACTOR_COLUMN }}</th><th class="c-action"><span class="actor-prefix">{{ crate::strings::audit::ACTOR_COLUMN }} · </span>{{ crate::strings::audit::ACTION_COLUMN }}</th><th class="col-target">{{ crate::strings::audit::TARGET_COLUMN }}</th><th>{{ crate::strings::audit::REQUEST_COLUMN }}</th><th>{{ crate::strings::audit::DETAILS_SUMMARY }}</th></tr>
+      <tr><th>{{ crate::i18n::tr("audit.when_column") }}</th><th class="c-actor">{{ crate::i18n::tr("audit.actor_column") }}</th><th class="c-action"><span class="actor-prefix">{{ crate::i18n::tr("audit.actor_column") }} · </span>{{ crate::i18n::tr("audit.action_column") }}</th><th class="col-target">{{ crate::i18n::tr("audit.target_column") }}</th><th>{{ crate::i18n::tr("audit.request_column") }}</th><th>{{ crate::i18n::tr("audit.details_summary") }}</th></tr>
     </thead>
     <tbody>
       {% for row in rows %}
@@ -53,12 +53,12 @@
           {% if !row.request_id.is_empty() %}
           <a class="request-id" href="/trace/{{ row.request_id }}" title="{{ row.request_id }}">{{ row.short_request_id }}</a>
           {% else %}
-          {{ crate::strings::common::DASH }}
+          {{ crate::i18n::tr("common.dash") }}
           {% endif %}
         </td>
         <td class="details-cell">
           {% if !row.details.is_empty() %}
-          <details><summary>{{ crate::strings::audit::DETAILS_SUMMARY }}</summary><pre tabindex="0" role="group" aria-label="{{ crate::strings::audit::DETAILS_SUMMARY }}">{{ row.details }}</pre></details>
+          <details><summary>{{ crate::i18n::tr("audit.details_summary") }}</summary><pre tabindex="0" role="group" aria-label="{{ crate::i18n::tr("audit.details_summary") }}">{{ row.details }}</pre></details>
           {% endif %}
         </td>
       </tr>
@@ -68,7 +68,7 @@
   </div>
   {% endif %}
   <div class="meta">
-    {{ crate::strings::common::REQUEST_LABEL }} <code class="request-id">{{ request_id }}</code>
+    {{ crate::i18n::tr("common.request_label") }} <code class="request-id">{{ request_id }}</code>
   </div>
   </main>
   <script>{{ crate::html::app_js()|safe }}</script>

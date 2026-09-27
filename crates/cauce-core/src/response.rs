@@ -7,6 +7,7 @@
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 use url::Url;
 use uuid::Uuid;
 
@@ -18,14 +19,18 @@ use crate::engine::{EngineError, EngineId, Tier};
 /// `{"cache":{"tier":1,"age_s":12,"ttl_s":3600,"stale":false}}` or `"network"`.
 /// A fuzzy hit additionally carries `matched_query` (W1-10 tier-2 lexical,
 /// W5-05 tier-3 semantic).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
 pub enum Source {
     Cache {
+        /// Serializes as the tier integer (1-3).
+        #[ts(type = "number")]
         tier: Tier,
         /// Seconds since the hit was stored.
+        #[ts(type = "number")]
         age_s: u64,
         /// Seconds until expiry (remaining TTL at serve time).
+        #[ts(type = "number")]
         ttl_s: u64,
         /// True when the row was past `expires_at` (served stale).
         stale: bool,
@@ -39,7 +44,7 @@ pub enum Source {
 }
 
 /// Per-engine outcome folded into `SearchMeta::engines_used`.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
 pub enum EngineStatus {
     Ok,
@@ -47,7 +52,7 @@ pub enum EngineStatus {
 }
 
 /// Per-engine report of a fan-out: status, observed latency, result count.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 pub struct EngineReport {
     pub engine: EngineId,
     pub status: EngineStatus,
@@ -56,7 +61,7 @@ pub struct EngineReport {
 }
 
 /// One merged result row (parent plan 4.2).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 pub struct SearchResult {
     pub url: Url,
     pub title: String,
@@ -71,7 +76,7 @@ pub struct SearchResult {
 
 /// Response metadata (parent plan 4.2). `request_id` is a UUIDv7 minted by the
 /// inbound surface and echoed in `X-Request-Id` and the JSONL log.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 pub struct SearchMeta {
     pub source: Source,
     pub engines_used: Vec<EngineReport>,
@@ -96,7 +101,7 @@ pub struct SearchMeta {
 }
 
 /// The canonical `GET /api/search` payload (parent plan 4.2).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 pub struct SearchResponse {
     /// The query as executed (post-normalisation).
     pub query: String,
@@ -134,10 +139,42 @@ pub enum StreamEvent {
 /// first. The progressive page never reorders what it rendered; `order`
 /// is what lets it tell the user how many late results would have ranked
 /// above the visible ones, and hide anything the merge did not keep.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, TS)]
 pub struct StreamMeta {
     #[serde(flatten)]
+    #[ts(flatten)]
     pub meta: SearchMeta,
     /// Final RRF order: the emitted results' dedupe keys, best first.
     pub order: Vec<Url>,
+}
+
+/// A [`SearchResult`] plus `key`, the client-side dedupe key
+/// (`normalize_url` of its URL — the same form `meta.order` carries). The
+/// progressive page dedupes appended articles on `key`: the merge drops
+/// duplicate URL spellings the raw `url` field would render twice.
+#[derive(Debug, Clone, PartialEq, Serialize, TS)]
+pub struct StreamResult {
+    /// Dedup key: `normalize_url` of `url`.
+    pub key: Url,
+    #[serde(flatten)]
+    #[ts(flatten)]
+    pub result: SearchResult,
+}
+
+impl From<&SearchResult> for StreamResult {
+    fn from(result: &SearchResult) -> Self {
+        Self {
+            key: crate::normalize_url(&result.url),
+            result: result.clone(),
+        }
+    }
+}
+
+/// The `results` SSE event payload of `GET /api/search/stream` (W2-01):
+/// one engine's raw batch (pre-merge) plus the request-elapsed ms.
+#[derive(Debug, Clone, PartialEq, Serialize, TS)]
+pub struct ResultsFrame {
+    pub engine: EngineId,
+    pub results: Vec<StreamResult>,
+    pub elapsed_ms: u32,
 }

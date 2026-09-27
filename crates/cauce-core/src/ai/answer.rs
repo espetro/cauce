@@ -24,6 +24,7 @@ use serde::Serialize;
 use serde_json::json;
 use tokio::sync::mpsc;
 use tracing::{Instrument, info_span, warn};
+use ts_rs::TS;
 use uuid::Uuid;
 
 use crate::cache::normalize_query;
@@ -137,7 +138,7 @@ fn search_archive_spec() -> ToolSpec {
 
 /// One item of the `stream_answer` channel — the settled W4-02 wire
 /// shapes, serde-tagged on `type` so SSE is `data: {"type": ...}`.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, TS)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum AnswerFrame {
     /// A tool call is starting (`label` is the human-readable form the UI
@@ -163,7 +164,9 @@ pub enum AnswerFrame {
         /// The inbound request id (supplied or minted UUIDv7).
         request_id: Uuid,
         /// `true` when the answer drew on no sources; absent otherwise.
-        #[serde(skip_serializing_if = "is_false")]
+        /// (`default` is inert — `AnswerFrame` is never deserialized — but
+        /// tells ts-rs the field may be absent on the wire.)
+        #[serde(default, skip_serializing_if = "is_false")]
         ungrounded: bool,
     },
     /// Terminal frame for failures that abort the stream before a `done`
@@ -171,7 +174,8 @@ pub enum AnswerFrame {
     Error {
         message: String,
         /// Provider retry hint, only on rate limits.
-        #[serde(skip_serializing_if = "Option::is_none")]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(type = "number")]
         retry_after_s: Option<u64>,
     },
 }
