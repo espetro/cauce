@@ -67,6 +67,7 @@ run = """
 #!/usr/bin/env bash
 set -euo pipefail
 cargo test -p cauce-server --test wire_types --quiet
+cargo run -p cauce-server --bin gen_i18n --quiet
 pnpm install --frozen-lockfile
 pnpm run typecheck
 pnpm run build

@@ -1,0 +1,9 @@
+{
+  "cached": "cached",
+  "confidence": "confidence {n}/10",
+  "grounded": "grounded · {n} sources",
+  "invalid_stream": "unreadable answer stream",
+  "retry_after": "retry after {n}s",
+  "stream_failed": "answer stream failed",
+  "ungrounded": "ungrounded"
+}
