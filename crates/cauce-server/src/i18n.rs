@@ -7,7 +7,7 @@
 //! macros inside `{{ ... }}` expressions, so they go through
 //! [`crate::i18n::tr`].
 //!
-//! The `var S = {...}`/`var AS = {...}` literals the pages' inline JS
+//! The `var S`/`var SA`/`var AS` literals the pages' inline JS
 //! reads are built here too ([`search_bundle`], [`assist_bundle`],
 //! [`answer_bundle`]), and `cargo run -p cauce-server --bin gen_i18n`
 //! writes the same maps to `web/src/i18n/*.json` — so the TypeScript
@@ -90,7 +90,7 @@ pub fn assist_bundle() -> Value {
     ])
 }
 
-/// The `var S = {...}` copy the `/answer` shell's inline JS interpolates
+/// The `var SA = {...}` copy the `/answer` shell's inline JS interpolates
 /// (mirrored to `web/src/i18n/answer.json`).
 pub fn answer_bundle() -> Value {
     bundle(&[

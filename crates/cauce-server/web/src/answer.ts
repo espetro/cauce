@@ -4,9 +4,11 @@
  */
 
 import { fmt } from "./format.js";
+import { parseSseFrame, pumpSse, type SseFetch, type SseResponse } from "./sse.js";
 import type { AnswerFrame } from "./types/AnswerFrame.js";
 import type { AnswerSource } from "./types/AnswerSource.js";
 import type { AnswerTurn } from "./types/AnswerTurn.js";
+import type { ApiError } from "./types/ApiError.js";
 
 /** The `done` variant of [`AnswerFrame`]. */
 type DoneFrame = Extract<AnswerFrame, { type: "done" }>;
@@ -43,7 +45,7 @@ interface AnswerRefs {
 }
 
 interface AnswerDeps {
-  fetchImpl?: typeof fetch;
+  fetchImpl?: SseFetch;
 }
 
 export interface AnswerSession {
@@ -51,24 +53,8 @@ export interface AnswerSession {
   startTurn: (q: string) => void;
   beginTurn: (q: string) => Turn;
   handleFrame: (raw: string) => void;
-  pump: (res: Response) => Promise<void>;
+  pump: (res: SseResponse) => Promise<void>;
   history: AnswerTurn[];
-}
-
-/**
- * Split one raw SSE frame (`event:`/`data:` lines) into `{name, data}`.
- * Multiple `data:` lines concatenate (matching the historical inline
- * behavior); frames without data return `data: ""` and are skipped by
- * the caller.
- */
-export function parseSseFrame(raw: string): { name: string; data: string } {
-  let name = "message";
-  let data = "";
-  raw.split("\n").forEach((line) => {
-    if (line.indexOf("event:") === 0) name = line.slice(6).trim();
-    else if (line.indexOf("data:") === 0) data += line.slice(5).trim();
-  });
-  return { name, data };
 }
 
 /** `el.querySelector(sel)` that fails loudly on a markup drift. */
@@ -95,12 +81,12 @@ function req<T extends Element>(root: ParentNode, sel: string): T {
  * `#answer-followup`, the bottom-pinned next-question form.
  *
  * `refs` are the page elements (`stream`, `turnTpl`, `followupForm`,
- * `followupInput`); `S` is the `var S = {...}` i18n bundle and `Q` the
+ * `followupInput`); `S` is the `var SA = {...}` i18n bundle and `Q` the
  * `var Q` query literal the template injects.
  */
 export function createAnswerSession(
   refs: AnswerRefs,
-  S: Record<string, string>,
+  S: AnswerStrings,
   Q: string,
   { fetchImpl = window.fetch?.bind(window) }: AnswerDeps = {},
 ): AnswerSession {
@@ -373,23 +359,10 @@ export function createAnswerSession(
     }
   }
 
-  /** Read `res.body` to end, dispatching each `\n\n`-delimited frame. */
-  async function pump(T: Turn, res: Response): Promise<void> {
+  /** Stream `res`'s frames into `T`; a non-terminal close fails. */
+  async function pump(T: Turn, res: SseResponse): Promise<void> {
     if (!res.body) return fail(T, S.stream_failed);
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-    for (;;) {
-      const chunk = await reader.read();
-      buffer += decoder.decode(chunk.value, { stream: !chunk.done });
-      let i;
-      while ((i = buffer.indexOf("\n\n")) >= 0) {
-        dispatch(T, buffer.slice(0, i));
-        buffer = buffer.slice(i + 2);
-      }
-      if (chunk.done) break;
-    }
-    if (buffer.trim()) dispatch(T, buffer);
+    await pumpSse(res, (raw) => dispatch(T, raw));
     // The stream closed without a terminal frame: surface that
     // instead of leaving the page "answering..." forever.
     if (!T.terminal) fail(T, S.stream_failed);
@@ -412,8 +385,8 @@ export function createAnswerSession(
       });
       if (!res.ok) {
         try {
-          const env = await res.json();
-          fail(T, (env && env.error && env.error.message) || S.stream_failed + ": HTTP " + res.status);
+          const env = (await res.json()) as Partial<ApiError> | undefined;
+          fail(T, env?.error?.message || S.stream_failed + ": HTTP " + res.status);
         } catch {
           fail(T, S.stream_failed + ": HTTP " + res.status);
         }
@@ -454,11 +427,11 @@ export function createAnswerSession(
 
 /**
  * Wire the answer page (no-op elsewhere: `#answer-stream` only renders
- * while `has_query && enabled`, and `var Q`/`var S` ride the same gate).
+ * while `has_query && enabled`, and `var Q`/`var SA` ride the same gate).
  */
 export function initAnswerPage(doc: Document = document, deps?: AnswerDeps): void {
   const stream = doc.getElementById("answer-stream");
-  if (!stream || window.Q === undefined || !window.S) return;
+  if (!stream || window.Q === undefined || !window.SA) return;
   const session = createAnswerSession(
     {
       stream,
@@ -466,7 +439,7 @@ export function initAnswerPage(doc: Document = document, deps?: AnswerDeps): voi
       followupForm: doc.getElementById("answer-followup") as HTMLFormElement | null,
       followupInput: doc.getElementById("followup-q") as HTMLInputElement | null,
     },
-    window.S,
+    window.SA,
     window.Q,
     deps,
   );

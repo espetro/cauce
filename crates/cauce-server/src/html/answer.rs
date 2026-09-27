@@ -53,7 +53,7 @@ struct AnswerPage {
     style_css: String,
     /// `serde_json`-encoded `q` — the inline script's POST body literal.
     q_json: String,
-    /// `answer.*` catalog copy as a `var S = {...}` JSON literal.
+    /// `answer.*` catalog copy as a `var SA = {...}` JSON literal.
     answer_strings: String,
 }
 
@@ -92,7 +92,7 @@ pub async fn answer(
 }
 
 /// The `answer.*` catalog copy the shell's inline JS interpolates,
-/// serialized into the page as `var S = {...}`; `gen_i18n` mirrors it
+/// serialized into the page as `var SA = {...}`; `gen_i18n` mirrors it
 /// to `web/src/i18n/answer.json`.
 fn answer_strings() -> String {
     serde_json::to_string(&crate::i18n::answer_bundle()).expect("answer strings serialize")
