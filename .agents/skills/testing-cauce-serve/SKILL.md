@@ -224,3 +224,18 @@ None — all local, no auth.
   `data-i18n-test-failed` text in `.test-results`. Success path returns a results fragment.
 - UI canary for "bundle didn't run": submitting the search form must land on
   `/search?q=…&stream=1` — a dead bundle falls back to a plain GET `/search?q=…`.
+
+## Browser tooling gotcha (Devin box)
+
+- `browser_console`/`read_dom` attach via CDP to the automation Chrome for Testing
+  instance (`--remote-debugging-port=29229`, `--user-data-dir=/home/ubuntu/.browser_data_dir`)
+  — specifically to the page target it was opened on. A window launched yourself with
+  `google-chrome <url>` may be a *different* target: `/json/list` then shows only the
+  automation page (often `chrome://newtab/`), and `Runtime.evaluate` silently returns
+  results for THAT page (e.g. `.answer-turn` count 0 on a fully-rendered answer page).
+  Drive the flow in the CDP-attached window (`wmctrl -l` to find it, then navigate it),
+  and verify `location.href`/DOM reads match what the screenshot shows before trusting
+  console assertions.
+- Assist answers are query-cached (confidence ≥4): reusing the same SERP query for
+  `/answer?q=` afterwards replays `done{cached:true}` with no step frames — pick a
+  different question for the tool-loop run.
