@@ -29,6 +29,7 @@ const MODEL: &str = "test-answer-loop";
 const SSE_TOOLCALL: &str = include_str!("../../cauce-core/fixtures/ai/sse_toolcall.raw");
 const SSE_TOOLCALL_2: &str = include_str!("../../cauce-core/fixtures/ai/sse_toolcall_2.raw");
 const SSE_ANSWER: &str = include_str!("../../cauce-core/fixtures/ai/sse_answer.raw");
+const SSE_CONFIDENT: &str = include_str!("../../cauce-core/fixtures/ai/sse_confident.raw");
 const SSE_NOTOOLS: &str = include_str!("../../cauce-core/fixtures/ai/sse_notools.raw");
 const SSE_ERROR: &str = include_str!("../../cauce-core/fixtures/ai/sse_error.raw");
 
@@ -596,4 +597,185 @@ async fn ai_entry_points_follow_the_answer_loop() {
             "{uri}: no AI-mode pill while ai is disabled"
         );
     }
+}
+
+/// W7-04 acceptance: a `history`-carrying body replays the prior turns
+/// to the provider verbatim (system first, the user/assistant pairs in
+/// order, the new `q` last) and keeps full tool access — the loop still
+/// emits `step` frames and this turn's `sources`.
+#[tokio::test]
+async fn answer_replays_history_to_the_provider() {
+    let (router, _state, _tmp, server) = ai_app().await;
+    mount_sse(&server, SSE_TOOLCALL, 1).await;
+    mount_sse(&server, SSE_ANSWER, 1).await;
+
+    let body = r#"{"q":"and the borrow checker?","history":[
+        {"role":"user","content":"what is rust"},
+        {"role":"assistant","content":"Rust is a systems language [1]."}
+    ]}"#;
+    let (status, _, body) = post_answer(&router, body).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let events = sse_events(&body);
+    let names = event_names(&events);
+    assert!(
+        names.contains(&"step") && names.contains(&"sources") && names.last() == Some(&"done"),
+        "a follow-up turn keeps the tool loop: {names:?}"
+    );
+
+    let requests = server.received_requests().await.expect("request log");
+    assert_eq!(requests.len(), 2, "tool call turn + final turn");
+    // The first chat request already carries the replayed thread.
+    let sent: Value = serde_json::from_slice(&requests[0].body).unwrap();
+    let messages = sent["messages"].as_array().expect("messages array");
+    let roles: Vec<&str> = messages
+        .iter()
+        .map(|m| m["role"].as_str().unwrap_or("?"))
+        .collect();
+    assert_eq!(
+        roles,
+        ["system", "user", "assistant", "user"],
+        "history replays ahead of q: {sent}"
+    );
+    assert_eq!(messages[1]["content"], "what is rust");
+    assert_eq!(messages[2]["content"], "Rust is a systems language [1].");
+    assert_eq!(messages[3]["content"], "and the borrow checker?");
+    assert!(
+        sent.get("tools").map(|t| !t.as_array().unwrap().is_empty()) == Some(true),
+        "follow-ups keep tool access: {sent}"
+    );
+}
+
+/// W7-04: multi-turn requests skip the `answers` cache on both sides —
+/// a cached first turn must not replay at a follow-up, and the
+/// follow-up's context-dependent answer must not poison the
+/// single-turn row.
+#[tokio::test]
+async fn answer_history_skips_the_answers_cache() {
+    let (router, _state, _tmp, server) = ai_app().await;
+    // Provider call order: the first request's tool call + confident
+    // answer (cacheable), then the multi-turn request's own pair.
+    // Interleaved single-use mounts — wiremock matches in mount order.
+    mount_sse(&server, SSE_TOOLCALL, 1).await;
+    mount_sse(&server, SSE_CONFIDENT, 1).await;
+    mount_sse(&server, SSE_TOOLCALL, 1).await;
+    mount_sse(&server, SSE_CONFIDENT, 1).await;
+
+    // Prime the cache: single-turn `q` caches, the identical repeat
+    // replays without a provider call.
+    let (status, _, body) = post_answer(&router, r#"{"q":"tokyo weather?"}"#).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let (status, _, body) = post_answer(&router, r#"{"q":"tokyo weather?"}"#).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let done = sse_events(&body)
+        .into_iter()
+        .find(|(n, _)| n == "done")
+        .map(|(_, v)| v)
+        .expect("done frame");
+    assert_eq!(done["cached"], true, "repeat q replays the cache: {done}");
+    assert_eq!(
+        server.received_requests().await.unwrap().len(),
+        2,
+        "the repeat never reached the provider"
+    );
+
+    // Same `q`, now with history: the cache row must not answer it —
+    // the provider sees the thread instead.
+    let body = r#"{"q":"tokyo weather?","history":[
+        {"role":"user","content":"hi"},
+        {"role":"assistant","content":"hello"}
+    ]}"#;
+    let (status, _, body) = post_answer(&router, body).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let done = sse_events(&body)
+        .into_iter()
+        .find(|(n, _)| n == "done")
+        .map(|(_, v)| v)
+        .expect("done frame");
+    assert_eq!(done["cached"], false, "multi-turn never replays: {done}");
+    assert_eq!(
+        server.received_requests().await.unwrap().len(),
+        4,
+        "the threaded call reached the provider despite the cache row"
+    );
+
+    // ...and the single-turn cache row still serves repeats.
+    let (status, _, body) = post_answer(&router, r#"{"q":"tokyo weather?"}"#).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let done = sse_events(&body)
+        .into_iter()
+        .find(|(n, _)| n == "done")
+        .map(|(_, v)| v)
+        .expect("done frame");
+    assert_eq!(done["cached"], true, "the single-turn row survives: {done}");
+    assert_eq!(server.received_requests().await.unwrap().len(), 4);
+}
+
+/// W7-04: malformed threads reject `bad_request` before the stream —
+/// odd length, wrong alternation, empty content, unknown turn fields
+/// or roles, and `history` combined with `context_results` (assist
+/// stays single-turn).
+#[tokio::test]
+async fn answer_rejects_malformed_history() {
+    let (router, _state, _tmp, _server) = ai_app().await;
+    for (body, why) in [
+        (
+            r#"{"q":"x","history":[{"role":"user","content":"hi"}]}"#,
+            "odd length — ends on user",
+        ),
+        (
+            r#"{"q":"x","history":[{"role":"assistant","content":"hi"},{"role":"user","content":"hey"}]}"#,
+            "assistant first",
+        ),
+        (
+            r#"{"q":"x","history":[{"role":"user","content":"hi"},{"role":"assistant","content":"  "}]}"#,
+            "blank content",
+        ),
+        (
+            r#"{"q":"x","history":[{"role":"system","content":"hi"},{"role":"assistant","content":"hey"}]}"#,
+            "invalid role",
+        ),
+        (
+            r#"{"q":"x","history":[{"role":"user","content":"hi","extra":1},{"role":"assistant","content":"hey"}]}"#,
+            "unknown turn field",
+        ),
+        (
+            r#"{"q":"x","history":[{"role":"user","content":"hi"},{"role":"assistant","content":"hey"}],"context_results":[]}"#,
+            "history + context_results",
+        ),
+    ] {
+        let (status, _, text) = post_answer(&router, body).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{why}: {text}");
+        let env: Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(env["error"]["code"], "bad_request", "{why}");
+    }
+}
+
+/// W7-04 acceptance (page): the thread shell ships the per-turn
+/// template and the bottom-pinned follow-up form.
+#[cfg(feature = "ui")]
+#[tokio::test]
+async fn answer_page_ships_thread_markup() {
+    let (router, _state, _tmp, _server) = ai_app().await;
+    let (status, body) = get_html(&router, "/answer?q=what+is+rust").await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    for marker in [
+        r#"class="answer-turn""#,
+        r#"class="turn-q""#,
+        r#"id="answer-turn-tpl""#,
+        r#"id="answer-followup""#,
+        r#"id="followup-q""#,
+        "Ask a follow-up",
+    ] {
+        assert!(body.contains(marker), "thread markup missing {marker}");
+    }
+    // Turn 1's shell keeps its element ids inside `.answer-turn`; the
+    // template carries class-only markup (no duplicated ids).
+    let tpl_start = body.find(r#"<template id="answer-turn-tpl">"#).unwrap()
+        + "<template id=\"answer-turn-tpl\">".len();
+    let tpl_end = body[tpl_start..].find("</template>").unwrap() + tpl_start;
+    assert!(
+        !body[tpl_start..tpl_end].contains("id="),
+        "cloned turns must not duplicate the SSR ids: {}",
+        &body[tpl_start..tpl_end]
+    );
 }

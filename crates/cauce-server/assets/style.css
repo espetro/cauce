@@ -1105,6 +1105,42 @@ body.engines-page {
     margin: 0.15rem 0;
 }
 
+/* W7-04 thread turns: the asked question as a light bubble above its
+   streamed reply. */
+.answer-turn {
+    margin: 0 0 1.5rem;
+}
+
+.answer-turn + .answer-turn {
+    border-top: 1px solid var(--border);
+    padding-top: 1rem;
+}
+
+.turn-q {
+    font-weight: 600;
+    margin: 0 0 0.25rem;
+}
+
+/* W7-04: the follow-up form pins to the viewport bottom so the next
+   question is always in reach. */
+#answer-followup {
+    position: sticky;
+    bottom: 0;
+    display: flex;
+    gap: 0.5rem;
+    padding: 0.5rem 0;
+    background: var(--bg);
+    border-top: 1px solid var(--border);
+}
+
+#answer-followup[hidden] {
+    display: none;
+}
+
+#answer-followup input {
+    flex: 1;
+}
+
 /* W7-02 Search Assist card between the meta line and the results;
    reuses .answer-text, .cite and .field-error from /answer. */
 .assist {

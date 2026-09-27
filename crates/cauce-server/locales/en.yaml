@@ -547,6 +547,11 @@ answer:
   disabled_link: configure it in settings
   # `<noscript>` line inside the stream shell.
   noscript: Answering needs JavaScript; the answer stream cannot run without it.
+  # W7-04: placeholder + aria label for the pinned follow-up input
+  # that appears once a turn settles.
+  followup_placeholder: Ask a follow-up...
+  # W7-04: the follow-up form's submit label.
+  followup_submit: ask
 
 # W7-02 Search Assist card on the SERP (the DDG/Kagi shape).
 assist:

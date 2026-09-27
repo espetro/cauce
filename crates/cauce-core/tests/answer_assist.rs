@@ -82,6 +82,7 @@ fn assist_loop(
 fn req(q: &str) -> AnswerRequest {
     AnswerRequest {
         q: q.to_string(),
+        history: Vec::new(),
         client: ClientKind::Ui,
         request_id: Some(Uuid::now_v7()),
         actor: None,

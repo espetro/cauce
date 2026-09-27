@@ -32,6 +32,9 @@ fn export_bindings() {
         cauce_core::StreamMeta::export_all(&cfg),
         cauce_core::ResultsFrame::export_all(&cfg),
         cauce_core::AnswerFrame::export_all(&cfg),
+        // W7-04: the client-replayed thread turns on `AnswerBody` —
+        // `answer.ts` imports this for the `history` payload.
+        cauce_core::AnswerTurn::export_all(&cfg),
         cauce_server::ApiError::export_all(&cfg),
     ] {
         result.expect("binding export");

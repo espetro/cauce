@@ -131,7 +131,25 @@ process — you cannot give tier-1 and tier-2 different latencies from env. Mult
 - If the model wraps the metadata tail in a ```` ```json ```` fence, `parse_final_answer`
   misses it → `done.confidence=0` and the fenced JSON renders as literal answer text.
   Pre-existing parser behavior; pick a better-behaved model when a nonzero confidence
-  chip matters for evidence.
+  chip matters for evidence. Observed live with `openai/gpt-4o-mini` on follow-up
+  turns (turn 1 clean, turns 2+ fenced).
+
+### Multi-turn `/answer` threads (W7-04)
+
+- Follow-up probes must use a pronoun/referent (`who created it…`, `does it use a
+  garbage collector?`) so a missing `history` is visually obvious — without thread
+  replay the model can't resolve "it" and asks for clarification instead of naming
+  Rust/Hoare.
+- DOM spot-checks between turns (browser console):
+  `document.querySelectorAll('.answer-turn').length` for turn count, per-turn cards
+  `[...t.querySelectorAll('.source-card')].map(c=>c.id)` should be `src-<turn>-*`,
+  `[...document.querySelectorAll('[id]')]` filtered for dupes should be empty
+  (cloned turns are class-only), and `[n]` cite anchors in `.answer-text` carry
+  `href="#src-<turn>-<n>"`. The follow-up input/button go `disabled` while a turn
+  streams (`#answer-stream[aria-busy="true"]`).
+- A fenced-metadata turn (`confidence 0/10`) still counts as a completed turn — it
+  enters `history` and the follow-up bar stays usable; only `error` frames exclude
+  the turn.
 
 ## Archive / click-beacon e2e (`/api/pages`, W5-01+)
 

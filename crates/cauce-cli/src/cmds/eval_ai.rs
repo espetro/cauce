@@ -303,6 +303,7 @@ async fn run_case(
     let loop_ = AnswerLoop::new(pipeline, provider, store);
     let req = AnswerRequest {
         q: case.query.clone(),
+        history: Vec::new(),
         client: ClientKind::Cli,
         request_id: None,
         actor: Some("eval-ai".to_string()),

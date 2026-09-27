@@ -33,7 +33,7 @@ use serde::Serialize;
 use thiserror::Error;
 use uuid::Uuid;
 
-pub use answer::{AnswerFrame, AnswerLoop, AnswerRequest, ChatProvider};
+pub use answer::{AnswerFrame, AnswerLoop, AnswerRequest, AnswerRole, AnswerTurn, ChatProvider};
 pub use anthropic::AnthropicClient;
 pub use openai::OpenAiClient;
 

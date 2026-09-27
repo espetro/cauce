@@ -3,6 +3,8 @@
   "complete": "answered",
   "confidence": "confidence {n}/10",
   "error_status": "answer failed",
+  "followup_placeholder": "Ask a follow-up...",
+  "followup_submit": "ask",
   "invalid_stream": "unreadable answer stream",
   "path_direct": "answered directly — no search needed",
   "path_replay": "searched · {n} sources",

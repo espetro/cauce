@@ -111,5 +111,9 @@ pub fn answer_bundle() -> Value {
         "answer.retry_after",
         "answer.stream_failed",
         "answer.invalid_stream",
+        // W7-04: the pinned follow-up form's copy (SSR'd via tr() too,
+        // kept in the bundle so the JS side can reuse it).
+        "answer.followup_placeholder",
+        "answer.followup_submit",
     ])
 }
