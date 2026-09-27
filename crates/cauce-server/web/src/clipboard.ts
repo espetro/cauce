@@ -93,8 +93,17 @@ export function initHistoryCopy(doc: Document = document): void {
   });
 }
 
+/** The window slice `initHashDetails` listens on (tests pass a fake). */
+interface HashLoadWindow {
+  location: Pick<Location, "hash">;
+  addEventListener(name: string, listener: () => void): void;
+}
+
 /** `/cache` (`cache-page` body class): a `#id` hash opens that <details>. */
-export function initHashDetails(win: Window = window, doc: Document = document): void {
+export function initHashDetails(
+  win: HashLoadWindow = window,
+  doc: Document = document,
+): void {
   if (!doc.body || !doc.body.classList.contains("cache-page")) return;
   win.addEventListener("load", () => {
     if (win.location.hash.length > 1) {

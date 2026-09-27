@@ -16,12 +16,20 @@ interface HtmxExtensionApi {
 interface HtmxExtension {
   init?(api: HtmxExtensionApi): void;
   getSelectors?(): string[] | null;
-  onEvent?(name: string, event: Event | CustomEvent): boolean | void;
+  // htmx dispatches real Events here; the structural union member lets
+  // tests drive `onEvent` with plain `{target}`/`{detail}` fakes.
+  onEvent?(name: string, event: Event | HtmxEventLike): boolean | void;
   encodeParameters?(
     xhr: XMLHttpRequest,
     parameters: FormData,
     elt: Element,
   ): string | null;
+}
+
+/** Structural view of the `htmx:*` event objects extensions consume. */
+interface HtmxEventLike {
+  target?: unknown;
+  detail?: { elt?: unknown };
 }
 
 interface Htmx {

@@ -7,6 +7,6 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   test: {
     environment: "happy-dom",
-    include: ["web/tests/**/*.test.js"],
+    include: ["web/tests/**/*.test.ts"],
   },
 });
