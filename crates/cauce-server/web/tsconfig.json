@@ -1,0 +1,17 @@
+{
+  // Bundler-side typecheck only: rolldown emits assets/app.js; tsc never
+  // emits (noEmit). `incremental` caches the program graph in
+  // tsconfig.tsbuildinfo (gitignored).
+  "compilerOptions": {
+    "strict": true,
+    "noEmit": true,
+    "incremental": true,
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "skipLibCheck": true,
+    "verbatimModuleSyntax": true
+  },
+  "include": ["src/**/*.ts"]
+}

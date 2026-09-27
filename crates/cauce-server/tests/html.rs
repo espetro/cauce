@@ -469,16 +469,20 @@ async fn click_beacon_records_ui_client() {
     assert!(clicked, "click should be persisted with client=ui");
 }
 
-/// The vendored `json-enc` extension must be the htmx-2 build: the htmx-1
-/// version printed a console warning on every page load under htmx 2.0.4.
+/// htmx and `json-enc` ship inside the bundled `app.js` (TS migration
+/// step 1): the page inlines one script whose `defineExtension` call
+/// names the extension. The bundled `htmx-ext-json-enc` pin is the
+/// htmx-2 build — the htmx-1 line warned on every load under htmx 2.0.4.
 #[tokio::test]
-async fn vendored_json_enc_has_no_htmx1_warning() {
+async fn bundled_json_enc_has_no_htmx1_warning() {
     let (app, _state, _tmp) = app();
     let (status, body) = get_html(&app, "/search?q=x").await;
     assert_eq!(status, StatusCode::OK);
     assert!(
-        body.contains("htmx.defineExtension('json-enc'"),
-        "json-enc extension should be inlined into the page"
+        body.contains("defineExtension(`json-enc`")
+            || body.contains("defineExtension(\"json-enc\"")
+            || body.contains("defineExtension('json-enc'"),
+        "bundled json-enc registration should be inlined into the page"
     );
     assert!(
         !body.contains("htmx 1 extension"),

@@ -23,7 +23,7 @@ use chrono::Utc;
 use crate::app::AppState;
 use crate::error::ApiError;
 use crate::handlers::{EngineView, engine_views};
-use crate::html::{HTMX_JS, JSON_ENC_JS, STYLE_CSS, render_err};
+use crate::html::{STYLE_CSS, render_err};
 use crate::middleware::RequestCtx;
 use crate::strings::{common, engines as copy};
 
@@ -104,8 +104,6 @@ struct EnginesPage {
     engines_pinned: bool,
     /// Full page-render request id (footer, copyable).
     request_id: String,
-    htmx_js: String,
-    json_enc_js: String,
     style_css: String,
 }
 
@@ -148,8 +146,6 @@ pub(crate) async fn page(state: &AppState, ctx: &RequestCtx) -> Result<Html<Stri
         summary,
         engines_pinned: pinned,
         request_id: rid,
-        htmx_js: HTMX_JS.clone(),
-        json_enc_js: JSON_ENC_JS.clone(),
         style_css: STYLE_CSS.clone(),
     }
     .render()

@@ -2,18 +2,24 @@
   "name": "cauce-server-web",
   "private": true,
   "type": "module",
-  "description": "Web UI toolchain for cauce-server: bundles web/src/ into assets/app.js (esbuild) and unit-tests the modules (vitest + happy-dom).",
+  "description": "Web UI toolchain for cauce-server: bundles web/src/ into assets/app.js (rolldown), typechecks the .ts modules (typescript@7 native tsc), and unit-tests the modules (vitest + happy-dom).",
   "scripts": {
     "build": "node web/build.mjs",
     "watch": "node web/build.mjs --watch",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "typecheck": "tsc --project web/tsconfig.json"
   },
   "devDependencies": {
-    "esbuild": "0.28.2",
     "happy-dom": "20.14.5",
+    "rolldown": "1.2.11",
+    "typescript": "7.0.2",
     "vitest": "5.0.1",
     "vite": "8.2.2"
   },
-  "packageManager": "pnpm@11.21.0"
+  "packageManager": "pnpm@11.21.0",
+  "dependencies": {
+    "htmx.org": "2.0.4",
+    "htmx-ext-json-enc": "2.0.2"
+  }
 }

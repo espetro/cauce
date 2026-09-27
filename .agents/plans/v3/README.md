@@ -15,6 +15,7 @@ wave is one issue, one branch, one PR.
 | W5 | `wave-5-archive-and-semantic.md` | 6 | 12-01 to 12-14 | P2 | `fetch_and_index`, `search_archive` (3 steps) |
 | W6 | `wave-6-postgres-and-multi-instance.md` | 7 | 12-15 to 12-28 | P2 | conformance suite green on SQLite, parameterised for a second impl (1 step) |
 | W7 | `wave-7-ai-ux.md` | 8 | — | P1 | first-class AI mode entry + SERP Search Assist + visible confidence + threads (4 steps) |
+| — | `ts-migration.md` | — | — | P1 | web frontend at TS level (b): strict `tsc` gate + rolldown; 3 issues #212/#213/#214 |
 | later | `later/*.md` | none | none | P3 | stubs only; not v3.0 |
 
 ## Dependency graph
