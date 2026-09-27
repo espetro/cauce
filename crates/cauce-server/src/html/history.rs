@@ -20,7 +20,7 @@ use crate::handlers::QueryParams;
 use crate::middleware::RequestCtx;
 use crate::strings::{common, history as hs};
 
-use super::{HTMX_JS, STYLE_CSS, render_err};
+use super::{STYLE_CSS, render_err};
 
 /// `Accept: text/html` (without an explicit JSON ask) wants the page — the
 /// content-negotiation half of "the HTML page is the API handler".
@@ -105,7 +105,6 @@ struct History {
     /// empty unless the feed was truncated.
     capped_line: String,
     request_id: String,
-    htmx_js: String,
     style_css: String,
 }
 
@@ -232,7 +231,6 @@ pub(crate) async fn history_page(
         rows,
         capped_line,
         request_id: ctx.request_id.as_uuid().to_string(),
-        htmx_js: HTMX_JS.clone(),
         style_css: STYLE_CSS.clone(),
     };
     Ok(Html(

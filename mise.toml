@@ -58,12 +58,13 @@ run = "cargo check -p cauce-cli -p cauce-server --all-targets --no-default-featu
 # the task rebuilds it and diffs the output — a stale or missing app.js
 # fails the gate instead of silently shipping the old script.
 [tasks.web]
-description = "pnpm install + esbuild bundle + vitest + committed-bundle freshness"
+description = "pnpm install + tsc typecheck + rolldown bundle + vitest + committed-bundle freshness"
 dir = "crates/cauce-server"
 run = """
 #!/usr/bin/env bash
 set -euo pipefail
 pnpm install --frozen-lockfile
+pnpm run typecheck
 pnpm run build
 pnpm run test
 git diff --exit-code -- assets/app.js pnpm-lock.yaml

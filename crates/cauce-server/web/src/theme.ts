@@ -12,9 +12,14 @@
  * button inertly shows `theme` and the media query keeps working.
  */
 export const THEME_KEY = "cauce-theme";
-const ORDER = ["system", "light", "dark"];
 
-export function storedTheme(storage) {
+export type Theme = "system" | "light" | "dark";
+const ORDER: Theme[] = ["system", "light", "dark"];
+
+/** The Storage slice the toggle needs (tests pass a fake). */
+type ThemeStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
+
+export function storedTheme(storage: ThemeStorage): Theme {
   try {
     const s = storage.getItem(THEME_KEY);
     return s === "light" || s === "dark" ? s : "system";
@@ -23,16 +28,19 @@ export function storedTheme(storage) {
   }
 }
 
-export function nextTheme(state) {
+export function nextTheme(state: Theme): Theme {
   return ORDER[(ORDER.indexOf(state) + 1) % ORDER.length];
 }
 
-export function initThemeToggle(doc = document, storage = window.localStorage) {
+export function initThemeToggle(
+  doc: Document = document,
+  storage: ThemeStorage = window.localStorage,
+): void {
   const btn = doc.getElementById("theme-toggle");
   if (!btn) return;
   const root = doc.documentElement;
 
-  function render() {
+  const render = () => {
     const s = storedTheme(storage);
     const label = btn.getAttribute(`data-label-${s}`) || s;
     btn.textContent = label;
@@ -40,7 +48,7 @@ export function initThemeToggle(doc = document, storage = window.localStorage) {
     // the static aria-label only covers the no-JS render.
     const tpl = btn.getAttribute("data-aria-state");
     if (tpl) btn.setAttribute("aria-label", tpl.replace("{state}", label));
-  }
+  };
 
   btn.addEventListener("click", () => {
     const next = nextTheme(storedTheme(storage));

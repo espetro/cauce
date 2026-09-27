@@ -23,7 +23,7 @@ use crate::app::AppState;
 use crate::error::ApiError;
 use crate::middleware::RequestCtx;
 
-use super::{HTMX_JS, STYLE_CSS, prefers_json, render_err};
+use super::{STYLE_CSS, prefers_json, render_err};
 
 /// Budget for the `/models` listing behind the model picker; the settings
 /// page must not hang on a dead provider.
@@ -83,7 +83,6 @@ struct SettingsPage {
     /// target refreshes the same block out of band after a delete).
     cache_block: String,
     request_id: String,
-    htmx_js: String,
     style_css: String,
 }
 
@@ -219,7 +218,6 @@ pub async fn settings(
         ai_models_failed,
         cache_block,
         request_id: rid.to_string(),
-        htmx_js: HTMX_JS.clone(),
         style_css: STYLE_CSS.clone(),
     };
     Ok(Html(page.render().map_err(|e| render_err(e, rid))?).into_response())

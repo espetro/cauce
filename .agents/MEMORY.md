@@ -209,3 +209,23 @@ global store, and is never shared with or copied into another project.
 - UI: `strings::search::STALE_BADGE` ("stale · refreshing") is shared by
   the SSR badge arm and the streaming page's `S` bundle (JS checks
   `meta.source.cache.stale` before falling back to `S.cached`).
+
+## 2026-09-26 — TS migration step 1 (#212, branch v3/ts-toolchain)
+
+- `typescript@7` is the native tsgo build (`tsc` bin works; strict `tsc --noEmit`
+  is the new gate between `pnpm install` and `pnpm run build` in `[tasks.web]`).
+- esbuild → rolldown: `build(options)`/`watch(options)`; the MPL banner must go
+  through `output.postBanner` (runs post-minify — `banner`/`/*!` get stripped or
+  mangled), target via `transform.target`. Rolldown warns on htmx's internal
+  `eval`; expected.
+- `htmx.org` ESM (`dist/htmx.esm.js`) does NOT assign `window.htmx` — `app.js`
+  must set it before extensions register. `htmx-ext-json-enc@2.0.2` self-
+  registers on import and matches the previously vendored build.
+- rolldown's minifier rewrites string literals to backtick quotes — the
+  `html.rs` test asserting `defineExtension('json-enc'` accepts all three quote
+  forms now.
+- esbuild stays in `pnpm-workspace.yaml` `allowBuilds`: vite/vitest pull it in
+  transitively even though the bundler is gone.
+- TS narrowing does NOT flow into hoisted `function` declarations inside a
+  function body — use arrow `const` or an alias for narrowed values (hit on
+  `initThemeToggle`'s `btn`).
