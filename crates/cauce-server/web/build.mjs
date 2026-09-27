@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-// Bundles `web/src/app.js` into `assets/app.js` — a single minified IIFE
+// Bundles `web/src/app.ts` into `assets/app.js` — a single minified IIFE
 // the templates inline (`{{ crate::html::app_js()|safe }}`). `node
 // web/build.mjs --watch` rebuilds on change.
 
@@ -10,7 +10,7 @@ import { readFile } from "node:fs/promises";
 import { build, watch } from "rolldown";
 
 const options = {
-  input: "web/src/app.js",
+  input: "web/src/app.ts",
   transform: { target: "es2018" },
   output: {
     file: "assets/app.js",

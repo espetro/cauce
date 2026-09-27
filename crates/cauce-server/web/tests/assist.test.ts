@@ -4,8 +4,9 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { initAssist } from "../src/assist.js";
+import type { AnswerSource } from "../src/types/AnswerSource.js";
 
-const AS = {
+const AS: AssistStrings = {
   stream_failed: "answer stream failed",
   invalid_stream: "unreadable answer stream",
   retry_after: "retry after {n}s",
@@ -32,33 +33,36 @@ function assistShell({ streaming = false } = {}) {
         <p id="assist-error" hidden></p>
       </div>
     </section>`;
+  const $ = (id: string) => document.getElementById(id)!;
   return {
-    section: document.getElementById("assist"),
-    btn: document.getElementById("assist-btn"),
-    card: document.getElementById("assist-card"),
-    meta: document.getElementById("assist-meta"),
-    grounded: document.getElementById("assist-grounded"),
-    conf: document.getElementById("assist-confidence"),
-    ung: document.getElementById("assist-ungrounded"),
-    cachedChip: document.getElementById("assist-cached"),
-    text: document.getElementById("assist-text"),
-    sources: document.getElementById("assist-sources"),
-    err: document.getElementById("assist-error"),
+    section: $("assist"),
+    btn: document.querySelector<HTMLButtonElement>("#assist-btn")!,
+    card: $("assist-card"),
+    meta: $("assist-meta"),
+    grounded: $("assist-grounded"),
+    conf: $("assist-confidence"),
+    ung: $("assist-ungrounded"),
+    cachedChip: $("assist-cached"),
+    text: $("assist-text"),
+    sources: $("assist-sources"),
+    err: $("assist-error"),
   };
 }
 
-const ROWS = [
+const ROWS: AnswerSource[] = [
   { url: "https://a.example.com/x", title: "A", snippet: "sa", engine: "replay" },
   { url: "https://b.example.com/y", title: "B", snippet: "sb", engine: "replay" },
 ];
 
 /** A fetch stub whose body is a scripted reader (no ReadableStream needed). */
-function fetchWithChunks(chunks) {
+function fetchWithChunks(chunks: string[]) {
   const encoded = chunks.map((s) => new TextEncoder().encode(s));
   let i = 0;
-  return vi.fn(() =>
+  return vi.fn((_input: string, _init: RequestInit) =>
     Promise.resolve({
       ok: true,
+      status: 200,
+      json: () => Promise.reject(new Error("no json")),
       body: {
         getReader: () => ({
           read: () =>
@@ -73,9 +77,14 @@ function fetchWithChunks(chunks) {
   );
 }
 
-function fetchError(status, envelope) {
-  return vi.fn(() =>
-    Promise.resolve({ ok: false, status, json: () => Promise.resolve(envelope) }),
+function fetchError(status: number, envelope: unknown) {
+  return vi.fn((_input: string, _init: RequestInit) =>
+    Promise.resolve({
+      ok: false,
+      status,
+      json: () => Promise.resolve(envelope),
+      body: null,
+    }),
   );
 }
 
@@ -114,8 +123,8 @@ describe("initAssist", () => {
     const [url, init] = fetchImpl.mock.calls[0];
     expect(url).toBe("/api/answer");
     expect(init.method).toBe("POST");
-    expect(init.headers.Accept).toBe("text/event-stream");
-    expect(JSON.parse(init.body)).toEqual({ q: "tokyo weather", context_results: ROWS });
+    expect((init.headers as Record<string, string>).Accept).toBe("text/event-stream");
+    expect(JSON.parse(init.body as string)).toEqual({ q: "tokyo weather", context_results: ROWS });
   });
 
   it("fires only once — a second click does not re-POST", async () => {
@@ -143,14 +152,14 @@ describe("setContext (meta-frame wiring)", () => {
   it("arms the disabled streaming trigger when the merged order has rows", () => {
     const refs = assistShell({ streaming: true });
     const assist = initAssist(document, AS, [], vi.fn());
-    assist.setContext(ROWS);
+    assist!.setContext(ROWS);
     expect(refs.btn.disabled).toBe(false);
   });
 
   it("hides the section when the merged order is empty", () => {
     const refs = assistShell({ streaming: true });
     const assist = initAssist(document, AS, [], vi.fn());
-    assist.setContext([]);
+    assist!.setContext([]);
     expect(refs.section.hidden).toBe(true);
     expect(refs.btn.disabled).toBe(true);
   });
@@ -159,10 +168,19 @@ describe("setContext (meta-frame wiring)", () => {
     const refs = assistShell();
     const fetchImpl = fetchWithChunks([]);
     const assist = initAssist(document, AS, [], fetchImpl);
-    assist.setContext(Array.from({ length: 14 }, (_, i) => ({ url: "https://x.example/" + i })));
+    assist!.setContext(
+      Array.from({ length: 14 }, (_, i) => ({
+        url: "https://x.example/" + i,
+        title: "t" + i,
+        snippet: "s" + i,
+        engine: "replay",
+      })),
+    );
     refs.btn.click();
     await flush();
-    expect(JSON.parse(fetchImpl.mock.calls[0][1].body).context_results).toHaveLength(10);
+    expect(
+      JSON.parse(fetchImpl.mock.calls[0][1].body as string).context_results,
+    ).toHaveLength(10);
   });
 });
 
@@ -176,11 +194,11 @@ describe("assist SSE frames", () => {
     initAssist(document, AS, ROWS, fetchImpl);
     refs.btn.click();
     await flush();
-    const chip = refs.sources.querySelector("a.assist-chip");
+    const chip = refs.sources.querySelector<HTMLAnchorElement>("a.assist-chip")!;
     expect(chip).not.toBeNull();
     expect(chip.id).toBe("asrc-1");
     expect(chip.href).toBe("https://a.example.com/x");
-    expect(chip.querySelector("span").textContent).toBe("a.example.com");
+    expect(chip.querySelector("span")!.textContent).toBe("a.example.com");
     expect(refs.text.textContent).toBe("partial");
   });
 
@@ -192,7 +210,7 @@ describe("assist SSE frames", () => {
     initAssist(document, AS, ROWS, fetchImpl);
     refs.btn.click();
     await flush();
-    expect(refs.sources.querySelector("a.assist-chip").textContent).toBe("Plain");
+    expect(refs.sources.querySelector("a.assist-chip")!.textContent).toBe("Plain");
   });
 
   it("linkifies [n] markers in the done answer to the numbered chips", async () => {

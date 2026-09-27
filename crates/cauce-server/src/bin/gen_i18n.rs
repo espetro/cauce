@@ -1,4 +1,4 @@
-//! `gen_i18n` — write the pages' `var S = {...}`/`var AS = {...}` string
+//! `gen_i18n` — write the pages' `var S`/`var SA`/`var AS` string
 //! bundles to `web/src/i18n/{search,assist,answer}.json` from the
 //! rust-i18n catalog (`locales/en.yaml`). The TypeScript modules then
 //! typecheck against literal copy and vitest asserts on real strings.

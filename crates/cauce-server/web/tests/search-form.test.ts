@@ -5,7 +5,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { initAiModePill, initIndexBeacon, initSearchForm } from "../src/search.js";
 
-function clickNoNav(el) {
+function clickNoNav(el: HTMLElement) {
   el.addEventListener("click", (e) => e.preventDefault(), { once: true });
   el.click();
 }
@@ -24,15 +24,15 @@ function searchShell({ aiPill = true, indexOnClick = false } = {}) {
     </form>
     <div id="results"></div>
     </body>`;
-  const form = document.getElementById("search-form");
-  return { form, input: form.querySelector('input[name="q"]') };
+  const form = document.querySelector<HTMLFormElement>("#search-form")!;
+  return { form, input: form.querySelector<HTMLInputElement>('input[name="q"]')! };
 }
 
 function fakeLocation(origin = "http://localhost:4479") {
   return { origin, assign: vi.fn() };
 }
 
-function submit(form) {
+function submit(form: HTMLFormElement) {
   const event = new Event("submit", { cancelable: true, bubbles: true });
   form.dispatchEvent(event);
   return event;
@@ -64,8 +64,8 @@ describe("initAiModePill — assist context collection", () => {
   it("collects placeholder/submit strings from data attributes and toggles", () => {
     const { form, input } = searchShell();
     initAiModePill(form);
-    const pill = document.getElementById("ai-mode");
-    const submitBtn = form.querySelector('button[type="submit"]');
+    const pill = document.getElementById("ai-mode")!;
+    const submitBtn = form.querySelector<HTMLButtonElement>('button[type="submit"]')!;
 
     pill.click();
     expect(form.dataset.mode).toBe("ai");
@@ -85,7 +85,7 @@ describe("initAiModePill — assist context collection", () => {
     const loc = fakeLocation();
     initAiModePill(form);
     initSearchForm(form, loc);
-    document.getElementById("ai-mode").click();
+    document.getElementById("ai-mode")!.click();
     input.value = "why rust";
     submit(form);
     expect(loc.assign).toHaveBeenCalledWith("/answer?q=why%20rust");
@@ -104,7 +104,9 @@ describe("initAiModePill — assist context collection", () => {
 
 describe("initIndexBeacon", () => {
   it("posts /api/pages with url + query_hash on result clicks", () => {
-    const fetchImpl = vi.fn(() => Promise.resolve({ ok: true }));
+    const fetchImpl = vi.fn((_input: string, _init: RequestInit) =>
+      Promise.resolve({ ok: true }),
+    );
     document.body.innerHTML = "";
     document.body.setAttribute("data-index-on-click", "");
     document.body.dataset.queryHash = "hash123";
@@ -113,7 +115,7 @@ describe("initIndexBeacon", () => {
     results.innerHTML = `<a href="https://example.com/x">t</a>`;
     document.body.appendChild(results);
     initIndexBeacon(document, fetchImpl);
-    clickNoNav(results.querySelector("a"));
+    clickNoNav(results.querySelector("a")!);
     expect(fetchImpl).toHaveBeenCalledWith(
       "/api/pages",
       expect.objectContaining({
@@ -125,7 +127,9 @@ describe("initIndexBeacon", () => {
   });
 
   it("omits query_hash when empty and ignores non-http links", () => {
-    const fetchImpl = vi.fn(() => Promise.resolve({ ok: true }));
+    const fetchImpl = vi.fn((_input: string, _init: RequestInit) =>
+      Promise.resolve({ ok: true }),
+    );
     document.body.innerHTML = "";
     document.body.setAttribute("data-index-on-click", "");
     delete document.body.dataset.queryHash;
@@ -137,11 +141,13 @@ describe("initIndexBeacon", () => {
     clickNoNav(results.querySelectorAll("a")[1]);
     expect(fetchImpl).not.toHaveBeenCalled();
     clickNoNav(results.querySelectorAll("a")[0]);
-    expect(JSON.parse(fetchImpl.mock.calls[0][1].body)).toEqual({ url: "https://a.com/" });
+    expect(JSON.parse(fetchImpl.mock.calls[0][1].body as string)).toEqual({ url: "https://a.com/" });
   });
 
   it("swallows beacon rejections so the click flow never breaks", async () => {
-    const fetchImpl = vi.fn(() => Promise.reject(new Error("offline")));
+    const fetchImpl = vi.fn((_input: string, _init: RequestInit) =>
+      Promise.reject(new Error("offline")),
+    );
     document.body.innerHTML = "";
     document.body.setAttribute("data-index-on-click", "");
     const results = document.createElement("div");
@@ -149,7 +155,7 @@ describe("initIndexBeacon", () => {
     results.innerHTML = `<a href="https://a.com/">a</a>`;
     document.body.appendChild(results);
     initIndexBeacon(document, fetchImpl);
-    clickNoNav(results.querySelector("a"));
+    clickNoNav(results.querySelector("a")!);
     await vi.waitFor(() => expect(fetchImpl).toHaveBeenCalled()); // no unhandled rejection
   });
 

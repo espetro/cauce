@@ -16,5 +16,5 @@
     // `gen_i18n` from the rust-i18n catalog).
     "resolveJsonModule": true
   },
-  "include": ["src/**/*.ts"]
+  "include": ["src/**/*.ts", "tests/**/*.ts"]
 }

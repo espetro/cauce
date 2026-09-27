@@ -5,12 +5,12 @@
 import { describe, expect, it, vi } from "vitest";
 import { createStreamRenderer, initSearchStream } from "../src/search.js";
 
-function clickNoNav(el) {
+function clickNoNav(el: Element) {
   el.addEventListener("click", (e) => e.preventDefault(), { once: true });
-  el.click();
+  (el as HTMLElement).click();
 }
 
-const S = {
+const S: StreamStrings = {
   results: "results",
   no_results: "No results",
   waiting: "Waiting for engines...",
@@ -42,30 +42,35 @@ function streamShell() {
     </div>
     <p id="new-results-above" hidden></p>
     <div id="results"></div>`;
+  const $ = (id: string) => document.getElementById(id)!;
   return {
-    stream: document.getElementById("search-stream"),
-    results: document.getElementById("results"),
-    status: document.getElementById("stream-status"),
-    count: document.getElementById("result-count"),
-    metaLine: document.getElementById("search-meta"),
-    requestId: document.getElementById("request-id"),
-    above: document.getElementById("new-results-above"),
+    stream: $("search-stream"),
+    results: $("results"),
+    status: $("stream-status"),
+    count: $("result-count"),
+    metaLine: $("search-meta"),
+    requestId: $("request-id"),
+    above: $("new-results-above"),
   };
 }
 
 function renderer() {
   const refs = streamShell();
-  const fetchImpl = vi.fn(() => Promise.resolve({ ok: true }));
+  const fetchImpl = vi.fn((_input: string, _init: RequestInit) =>
+    Promise.resolve({ ok: true }),
+  );
   const r = createStreamRenderer(refs, S, { fetchImpl });
   return { refs, fetchImpl, ...r };
 }
 
-const resultsFrame = (results) => ({
+// Frame builders take `unknown` — tests deliberately emit out-of-contract
+// payloads (e.g. an unknown error kind) that the renderer must survive.
+const resultsFrame = (results: unknown) => ({
   name: "results",
   data: JSON.stringify({ results }),
 });
 
-const metaFrame = (meta) => ({ name: "meta", data: JSON.stringify(meta) });
+const metaFrame = (meta: unknown) => ({ name: "meta", data: JSON.stringify(meta) });
 
 describe("createStreamRenderer — results frames", () => {
   it("appends an article per result with icon, link, host and snippet", () => {
@@ -80,16 +85,16 @@ describe("createStreamRenderer — results frames", () => {
         },
       ]),
     );
-    const article = refs.results.querySelector("article");
+    const article = refs.results.querySelector("article")!;
     expect(article.dataset.key).toBe("k1");
-    expect(article.querySelector("img").src).toBe(
+    expect(article.querySelector("img")!.src).toBe(
       "https://icons.duckduckgo.com/ip3/example.com.ico",
     );
-    const a = article.querySelector("a");
+    const a = article.querySelector("a")!;
     expect(a.href).toBe("https://example.com/a");
     expect(a.target).toBe("_blank");
-    expect(article.querySelector(".host").textContent).toBe("example.com");
-    expect(article.querySelector(".snippet").textContent).toBe("snippet a");
+    expect(article.querySelector(".host")!.textContent).toBe("example.com");
+    expect(article.querySelector(".snippet")!.textContent).toBe("snippet a");
     expect(refs.count.textContent).toBe("1 results");
   });
 
@@ -108,7 +113,7 @@ describe("createStreamRenderer — results frames", () => {
         { key: "k2", url: "https://a.com/2", title: "t2", snippet: "s2" },
       ]),
     );
-    clickNoNav(refs.results.querySelectorAll("article a")[1]);
+    clickNoNav(refs.results.querySelectorAll<HTMLElement>("article a")[1]);
     expect(fetchImpl).toHaveBeenCalledWith(
       "/api/click",
       expect.objectContaining({
@@ -184,7 +189,7 @@ describe("createStreamRenderer — meta frame wiring", () => {
     );
     handleMessage(metaFrame({ ...meta, order: ["k2", "k1"] }));
     const articles = [...refs.results.querySelectorAll("article")];
-    expect(articles.find((a) => a.dataset.key === "k3").hidden).toBe(true);
+    expect(articles.find((a) => a.dataset.key === "k3")!.hidden).toBe(true);
     // k2 (rank 0) arrived after k1 (rank 1) -> one outranked arrival.
     expect(refs.above.hidden).toBe(false);
     expect(refs.above.textContent).toBe("1 new results above");
@@ -193,7 +198,7 @@ describe("createStreamRenderer — meta frame wiring", () => {
   it("renders the empty-state line when no results arrived", () => {
     const { refs, handleMessage } = renderer();
     handleMessage(metaFrame({ ...meta, order: [] }));
-    expect(refs.results.querySelector("p").textContent).toBe(
+    expect(refs.results.querySelector("p")!.textContent).toBe(
       "No results · bing · brave failed (blocked) · ddgs skipped",
     );
   });

@@ -7,17 +7,21 @@ import { initThemeToggle, nextTheme, storedTheme } from "../src/theme.js";
 import { initEngineErrors } from "../src/engines.js";
 import { initHashDetails, initHistoryCopy } from "../src/clipboard.js";
 
-function clickNoNav(el) {
+function clickNoNav(el: HTMLElement) {
   el.addEventListener("click", (e) => e.preventDefault(), { once: true });
   el.click();
 }
 
 function fakeStorage() {
-  const map = new Map();
+  const map = new Map<string, string>();
   return {
-    getItem: (k) => (map.has(k) ? map.get(k) : null),
-    setItem: (k, v) => map.set(k, String(v)),
-    removeItem: (k) => map.delete(k),
+    getItem: (k: string) => (map.has(k) ? map.get(k)! : null),
+    setItem: (k: string, v: string) => {
+      map.set(k, String(v));
+    },
+    removeItem: (k: string) => {
+      map.delete(k);
+    },
     map,
   };
 }
@@ -30,7 +34,7 @@ describe("theme toggle", () => {
       data-aria-state="theme: {state}">theme</button>`;
     const storage = fakeStorage();
     initThemeToggle(document, storage);
-    const btn = document.getElementById("theme-toggle");
+    const btn = document.getElementById("theme-toggle")!;
 
     expect(storedTheme(storage)).toBe("system");
     expect(btn.textContent).toBe("theme");
@@ -67,7 +71,7 @@ describe("engines responseError slot", () => {
     document.body.appendChild(card);
     initEngineErrors(document);
 
-    const fire = (elt, status) =>
+    const fire = (elt: Element | null, status: number) =>
       document.body.dispatchEvent(
         new CustomEvent("htmx:responseError", {
           bubbles: true,
@@ -75,9 +79,9 @@ describe("engines responseError slot", () => {
         }),
       );
     fire(card.querySelector("form"), 502);
-    expect(card.querySelector(".test-results").textContent).toBe("fetch failed (502)");
+    expect(card.querySelector(".test-results")!.textContent).toBe("fetch failed (502)");
     fire(card.querySelector("button"), 404);
-    expect(card.querySelector(".test-results").textContent).toBe("request failed (404)");
+    expect(card.querySelector(".test-results")!.textContent).toBe("request failed (404)");
   });
 
   it("no-ops on pages without the i18n attributes", () => {
@@ -107,9 +111,9 @@ describe("history copy-json", () => {
     });
     initHistoryCopy(document);
 
-    clickNoNav(td.querySelector("a"));
+    clickNoNav(td.querySelector("a")!);
     await vi.waitFor(() => expect(writeText).toHaveBeenCalledWith('{"a":1}'));
-    const a = td.querySelector("a");
+    const a = td.querySelector("a")!;
     expect(a.textContent).toBe("copied");
     vi.advanceTimersByTime(1600);
     expect(a.textContent).toBe("copy json");
@@ -131,8 +135,8 @@ describe("history copy-json", () => {
     });
     initHistoryCopy(document);
 
-    clickNoNav(td.querySelector("a"));
-    const code = td.querySelector(".copy-fallback");
+    clickNoNav(td.querySelector("a")!);
+    const code = td.querySelector<HTMLElement>(".copy-fallback")!;
     await vi.waitFor(() => expect(code.hidden).toBe(false));
     expect(code.textContent).toContain("/api/search?q=x");
     vi.unstubAllGlobals();
@@ -144,16 +148,16 @@ describe("cache hash details", () => {
     document.body.innerHTML = "";
     document.body.className = "cache-page";
     document.body.innerHTML = `<details id="row-1"><summary>s</summary></details>`;
+    const listeners = new Map<string, () => void>();
     const win = {
       location: { hash: "#row-1" },
-      listeners: new Map(),
-      addEventListener(n, f) {
-        this.listeners.set(n, f);
+      addEventListener(n: string, f: () => void) {
+        listeners.set(n, f);
       },
     };
     initHashDetails(win, document);
-    win.listeners.get("load")();
-    expect(document.getElementById("row-1").open).toBe(true);
+    listeners.get("load")!();
+    expect((document.getElementById("row-1") as HTMLDetailsElement).open).toBe(true);
   });
 
   it("no-ops off the cache page", () => {
