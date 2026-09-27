@@ -40,7 +40,6 @@ fn asset_string(name: &str) -> String {
         .unwrap_or_default()
 }
 
-static HTMX_JS: LazyLock<String> = LazyLock::new(|| asset_string("htmx.min.js"));
 static STYLE_CSS: LazyLock<String> = LazyLock::new(|| asset_string("style.css"));
 
 /// Default `/cache` page size.
@@ -88,7 +87,6 @@ struct CachePage {
     prev_url: String,
     next_url: String,
     request_id: String,
-    htmx_js: String,
     style_css: String,
 }
 
@@ -172,7 +170,6 @@ pub async fn cache(
         prev_url,
         next_url,
         request_id: rid,
-        htmx_js: HTMX_JS.clone(),
         style_css: STYLE_CSS.clone(),
     };
     page.render()

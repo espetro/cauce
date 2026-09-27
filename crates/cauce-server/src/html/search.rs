@@ -20,7 +20,7 @@ use crate::error::ApiError;
 use crate::handlers::{QueryParams, search_inner};
 use crate::middleware::RequestCtx;
 
-use super::assets::{HTMX_JS, JSON_ENC_JS, STYLE_CSS};
+use super::assets::STYLE_CSS;
 use super::{Page, Row, is_htmx, prefers_json, render_err, render_html, short_id};
 
 /// Results partial swapped in by HTMX `hx-get` on the more button.
@@ -52,8 +52,6 @@ pub async fn index(
         short_request_id: short_id(&rid),
         results: Vec::new(),
         more_url: String::new(),
-        htmx_js: HTMX_JS.clone(),
-        json_enc_js: JSON_ENC_JS.clone(),
         style_css: STYLE_CSS.clone(),
         is_streaming: false,
         stream_url: String::new(),
@@ -116,8 +114,6 @@ pub async fn search(
             short_request_id: short_id(&rid),
             results: Vec::new(),
             more_url: String::new(),
-            htmx_js: HTMX_JS.clone(),
-            json_enc_js: JSON_ENC_JS.clone(),
             style_css: STYLE_CSS.clone(),
             is_streaming: true,
             stream_url: stream_url(&params, &req),
@@ -171,8 +167,6 @@ pub async fn search(
             short_request_id: short_id(&rid),
             results: rows,
             more_url,
-            htmx_js: HTMX_JS.clone(),
-            json_enc_js: JSON_ENC_JS.clone(),
             style_css: STYLE_CSS.clone(),
             is_streaming: false,
             stream_url: String::new(),

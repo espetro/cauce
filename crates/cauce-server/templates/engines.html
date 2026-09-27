@@ -33,8 +33,6 @@
   <footer class="meta">
     {{ crate::strings::common::REQUEST_LABEL }} <code class="request-id" id="page-request-id" title="{{ request_id }}">{{ request_id }}</code>
   </footer>
-  <script>{{ htmx_js|safe }}</script>
-  <script>{{ json_enc_js|safe }}</script>
   <script>{{ crate::html::app_js()|safe }}</script>
 </body>
 </html>

@@ -22,7 +22,7 @@ use crate::handlers::QueryParams;
 use crate::middleware::RequestCtx;
 use crate::strings::answer as copy;
 
-use super::assets::{HTMX_JS, STYLE_CSS};
+use super::assets::STYLE_CSS;
 use super::{render_err, short_id};
 
 /// Full page, rendered for `GET /answer` (ask form only) and
@@ -48,7 +48,6 @@ struct AnswerPage {
     request_id: String,
     short_request_id: String,
     style_css: String,
-    htmx_js: String,
     /// `serde_json`-encoded `q` — the inline script's POST body literal.
     q_json: String,
     /// `crate::strings::answer` copy as a `var S = {...}` JSON literal.
@@ -82,7 +81,6 @@ pub async fn answer(
         request_id: rid.clone(),
         short_request_id: short_id(&rid),
         style_css: STYLE_CSS.clone(),
-        htmx_js: HTMX_JS.clone(),
         answer_strings: answer_strings(),
     };
     page.render()

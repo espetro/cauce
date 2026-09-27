@@ -38,7 +38,7 @@ pub use answer::answer;
 pub use archive::archive;
 #[cfg(feature = "archive")]
 pub(crate) use archive::{archive_page, page_markdown, page_markdown_error};
-pub(crate) use assets::{HTMX_JS, JSON_ENC_JS, STYLE_CSS, VERSION_LABEL, app_js};
+pub(crate) use assets::{STYLE_CSS, VERSION_LABEL, app_js};
 pub use assets::{favicon, opensearch};
 pub use history::history;
 pub(crate) use history::{history_page, prefers_html};
@@ -78,8 +78,6 @@ struct Page {
     short_request_id: String,
     results: Vec<Row>,
     more_url: String,
-    htmx_js: String,
-    json_enc_js: String,
     style_css: String,
     is_streaming: bool,
     stream_url: String,
