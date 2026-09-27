@@ -15,10 +15,9 @@ use axum::response::{
     sse::{Event, KeepAlive},
 };
 use cauce_core::{
-    ClientKind, EngineId, PipelineError, SafeSearch, SearchOpts, SearchRequest, SearchResponse,
-    SearchResult, StreamEvent, TimeRange,
+    ClientKind, EngineId, PipelineError, ResultsFrame, SafeSearch, SearchOpts, SearchRequest,
+    SearchResponse, StreamEvent, StreamResult, TimeRange,
 };
-use serde_json::{Value, json};
 use tokio_stream::StreamExt;
 
 use super::{QueryParams, engine_error_class, search_error_payload};
@@ -159,11 +158,11 @@ pub async fn search_stream(
                 elapsed_ms,
             } => Event::default()
                 .event("results")
-                .json_data(json!({
-                    "engine": engine,
-                    "results": results.iter().map(stream_result_json).collect::<Vec<_>>(),
-                    "elapsed_ms": elapsed_ms,
-                }))
+                .json_data(ResultsFrame {
+                    engine,
+                    results: results.iter().map(StreamResult::from).collect(),
+                    elapsed_ms,
+                })
                 .expect("search result event serializes"),
             StreamEvent::Meta(meta) => Event::default()
                 .event("meta")
@@ -201,16 +200,6 @@ fn client_hint(value: &str) -> Option<ClientKind> {
             name.to_string()
         })
     })
-}
-
-/// A streamed result plus `key`, the server-side dedupe key
-/// (`normalize_url` of its URL — the same form `meta.order` carries). The
-/// progressive page dedupes appended articles on `key`: the merge drops
-/// duplicate URL spellings the raw `url` field would render twice.
-fn stream_result_json(result: &SearchResult) -> Value {
-    let mut value = serde_json::to_value(result).expect("SearchResult serializes");
-    value["key"] = json!(cauce_core::normalize_url(&result.url));
-    value
 }
 
 pub(crate) fn search_error(
@@ -266,10 +255,10 @@ pub(crate) async fn search_inner_classed(
     state: &AppState,
     ctx: &RequestCtx,
     uri: &Uri,
-) -> Result<(SearchRequest, SearchResponse), (ApiError, &'static str)> {
-    use crate::strings::engines as copy;
-
-    let req = parse_search_request(ctx, uri, &[]).map_err(|e| (e, copy::TEST_BAD_REQUEST))?;
+) -> Result<(SearchRequest, SearchResponse), (ApiError, std::borrow::Cow<'static, str>)> {
+    use rust_i18n::t;
+    let req =
+        parse_search_request(ctx, uri, &[]).map_err(|e| (e, t!("engines.test_bad_request")))?;
     match state
         .pipeline()
         .search_with_id(&req, ctx.request_id.as_uuid())
@@ -289,16 +278,15 @@ pub(crate) fn search_error_classed(
     ctx: &RequestCtx,
     req: &SearchRequest,
     error: PipelineError,
-) -> (ApiError, &'static str) {
-    use crate::strings::engines as copy;
-
+) -> (ApiError, std::borrow::Cow<'static, str>) {
+    use rust_i18n::t;
     let class = match &error {
-        PipelineError::UnknownEngines { .. } => copy::TEST_UNKNOWN_ENGINES,
-        PipelineError::NoEngines if req.engines.is_some() => copy::TEST_UNKNOWN_ENGINES,
-        PipelineError::NoEngines => copy::TEST_NO_ENGINES,
+        PipelineError::UnknownEngines { .. } => t!("engines.test_unknown_engines"),
+        PipelineError::NoEngines if req.engines.is_some() => t!("engines.test_unknown_engines"),
+        PipelineError::NoEngines => t!("engines.test_no_engines"),
         PipelineError::AllEnginesFailed(failures) => engine_error_class(failures),
-        PipelineError::RateLimited { .. } => copy::TEST_RATE_LIMITED,
-        PipelineError::BreakerOpen(_) => copy::TEST_BREAKER_OPEN,
+        PipelineError::RateLimited { .. } => t!("engines.test_rate_limited"),
+        PipelineError::BreakerOpen(_) => t!("engines.test_breaker_open"),
     };
     (search_error(ctx, req, error), class)
 }

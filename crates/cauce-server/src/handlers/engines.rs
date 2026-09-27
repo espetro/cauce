@@ -341,11 +341,12 @@ async fn engine_set_enabled(
 
     #[cfg(feature = "ui")]
     if crate::html::is_htmx(headers) {
+        use rust_i18n::t;
         return crate::engines_page::card(
             state,
             &id,
             ctx.request_id.as_uuid(),
-            Some(crate::strings::engines::TOGGLE_SAVED),
+            Some(t!("engines.toggle_saved")),
         )
         .await;
     }

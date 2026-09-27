@@ -17,6 +17,7 @@ use async_trait::async_trait;
 use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use ts_rs::TS;
 use url::Url;
 use uuid::Uuid;
 
@@ -438,7 +439,7 @@ impl FromStr for AnswerKey {
 
 /// One cited source: an item of the `sources` frame (W4-02 settled wire
 /// shape) and of `answers.sources_json`.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 pub struct AnswerSource {
     pub url: Url,
     pub title: String,

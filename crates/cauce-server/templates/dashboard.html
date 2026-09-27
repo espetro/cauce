@@ -6,7 +6,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{{ crate::strings::dashboard::TITLE }} · {{ crate::strings::common::BRAND }}</title>
+  <title>{{ crate::i18n::tr("dashboard.title") }} · {{ crate::i18n::tr("common.brand") }}</title>
   <link rel="search" type="application/opensearchdescription+xml" title="cauce" href="/opensearch.xml">
   <link rel="icon" href="/favicon.ico" type="image/svg+xml">
   <style>{{ style_css|safe }}</style>
@@ -50,18 +50,18 @@
 <body>
   {% include "header.html" %}
   <main>
-  <h1>{{ crate::strings::dashboard::TITLE }}</h1>
-  <p class="meta window">{{ crate::strings::dashboard::WINDOW }}:
-    <a href="/dashboard?days=7"{% if days == 7 %} aria-current="page"{% endif %}>{{ crate::strings::dashboard::DAYS_7 }}</a>
+  <h1>{{ crate::i18n::tr("dashboard.title") }}</h1>
+  <p class="meta window">{{ crate::i18n::tr("dashboard.window") }}:
+    <a href="/dashboard?days=7"{% if days == 7 %} aria-current="page"{% endif %}>{{ crate::i18n::tr("dashboard.days_7") }}</a>
     ·
-    <a href="/dashboard?days=30"{% if days == 30 %} aria-current="page"{% endif %}>{{ crate::strings::dashboard::DAYS_30 }}</a>
+    <a href="/dashboard?days=30"{% if days == 30 %} aria-current="page"{% endif %}>{{ crate::i18n::tr("dashboard.days_30") }}</a>
   </p>
 
   <div class="panels">
     <section class="panel">
-      <h2 id="searches-per-day">{{ crate::strings::dashboard::SEARCHES_PER_DAY }}</h2>
+      <h2 id="searches-per-day">{{ crate::i18n::tr("dashboard.searches_per_day") }}</h2>
       {% if bars.is_empty() %}
-      <p class="muted">{{ crate::strings::dashboard::NO_DATA }}</p>
+      <p class="muted">{{ crate::i18n::tr("dashboard.no_data") }}</p>
       {% else %}
       <svg class="bars" viewBox="0 0 {{ chart_w }} {{ chart_h }}" role="img" aria-labelledby="searches-per-day">
         {% for bar in bars %}
@@ -70,14 +70,14 @@
         <text x="{{ bar.x }}" y="{{ chart_h }}">{{ bar.tick }}</text>
         {% endfor %}
       </svg>
-      <p class="legend"><span><i class="c"></i>{{ crate::strings::dashboard::LEGEND_CACHE }}</span><span><i class="n"></i>{{ crate::strings::dashboard::LEGEND_NETWORK }}</span></p>
+      <p class="legend"><span><i class="c"></i>{{ crate::i18n::tr("dashboard.legend_cache") }}</span><span><i class="n"></i>{{ crate::i18n::tr("dashboard.legend_network") }}</span></p>
       {% endif %}
     </section>
 
     <section class="panel">
-      <h2>{{ crate::strings::dashboard::HIT_RATE }}</h2>
+      <h2>{{ crate::i18n::tr("dashboard.hit_rate") }}</h2>
       {% if !has_data %}
-      <p class="muted">{{ crate::strings::dashboard::NO_DATA }}</p>
+      <p class="muted">{{ crate::i18n::tr("dashboard.no_data") }}</p>
       {% else %}
       <p class="big">{{ hit_rate_pct }}</p>
       <p class="muted">{{ total_hits }} / {{ total_searches }}</p>
@@ -92,17 +92,17 @@
     </section>
 
     <section class="panel">
-      <h2>{{ crate::strings::dashboard::LATENCY }}</h2>
+      <h2>{{ crate::i18n::tr("dashboard.latency") }}</h2>
       {% if !has_latency && !has_ttfr %}
-      <p class="muted">{{ crate::strings::dashboard::NO_DATA }}</p>
+      <p class="muted">{{ crate::i18n::tr("dashboard.no_data") }}</p>
       {% else %}
       <dl class="kv">
         {% if has_ttfr %}
-        <dt>{{ crate::strings::dashboard::TTFR }}</dt>
+        <dt>{{ crate::i18n::tr("dashboard.ttfr") }}</dt>
         <dd>p50 {{ ttfr.p50_ms }} ms · p90 {{ ttfr.p90_ms }} ms · p99 {{ ttfr.p99_ms }} ms</dd>
         {% endif %}
         {% if has_latency %}
-        <dt>{{ crate::strings::dashboard::FULL }}</dt>
+        <dt>{{ crate::i18n::tr("dashboard.full") }}</dt>
         <dd>p50 {{ lat.p50_ms }} ms · p90 {{ lat.p90_ms }} ms · p99 {{ lat.p99_ms }} ms</dd>
         {% endif %}
       </dl>
@@ -110,9 +110,9 @@
     </section>
 
     <section class="panel">
-      <h2>{{ crate::strings::dashboard::CLIENTS }}</h2>
+      <h2>{{ crate::i18n::tr("dashboard.clients") }}</h2>
       {% if clients.is_empty() %}
-      <p class="muted">{{ crate::strings::dashboard::NO_DATA }}</p>
+      <p class="muted">{{ crate::i18n::tr("dashboard.no_data") }}</p>
       {% else %}
       <ul class="flat">
         {% for c in clients %}
@@ -123,9 +123,9 @@
     </section>
 
     <section class="panel">
-      <h2>{{ crate::strings::dashboard::OUTCOMES }}</h2>
+      <h2>{{ crate::i18n::tr("dashboard.outcomes") }}</h2>
       {% if outcomes.is_empty() %}
-      <p class="muted">{{ crate::strings::dashboard::NO_DATA }}</p>
+      <p class="muted">{{ crate::i18n::tr("dashboard.no_data") }}</p>
       {% else %}
       <ul class="flat">
         {% for o in outcomes %}
@@ -136,25 +136,25 @@
     </section>
 
     <section class="panel">
-      <h2>{{ crate::strings::dashboard::RELIABILITY }}</h2>
+      <h2>{{ crate::i18n::tr("dashboard.reliability") }}</h2>
       {% if !has_data && deadline_hits == 0 && stale_served == 0 && admission_rejected == 0 %}
-      <p class="muted">{{ crate::strings::dashboard::NO_DATA }}</p>
+      <p class="muted">{{ crate::i18n::tr("dashboard.no_data") }}</p>
       {% else %}
       <dl class="kv">
-        <dt>{{ crate::strings::dashboard::DEADLINE_HITS }}</dt>
+        <dt>{{ crate::i18n::tr("dashboard.deadline_hits") }}</dt>
         <dd>{{ deadline_hits }} · {{ deadline_rate }}</dd>
-        <dt>{{ crate::strings::dashboard::STALE_SERVED }}</dt>
+        <dt>{{ crate::i18n::tr("dashboard.stale_served") }}</dt>
         <dd>{{ stale_served }}</dd>
-        <dt>{{ crate::strings::dashboard::ADMISSION_REJECTED }}</dt>
+        <dt>{{ crate::i18n::tr("dashboard.admission_rejected") }}</dt>
         <dd>{{ admission_rejected }}</dd>
       </dl>
       {% endif %}
     </section>
 
     <section class="panel">
-      <h2>{{ crate::strings::dashboard::TOP_QUERIES }}</h2>
+      <h2>{{ crate::i18n::tr("dashboard.top_queries") }}</h2>
       {% if top_queries.is_empty() %}
-      <p class="muted">{{ crate::strings::dashboard::NO_DATA }}</p>
+      <p class="muted">{{ crate::i18n::tr("dashboard.no_data") }}</p>
       {% else %}
       <ul class="flat">
         {% for q in top_queries %}
@@ -165,9 +165,9 @@
     </section>
 
     <section class="panel">
-      <h2>{{ crate::strings::dashboard::ZERO_RESULTS }}</h2>
+      <h2>{{ crate::i18n::tr("dashboard.zero_results") }}</h2>
       {% if zero_queries.is_empty() %}
-      <p class="muted">{{ crate::strings::dashboard::NO_DATA }}</p>
+      <p class="muted">{{ crate::i18n::tr("dashboard.no_data") }}</p>
       {% else %}
       <ul class="flat">
         {% for q in zero_queries %}
@@ -178,9 +178,9 @@
     </section>
 
     <section class="panel">
-      <h2>{{ crate::strings::dashboard::ENGINE_EVAL }}</h2>
+      <h2>{{ crate::i18n::tr("dashboard.engine_eval") }}</h2>
       {% if !has_engine_eval %}
-      <p class="muted">{{ crate::strings::dashboard::EVAL_NO_RUN }}</p>
+      <p class="muted">{{ crate::i18n::tr("dashboard.eval_no_run") }}</p>
       {% else %}
       <p class="muted">{{ eval_meta }}</p>
       <ul class="flat">
@@ -193,32 +193,32 @@
   </div>
 
   <section class="panel">
-    <h2>{{ crate::strings::dashboard::ENGINES }}</h2>
+    <h2>{{ crate::i18n::tr("dashboard.engines") }}</h2>
     {% if engines.is_empty() %}
-    <p class="muted">{{ crate::strings::dashboard::NO_ENGINES }}</p>
+    <p class="muted">{{ crate::i18n::tr("dashboard.no_engines") }}</p>
     {% else %}
     <table class="stats">
       <thead>
         <tr>
-          <th>{{ crate::strings::dashboard::COL_ENGINE }}</th>
-          <th>{{ crate::strings::dashboard::COL_BREAKER }}</th>
-          <th>{{ crate::strings::dashboard::COL_RELIABILITY }}</th>
-          <th>{{ crate::strings::dashboard::COL_CALLS }}</th>
-          <th>{{ crate::strings::dashboard::COL_TOTAL }}</th>
-          <th>{{ crate::strings::dashboard::COL_HTTP }}</th>
-          <th>{{ crate::strings::dashboard::COL_PARSE }}</th>
+          <th>{{ crate::i18n::tr("dashboard.col_engine") }}</th>
+          <th>{{ crate::i18n::tr("dashboard.col_breaker") }}</th>
+          <th>{{ crate::i18n::tr("dashboard.col_reliability") }}</th>
+          <th>{{ crate::i18n::tr("dashboard.col_calls") }}</th>
+          <th>{{ crate::i18n::tr("dashboard.col_total") }}</th>
+          <th>{{ crate::i18n::tr("dashboard.col_http") }}</th>
+          <th>{{ crate::i18n::tr("dashboard.col_parse") }}</th>
         </tr>
       </thead>
       <tbody>
         {% for e in engines %}
         <tr>
-          <td data-label="{{ crate::strings::dashboard::COL_ENGINE }}"><a href="/engines#{{ e.card_anchor }}">{{ e.id }}</a></td>
-          <td data-label="{{ crate::strings::dashboard::COL_BREAKER }}">{{ e.breaker }}</td>
-          <td data-label="{{ crate::strings::dashboard::COL_RELIABILITY }}">{{ e.reliability }}</td>
-          <td data-label="{{ crate::strings::dashboard::COL_CALLS }}">{{ e.requests }}</td>
-          <td data-label="{{ crate::strings::dashboard::COL_TOTAL }}">{{ e.total }}</td>
-          <td data-label="{{ crate::strings::dashboard::COL_HTTP }}">{{ e.http }}</td>
-          <td data-label="{{ crate::strings::dashboard::COL_PARSE }}">{{ e.parse }}</td>
+          <td data-label="{{ crate::i18n::tr("dashboard.col_engine") }}"><a href="/engines#{{ e.card_anchor }}">{{ e.id }}</a></td>
+          <td data-label="{{ crate::i18n::tr("dashboard.col_breaker") }}">{{ e.breaker }}</td>
+          <td data-label="{{ crate::i18n::tr("dashboard.col_reliability") }}">{{ e.reliability }}</td>
+          <td data-label="{{ crate::i18n::tr("dashboard.col_calls") }}">{{ e.requests }}</td>
+          <td data-label="{{ crate::i18n::tr("dashboard.col_total") }}">{{ e.total }}</td>
+          <td data-label="{{ crate::i18n::tr("dashboard.col_http") }}">{{ e.http }}</td>
+          <td data-label="{{ crate::i18n::tr("dashboard.col_parse") }}">{{ e.parse }}</td>
         </tr>
         {% endfor %}
       </tbody>
@@ -227,22 +227,22 @@
   </section>
 
   <section class="panel">
-    <h2>{{ crate::strings::dashboard::CACHE }}</h2>
+    <h2>{{ crate::i18n::tr("dashboard.cache") }}</h2>
     <dl class="kv">
-      <dt>{{ crate::strings::dashboard::CACHE_ROWS }}</dt>
+      <dt>{{ crate::i18n::tr("dashboard.cache_rows") }}</dt>
       <dd>{{ cache_rows }} ({{ cache_expired }} expired)</dd>
-      <dt>{{ crate::strings::dashboard::CACHE_UNEXPIRED }}</dt>
+      <dt>{{ crate::i18n::tr("dashboard.cache_unexpired") }}</dt>
       <dd>{{ cache_unexpired }}</dd>
-      <dt>{{ crate::strings::dashboard::CACHE_DB_SIZE }}</dt>
+      <dt>{{ crate::i18n::tr("dashboard.cache_db_size") }}</dt>
       <dd>{{ cache_db }}</dd>
-      <dt>{{ crate::strings::dashboard::CACHE_NEWEST }}</dt>
+      <dt>{{ crate::i18n::tr("dashboard.cache_newest") }}</dt>
       <dd>{{ cache_newest }}</dd>
     </dl>
   </section>
 
   </main>
   <footer class="meta">
-    {{ crate::strings::common::REQUEST_LABEL }} <code class="request-id" title="{{ request_id }}">{{ request_id }}</code>
+    {{ crate::i18n::tr("common.request_label") }} <code class="request-id" title="{{ request_id }}">{{ request_id }}</code>
   </footer>
   <script>{{ crate::html::app_js()|safe }}</script>
 </body>

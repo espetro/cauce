@@ -1,0 +1,18 @@
+{
+  "cached": "cached",
+  "complete": "answered",
+  "confidence": "confidence {n}/10",
+  "error_status": "answer failed",
+  "invalid_stream": "unreadable answer stream",
+  "path_direct": "answered directly — no search needed",
+  "path_replay": "searched · {n} sources",
+  "path_searched": "searched {tools} · {n} sources",
+  "related": "related",
+  "retry_after": "retry after {n}s",
+  "sources": "sources",
+  "stream_failed": "answer stream failed",
+  "tool_archive": "archive",
+  "tool_web": "web",
+  "ungrounded": "this answer cites no sources — it may be ungrounded",
+  "waiting": "answering..."
+}
