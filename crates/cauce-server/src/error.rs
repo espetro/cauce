@@ -9,6 +9,7 @@ use axum::Json;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use serde_json::json;
+use ts_rs::TS;
 use uuid::Uuid;
 
 /// An API error rendered as the `{error: {...}}` envelope.
@@ -18,14 +19,24 @@ use uuid::Uuid;
 /// `X-Request-Id` response header.
 ///
 /// [`RequestCtx`]: crate::middleware::RequestCtx
-#[derive(Debug)]
+///
+/// The TypeScript shape is the emitted envelope (`envelope()`), not the
+/// field set — `status` rides the response line, `retry_after_s` the
+/// `Retry-After` header, so neither appears in the body.
+#[derive(Debug, TS)]
+#[ts(type = "{ error: { code: string, message: string, request_id: string | null } }")]
 pub struct ApiError {
+    #[ts(skip)]
     status: StatusCode,
     /// Stable machine code (`bad_request`, `not_found`, `no_engines`, ...).
+    #[ts(skip)]
     code: &'static str,
+    #[ts(skip)]
     message: String,
+    #[ts(skip)]
     request_id: Option<Uuid>,
     /// `Retry-After` seconds for 429s (admission overflow, W1-07).
+    #[ts(skip)]
     retry_after_s: Option<u64>,
 }
 

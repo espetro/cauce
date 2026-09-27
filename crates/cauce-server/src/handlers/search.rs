@@ -15,10 +15,9 @@ use axum::response::{
     sse::{Event, KeepAlive},
 };
 use cauce_core::{
-    ClientKind, EngineId, PipelineError, SafeSearch, SearchOpts, SearchRequest, SearchResponse,
-    SearchResult, StreamEvent, TimeRange,
+    ClientKind, EngineId, PipelineError, ResultsFrame, SafeSearch, SearchOpts, SearchRequest,
+    SearchResponse, StreamEvent, StreamResult, TimeRange,
 };
-use serde_json::{Value, json};
 use tokio_stream::StreamExt;
 
 use super::{QueryParams, engine_error_class, search_error_payload};
@@ -159,11 +158,11 @@ pub async fn search_stream(
                 elapsed_ms,
             } => Event::default()
                 .event("results")
-                .json_data(json!({
-                    "engine": engine,
-                    "results": results.iter().map(stream_result_json).collect::<Vec<_>>(),
-                    "elapsed_ms": elapsed_ms,
-                }))
+                .json_data(ResultsFrame {
+                    engine,
+                    results: results.iter().map(StreamResult::from).collect(),
+                    elapsed_ms,
+                })
                 .expect("search result event serializes"),
             StreamEvent::Meta(meta) => Event::default()
                 .event("meta")
@@ -201,16 +200,6 @@ fn client_hint(value: &str) -> Option<ClientKind> {
             name.to_string()
         })
     })
-}
-
-/// A streamed result plus `key`, the server-side dedupe key
-/// (`normalize_url` of its URL — the same form `meta.order` carries). The
-/// progressive page dedupes appended articles on `key`: the merge drops
-/// duplicate URL spellings the raw `url` field would render twice.
-fn stream_result_json(result: &SearchResult) -> Value {
-    let mut value = serde_json::to_value(result).expect("SearchResult serializes");
-    value["key"] = json!(cauce_core::normalize_url(&result.url));
-    value
 }
 
 pub(crate) fn search_error(
