@@ -1,0 +1,20 @@
+{
+  "cached": "cached",
+  "complete": "Search complete",
+  "engine_failed": "{engine} failed ({kind})",
+  "engine_skipped": "{engine} skipped (breaker)",
+  "err_blocked": "blocked",
+  "err_no_results": "no results",
+  "err_parse": "parse",
+  "err_rate_limited": "rate limited",
+  "err_timeout": "timeout",
+  "err_transport": "transport",
+  "err_unknown": "failed",
+  "invalid_stream": "Search stream returned invalid data",
+  "live_badge": "live · {ms} ms",
+  "new_above": "{n} new results above",
+  "no_results": "No results",
+  "results": "results",
+  "stale_badge": "stale · refreshing",
+  "waiting": "Waiting for engines..."
+}

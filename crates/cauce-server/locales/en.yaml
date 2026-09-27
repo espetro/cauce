@@ -1,0 +1,578 @@
+_version: 1
+
+# Strings shared across pages.
+common:
+  # The product name (brand link, title suffix).
+  brand: cauce
+  # Empty-cell placeholder.
+  dash: '-'
+  # Footer label ahead of the page's own request id.
+  request_label: request
+  # Primary nav link to the search landing page.
+  nav_search: search
+  # Primary nav link to `/history`.
+  nav_history: history
+  # Primary nav link to `/dashboard`.
+  nav_dashboard: dashboard
+  # Primary nav link to `/archive`.
+  nav_archive: archive
+  # Primary nav link to `/answer`; the link renders only while an
+  # answer loop exists (W7-01).
+  nav_answer: answer
+  # Operator nav link to `/engines`.
+  nav_engines: engines
+  # Operator nav link to `/cache`.
+  nav_cache: cache
+  # Operator nav link to `/audit`.
+  nav_audit: audit
+  # Header link to `/settings` (outside the operator group).
+  nav_settings: settings
+  # Label of the collapsed operator-group menu below 700 px.
+  nav_more: more
+  # `aria-label` of the primary nav landmark.
+  nav_primary_label: primary
+  # `aria-label` of the operator nav landmark (inline and inside `more`).
+  nav_operator_label: operator
+  # Theme toggle button text and `aria-label`; cycles system -> light
+  # -> dark (W2-08). JS rewrites the text to the active state's word.
+  theme_switch: theme
+  # Theme state word shown on the toggle while following
+  # `prefers-color-scheme` (no stored choice).
+  theme_system: system
+  # Theme state word while light is forced.
+  theme_light: light
+  # Theme state word while dark is forced.
+  theme_dark: dark
+  # `aria-label` for the toggle before JS runs; names the cycle it
+  # steps through. Once wired, `THEME_ARIA_STATE` takes over so the
+  # accessible name announces the active state.
+  theme_aria: 'theme: cycles system, light, dark'
+  # `aria-label` template the toggle JS fills in on every state change
+  # (`theme: dark`); `{state}` is replaced with the state's word.
+  theme_aria_state: 'theme: {state}'
+
+# `/` and `/search` page copy: the landing form, the server-rendered
+# results page and the W2-01 streaming shell. The streaming page's
+# inline JS interpolates these too (serialized once into the page as a
+# `var S = {...}` literal), so no user-visible string lives in the
+# template or the script.
+search:
+  # Search-box placeholder.
+  placeholder: Search...
+  # Search-box submit label.
+  submit: Search
+  # In-form AI-mode pill (W7-01): toggles the form's submit target
+  # between `/search` and `/answer`; renders only while an answer
+  # loop exists.
+  ai_mode: AI mode
+  # Result-count suffix (`12 results`).
+  results: results
+  # Empty-state lead-in (`No results` / `No results · <statuses>`).
+  no_results: No results
+  # Next-page button label.
+  more: More
+  # Badge while the SSE stream is in flight.
+  searching: searching...
+  # Status line under the stream shell before the first event.
+  waiting: Waiting for engines...
+  # Status line once the terminal `meta` event lands.
+  complete: Search complete
+  # Status line when an SSE frame fails to parse.
+  invalid_stream: Search stream returned invalid data
+  # `<noscript>` on the streaming shell: the events need JavaScript,
+  # while a plain form submit still runs a server-rendered search.
+  noscript_stream: Streaming needs JavaScript; submit the form for a plain search.
+  # Outranking pill (`{n}` is the late-result count).
+  new_above: '{n} new results above'
+  # Live (network) badge (`{ms}` is the elapsed time in ms).
+  live_badge: live · {ms} ms
+  # Cache badge (`{age}`/`{ttl}` in seconds).
+  cached_badge: cached · {age} s ago · ttl {ttl} s
+  # JS-side cache lead-in (the stream only knows `source != network`).
+  cached: cached
+  # Stale-serve badge, server-rendered and streamed (W3-02).
+  stale_badge: stale · refreshing
+  # Engine status phrase (`{kind}` is an `ERR_*` word).
+  engine_failed: '{engine} failed ({kind})'
+  # Breaker-skipped engine phrase.
+  engine_skipped: '{engine} skipped (breaker)'
+  # `EngineError::RateLimited` kind word.
+  err_rate_limited: rate limited
+  # `EngineError::Blocked` kind word.
+  err_blocked: blocked
+  # `EngineError::Timeout` kind word.
+  err_timeout: timeout
+  # `EngineError::Parse` kind word.
+  err_parse: parse
+  # `EngineError::Transport` kind word.
+  err_transport: transport
+  # `EngineError::NoResults` kind word.
+  err_no_results: no results
+  # Kind word when the wire payload names none.
+  err_unknown: failed
+
+# `/cache` page copy (W2-04).
+cache:
+  page_title: Cache
+  # Search-box placeholder.
+  filter_placeholder: Filter cached queries...
+  # Search-box submit label.
+  filter_button: Filter
+  # "Clear filter" link shown while `q` is active.
+  filter_clear: clear
+  # Bulk action: delete rows past `expires_at`.
+  delete_expired: Delete expired
+  # Bulk action: delete every row.
+  delete_all: Delete all
+  # `hx-confirm` for the expired-rows bulk delete.
+  confirm_expired: Delete all expired entries?
+  # `hx-confirm` for the full-table delete.
+  confirm_all: Delete every cached entry? Searches will hit the network until the cache refills.
+  # `hx-confirm` for a single-row delete.
+  confirm_row: Delete this cache entry?
+  # Per-row delete button label.
+  delete_row: Delete
+  # Empty state when the table has no rows at all.
+  empty: no cached queries yet. run a search and it lands here.
+  # Empty state when `q` matched nothing; `{q}` is the active filter.
+  empty_filtered: nothing cached matches "{q}".
+  # Pagination: link to the previous (newer) page.
+  page_prev: Newer
+  # Pagination: link to the next (older) page.
+  page_next: Older
+  # Note shown in filtered mode, which is capped at one page; `{n}` is
+  # the row cap.
+  filtered_cap: showing the newest {n} matches
+  # Placeholder inside the payload slot before the lazy fragment loads.
+  payload_loading: loading...
+  # Inline error inside the payload slot when the lazy fetch fails;
+  # `{status}` is the HTTP status code.
+  payload_error: 'error: could not load payload ({status})'
+  # `<noscript>` hint next to the delete controls: deletes go through
+  # htmx, so they do nothing without JavaScript.
+  noscript_deletes: the delete buttons need JavaScript.
+  # Count line, singular (`1 entry`).
+  entry_one: entry
+  # Count line, plural (`34 entries`).
+  entry_many: entries
+  # Count line qualifier while a `q` filter is active
+  # (`3 matching entries`).
+  matching: matching
+  # Hit count, singular (`1 hit`).
+  hit_one: hit
+  # Hit count, plural (`3 hits`).
+  hit_many: hits
+  # Row expiry phrase while the entry is live; `{rel}` is a relative
+  # duration like `41m`.
+  expires_in: expires in {rel}
+  # Row expiry phrase once `expires_at` has passed.
+  expired_ago: expired {rel} ago
+settings:
+  page_title: Settings
+  editing: editing
+  restart_note: changes apply on restart
+  section_search: Search
+  deadline: Deadline (ms)
+  ttl: Cache TTL (s)
+  min_results: Min results before hedge
+  hedge_floor: Hedge floor (ms)
+  hedge_ceiling: Hedge ceiling (ms)
+  section_engines: Engines
+  engines_pinned: enabled flags are pinned by CAUCE_ENGINES
+  enabled: enabled
+  disabled: disabled
+  tier: tier
+  tier_default: default
+  proxy: egress proxy
+  proxy_placeholder: direct
+  browse_engines: browse engines
+  section_admission: Admission
+  max_wait: Max queue wait (ms)
+  max_concurrent: Max concurrent per engine
+  section_logging: Logging
+  retention: JSONL retention (days)
+  section_cache: Cache
+  entries: entries
+  unexpired: unexpired
+  newest: newest
+  delete_expired: delete expired
+  delete_all: delete all
+  confirm_expired: Delete every expired cache entry?
+  confirm_all: Delete ALL cache entries? Every next search will hit the network.
+  browse_entries: browse entries
+  section_ai: AI answers
+  ai_base_url: Base URL
+  ai_api_key: API key
+  ai_api_key_placeholder: ${env:CAUCE_AI_API_KEY}
+  ai_model: Model
+  ai_model_placeholder: model name
+  models_unreachable: model list unreachable; type a model name
+  ai_pipeline_note: (applies on restart)
+  set_by: set by
+  is_set: is set
+  is_not_set: is not set
+  save: Save
+  saved: saved
+  not_saved: 'not saved:'
+  error_one: error
+  error_many: errors
+  could_not_save: 'error: could not save'
+  noscript: Saving needs JavaScript (the form issues PUT /api/config via htmx).
+
+# `/history` page copy (W2-02).
+history:
+  title: History
+  # Stats line: `N searches in last 24h · N total · N clicks today`.
+  stat_searches_24h: searches in last 24h
+  stat_total: total
+  stat_clicks_today: clicks today
+  filter_submit: Filter
+  window_24h: last 24h
+  window_7d: last 7d
+  window_30d: last 30d
+  window_all: all time
+  # `aria-label` for the `since` select; the control renders no
+  # visible label, so the accessible name comes from the attribute.
+  since_label: time window
+  # `aria-label` for the `q` input; the placeholder is not an
+  # accessible name.
+  query_label: filter by query text
+  query_placeholder: filter query text...
+  cached_only: cached only
+  clear: clear
+  empty: nothing searched yet. run a search and it lands here.
+  # Filtered-empty fragments, composed as
+  # `no searches match "q" in the last 7 days that are still cached.`
+  ef_match: no searches match
+  ef_none: no searches
+  in_24h: in the last 24h
+  in_7d: in the last 7 days
+  in_30d: in the last 30 days
+  in_since: since
+  ef_cached: that are still cached
+  # Cap note: `showing 200 of N · use the filters to reach older searches`.
+  capped_showing: showing
+  capped_of: of
+  capped_hint: use the filters to reach older searches
+  col_query: query
+  col_when: when
+  col_source: source
+  col_engines: engines
+  col_results: "n"
+  col_latency: ms
+  col_client: by
+  # Source-cell fragments: `cached · 41m`, `cached · expired`,
+  # `network · t1`.
+  src_cached: cached
+  src_expired: expired
+  src_network: network
+  # `t` in `network · t1`.
+  tier_prefix: t
+  # `#` in a click's `#position` marker.
+  position_prefix: '#'
+  clicks_word: clicks
+  # Singular of `CLICKS_WORD` for the delete confirm.
+  click_one: click
+  click_only: (click only)
+  rerun: re-run
+  copy_json: copy json
+  copied: copied
+  payload: payload
+  delete: delete
+  delete_confirm: Delete this search?
+  # `hx-confirm` prefix when the row has nested clicks, composed as
+  # `Delete this search and its {n} {click|clicks}?`.
+  delete_confirm_clicks_pre: Delete this search and its
+  # Inline error a failed `DELETE /api/history/<id>` writes into the
+  # row (htmx `response-error`); `{status}` is replaced client-side.
+  delete_failed: 'error: delete failed ({status})'
+  request_label: request
+
+# `/dashboard` (W2-03).
+dashboard:
+  title: dashboard
+  window: window
+  days_7: 7 days
+  days_30: 30 days
+  # Flat muted placeholder for panels whose source table has no rows in
+  # the window (the screen spec's empty state).
+  no_data: no search log data yet
+  no_engines: no engine data yet
+  searches_per_day: searches per day
+  legend_cache: cache
+  legend_network: network
+  hit_rate: cache hit rate
+  latency: latency
+  ttfr: time to first result
+  full: full request
+  clients: client split
+  outcomes: request outcomes
+  top_queries: top queries
+  zero_results: zero-result queries
+  reliability: reliability
+  deadline_hits: deadline-hit
+  stale_served: stale-served
+  admission_rejected: admission-rejected
+  engines: engines
+  cache: cache
+  # W3-05 nightly engine relevance evals panel.
+  engine_eval: engine relevance (nightly)
+  # Empty state when no `evals/results/*-engines.json` exists.
+  eval_no_run: no eval run yet
+  col_engine: engine
+  col_breaker: breaker
+  col_reliability: reliability
+  col_calls: calls
+  col_total: total ms (med/p80/p95)
+  col_http: http ms (med/p80/p95)
+  col_parse: parse ms (med/p80/p95)
+  cache_rows: rows
+  cache_unexpired: unexpired
+  cache_db_size: db size
+  cache_newest: newest
+audit:
+  page_title: Audit
+  any: any
+  filter: Filter
+  clear: clear
+  empty: nothing audited yet. deleting a cache row or resetting a breaker writes the first entry.
+  filtered_empty_prefix: no audit rows match
+  filtered_empty_and: and
+  actor_label: actor
+  action_label: action
+  when_column: when
+  actor_column: actor
+  action_column: action
+  target_column: target
+  request_column: request
+  details_summary: details
+  row: row
+  rows: rows
+  matching: matching
+  cap_note_prefix: showing the newest
+  cap_note_suffix: raise `limit` (max 1000) for more
+  # Accessible name of the horizontally scrollable table region.
+  table_region: audit table
+trace:
+  page_title: Trace
+  copy: copy
+  back_to_audit: back to audit
+  spans_heading: spans
+  ms: ms
+  results: results
+  # `{days}` is replaced with the configured `logs.retention_days`.
+  no_trace: no trace for this request id. traces are kept for logs.retention_days days (currently {days}).
+  bad_id: that is not a request id
+  # Accessible name of the horizontally scrollable timeline region.
+  timeline_region: request timeline
+  # Accessible name of one span's expandable raw-fields block.
+  span_region: span fields
+engines:
+  page_title: Engines
+  # Summary line under the heading (`3 configured · 2 enabled`).
+  summary: '{configured} configured · {enabled} enabled'
+  # Appended to SUMMARY only while at least one breaker is open.
+  summary_open: ' · {open} breaker open'
+  # Page-level note: toggles persist but the live set is fixed until
+  # restart.
+  hint_restart: enable/disable writes config.toml and takes effect on restart.
+  # Page-level note while `CAUCE_ENGINES` pins the enabled set.
+  hint_pinned: CAUCE_ENGINES pins the enabled set; resolved state will not move while it is set.
+  # Empty state: nothing configured, running, or tracked.
+  empty: No engines configured.
+  # Card header note for an engine the resolved config does not name.
+  not_in_config: not in config
+  # Card header note for an engine absent from the running pipeline.
+  not_running: not running
+  # Breaker chip, closed state.
+  breaker_closed: Closed
+  # Breaker chip, open state.
+  breaker_open: Open
+  # Breaker chip, half-open state.
+  breaker_half_open: HalfOpen
+  # Countdown note next to an open chip; `{rel}` is `42s`-style.
+  breaker_retries: retries in {rel}
+  # Note next to an open chip whose window already elapsed (the lazy
+  # `Open -> HalfOpen` truth: the next call probes).
+  breaker_elapsed: next call probes
+  # Note next to a half-open chip.
+  breaker_probing: probing
+  # Note next to the chip while the engine is disabled (the mockup's
+  # `[ Closed ] disabled`); the countdown wins when both apply.
+  disabled: disabled
+  # Stats labels (definition-list terms).
+  stat_enabled: enabled
+  stat_ewma: ewma
+  stat_last_ok: last ok
+  stat_last_error: last error
+  stat_p95: p95
+  stat_reliability: reliability
+  stat_requests: requests today
+  # `enabled` cell values.
+  enabled_yes: 'yes'
+  enabled_no: 'no'
+  # `last ok` cell: absolute local time plus relative (`01:02 (9m)`).
+  last_ok_fmt: '{hhmm} ({rel})'
+  # `p95`/`ewma` cell for a real sub-millisecond sample (renders
+  # instead of a misleading `0 ms`).
+  sub_ms: <1 ms
+  # Reset action button.
+  action_reset: reset breaker
+  # Toggle action labels — the action that will happen.
+  action_disable: disable
+  action_enable: enable
+  # Per-button hint while `CAUCE_ENGINES` pins the set (button disabled).
+  toggle_pinned: pinned by CAUCE_ENGINES
+  # Card notice after an enable/disable write.
+  toggle_saved: saved; applies after restart
+  # Test-query form: input default, aria label, submit label.
+  test_default: test
+  test_aria: test query
+  action_run: run
+  # Meta line above a test fragment; `{n}`/`{ms}` are substituted.
+  test_results: '{n} results · {ms} ms'
+  # Error classes the test meta line can show (`{n} results` absent).
+  test_no_results: no results
+  test_blocked: blocked
+  test_timeout: timeout
+  test_rate_limited: rate limited
+  test_parse: parse error
+  test_transport: transport error
+  test_upstream: upstream failed
+  test_breaker_open: breaker open
+  test_no_engines: no engines
+  test_unknown_engines: unknown engines
+  test_bad_request: bad request
+  # Inline meta when an htmx test fetch fails outside the handler;
+  # `{status}` is the HTTP status code.
+  test_fetch_failed: 'test query failed: HTTP {status}'
+  # Inline meta for a failed non-test htmx call (reset/toggle);
+  # `{status}` is the HTTP status code.
+  request_failed: 'request failed: HTTP {status}'
+
+# `/answer` page copy (W4-03): the ask form, the streamed-answer shell
+# and every string the shell's inline JS interpolates (serialized as
+# `var S = {...}` — JS placeholders read `{name}` like Rust's).
+archive:
+  page_title: Archive
+  # Search-box placeholder.
+  filter_placeholder: Search archived pages...
+  # Search-box submit label.
+  filter_button: Search
+  # "Clear filter" link shown while `q` is active.
+  filter_clear: clear
+  # `hx-confirm` for a single-row delete.
+  confirm_row: Delete this archived page?
+  # Per-row delete button label.
+  delete_row: Delete
+  # Empty state when no pages are archived yet.
+  empty: no archived pages yet. fetch one with POST /api/pages or click a result when indexing is on.
+  # Empty state when `q` matched nothing; `{q}` is the active query.
+  empty_filtered: nothing in the archive matches "{q}".
+  # Notice when the `archive` pipeline is unavailable (the page still
+  # renders its shell); links `/settings`.
+  disabled: page archiving is disabled.
+  # The disabled notice's link text to `/settings`.
+  disabled_link: check settings
+  # Pagination: link to the previous (newer) page.
+  page_prev: Newer
+  # Pagination: link to the next (older) page.
+  page_next: Older
+  # Placeholder inside the markdown slot before the lazy fragment
+  # loads.
+  markdown_loading: loading...
+  # Inline error inside the markdown slot when the lazy fetch fails;
+  # `{status}` is the HTTP status code.
+  markdown_failed: 'error: could not load page body ({status})'
+  # The `hx-on::response-error` fallback for error statuses raised
+  # outside the handler; `{status}` is the HTTP status code.
+  markdown_error: 'error: could not load page body ({status})'
+  # Count line, singular (`1 page`).
+  page_one: page
+  # Count line, plural (`34 pages`).
+  page_many: pages
+  # Count line qualifier while a `q` is active (`3 matching pages`).
+  matching: matching
+answer:
+  # Search-box placeholder on the ask form.
+  placeholder: Ask a question...
+  # Ask submit label.
+  submit: ask
+  # The `/search` meta-line link to this page.
+  ask_link: ask
+  # Status line while the answer stream is in flight.
+  waiting: answering...
+  # Status word once the terminal `done` frame lands.
+  complete: answered
+  # Status word when the stream fails before `done`.
+  error_status: answer failed
+  # `done.confidence` meta phrase; `{n}` is the 1-10 score.
+  confidence: confidence {n}/10
+  # `done.cached` meta word.
+  cached: cached
+  # `done.ungrounded` notice — a zero-source answer is never cached
+  # (the core already enforces it) and gets this visible flag.
+  ungrounded: this answer cites no sources — it may be ungrounded
+  # Short `ungrounded` badge word for the meta-row chip; the full
+  # notice below the steps stays UNGROUNDED (W7-03).
+  ungrounded_badge: ungrounded
+  # W7-03 retrieval-path chip for a no-tool answer — the model
+  # answered from what it already knew.
+  path_direct: answered directly — no search needed
+  # W7-03 retrieval-path chip for a searched answer; `{tools}` is
+  # the joined tool list (`web`, `archive`, `web + archive`), `{n}`
+  # the cited-source count.
+  path_searched: searched {tools} · {n} sources
+  # W7-03 retrieval-path chip on a cached replay: the tools ran on
+  # the original request, so only the cited-source count survives
+  # (`{n}`); naming tools here would claim calls that did not happen.
+  path_replay: searched · {n} sources
+  # `search_web`'s display word inside PATH_SEARCHED.
+  tool_web: web
+  # `search_archive`'s display word inside PATH_SEARCHED.
+  tool_archive: archive
+  # `related_questions` section label.
+  related: related
+  # Sources section label (aria + heading).
+  sources: sources
+  # `error.retry_after_s` suffix; `{n}` is the seconds hint.
+  retry_after: retry after {n}s
+  # Inline error lead for HTTP-level and provider `error` frames.
+  stream_failed: answer stream failed
+  # An SSE frame whose data did not parse.
+  invalid_stream: unreadable answer stream
+  # Disabled notice lead; followed by the `/settings` link.
+  disabled: AI mode is disabled.
+  # Disabled notice link text to `/settings`.
+  disabled_link: configure it in settings
+  # `<noscript>` line inside the stream shell.
+  noscript: Answering needs JavaScript; the answer stream cannot run without it.
+
+# W7-02 Search Assist card on the SERP (the DDG/Kagi shape).
+assist:
+  # The on-demand trigger button between the meta line and results.
+  trigger: Assist
+  # Card header label once the panel opens.
+  label: Assist
+  # Handoff link into the full AI surface (`/answer?q=`).
+  ask_ai: Ask in AI mode
+  # Always-visible disclaimer under the answer (settled input).
+  disclaimer: auto-generated — may contain inaccuracies
+  # W7-03 grounded chip in the card meta row, rendered on the
+  # up-front `sources` frame; `{n}` is the cited-result count.
+  grounded: grounded · {n} sources
+  # W7-03 ungrounded badge — an assist turn that cited nothing
+  # (reachable only with an empty `context_results`).
+  ungrounded: ungrounded
+  # `done.confidence` chip; `{n}` is the 1-10 score.
+  confidence: confidence {n}/10
+  # `done.cached` chip word.
+  cached: cached
+  # Inline error lead for HTTP-level and provider `error` frames.
+  stream_failed: answer stream failed
+  # An SSE frame whose data did not parse.
+  invalid_stream: unreadable answer stream
+  # `error.retry_after_s` suffix; `{n}` is the seconds hint.
+  retry_after: retry after {n}s
+  # `<noscript>` line inside the assist section.
+  noscript: Assist needs JavaScript; the answer stream cannot run without it.

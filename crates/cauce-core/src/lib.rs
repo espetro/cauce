@@ -57,8 +57,8 @@ pub use pipeline::{
 };
 pub use request::{ClientKind, SafeSearch, SearchRequest, TimeRange};
 pub use response::{
-    EngineReport, EngineStatus, SearchMeta, SearchResponse, SearchResult, Source, StreamEvent,
-    StreamMeta,
+    EngineReport, EngineStatus, ResultsFrame, SearchMeta, SearchResponse, SearchResult, Source,
+    StreamEvent, StreamMeta, StreamResult,
 };
 pub use store::{
     AdmissionStats, AnswerKey, AnswerPayload, AnswerRow, AnswerSource, AuditFacets, AuditFilter,

@@ -56,18 +56,23 @@ run = "cargo check -p cauce-cli -p cauce-server --all-targets --no-default-featu
 
 # The web bundle is committed (rust-embed reads assets/ at build time), so
 # the task rebuilds it and diffs the output — a stale or missing app.js
-# fails the gate instead of silently shipping the old script.
+# fails the gate instead of silently shipping the old script. The generated
+# artifacts (ts-rs wire types in web/src/types, i18n bundles in
+# web/src/i18n) are committed the same way: regenerated here, then
+# freshness-checked by the trailing `git diff`.
 [tasks.web]
-description = "pnpm install + tsc typecheck + rolldown bundle + vitest + committed-bundle freshness"
+description = "pnpm install + tsc typecheck + rolldown bundle + vitest + committed generated-artifact freshness"
 dir = "crates/cauce-server"
 run = """
 #!/usr/bin/env bash
 set -euo pipefail
+cargo test -p cauce-server --test wire_types --quiet
+cargo run -p cauce-server --bin gen_i18n --quiet
 pnpm install --frozen-lockfile
 pnpm run typecheck
 pnpm run build
 pnpm run test
-git diff --exit-code -- assets/app.js pnpm-lock.yaml
+git diff --exit-code -- assets/app.js pnpm-lock.yaml web/src/types web/src/i18n
 """
 
 [tasks.validate]

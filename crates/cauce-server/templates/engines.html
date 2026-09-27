@@ -6,23 +6,23 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{{ crate::strings::engines::PAGE_TITLE|lower }} · {{ crate::strings::common::BRAND }}</title>
+  <title>{{ crate::i18n::tr("engines.page_title")|lower }} · {{ crate::i18n::tr("common.brand") }}</title>
   <style>{{ style_css|safe }}</style>
   {% include "theme_head.html" %}
 </head>
 <body class="engines-page"
-      data-i18n-test-failed="{{ crate::strings::engines::TEST_FETCH_FAILED }}"
-      data-i18n-request-failed="{{ crate::strings::engines::REQUEST_FAILED }}">
+      data-i18n-test-failed="{{ crate::i18n::tr("engines.test_fetch_failed") }}"
+      data-i18n-request-failed="{{ crate::i18n::tr("engines.request_failed") }}">
   {% include "header.html" %}
   <main>
-  <h1>{{ crate::strings::engines::PAGE_TITLE }}</h1>
+  <h1>{{ crate::i18n::tr("engines.page_title") }}</h1>
   <p class="meta"><span>{{ summary }}</span></p>
   <p class="meta">
-    {{ crate::strings::engines::HINT_RESTART }}
-    {% if engines_pinned %}{{ crate::strings::engines::HINT_PINNED }}{% endif %}
+    {{ crate::i18n::tr("engines.hint_restart") }}
+    {% if engines_pinned %}{{ crate::i18n::tr("engines.hint_pinned") }}{% endif %}
   </p>
   {% if cards.is_empty() %}
-  <p>{{ crate::strings::engines::EMPTY }}</p>
+  <p>{{ crate::i18n::tr("engines.empty") }}</p>
   {% endif %}
   <div class="engine-grid">
   {% for card in cards %}
@@ -31,7 +31,7 @@
   </div>
   </main>
   <footer class="meta">
-    {{ crate::strings::common::REQUEST_LABEL }} <code class="request-id" id="page-request-id" title="{{ request_id }}">{{ request_id }}</code>
+    {{ crate::i18n::tr("common.request_label") }} <code class="request-id" id="page-request-id" title="{{ request_id }}">{{ request_id }}</code>
   </footer>
   <script>{{ crate::html::app_js()|safe }}</script>
 </body>

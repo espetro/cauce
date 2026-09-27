@@ -82,7 +82,7 @@ struct Page {
     is_streaming: bool,
     stream_url: String,
     query_hash: String,
-    /// `crate::strings::search` copy the bundled JS uses, as a JSON literal.
+    /// `search.*` catalog copy the bundled JS uses, as a JSON literal.
     stream_strings: String,
     /// W4-03: `/answer?q=...` the meta line links to when an answer loop
     /// exists (`ai` effectively on); empty otherwise and on `/`.
@@ -98,7 +98,7 @@ struct Page {
     /// `[]` on `?stream=1` pages (the streaming JS fills it from the
     /// `results`/`meta` frames) and whenever `assist` is false.
     assist_context: String,
-    /// `crate::strings::assist` copy the assist JS uses, as a JSON
+    /// `assist.*` catalog copy the assist JS uses, as a JSON
     /// literal (the `stream_strings` pattern).
     assist_strings: String,
 }

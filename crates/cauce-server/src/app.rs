@@ -72,6 +72,7 @@ pub struct AppState {
 
 impl AppState {
     pub fn new(pipeline: Arc<SearchPipeline>, store: Arc<dyn Store>, config: Config) -> Self {
+        rust_i18n::set_locale(&config.ui.locale);
         Self {
             answer: build_answer_loop(&pipeline, &store, &config),
             #[cfg(feature = "archive")]

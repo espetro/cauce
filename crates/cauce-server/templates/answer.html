@@ -6,7 +6,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{% if !q.is_empty() %}{{ q }} · {{ crate::strings::common::BRAND }}{% else %}{{ crate::strings::common::BRAND }}{% endif %}</title>
+  <title>{% if !q.is_empty() %}{{ q }} · {{ crate::i18n::tr("common.brand") }}{% else %}{{ crate::i18n::tr("common.brand") }}{% endif %}</title>
   <link rel="search" type="application/opensearchdescription+xml" title="cauce" href="/opensearch.xml">
   <link rel="icon" href="/favicon.ico" type="image/svg+xml">
   <style>{{ style_css|safe }}</style>
@@ -15,33 +15,33 @@
 <body>
   {% include "header.html" %}
   <main>
-  <h1 class="vh">{{ crate::strings::common::BRAND }}</h1>
+  <h1 class="vh">{{ crate::i18n::tr("common.brand") }}</h1>
   <form id="answer-form" action="/answer" method="get">
-    <input type="search" name="q" value="{{ q }}" placeholder="{{ crate::strings::answer::PLACEHOLDER }}" autofocus>
-    <button type="submit">{{ crate::strings::answer::SUBMIT }}</button>
+    <input type="search" name="q" value="{{ q }}" placeholder="{{ crate::i18n::tr("answer.placeholder") }}" autofocus>
+    <button type="submit">{{ crate::i18n::tr("answer.submit") }}</button>
   </form>
   {% if !enabled %}
-  <p id="ai-disabled" class="notice">{{ crate::strings::answer::DISABLED }} <a href="/settings">{{ crate::strings::answer::DISABLED_LINK }}</a></p>
+  <p id="ai-disabled" class="notice">{{ crate::i18n::tr("answer.disabled") }} <a href="/settings">{{ crate::i18n::tr("answer.disabled_link") }}</a></p>
   {% endif %}
   {% if has_query && enabled %}
   <div id="answer-stream" aria-live="polite" aria-busy="true"
        data-endpoint="/api/answer" data-accept="text/event-stream"
        data-headers='{"X-Cauce-Client":"ui"}'>
     <div class="meta">
-      <span id="answer-status" role="status">{{ crate::strings::answer::WAITING }}</span>
+      <span id="answer-status" role="status">{{ crate::i18n::tr("answer.waiting") }}</span>
       <span id="answer-path" class="meta-chip" hidden></span>
       <span id="answer-confidence" class="meta-chip" hidden></span>
-      <span id="answer-ungrounded-badge" class="meta-chip warn" hidden>{{ crate::strings::answer::UNGROUNDED_BADGE }}</span>
+      <span id="answer-ungrounded-badge" class="meta-chip warn" hidden>{{ crate::i18n::tr("answer.ungrounded_badge") }}</span>
       <span id="answer-meta"></span>
       <span id="request-id" class="request-id" title="{{ request_id }}">{{ short_request_id }}</span>
     </div>
     <ol id="answer-steps" class="answer-steps"></ol>
-    <p id="answer-ungrounded" class="ungrounded" role="note" hidden>{{ crate::strings::answer::UNGROUNDED }}</p>
+    <p id="answer-ungrounded" class="ungrounded" role="note" hidden>{{ crate::i18n::tr("answer.ungrounded") }}</p>
     <div id="answer-text" class="answer-text"></div>
     <div id="answer-sources"></div>
     <div id="answer-related"></div>
     <p id="answer-error" class="field-error" role="alert" hidden></p>
-    <noscript><p>{{ crate::strings::answer::NOSCRIPT }}</p></noscript>
+    <noscript><p>{{ crate::i18n::tr("answer.noscript") }}</p></noscript>
   </div>
   {% endif %}
   </main>
