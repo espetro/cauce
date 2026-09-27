@@ -140,6 +140,7 @@ async fn run_frames(
     }
     let req = AnswerRequest {
         q: "tokyo weather".to_string(),
+        history: Vec::new(),
         client: ClientKind::Cli,
         request_id: None,
         actor: None,

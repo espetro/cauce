@@ -22,28 +22,48 @@ const S = {
   tool_archive: "archive",
 };
 
+/** The per-turn inner markup shared by the SSR shell and the template. */
+function turnMarkup(ids) {
+  const id = (name) => (ids ? `id="${name}"` : "");
+  return `
+    <section class="answer-turn">
+      <p class="turn-q"></p>
+      <div class="meta">
+        <span ${id("answer-status")} class="answer-status"></span>
+        <span ${id("answer-path")} class="meta-chip answer-path" hidden></span>
+        <span ${id("answer-confidence")} class="meta-chip answer-confidence" hidden></span>
+        <span ${id("answer-ungrounded-badge")} class="meta-chip warn answer-ungrounded-badge" hidden></span>
+        <span ${id("answer-meta")} class="answer-meta"></span>
+        <span ${id("request-id")} class="request-id"></span>
+      </div>
+      <ol ${id("answer-steps")} class="answer-steps"></ol>
+      <p ${id("answer-ungrounded")} class="ungrounded" role="note" hidden></p>
+      <div ${id("answer-text")} class="answer-text"></div>
+      <div ${id("answer-sources")} class="answer-sources"></div>
+      <div ${id("answer-related")} class="answer-related"></div>
+      <p ${id("answer-error")} class="field-error answer-error" role="alert" hidden></p>
+    </section>`;
+}
+
 /** The DOM shell answer.html renders while `has_query && enabled`. */
 function answerShell() {
   document.body.innerHTML = `
     <div id="answer-stream" aria-busy="true"
          data-endpoint="/api/answer" data-accept="text/event-stream"
          data-headers='{"X-Cauce-Client":"ui"}'>
-      <span id="answer-status"></span>
-      <span id="answer-path" hidden></span>
-      <span id="answer-confidence" hidden></span>
-      <span id="answer-ungrounded-badge" hidden></span>
-      <span id="answer-meta"></span>
-      <span id="request-id"></span>
-      <ol id="answer-steps"></ol>
-      <p id="answer-ungrounded" hidden></p>
-      <div id="answer-text"></div>
-      <div id="answer-sources"></div>
-      <div id="answer-related"></div>
-      <p id="answer-error" hidden></p>
-    </div>`;
+      ${turnMarkup(true)}
+    </div>
+    <template id="answer-turn-tpl">${turnMarkup(false)}</template>
+    <form id="answer-followup" hidden>
+      <input type="search" id="followup-q">
+      <button type="submit">ask</button>
+    </form>`;
   const $ = (id) => document.getElementById(id);
   return {
     stream: $("answer-stream"),
+    turnTpl: $("answer-turn-tpl"),
+    followupForm: $("answer-followup"),
+    followupInput: $("followup-q"),
     status: $("answer-status"),
     meta: $("answer-meta"),
     requestId: $("request-id"),
@@ -62,8 +82,45 @@ function answerShell() {
 function session(overrides = {}) {
   const refs = answerShell();
   const fetchImpl = overrides.fetchImpl || vi.fn();
-  const s = createAnswerSession(refs, S, "what is rust", { fetchImpl });
+  const s = createAnswerSession(
+    {
+      stream: refs.stream,
+      turnTpl: refs.turnTpl,
+      followupForm: refs.followupForm,
+      followupInput: refs.followupInput,
+    },
+    S,
+    "what is rust",
+    { fetchImpl },
+  );
   return { refs, fetchImpl, ...s };
+}
+
+/** A readable SSE body out of raw frames (each ends with `\n\n`). */
+function fakeResponse(frames, ok = true, status = 200) {
+  const chunks = frames.map((f) => new TextEncoder().encode(f));
+  let i = 0;
+  return {
+    ok,
+    status,
+    json: () => Promise.reject(new Error("no json")),
+    body: {
+      getReader: () => ({
+        read: () =>
+          Promise.resolve(
+            i < chunks.length
+              ? { value: chunks[i++], done: false }
+              : { value: undefined, done: true },
+          ),
+      }),
+    },
+  };
+}
+
+/** Fire the follow-up form like a user submit (happy-dom). */
+function submitFollowup(refs, value) {
+  refs.followupInput.value = value;
+  refs.followupForm.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
 }
 
 describe("parseSseFrame", () => {
@@ -108,7 +165,7 @@ describe("createAnswerSession — frame dispatch", () => {
       'event: sources\ndata: {"sources":[{"url":"https://a.com/x","title":"A","snippet":"sa"}]}',
     );
     const card = refs.sourcesEl.querySelector(".source-card");
-    expect(card.id).toBe("src-1");
+    expect(card.id).toBe("src-1-1");
     expect(card.querySelector(".cite-badge").textContent).toBe("[1]");
     expect(card.querySelector("a").textContent).toBe("A");
     expect(refs.sourcesEl.querySelector(".section-label").textContent).toBe("Sources");
@@ -131,7 +188,7 @@ describe("createAnswerSession — frame dispatch", () => {
       })}`,
     );
     const cite = refs.text.querySelector("a.cite");
-    expect(cite.getAttribute("href")).toBe("#src-1");
+    expect(cite.getAttribute("href")).toBe("#src-1-1");
     expect(cite.textContent).toBe("[1]");
     expect(refs.text.textContent).toBe("Rust is a language [1].");
     expect(refs.ungrounded.hidden).toBe(false);
@@ -218,27 +275,89 @@ describe("createAnswerSession — W7-03 path/confidence chips", () => {
   });
 });
 
-describe("createAnswerSession — pump and start", () => {
-  function fakeResponse(frames, ok = true, status = 200) {
-    const chunks = frames.map((f) => new TextEncoder().encode(f));
-    let i = 0;
-    return {
-      ok,
-      status,
-      json: () => Promise.reject(new Error("no json")),
-      body: {
-        getReader: () => ({
-          read: () =>
-            Promise.resolve(
-              i < chunks.length
-                ? { value: chunks[i++], done: false }
-                : { value: undefined, done: true },
-            ),
-        }),
-      },
-    };
-  }
+describe("createAnswerSession — W7-04 thread turns", () => {
+  it("done reveals the follow-up form; submitting it starts a cloned turn with history", async () => {
+    const res = () => fakeResponse(['event: done\ndata: {"answer":"reply"}\n\n']);
+    const fetchImpl = vi.fn(() => Promise.resolve(res()));
+    const { refs, start } = session({ fetchImpl });
+    await start();
+    expect(refs.followupForm.hidden).toBe(false);
+    expect(refs.stream.querySelectorAll(".answer-turn")).toHaveLength(1);
 
+    submitFollowup(refs, "and borrow checker?");
+    await vi.waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() =>
+      expect(refs.stream.querySelectorAll(".answer-turn")).toHaveLength(2),
+    );
+    const turns = refs.stream.querySelectorAll(".answer-turn");
+    expect(turns[1].dataset.turn).toBe("2");
+    expect(turns[1].querySelector(".turn-q").textContent).toBe("and borrow checker?");
+    // The second POST replays the completed first turn verbatim.
+    expect(JSON.parse(fetchImpl.mock.calls[1][1].body)).toEqual({
+      q: "and borrow checker?",
+      history: [
+        { role: "user", content: "what is rust" },
+        { role: "assistant", content: "reply" },
+      ],
+    });
+    await vi.waitFor(() =>
+      expect(turns[1].querySelector(".answer-status").textContent).toBe("Done"),
+    );
+    // The input cleared for the next question and stays live.
+    expect(refs.followupInput.value).toBe("");
+    expect(refs.followupInput.disabled).toBe(false);
+  });
+
+  it("per-turn sources anchor [n] citations to that turn's own list", async () => {
+    // fetch stays pending: frames are driven by hand this test.
+    const fetchImpl = vi.fn(() => new Promise(() => {}));
+    const { refs, handleFrame, startTurn } = session({ fetchImpl });
+    handleFrame(
+      'event: sources\ndata: {"sources":[{"url":"https://a.com/x","title":"A"}]}',
+    );
+    handleFrame('event: done\ndata: {"answer":"first [1]"}');
+    startTurn("second question");
+    const turns = refs.stream.querySelectorAll(".answer-turn");
+    handleFrame(
+      'event: sources\ndata: {"sources":[{"url":"https://b.com/y","title":"B"}]}',
+    );
+    handleFrame('event: done\ndata: {"answer":"second [1]"}');
+    // Same [1] marker, different anchors: turn-local source lists.
+    const c1 = turns[0].querySelector("a.cite");
+    const c2 = turns[1].querySelector("a.cite");
+    expect(c1.getAttribute("href")).toBe("#src-1-1");
+    expect(c2.getAttribute("href")).toBe("#src-2-1");
+    expect(document.getElementById("src-1-1").textContent).toContain("A");
+    expect(document.getElementById("src-2-1").textContent).toContain("B");
+  });
+
+  it("a failed turn never enters history — the follow-up retries without it", async () => {
+    const fetchImpl = vi.fn(() => new Promise(() => {}));
+    const { refs, handleFrame, startTurn, history } = session({ fetchImpl });
+    handleFrame('event: done\ndata: {"answer":"reply"}');
+    expect(history).toHaveLength(2);
+    startTurn("flaky follow-up");
+    handleFrame('event: error\ndata: {"message":"rate limited"}');
+    // Failed turn: no history entry, follow-up stays usable for a retry.
+    expect(history).toHaveLength(2);
+    expect(refs.followupForm.hidden).toBe(false);
+    const turns = refs.stream.querySelectorAll(".answer-turn");
+    expect(turns[1].querySelector(".answer-error").textContent).toBe("rate limited");
+    expect(refs.stream.getAttribute("aria-busy")).toBe("false");
+  });
+
+  it("blank and mid-stream submissions are ignored", async () => {
+    const fetchImpl = vi.fn(() => new Promise(() => {})); // stream never settles
+    const { refs, start } = session({ fetchImpl });
+    start(); // in-flight for the rest of the test
+    submitFollowup(refs, "   ");
+    submitFollowup(refs, "while busy");
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(refs.stream.querySelectorAll(".answer-turn")).toHaveLength(1);
+  });
+});
+
+describe("createAnswerSession — pump and start", () => {
   it("pumps frames across chunk boundaries and fails when no terminal frame arrives", async () => {
     const { refs, pump } = session();
     await pump(
