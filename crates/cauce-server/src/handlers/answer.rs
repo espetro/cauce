@@ -14,13 +14,20 @@ use axum::response::{
     IntoResponse, Response, Sse,
     sse::{Event, KeepAlive},
 };
-use cauce_core::{AnswerFrame, AnswerRequest, AnswerSource};
+use cauce_core::{AnswerFrame, AnswerRequest, AnswerRole, AnswerSource, AnswerTurn};
 use serde::Deserialize;
 use tokio_stream::StreamExt;
 
 use crate::app::AppState;
 use crate::error::ApiError;
 use crate::middleware::RequestCtx;
+
+/// Bounds on the client-replayed thread (W7-04): enough turns for a
+/// real conversation, small enough that the assembled provider prompt
+/// stays sane.
+const MAX_HISTORY_TURNS: usize = 20;
+/// Total `content` bytes across all replayed turns.
+const MAX_HISTORY_BYTES: usize = 64 * 1024;
 
 /// The `POST /api/answer` body; unknown fields are rejected like the
 /// query-side `deny_unknown_fields` contract.
@@ -34,6 +41,51 @@ struct AnswerBody {
     /// grounded in these results, never an engine re-fetch. Absent runs
     /// the full tool loop.
     context_results: Option<Vec<AnswerSource>>,
+    /// W7-04 conversation threads: the prior completed turns of this
+    /// `/answer` thread, oldest first — strict `user`/`assistant` pairs
+    /// ending on an assistant turn (the new `q` follows). The page owns
+    /// the thread; the loop replays it to the provider verbatim.
+    /// Mutually exclusive with `context_results`: assist stays
+    /// single-turn.
+    history: Option<Vec<AnswerTurn>>,
+}
+
+/// The `history` contract (W7-04): a bounded list of completed
+/// user→assistant exchanges — even length, `user` on even indices,
+/// non-blank bounded content. Anything else is a `bad_request`: a
+/// malformed replay would otherwise reach the provider as a mangled
+/// conversation (Anthropic also hard-requires the alternation).
+fn check_history(ctx: &RequestCtx, history: &[AnswerTurn]) -> Result<(), ApiError> {
+    if history.len() > MAX_HISTORY_TURNS {
+        return Err(ctx.bad_request(format!("history exceeds {MAX_HISTORY_TURNS} turns")));
+    }
+    if !history.len().is_multiple_of(2) {
+        return Err(ctx.bad_request(
+            "history must be complete user/assistant pairs (ends on an assistant turn)",
+        ));
+    }
+    let mut bytes = 0usize;
+    for (i, turn) in history.iter().enumerate() {
+        let want = if i % 2 == 0 {
+            AnswerRole::User
+        } else {
+            AnswerRole::Assistant
+        };
+        if turn.role != want {
+            return Err(ctx.bad_request(format!(
+                "history turns must alternate user/assistant; turn {i} is {:?}",
+                turn.role
+            )));
+        }
+        if turn.content.trim().is_empty() {
+            return Err(ctx.bad_request(format!("history turn {i} has empty content")));
+        }
+        bytes += turn.content.len();
+    }
+    if bytes > MAX_HISTORY_BYTES {
+        return Err(ctx.bad_request(format!("history exceeds {} bytes total", MAX_HISTORY_BYTES)));
+    }
+    Ok(())
 }
 
 /// `POST /api/answer` — JSON `{"q": "..."}` in, SSE frames out; a body
@@ -71,8 +123,16 @@ pub async fn answer(
     if q.is_empty() {
         return Err(ctx.bad_request("missing required parameter \"q\""));
     }
+    let history = body.history.unwrap_or_default();
+    check_history(&ctx, &history)?;
+    if !history.is_empty() && body.context_results.is_some() {
+        return Err(ctx.bad_request(
+            "context_results and history are mutually exclusive (assist is single-turn)",
+        ));
+    }
     let req = AnswerRequest {
         q: q.to_string(),
+        history,
         client: ctx.client.clone(),
         request_id: Some(ctx.request_id.as_uuid()),
         actor: Some(ctx.actor(&headers)),
