@@ -106,6 +106,7 @@ mod cache;
 mod fanout;
 mod merge;
 mod persistence;
+mod prober;
 use persistence::LogRow;
 mod waves;
 
