@@ -111,7 +111,11 @@ async fn deadline_edit_saves_and_reloads() {
     assert_eq!(status, StatusCode::OK, "{body}");
     let json: Value = serde_json::from_str(&body).expect("json response");
     assert_eq!(json["search"]["deadline_ms"], 1234);
-    assert_eq!(json["effective_after_restart"], true);
+    // `search.*` is hot-applicable: the save applies in place, so nothing
+    // is left pending for a restart.
+    assert_eq!(json["effective_after_restart"], false);
+    assert_eq!(json["applied"], serde_json::json!(["search.deadline_ms"]));
+    assert_eq!(json["requires_restart"], serde_json::json!([]));
 
     let on_disk = saved_config(&tmp);
     assert!(
@@ -672,8 +676,10 @@ async fn pinned_engine_tier_edit_writes_no_enabled() {
 
     let (status, body) = get_html(&app, "/settings").await;
     assert_eq!(status, StatusCode::OK, "{body}");
+    // `ai.enabled` is submittable on purpose (hot-applicable, #225); the
+    // pin only freezes `engines.*.enabled` flags.
     assert!(
-        !body.contains(".enabled\""),
+        !body.contains("engines.replay.enabled\"") && !body.contains("engines.ddgs.enabled\""),
         "pinned engine rows render no submittable enabled field: {body}"
     );
     for needle in [

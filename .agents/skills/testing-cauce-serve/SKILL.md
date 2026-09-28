@@ -48,7 +48,8 @@ process — you cannot give tier-1 and tier-2 different latencies from env. Mult
   the ceiling when latency > ceiling. A late-fired t2 whose remaining deadline < latency
   gets clipped (`failed: timeout`, `deadline_hit:true`); enough clips open its breaker and
   the hedge then reports `engines_skipped` instead of `hedged` — that is intended fire-time
-  gating, not a bug.
+  gating, not a bug. A `commit_config` fan-out rebuild (see `/settings` hot-apply above)
+  also resets the histogram.
 - `CAUCE_SEARCH_HEDGE_FLOOR_MS > CAUCE_SEARCH_HEDGE_CEILING_MS` panics `Duration::clamp`
   per request (502 "in-flight search task vanished") — no validation exists (bug).
 
@@ -64,8 +65,26 @@ process — you cannot give tier-1 and tier-2 different latencies from env. Mult
   not JSON. To show raw JSON in the page for a recording, use devtools console:
   `fetch('/api/search?q=…').then(r=>r.json()).then(j=>{document.body.innerHTML='<pre>'+JSON.stringify(j.meta,null,2)+'</pre>'})`.
   `/metrics`, `/settings`, `/history`, `/search` render fine directly.
-- `/settings` form PUTs to `/api/config` (hx-put); **"changes apply on restart"** — a saved
-  value does not affect the running process, only the on-disk `config.toml`.
+- `/settings` form PUTs to `/api/config` (hx-put); since the hot-settings work the running
+  derived config is rebuilt in place — hot keys (`search.*`, `admission.*`, `cache.*`,
+  `merge.*`, `health.*`, `ai.*`, `archive.*`, `ui.*`, `engines.*` incl. `tier`,
+  `server.public_url`) apply on save, `server.host`/`server.port`/`auth.*`/`logs.*` are
+  reported `requires_restart`. The save-status line reads `saved HH:MM` or
+  `saved HH:MM — restart needed: <paths>` (diff granularity is the changed table — a
+  newly-created `[logs]` table reports as `logs`, not `logs.retention_days`). JSON
+  (non-htmx) PUTs get `applied`, `requires_restart`, `effective_after_restart`.
+- Proving a hot engine-tier change in one process: `/engines` renders the **live
+  pipeline's** effective tier (live engine wins over the file entry) — a row flipping
+  `t1`→`t2` is the rebuild evidence. `meta.hedged` only goes `true` when the t=0 wave
+  is non-empty AND a deferred engine exists AND `merge.map.len() < min_results` at the
+  hedge point: replay returns 10 results ≥ default `min_results=5`, so the hedge
+  self-cancels — seed `search.min_results` high (e.g. `100`) to see `hedged:true`.
+  With the whole live set at tier 2, `promote_deferred` runs it at t=0 instead
+  (waves.rs) and `hedged` stays `false` — correct, not a bug.
+- Hot-enabling `[ai]` is visible without a provider: `POST /api/answer` flips from
+  `503 {code: ai_disabled}` to a `200` SSE stream ending in
+  `event: error` (`provider transport error`) against a dead `base_url` like
+  `http://127.0.0.1:9`, and the `answer` nav link appears in the header.
 - Shell kills: never `pkill -f "port 4479"` — the pattern also matches your own wrapping
   shell command and kills it (same for `pkill -f stub.py` etc). Kill by PID from
   `ss -ltnp | grep :PORT`.

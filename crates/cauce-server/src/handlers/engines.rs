@@ -283,10 +283,11 @@ pub async fn engine_disable(
 /// discipline as `PUT /api/config`. Engines absent from the file get a
 /// synthesized `[[engines]]` entry (built-ins serialize their full typed
 /// entry; auto-registered declarative specs get `{id, kind = "declarative"}`,
-/// which resolves the spec by id). Unknown ids 404. The running pipeline
-/// keeps its engine set until restart, so the response carries
-/// `effective_after_restart: true`, and the card fragment an HTMX caller
-/// swaps in carries the `saved; applies after restart` hint.
+/// which resolves the spec by id). Unknown ids 404. The save goes
+/// through [`AppState::commit_locked`]: with an engine factory installed
+/// the fan-out is rebuilt in place and the response reports
+/// `effective_after_restart: false`; without one (tests, minimal
+/// builds) it reports `true` like before.
 async fn engine_set_enabled(
     state: &AppState,
     ctx: &RequestCtx,
@@ -305,8 +306,9 @@ async fn engine_set_enabled(
     }
 
     // All sync file IO inside the lock; nothing awaits in the closure
-    // (same discipline as `config_put`).
-    state.with_config(|cfg| -> Result<(), ApiError> {
+    // (same discipline as `config_put`). The `state.pipeline()` read is
+    // the pre-commit fan-out — the runtime swaps on commit below.
+    let outcome = state.with_config(|cfg| -> Result<_, ApiError> {
         let mut tree = match cfg.raw_tree() {
             Some(raw) => raw.clone(),
             // `Config::default()` has no file layer; the display tree is a
@@ -316,7 +318,7 @@ async fn engine_set_enabled(
                 ctx.err(StatusCode::INTERNAL_SERVER_ERROR, "internal", e.to_string())
             })?,
         };
-        set_engine_enabled(&mut tree, &id, enabled, cfg, state.pipeline())
+        set_engine_enabled(&mut tree, &id, enabled, cfg, &state.pipeline())
             .map_err(|e| ctx.bad_request(e))?;
         let new_cfg = Config::from_raw(&tree, &system_env()).map_err(|e| {
             ctx.err(
@@ -325,15 +327,13 @@ async fn engine_set_enabled(
                 format!("invalid config: {e}"),
             )
         })?;
-        new_cfg.save().map_err(|e| {
+        state.commit_locked(cfg, new_cfg.clone()).map_err(|e| {
             ctx.err(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "internal",
                 format!("cannot write {}: {e}", new_cfg.config_path().display()),
             )
-        })?;
-        *cfg = new_cfg;
-        Ok(())
+        })
     })?;
 
     write_audit(
@@ -353,18 +353,17 @@ async fn engine_set_enabled(
     #[cfg(feature = "ui")]
     if crate::html::is_htmx(headers) {
         use rust_i18n::t;
-        return crate::engines_page::card(
-            state,
-            &id,
-            ctx.request_id.as_uuid(),
-            Some(t!("engines.toggle_saved")),
-        )
-        .await;
+        let hint = if outcome.engines_rebuilt {
+            t!("engines.toggle_saved")
+        } else {
+            t!("engines.toggle_saved_restart")
+        };
+        return crate::engines_page::card(state, &id, ctx.request_id.as_uuid(), Some(hint)).await;
     }
     Ok(Json(json!({
         "id": id.to_string(),
         "enabled": enabled,
-        "effective_after_restart": true,
+        "effective_after_restart": !outcome.engines_rebuilt,
     }))
     .into_response())
 }

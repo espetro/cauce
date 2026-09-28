@@ -10,7 +10,7 @@ use axum::body::Bytes;
 use axum::extract::State;
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Json, Response};
-use cauce_core::config::{Config, system_env};
+use cauce_core::config::{Config, key_requires_restart, system_env};
 use serde_json::{Value, json};
 
 use super::{changed_config_paths, write_audit};
@@ -41,10 +41,11 @@ pub async fn config_get(
 ///
 /// Validation runs in-memory against the current process environment *before*
 /// any write, so a crash or `kill -9` cannot leave `config.toml` in an
-/// unbootable state. On success the new raw tree is written atomically and
-/// `state.config` is swapped; the running pipeline/engines still use the
-/// values they were started with, so the response carries
-/// `effective_after_restart: true`.
+/// unbootable state. On success the new raw tree is written atomically,
+/// `state.config` is swapped and every hot-applicable change takes effect
+/// in place (the derived runtime is rebuilt; in-flight requests finish on
+/// the old one). The response partitions the changed paths into `applied`
+/// and `requires_restart` (see [`key_requires_restart`]).
 ///
 /// A form submit marked `HX-Request` gets an HTML fragment back (200 on both
 /// success and validation failure, so htmx swaps it inline); everything else
@@ -162,32 +163,43 @@ async fn config_put_inner(
         )
     })?;
 
-    // All sync file IO inside the lock; nothing awaits in the closure.
-    let loaded = state.with_config(|cfg| {
-        if let Err(e) = new_cfg.save() {
-            return Err(ctx.err(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "internal",
-                format!("cannot write {}: {e}", new_cfg.config_path().display()),
-            ));
-        }
-        *cfg = new_cfg.clone();
-        Ok(new_cfg)
+    // Save + swap + hot-apply inside the one config critical section
+    // (all sync IO; nothing awaits in it).
+    let outcome = state.commit_config(&new_cfg).map_err(|e| {
+        ctx.err(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "internal",
+            format!("cannot write {}: {e}", new_cfg.config_path().display()),
+        )
     })?;
+
+    // Split the changed paths: a classifier hit (`server.host`, `auth.*`,
+    // `logs.*`) always needs a restart; `engines.*` needs one only when
+    // this state has no engine factory to rebuild the fan-out with.
+    let (applied, requires_restart): (Vec<String>, Vec<String>) =
+        changed.iter().cloned().partition(|path| {
+            !key_requires_restart(path)
+                && (outcome.engines_rebuilt || !path.starts_with("engines."))
+        });
 
     write_audit(
         state.store(),
         ctx,
         headers,
         "config.put",
-        loaded.config_path().display().to_string(),
+        new_cfg.config_path().display().to_string(),
         json!({"changed": changed}),
     )
     .await?;
-    let mut body = serde_json::to_value(&loaded)
+    let mut body = serde_json::to_value(&new_cfg)
         .map_err(|e| ctx.err(StatusCode::INTERNAL_SERVER_ERROR, "internal", e.to_string()))?;
     if let Value::Object(m) = &mut body {
-        m.insert("effective_after_restart".to_string(), json!(true));
+        m.insert("applied".to_string(), json!(applied));
+        m.insert("requires_restart".to_string(), json!(requires_restart));
+        m.insert(
+            "effective_after_restart".to_string(),
+            json!(!requires_restart.is_empty()),
+        );
     }
     Ok(Json(body))
 }

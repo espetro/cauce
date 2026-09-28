@@ -51,6 +51,7 @@ use chrono::{DateTime, Utc};
 use tracing::{debug, info, warn};
 use uuid::Uuid;
 
+use crate::config::HealthConfig;
 use crate::engine::{EngineError, EngineId};
 use crate::store::{AuditRow, BreakerState, EngineHealthRow, Store, StoreError};
 
@@ -120,6 +121,22 @@ impl Default for HealthPolicy {
             probe_window_min: Duration::from_secs(30),
             probe_window_max: Duration::from_secs(5 * 60),
             probe_tick: Duration::from_secs(5),
+        }
+    }
+}
+
+impl HealthPolicy {
+    /// The operator-facing `[health]` knobs on top of the settled windows:
+    /// `Config` exposes the degraded pair and the probe cadence/backoff, so
+    /// the abuse/timeout rules always come from [`HealthPolicy::default`].
+    pub fn from_config(cfg: &HealthConfig) -> Self {
+        Self {
+            degraded_threshold: cfg.degraded_threshold,
+            degraded_window: Duration::from_secs(cfg.degraded_window_s),
+            probe_window_min: Duration::from_secs(cfg.probe_window_s),
+            probe_window_max: Duration::from_secs(cfg.probe_window_max_s),
+            probe_tick: Duration::from_secs(cfg.probe_tick_s),
+            ..Self::default()
         }
     }
 }
@@ -280,13 +297,15 @@ struct Inner {
     /// Breaker transitions awaiting audit + urgent persist.
     transitions: Vec<Transition>,
     last_flush: Option<Instant>,
+    /// Breaker policy — behind the same lock so [`HealthTracker::set_policy`]
+    /// can hot-apply a `[health]` save without dropping EWMA/breaker state.
+    policy: HealthPolicy,
 }
 
 /// Per-engine health state shared by the pipeline and the `/api/engines`
 /// routes. Cheap to clone (all state behind one mutex).
 pub struct HealthTracker {
     store: Arc<dyn Store>,
-    policy: HealthPolicy,
     inner: Mutex<Inner>,
 }
 
@@ -300,9 +319,18 @@ impl HealthTracker {
     pub fn with_policy(store: Arc<dyn Store>, policy: HealthPolicy) -> Self {
         Self {
             store,
-            policy,
-            inner: Mutex::new(Inner::default()),
+            inner: Mutex::new(Inner {
+                policy,
+                ..Inner::default()
+            }),
         }
+    }
+
+    /// Swap the breaker policy in place (hot config apply): subsequent
+    /// `record_err`/gate decisions use the new windows and thresholds while
+    /// streaks, EWMA and current breaker states carry over untouched.
+    pub fn set_policy(&self, policy: HealthPolicy) {
+        self.lock().policy = policy;
     }
 
     /// Register a configured engine so it appears in [`snapshot`] (and
@@ -458,6 +486,9 @@ impl HealthTracker {
         request_id: Uuid,
     ) {
         let mut inner = self.lock();
+        // `HealthPolicy` is a few numbers; cloning it out keeps the borrow
+        // of `inner.map` below from colliding with a policy read.
+        let policy = inner.policy.clone();
         let mut transition = None;
         {
             let health = inner.map.entry(id.clone()).or_default();
@@ -490,21 +521,17 @@ impl HealthTracker {
                 // another 5/10/15-minute wait, while a dead engine's
                 // probe rate is still capped by `probe_window_max`.
                 health.probe_failures += 1;
-                Some(self.probe_retry_window(id, health.probe_failures, err))
+                Some(probe_retry_window(&policy, id, health.probe_failures, err))
             } else {
                 match err {
-                    EngineError::RateLimited | EngineError::Blocked => {
-                        Some(self.policy.abuse_window)
-                    }
-                    EngineError::Timeout
-                        if health.timeout_streak >= self.policy.timeout_threshold =>
-                    {
-                        Some(self.policy.timeout_window)
+                    EngineError::RateLimited | EngineError::Blocked => Some(policy.abuse_window),
+                    EngineError::Timeout if health.timeout_streak >= policy.timeout_threshold => {
+                        Some(policy.timeout_window)
                     }
                     EngineError::Parse(_) | EngineError::Transport(_)
-                        if health.degraded_streak >= self.policy.degraded_threshold =>
+                        if health.degraded_streak >= policy.degraded_threshold =>
                     {
-                        Some(self.policy.degraded_window)
+                        Some(policy.degraded_window)
                     }
                     _ => None,
                 }
@@ -709,37 +736,10 @@ impl HealthTracker {
         if due { self.flush().await } else { Ok(()) }
     }
 
-    fn open_window(&self, err: &EngineError) -> Duration {
-        match err {
-            EngineError::RateLimited | EngineError::Blocked => self.policy.abuse_window,
-            EngineError::Parse(_) | EngineError::Transport(_) => self.policy.degraded_window,
-            _ => self.policy.timeout_window,
-        }
-    }
-
-    /// The re-open window after a failed probe (issue #227):
-    /// `min(kind window, probe_window_min * 2^(attempt-1))` capped at
-    /// `probe_window_max`, multiplied by a per-engine jitter in
-    /// `[0.75, 1.25)` so a fleet that tripped on the same connectivity
-    /// loss does not retry in lockstep. Exponential growth keeps a
-    /// genuinely dead endpoint resting (one call per `probe_window_max`
-    /// at worst); the floor keeps a flaky one re-probing fast enough
-    /// that recovery lands in bounded time once it can answer.
-    fn probe_retry_window(&self, id: &EngineId, attempt: u32, err: &EngineError) -> Duration {
-        let shift = attempt.saturating_sub(1).min(31);
-        let base = self
-            .policy
-            .probe_window_min
-            .saturating_mul(1u32 << shift)
-            .min(self.policy.probe_window_max);
-        let jittered = base.mul_f64(probe_jitter(id, attempt));
-        jittered.min(self.open_window(err))
-    }
-
     /// The prober loop's cadence (`probe_tick`; `Duration::ZERO` means
     /// probing stays passive — only requests drive it).
     pub fn probe_tick(&self) -> Duration {
-        self.policy.probe_tick
+        self.lock().policy.probe_tick
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, Inner> {
@@ -760,6 +760,39 @@ fn probe_jitter(id: &EngineId, attempt: u32) -> f64 {
     let mut h = std::collections::hash_map::DefaultHasher::new();
     (id.as_str(), attempt).hash(&mut h);
     0.75 + (h.finish() % 500) as f64 / 1_000.0
+}
+
+/// Breaker open window for `err`'s kind under `policy` — a free fn so
+/// `record_err` can call it while the health map is mutably borrowed.
+fn open_window(policy: &HealthPolicy, err: &EngineError) -> Duration {
+    match err {
+        EngineError::RateLimited | EngineError::Blocked => policy.abuse_window,
+        EngineError::Parse(_) | EngineError::Transport(_) => policy.degraded_window,
+        _ => policy.timeout_window,
+    }
+}
+
+/// The re-open window after a failed probe (issue #227):
+/// `min(kind window, probe_window_min * 2^(attempt-1))` capped at
+/// `probe_window_max`, multiplied by a per-engine jitter in
+/// `[0.75, 1.25)` so a fleet that tripped on the same connectivity
+/// loss does not retry in lockstep. Exponential growth keeps a
+/// genuinely dead endpoint resting (one call per `probe_window_max`
+/// at worst); the floor keeps a flaky one re-probing fast enough
+/// that recovery lands in bounded time once it can answer.
+fn probe_retry_window(
+    policy: &HealthPolicy,
+    id: &EngineId,
+    attempt: u32,
+    err: &EngineError,
+) -> Duration {
+    let shift = attempt.saturating_sub(1).min(31);
+    let base = policy
+        .probe_window_min
+        .saturating_mul(1u32 << shift)
+        .min(policy.probe_window_max);
+    let jittered = base.mul_f64(probe_jitter(id, attempt));
+    jittered.min(open_window(policy, err))
 }
 
 /// Clears the `probe_in_flight` gate on drop — the normal path is the

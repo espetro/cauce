@@ -100,7 +100,7 @@
 
 <fieldset>
   <legend>{{ crate::i18n::tr("settings.section_logging") }}</legend>
-  <label>{{ crate::i18n::tr("settings.retention") }}
+  <label>{{ crate::i18n::tr("settings.retention") }} <span class="hint">{{ crate::i18n::tr("settings.applies_after_restart") }}</span>
     <input type="text" name="logs.retention_days" value="{{ retention.value }}" {% if !retention.env.is_empty() %}disabled{% endif %}>
   </label>
   {% if !retention.env.is_empty() %}<p class="hint">{{ crate::i18n::tr("settings.set_by") }} {{ retention.env }}</p>{% endif %}
@@ -132,7 +132,8 @@
   {% if ai_models_failed %}<p class="hint">{{ crate::i18n::tr("settings.models_unreachable") }}</p>{% endif %}
   <p class="field-error" id="fe-ai-dmodel"></p>
   <label>
-    <input type="checkbox" disabled {% if ai_enabled %}checked{% endif %}> {{ crate::i18n::tr("settings.enabled") }} {{ crate::i18n::tr("settings.ai_pipeline_note") }}
+    <input type="hidden" name="ai.enabled" value="false" {% if !ai_enabled_env.is_empty() %}disabled{% endif %}>
+    <input type="checkbox" name="ai.enabled" value="true" {% if ai_enabled %}checked{% endif %} {% if !ai_enabled_env.is_empty() %}disabled{% endif %}> {{ crate::i18n::tr("settings.enabled") }}
   </label>
   {% if !ai_enabled_env.is_empty() %}<p class="hint">{{ crate::i18n::tr("settings.set_by") }} {{ ai_enabled_env }}</p>{% endif %}
 </fieldset>
