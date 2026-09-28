@@ -35,3 +35,9 @@
   the espetro noreply otherwise). `--author`/`-c user.*` alone get overridden.
 - Follow-up per the issue: split budgets / dedup / forced-synthesize land *inside*
   this crate — the seam is where a third-party harness (rig-core, genai) plugs in.
+- Owner direction on autonomy: the harness should be ReAct-shaped (model decides
+  each step; loop = orchestration + safety bounds), not a fixed pipeline. `run()`
+  already is — provider turn → tool dispatch → repeat until tool-free completion or
+  `max_iterations`/`provider_budget`. `run_assist` stays single-turn by contract
+  (inline grounding, no tools). Documented in lib.rs "Loop shape"; #231 deepens the
+  guards inside the same iteration.

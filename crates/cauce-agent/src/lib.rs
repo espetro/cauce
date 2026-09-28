@@ -43,6 +43,22 @@
 //! lives — inside the provider clients in `cauce-core::ai` — so it
 //! keeps working under any harness swapped in here.
 //!
+//! ## Loop shape
+//!
+//! [`AnswerLoop`] is already model-driven rather than a scripted
+//! pipeline: each iteration the provider decides whether to emit text
+//! or tool calls, the loop executes the calls it chose, and the cycle
+//! repeats until the model answers plainly or a bound trips — the
+//! ReAct shape (reason → act → observe → repeat). The loop itself
+//! only orchestrates and enforces safety bounds: [`LoopConfig`]'s
+//! per-turn provider budget and iteration cap, plus termination on a
+//! tool-free completion. The loop guards from the #231 follow-up
+//! (split budgets, tool-result dedup, forced-synthesize) land inside
+//! this same iteration — the architecture does not preclude deeper
+//! autonomy. `run_assist` is deliberately single-turn: the SERP
+//! grounding set is fixed inline, so there are no tools to reason
+//! over.
+//!
 //! This Source Code Form is subject to the terms of the Mozilla Public
 //! License, v. 2.0. If a copy of the MPL was not distributed with this
 //! file, You can obtain one at <https://mozilla.org/MPL/2.0/>.
