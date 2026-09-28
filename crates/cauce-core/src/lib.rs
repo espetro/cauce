@@ -42,6 +42,7 @@ pub use config::{
     AdmissionConfig, AiConfig, AiProtocol, ArchiveConfig, AuthConfig, CacheConfig, Config,
     ConfigError, Dirs, EgressConfig, EngineEntry, EngineKind, LexicalConfig, LogsConfig,
     MergeConfig, MetaConfig, Resources, SearchConfig, ServerConfig, is_loopback_host,
+    key_requires_restart,
 };
 pub use engine::{ENGINE_ID_PATTERN, Engine, EngineError, EngineId, Tier};
 pub use evals::{EvalReport, Thresholds};

@@ -14,10 +14,8 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use cauce_core::SearchPipeline;
 use cauce_core::config::{Config, Resources};
-use cauce_core::{
-    Admission, AdmissionLimits, CachePolicy, HealthPolicy, HedgePolicy, MergePolicy, SearchPipeline,
-};
 use cauce_engines::factory::build_engines;
 use cauce_server::{AppState, observability};
 use cauce_store_sqlite::{SqliteStore, spawn_eviction_task};
@@ -98,35 +96,7 @@ async fn mcp_async(cfg: Config) -> i32 {
             "no engines enabled (see [[engines]] / CAUCE_ENGINES); search_web will fail"
         );
     }
-    let pipeline = Arc::new(
-        SearchPipeline::new(store.clone(), engines)
-            .with_deadline(Duration::from_millis(cfg.search.deadline_ms))
-            .with_default_ttl(Duration::from_secs(cfg.search.ttl_s))
-            .with_ttl_cap(Duration::from_secs(cfg.search.ttl_cap_s))
-            .with_lexical(cfg.cache.lexical)
-            .with_admission(Admission::new(AdmissionLimits {
-                max_wait: Duration::from_millis(cfg.admission.max_wait_ms),
-                max_concurrent_per_engine: cfg.admission.max_concurrent_per_engine.max(1) as usize,
-            }))
-            .with_hedge(HedgePolicy {
-                floor: Duration::from_millis(cfg.search.hedge_floor_ms),
-                ceiling: Duration::from_millis(cfg.search.hedge_ceiling_ms),
-                min_results: cfg.search.min_results as usize,
-            })
-            .with_merge(MergePolicy {
-                rrf_k: cfg.merge.rrf_k as f32,
-                collapse_same_host_after: cfg.merge.collapse_same_host_after as usize,
-            })
-            .with_cache_policy(CachePolicy {
-                stale_grace: Duration::from_secs(cfg.cache.stale_grace_s),
-                degraded_ttl: Duration::from_secs(cfg.cache.degraded_ttl_s),
-            })
-            .with_health_policy(HealthPolicy {
-                degraded_threshold: cfg.health.degraded_threshold,
-                degraded_window: Duration::from_secs(cfg.health.degraded_window_s),
-                ..HealthPolicy::default()
-            }),
-    );
+    let pipeline = Arc::new(SearchPipeline::from_config(&cfg, store.clone(), engines));
     // Restore persisted breakers, same as `cauce serve`: a stdio process
     // must respect a breaker `serve` opened (parallel agents share the
     // egress IP) and its own writes must not clobber `serve`'s rows with
@@ -138,8 +108,14 @@ async fn mcp_async(cfg: Config) -> i32 {
             tracing::warn!(error = %e, "engine health load failed; starting with closed breakers")
         }
     }
-    let evict = spawn_eviction_task(store.clone(), Duration::from_secs(cfg.cache.stale_grace_s));
-    let state = AppState::new(pipeline.clone(), store, cfg);
+    // Same hot-apply wiring as `cauce serve`: the engine factory rebuilds
+    // the fan-out on a config save, the evictor re-reads the grace.
+    let state =
+        AppState::new(pipeline.clone(), store.clone(), cfg).with_engine_factory(build_engines);
+    let evict = spawn_eviction_task(store, {
+        let state = state.clone();
+        move || state.with_config(|c| Duration::from_secs(c.cache.stale_grace_s))
+    });
     tracing::info!("cauce mcp serving stdio");
     let result = cauce_server::mcp::serve_stdio(state).await;
     evict.abort();
