@@ -13,6 +13,7 @@
 
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex, RwLock};
+use std::time::{Duration, Instant};
 
 use axum::extract::{Extension, Request};
 use axum::http::Uri;
@@ -96,6 +97,10 @@ pub struct AppState {
     /// restart-required.
     engine_factory: Option<Arc<EngineFactory>>,
     metrics: MetricsHandle,
+    /// Process start instant, for the report bundle's `cauce.uptime_s`.
+    /// Lives on `AppState` (not the swappable `Runtime`) so a config
+    /// hot-apply does not reset the clock.
+    started: Instant,
 }
 
 impl AppState {
@@ -112,6 +117,7 @@ impl AppState {
             store,
             config: Arc::new(Mutex::new(config)),
             engine_factory: None,
+            started: Instant::now(),
         }
     }
 
@@ -144,6 +150,12 @@ impl AppState {
     /// The process metrics handle (`/metrics` render + cache gauge refresh).
     pub fn metrics(&self) -> &MetricsHandle {
         &self.metrics
+    }
+
+    /// Wall-clock uptime since `AppState` was built (`cauce.uptime_s` in
+    /// the report bundle).
+    pub fn uptime(&self) -> Duration {
+        self.started.elapsed()
     }
 
     /// Run `f` under the config lock. A poisoned lock is recovered (the
