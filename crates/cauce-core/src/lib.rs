@@ -25,6 +25,7 @@ pub mod http;
 pub mod metrics;
 mod normalize;
 mod pipeline;
+pub mod report;
 mod request;
 mod response;
 mod store;
@@ -55,6 +56,9 @@ pub use pipeline::{
     ArchiveHit, ArchiveSource, CachePolicy, DEFAULT_COLLAPSE_SAME_HOST_AFTER, DEFAULT_DEADLINE,
     DEFAULT_RRF_K, DEFAULT_TTL, DEFAULT_TTL_CAP, HedgePolicy, MergePolicy, PipelineError, RrfMerge,
     SearchOpts, SearchPipeline,
+};
+pub use report::{
+    RedactionProfile, ReportBundle, ReportCtx, ReportError, ReportEvent, ReportSection, ReportSink,
 };
 pub use request::{ClientKind, SafeSearch, SearchRequest, TimeRange};
 pub use response::{
