@@ -146,6 +146,9 @@ async fn serve_async(opts: ServeOpts, cfg: Config, host: String) -> i32 {
             .with_health_policy(HealthPolicy {
                 degraded_threshold: cfg.health.degraded_threshold,
                 degraded_window: Duration::from_secs(cfg.health.degraded_window_s),
+                probe_window_min: Duration::from_secs(cfg.health.probe_window_s),
+                probe_window_max: Duration::from_secs(cfg.health.probe_window_max_s),
+                probe_tick: Duration::from_secs(cfg.health.probe_tick_s),
                 ..HealthPolicy::default()
             }),
     );
@@ -160,6 +163,11 @@ async fn serve_async(opts: ServeOpts, cfg: Config, host: String) -> i32 {
         }
     }
     let evict = spawn_eviction_task(store.clone(), Duration::from_secs(cfg.cache.stale_grace_s));
+    // Issue #227: the background recovery prober claims elapsed/idle
+    // `HalfOpen` probes on `health.probe_tick_s`, so breakers close on
+    // their own once engines can answer — no inbound traffic or manual
+    // reset required. `None` when the tick is disabled (0).
+    let prober = pipeline.spawn_prober();
 
     let port = opts.port.unwrap_or(cfg.server.port);
     if !opts.headless && !cfg!(feature = "ui") {
@@ -179,6 +187,9 @@ async fn serve_async(opts: ServeOpts, cfg: Config, host: String) -> i32 {
         Err(e) => {
             tracing::error!(error = %e, host, port, "bind failed");
             evict.abort();
+            if let Some(prober) = &prober {
+                prober.abort();
+            }
             return 1;
         }
     };
@@ -188,6 +199,9 @@ async fn serve_async(opts: ServeOpts, cfg: Config, host: String) -> i32 {
     }
     let result = cauce_server::serve(listener, app).await;
     evict.abort();
+    if let Some(prober) = &prober {
+        prober.abort();
+    }
     // Best-effort final flush so EWMA/failure updates since the last
     // debounced write are not lost on shutdown.
     if let Err(e) = pipeline.health().flush().await {

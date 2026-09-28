@@ -67,6 +67,12 @@ pub struct EngineView {
     pub configured: bool,
     /// Live in the running pipeline's fan-out set.
     pub live: bool,
+    /// When the breaker next admits a probe — `breaker_until` for an
+    /// `Open` engine, when either the next gated request or the
+    /// background recovery prober (issue #227) picks it up. Absent for
+    /// `Closed`/`HalfOpen` rows, where no probe is pending.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_probe_at: Option<chrono::DateTime<Utc>>,
     /// Whole-call p95 from the in-process metrics registry (W1-09);
     /// absent until the engine has served a request this process.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -167,16 +173,21 @@ pub(crate) async fn engine_views(state: &AppState) -> Result<Vec<EngineView>, Ap
                 })
                 .to_string();
             let metrics = metrics.get(&id).filter(|m| m.requests > 0);
+            let row = health.get(&id).cloned().unwrap_or_else(|| EngineHealthRow {
+                engine: EngineId::from(id.as_str()),
+                ewma_ms: 0.0,
+                failures: 0,
+                breaker: cauce_core::BreakerState::Closed,
+                breaker_until: None,
+                last_ok_at: None,
+                last_error: None,
+            });
+            let next_probe_at = (row.breaker == cauce_core::BreakerState::Open)
+                .then_some(row.breaker_until)
+                .flatten();
             EngineView {
-                health: health.get(&id).cloned().unwrap_or_else(|| EngineHealthRow {
-                    engine: EngineId::from(id.as_str()),
-                    ewma_ms: 0.0,
-                    failures: 0,
-                    breaker: cauce_core::BreakerState::Closed,
-                    breaker_until: None,
-                    last_ok_at: None,
-                    last_error: None,
-                }),
+                health: row,
+                next_probe_at,
                 kind,
                 tier: live_tier
                     .or_else(|| entry.and_then(|e| e.tier))
