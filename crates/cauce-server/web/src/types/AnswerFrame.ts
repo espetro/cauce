@@ -9,7 +9,15 @@ import type { AnswerSource } from "./AnswerSource";
  * One item of the `stream_answer` channel — the settled W4-02 wire
  * shapes, serde-tagged on `type` so SSE is `data: {"type": ...}`.
  */
-export type AnswerFrame = { "type": "step", tool: string, query: string, label: string, } | { "type": "delta", text: string, } | { "type": "sources", sources: Array<AnswerSource>, } | { "type": "done", answer: string, confidence: number, model: string, related_questions: Array<string>, 
+export type AnswerFrame = { "type": "step", tool: string, query: string, label: string, } | { "type": "delta", text: string, } | { "type": "sources", sources: Array<AnswerSource>, } | { "type": "done", answer: string, 
+/**
+ * `answer` rendered server-side to sanitized HTML (#226): the
+ * web bundle injects it verbatim and retargets its
+ * `<a class="cite" data-cite="n">` placeholders to that
+ * turn's source cards; `answer` stays as the markdown source
+ * (thread replay, debug, text clients).
+ */
+html: string, confidence: number, model: string, related_questions: Array<string>, 
 /**
  * `true` only on the `answers`-table replay.
  */

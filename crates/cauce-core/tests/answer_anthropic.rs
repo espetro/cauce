@@ -220,6 +220,7 @@ async fn tool_loop_yields_steps_deltas_sources_and_done() {
         .expect("terminal done frame");
     let AnswerFrame::Done {
         answer,
+        html,
         confidence,
         model,
         related_questions,
@@ -231,6 +232,8 @@ async fn tool_loop_yields_steps_deltas_sources_and_done() {
         unreachable!()
     };
     assert!(!cached && !ungrounded);
+    // #226: the rendered HTML rides beside the markdown source.
+    assert!(html.contains('<'), "done.html is rendered markup: {html:?}");
     assert_eq!(got_id, request_id);
     assert_eq!(confidence, 0, "fixture answer carries no metadata tail");
     assert_eq!(model, "claude-sonnet-4-20250514");
