@@ -279,3 +279,20 @@ global store, and is never shared with or copied into another project.
   done: true}` satisfies a fake ReadableStream reader chunk.
 - `pkill -f "cauce serve"` kills the wrapping shell too — kill serve
   instances by PID (ss -ltnp), as the serve skill already warns.
+
+## 2026-09-28 — answer markdown server-side (#226, branch v3/answer-markdown)
+
+- ammonia 4.2 footguns: listing `rel` in a tag's `tag_attributes` while the
+  (default-on) `link_rel` is set panics — omit `rel`, ammonia applies it to
+  every `a[href]`. Same panic for `class` in `tag_attributes` +
+  `allowed_classes` on the same tag. `url_relative` defaults to PassThrough,
+  which is what keeps `#cite-n` fragment hrefs alive.
+- ammonia can't add `target` — emit markdown link opens as raw
+  `Event::InlineHtml` before sanitize; ammonia still validates the href scheme.
+- The `web` task's freshness gate (`git diff --exit-code` on app.js / wire
+  types / i18n) compares worktree vs index — it only passes AFTER the
+  generated artifacts are staged/committed. Commit first, then
+  `mise run validate` (matches the pre-push-hook flow it mirrors).
+- `CAUCE_AI_MODEL=openrouter/free` cannot converge the answer tool loop
+  (tool call every iteration → max-iterations). e2e needs a real model
+  (`openai/gpt-4o-mini` worked); the change itself is model-agnostic.
