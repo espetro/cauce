@@ -190,6 +190,7 @@ describe("createAnswerSession — frame dispatch", () => {
     handleFrame(
       `event: done\ndata: ${JSON.stringify({
         answer: "Rust is a language [1].",
+        html: '<p>Rust is a language <a class="cite" data-cite="1" href="#cite-1">[1]</a>.</p>',
         ungrounded: true,
         confidence: 6,
         model: "liquid/lfm",
@@ -218,9 +219,37 @@ describe("createAnswerSession — frame dispatch", () => {
 
   it("done with an out-of-range citation leaves the marker as text", () => {
     const { refs, handleFrame } = session();
-    handleFrame(`event: done\ndata: ${JSON.stringify({ answer: "see [9]" })}`);
+    // The server only anchors [n] in range — [9] arrives as literal text.
+    handleFrame(
+      `event: done\ndata: ${JSON.stringify({ answer: "see [9]", html: "<p>see [9]</p>" })}`,
+    );
     expect(refs.text.querySelector("a.cite")).toBeNull();
     expect(refs.text.textContent).toBe("see [9]");
+  });
+
+  it("done injects rendered markup and retargets cite placeholders", () => {
+    const { refs, handleFrame } = session();
+    handleFrame(
+      'event: sources\ndata: {"sources":[{"url":"https://a.com/x","title":"A"}]}',
+    );
+    handleFrame(
+      `event: done\ndata: ${JSON.stringify({
+        answer: "**Rust** is [1].",
+        html: '<p><strong>Rust</strong> is <a class="cite" data-cite="1" href="#cite-1">[1]</a>. ' +
+          'See <a href="https://e.com" target="_blank" rel="noopener noreferrer">e</a>.</p>',
+      })}`,
+    );
+    // Rendered markup replaces the streamed plain-text delta.
+    expect(refs.text.querySelector("strong")!.textContent).toBe("Rust");
+    expect(refs.text.classList.contains("md")).toBe(true);
+    const cite = refs.text.querySelector("a.cite")!;
+    expect(cite.getAttribute("href")).toBe("#src-1-1");
+    // Outbound links keep the server's target/rel attributes.
+    const out = refs.text.querySelector('a[href="https://e.com"]')!;
+    expect(out.getAttribute("target")).toBe("_blank");
+    expect(out.getAttribute("rel")).toBe("noopener noreferrer");
+    // An empty/absent html field falls back to clearing the text.
+    expect(refs.text.textContent).toContain("Rust is [1].");
   });
 
   it("error frames fail with the payload message plus retry hint", () => {
@@ -328,13 +357,23 @@ describe("createAnswerSession — W7-04 thread turns", () => {
     handleFrame(
       'event: sources\ndata: {"sources":[{"url":"https://a.com/x","title":"A"}]}',
     );
-    handleFrame('event: done\ndata: {"answer":"first [1]"}');
+    handleFrame(
+      `event: done\ndata: ${JSON.stringify({
+        answer: "first [1]",
+        html: '<p>first <a class="cite" data-cite="1" href="#cite-1">[1]</a></p>',
+      })}`,
+    );
     startTurn("second question");
     const turns = refs.stream.querySelectorAll<HTMLElement>(".answer-turn");
     handleFrame(
       'event: sources\ndata: {"sources":[{"url":"https://b.com/y","title":"B"}]}',
     );
-    handleFrame('event: done\ndata: {"answer":"second [1]"}');
+    handleFrame(
+      `event: done\ndata: ${JSON.stringify({
+        answer: "second [1]",
+        html: '<p>second <a class="cite" data-cite="1" href="#cite-1">[1]</a></p>',
+      })}`,
+    );
     // Same [1] marker, different anchors: turn-local source lists.
     const c1 = turns[0].querySelector("a.cite")!;
     const c2 = turns[1].querySelector("a.cite")!;
