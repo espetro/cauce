@@ -780,7 +780,12 @@ fn open_window(policy: &HealthPolicy, err: &EngineError) -> Duration {
 /// genuinely dead endpoint resting (one call per `probe_window_max`
 /// at worst); the floor keeps a flaky one re-probing fast enough
 /// that recovery lands in bounded time once it can answer.
-fn probe_retry_window(policy: &HealthPolicy, id: &EngineId, attempt: u32, err: &EngineError) -> Duration {
+fn probe_retry_window(
+    policy: &HealthPolicy,
+    id: &EngineId,
+    attempt: u32,
+    err: &EngineError,
+) -> Duration {
     let shift = attempt.saturating_sub(1).min(31);
     let base = policy
         .probe_window_min
