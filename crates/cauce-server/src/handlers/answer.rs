@@ -37,7 +37,7 @@ struct AnswerBody {
     q: String,
     /// W7-02 Search Assist: the result set the caller already has (the
     /// SERP's top rows). Present — even empty — selects
-    /// [`cauce_core::AnswerLoop::stream_assist`]: a single no-tools turn
+    /// [`cauce_agent::AnswerLoop::stream_assist`]: a single no-tools turn
     /// grounded in these results, never an engine re-fetch. Absent runs
     /// the full tool loop.
     context_results: Option<Vec<AnswerSource>>,
@@ -92,7 +92,7 @@ fn check_history(ctx: &RequestCtx, history: &[AnswerTurn]) -> Result<(), ApiErro
 /// carrying `context_results` (W7-02) takes the no-tools assist turn
 /// instead of the tool loop.
 ///
-/// Every [`AnswerFrame`] from [`cauce_core::AnswerLoop::stream_answer`]
+/// Every [`AnswerFrame`] from [`cauce_agent::AnswerLoop::stream_answer`]
 /// or `stream_assist` streams as a named event matching its serde tag
 /// (`step` / `delta` / `sources` / `done` / `error`), the
 /// `/api/search/stream` convention. Pre-stream rejections keep their

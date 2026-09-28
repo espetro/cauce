@@ -55,7 +55,7 @@ use crate::store::AnswerSource;
 /// One case line of an `evals/ai/*.jsonl` file.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AiEvalCase {
-    /// The user question fed to `AnswerLoop::stream_answer`.
+    /// The user question fed to `cauce_agent::AnswerLoop::stream_answer`.
     pub query: String,
     /// Stem of `evals/ai/transcripts/<stem>.json` — the provider turns
     /// replayed for this case, and the file `--record` overwrites.

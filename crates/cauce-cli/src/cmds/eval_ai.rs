@@ -28,7 +28,8 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use cauce_core::ai::{AnswerLoop, AnswerRequest, ChatProvider, provider_client};
+use cauce_agent::AnswerLoop;
+use cauce_core::ai::{AnswerRequest, ChatProvider, provider_client};
 use cauce_core::config::{AiProtocol, Config};
 use cauce_core::evals::ai::{
     AiCaseOutcome, AiEvalCase, AiEvalReport, AiThresholds, RecordingProvider, TranscriptProvider,

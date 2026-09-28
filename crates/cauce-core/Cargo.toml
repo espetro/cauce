@@ -59,8 +59,10 @@ ammonia = "4.2"
 pulldown-cmark-escape = "0.11"
 
 [dev-dependencies]
-# Cyclic dev-dependency is deliberate: pipeline tests drive the `replay`
-# engine (cauce-engines depends on cauce-core normally).
+# Cyclic dev-dependencies are deliberate: pipeline tests drive the
+# `replay` engine, and the `AnswerLoop` integration tests exercise the
+# loop — both crates depend on cauce-core normally.
+cauce-agent = { path = "../cauce-agent" }
 cauce-engines = { path = "../cauce-engines" }
 proptest = "1"
 tempfile = "3"

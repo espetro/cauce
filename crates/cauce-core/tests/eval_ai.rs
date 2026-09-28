@@ -13,13 +13,14 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use cauce_agent::AnswerLoop;
 use cauce_core::evals::ai::{
     AiEvalCase, AiThresholds, Transcript, TranscriptCompletion, TranscriptProvider, TranscriptTurn,
     gate_ok, score_frames,
 };
 use cauce_core::{
-    AnswerFrame, AnswerLoop, AnswerRequest, ChatProvider, ClientKind, Engine, EngineId,
-    SearchPipeline, SearchResult, Store,
+    AnswerFrame, AnswerRequest, ChatProvider, ClientKind, Engine, EngineId, SearchPipeline,
+    SearchResult, Store,
 };
 use cauce_engines::cassette::{Cassette, cassette_path};
 use cauce_engines::{Replay, ReplayOpts};
