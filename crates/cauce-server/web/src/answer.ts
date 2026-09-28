@@ -233,33 +233,21 @@ export function createAnswerSession(
     });
   }
 
-  // Re-render the accumulated answer with [n] markers as anchor
-  // links into this turn's numbered source cards below.
-  function renderAnswer(T: Turn, body: string): void {
-    T.text.textContent = "";
-    const re = /\[(\d+)\]/g;
-    let last = 0;
-    let m: RegExpExecArray | null;
-    while ((m = re.exec(body)) !== null) {
-      T.text.appendChild(document.createTextNode(body.slice(last, m.index)));
-      const n = parseInt(m[1], 10);
-      const anchor = "src-" + T.turn + "-" + n;
-      if (n >= 1 && n <= T.sources.length && T.el.ownerDocument.getElementById(anchor)) {
-        const a = document.createElement("a");
-        a.className = "cite";
-        a.href = "#" + anchor;
-        a.textContent = m[0];
-        T.text.appendChild(a);
-      } else {
-        T.text.appendChild(document.createTextNode(m[0]));
-      }
-      last = re.lastIndex;
+  // #226: `done.html` is server-rendered + sanitized — inject it, then
+  // retarget the `<a class="cite" data-cite="n">` placeholders to this
+  // turn's numbered source cards (`#src-<turn>-<n>`). The `.md` class
+  // drops pre-wrap so block markup isn't double-spaced.
+  function renderAnswer(T: Turn, html: string): void {
+    T.text.classList.add("md");
+    T.text.innerHTML = html;
+    for (const a of T.text.querySelectorAll<HTMLAnchorElement>("a.cite[data-cite]")) {
+      const n = a.getAttribute("data-cite");
+      if (n) a.setAttribute("href", "#src-" + T.turn + "-" + n);
     }
-    T.text.appendChild(document.createTextNode(body.slice(last)));
   }
 
   function renderDone(T: Turn, done: DoneFrame): void {
-    renderAnswer(T, done.answer || "");
+    renderAnswer(T, done.html || "");
     if (done.ungrounded) {
       T.ungrounded.hidden = false;
       T.ungroundedBadge.hidden = false;

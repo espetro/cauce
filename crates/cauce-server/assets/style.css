@@ -1068,6 +1068,89 @@ body.engines-page {
     white-space: pre-wrap;
 }
 
+/* #226: the done frame injects server-rendered markdown — block
+   elements supply their own spacing, so pre-wrap goes off and the
+   constructs get card-consistent styles. Streaming deltas still land
+   as raw text under the pre-wrap rule above. */
+.answer-text.md {
+    white-space: normal;
+}
+
+.answer-text.md > :first-child {
+    margin-top: 0;
+}
+
+.answer-text.md > :last-child {
+    margin-bottom: 0;
+}
+
+.answer-text.md p,
+.answer-text.md ul,
+.answer-text.md ol,
+.answer-text.md pre,
+.answer-text.md blockquote,
+.answer-text.md table {
+    margin: 0.5rem 0;
+}
+
+.answer-text.md h1,
+.answer-text.md h2,
+.answer-text.md h3,
+.answer-text.md h4,
+.answer-text.md h5,
+.answer-text.md h6 {
+    font-size: 1rem;
+    margin: 0.75rem 0 0.25rem;
+}
+
+.answer-text.md ul,
+.answer-text.md ol {
+    padding-left: 1.25rem;
+}
+
+.answer-text.md code {
+    background: var(--greyed-bg);
+    border-radius: 0.25rem;
+    font-family: var(--mono);
+    font-size: 0.875em;
+    padding: 0.1rem 0.3rem;
+}
+
+.answer-text.md pre {
+    background: var(--greyed-bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow-x: auto;
+    padding: 0.5rem 0.75rem;
+}
+
+.answer-text.md pre code {
+    background: none;
+    padding: 0;
+}
+
+.answer-text.md blockquote {
+    border-left: 3px solid var(--border);
+    color: var(--muted);
+    padding-left: 0.75rem;
+}
+
+.answer-text.md table {
+    border-collapse: collapse;
+}
+
+.answer-text.md th,
+.answer-text.md td {
+    border: 1px solid var(--border);
+    padding: 0.25rem 0.5rem;
+}
+
+.answer-text.md hr {
+    border: 0;
+    border-top: 1px solid var(--border);
+    margin: 0.75rem 0;
+}
+
 /* [n] citation marker linking to the matching source card. */
 .cite {
     color: var(--accent);

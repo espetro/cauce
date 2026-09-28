@@ -117,28 +117,17 @@ export function initAssist(
     }
   }
 
-  // Re-render the accumulated answer with [n] markers as anchor links
-  // into the numbered chips (the /answer page's convention).
-  function renderAnswer(body: string): void {
-    text.textContent = "";
-    const re = /\[(\d+)\]/g;
-    let last = 0;
-    let m;
-    while ((m = re.exec(body)) !== null) {
-      text.appendChild(doc.createTextNode(body.slice(last, m.index)));
-      const n = parseInt(m[1], 10);
-      if (n >= 1 && n <= sources.length && doc.getElementById("asrc-" + n)) {
-        const a = doc.createElement("a");
-        a.className = "cite";
-        a.href = "#asrc-" + n;
-        a.textContent = m[0];
-        text.appendChild(a);
-      } else {
-        text.appendChild(doc.createTextNode(m[0]));
-      }
-      last = re.lastIndex;
+  // #226: `done.html` is server-rendered + sanitized — inject it, then
+  // retarget the `<a class="cite" data-cite="n">` placeholders to the
+  // numbered chips (`#asrc-<n>`). The `.md` class drops pre-wrap so
+  // block markup isn't double-spaced.
+  function renderAnswer(html: string): void {
+    text.classList.add("md");
+    text.innerHTML = html;
+    for (const a of text.querySelectorAll<HTMLAnchorElement>("a.cite[data-cite]")) {
+      const n = a.getAttribute("data-cite");
+      if (n) a.setAttribute("href", "#asrc-" + n);
     }
-    text.appendChild(doc.createTextNode(body.slice(last)));
   }
 
   /** Dispatch one raw SSE frame (text between `\n\n` delimiters). */
@@ -159,7 +148,7 @@ export function initAssist(
       );
     } else if (name === "done") {
       const done = payload as Extract<AnswerFrame, { type: "done" }>;
-      renderAnswer(done.answer);
+      renderAnswer(done.html || "");
       // W7-03: confidence + grounded state from `done` — assist is
       // grounded on the shown results by construction, so an
       // `ungrounded` badge here means an empty context slipped in.

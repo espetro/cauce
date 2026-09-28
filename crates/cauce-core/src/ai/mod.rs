@@ -25,6 +25,7 @@ pub mod anthropic;
 mod http;
 pub mod openai;
 mod pump;
+pub mod render;
 mod sse;
 
 use std::sync::Arc;
@@ -36,6 +37,7 @@ use uuid::Uuid;
 pub use answer::{AnswerFrame, AnswerLoop, AnswerRequest, AnswerRole, AnswerTurn, ChatProvider};
 pub use anthropic::AnthropicClient;
 pub use openai::OpenAiClient;
+pub use render::render_answer_html;
 
 use crate::config::{AiConfig, AiProtocol};
 use crate::store::Store;

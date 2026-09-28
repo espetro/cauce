@@ -36,7 +36,7 @@ use crate::store::{AnswerKey, AnswerPayload, AnswerRow, AnswerSource, Store};
 
 use super::{
     AiCallCtx, AiError, AiStreamEvent, ChatCompletion, ChatMessage, ChatRequest, OpenAiClient,
-    ToolCall, ToolSpec,
+    ToolCall, ToolSpec, render_answer_html,
 };
 
 /// `answers` row TTL (settled input: 24 h).
@@ -164,6 +164,12 @@ pub enum AnswerFrame {
     /// Terminal frame on success.
     Done {
         answer: String,
+        /// `answer` rendered server-side to sanitized HTML (#226): the
+        /// web bundle injects it verbatim and retargets its
+        /// `<a class="cite" data-cite="n">` placeholders to that
+        /// turn's source cards; `answer` stays as the markdown source
+        /// (thread replay, debug, text clients).
+        html: String,
         confidence: u8,
         model: String,
         related_questions: Vec<String>,
@@ -422,6 +428,10 @@ impl AnswerLoop {
         if cacheable {
             match self.store.get_answer(&key).await {
                 Ok(Some(hit)) => {
+                    // The replayed `html` is re-rendered from the stored
+                    // markdown — deterministic, and keeps
+                    // `answers.payload_json` free of a derived field.
+                    let html = render_answer_html(&hit.payload.answer, hit.sources.len());
                     if send(
                         &tx,
                         AnswerFrame::Sources {
@@ -432,6 +442,7 @@ impl AnswerLoop {
                             &tx,
                             AnswerFrame::Done {
                                 answer: hit.payload.answer,
+                                html,
                                 confidence: hit.payload.confidence,
                                 model: hit.model,
                                 related_questions: hit.payload.related_questions,
@@ -588,6 +599,7 @@ impl AnswerLoop {
             send(
                 &tx,
                 AnswerFrame::Done {
+                    html: render_answer_html(&answer, sources.len()),
                     answer: answer.clone(),
                     confidence,
                     model: completion.model.clone().unwrap_or_else(|| model.clone()),
@@ -646,6 +658,7 @@ impl AnswerLoop {
         let key = AnswerKey::assist(&req.q, &model, &results);
         match self.store.get_answer(&key).await {
             Ok(Some(hit)) => {
+                let html = render_answer_html(&hit.payload.answer, hit.sources.len());
                 if send(
                     &tx,
                     AnswerFrame::Sources {
@@ -656,6 +669,7 @@ impl AnswerLoop {
                         &tx,
                         AnswerFrame::Done {
                             answer: hit.payload.answer,
+                            html,
                             confidence: hit.payload.confidence,
                             model: hit.model,
                             related_questions: hit.payload.related_questions,
@@ -759,6 +773,7 @@ impl AnswerLoop {
         send(
             &tx,
             AnswerFrame::Done {
+                html: render_answer_html(&answer, results.len()),
                 answer: answer.clone(),
                 confidence,
                 model: completion.model.clone().unwrap_or_else(|| model.clone()),
