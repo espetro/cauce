@@ -170,7 +170,7 @@ cache:
 settings:
   page_title: Settings
   editing: editing
-  restart_note: changes apply on restart
+  restart_note: changes apply on save · marked keys need a restart
   section_search: Search
   deadline: Deadline (ms)
   ttl: Cache TTL (s)
@@ -207,7 +207,8 @@ settings:
   ai_model: Model
   ai_model_placeholder: model name
   models_unreachable: model list unreachable; type a model name
-  ai_pipeline_note: (applies on restart)
+  applies_after_restart: (applies after restart)
+  restart_needed: restart needed
   set_by: set by
   is_set: is set
   is_not_set: is not set
@@ -373,9 +374,8 @@ engines:
   summary: '{configured} configured · {enabled} enabled'
   # Appended to SUMMARY only while at least one breaker is open.
   summary_open: ' · {open} breaker open'
-  # Page-level note: toggles persist but the live set is fixed until
-  # restart.
-  hint_restart: enable/disable writes config.toml and takes effect on restart.
+  # Page-level note: toggles persist and the live set follows at once.
+  hint_restart: enable/disable writes config.toml and applies immediately.
   # Page-level note while `CAUCE_ENGINES` pins the enabled set.
   hint_pinned: CAUCE_ENGINES pins the enabled set; resolved state will not move while it is set.
   # Empty state: nothing configured, running, or tracked.
@@ -423,8 +423,11 @@ engines:
   action_enable: enable
   # Per-button hint while `CAUCE_ENGINES` pins the set (button disabled).
   toggle_pinned: pinned by CAUCE_ENGINES
-  # Card notice after an enable/disable write.
-  toggle_saved: saved; applies after restart
+  # Card notice after an enable/disable write. `toggle_saved` is the
+  # hot-apply wording (engine factory installed); `toggle_saved_restart`
+  # is shown when the build cannot rebuild the fan-out in place.
+  toggle_saved: saved; applies immediately
+  toggle_saved_restart: saved; applies after restart
   # Test-query form: input default, aria label, submit label.
   test_default: test
   test_aria: test query

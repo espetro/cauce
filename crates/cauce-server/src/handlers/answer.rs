@@ -114,7 +114,7 @@ pub async fn answer(
         return Err(ctx.err(
             StatusCode::SERVICE_UNAVAILABLE,
             "ai_disabled",
-            "AI answers are disabled; configure [ai] and restart",
+            "AI answers are disabled; enable [ai] in settings",
         ));
     };
     let body: AnswerBody = serde_json::from_slice(&body)

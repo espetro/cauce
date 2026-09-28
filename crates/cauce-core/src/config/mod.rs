@@ -1547,6 +1547,40 @@ impl Config {
     }
 }
 
+/// Whether changing `path` (a dotted config key as produced by the
+/// `config.put` diff walker, e.g. `search.deadline_ms` or
+/// `engines.replay.enabled`) needs a process restart to take effect.
+///
+/// The save paths — `PUT /api/config`, the `/settings` form and
+/// `POST /api/engines/{id}/enable|disable` — apply every other key in
+/// place: the derived runtime (search pipeline, engine fan-out, AI answer
+/// loop, archiver) is rebuilt under the config lock, so the next request
+/// picks the new values up while in-flight requests finish on the old
+/// runtime.
+///
+/// ## Restart-required keys
+///
+/// | Path | Why it needs a restart |
+/// |---|---|
+/// | `server.host`, `server.port` | the TCP listener is bound once at startup |
+/// | `auth.*` | bind policy is decided when the listener is created |
+/// | `logs.*` | the JSONL appender's `max_log_files` is created at startup |
+///
+/// Everything else is hot: `search.*`, `admission.*`, `cache.*`,
+/// `merge.*`, `lexical`/`cache.lexical.*`, `health.*`, `ai.*`,
+/// `archive.*`, `ui.*`, `engines.*` (`enabled`/`tier`/`egress`/`params`
+/// — the fan-out is rebuilt), `server.public_url` (already read
+/// per-request) and `config.interpolation` (governs the next parse).
+/// Filesystem locations (`CAUCE_CONFIG_DIR`, `CAUCE_DATA_DIR`) are env
+/// overrides, not file keys, so they never reach this classifier.
+pub fn key_requires_restart(path: &str) -> bool {
+    match path.split('.').next() {
+        Some("server") => matches!(path, "server.host" | "server.port"),
+        Some("auth" | "logs") => true,
+        _ => false,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::tests_support::{env_of, sandbox, write_config};

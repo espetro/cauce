@@ -12,7 +12,7 @@
 //! file, You can obtain one at <https://mozilla.org/MPL/2.0/>.
 
 use std::collections::BTreeMap;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 
 use axum::extract::{Extension, Request};
 use axum::http::Uri;
@@ -22,7 +22,8 @@ use axum::routing::{MethodRouter, delete, get, post, put};
 use axum::{Router, middleware};
 #[cfg(feature = "archive")]
 use cauce_core::Archiver;
-use cauce_core::{AnswerLoop, SearchPipeline, Store, config::Config};
+use cauce_core::config::{Config, ConfigError};
+use cauce_core::{AnswerLoop, Engine, HealthPolicy, SearchPipeline, Store};
 use tokio::net::TcpListener;
 
 #[cfg(feature = "ui")]
@@ -45,22 +46,17 @@ use crate::routes::{ROUTES, RouteKind, RouteSpec};
 /// `wave <= CURRENT_WAVE` declarations to mounted handlers.
 pub const CURRENT_WAVE: u8 = 1;
 
-/// Shared handler state: the search pipeline, the store, the live config
-/// (`PUT /api/config` swaps it under the lock), the W1-09 metrics
-/// handle (`GET /metrics` scrape off the owned in-process registry) and
-/// the W4-03 grounded-answer loop.
-#[derive(Clone)]
-pub struct AppState {
+/// The runtime `Config` derives: rebuilt wholesale when a config save
+/// hot-applies (`commit_config`). Readers clone the `Arc`/struct out
+/// under a brief read lock — never held across `.await` — so an in-flight
+/// request finishes on the runtime it started with while the next request
+/// picks the new values up.
+struct Runtime {
     pipeline: Arc<SearchPipeline>,
-    store: Arc<dyn Store>,
-    /// `std::sync::Mutex` is deliberate: the critical sections hold a clone,
-    /// a file write and a `Config::load()` — sync IO, no `.await` inside.
-    config: Arc<Mutex<Config>>,
-    metrics: MetricsHandle,
-    /// `Some` only when `[ai]` was `enabled` at startup and the provider
-    /// client built; a rejected config logs and degrades to `None` rather
-    /// than failing boot. `POST /api/answer` answers 503 `ai_disabled`
-    /// and `/answer` renders its disabled notice when `None`.
+    /// `Some` only when `[ai]` is `enabled` and the provider client
+    /// built; a rejected config logs and degrades to `None`. `POST
+    /// /api/answer` answers 503 `ai_disabled` and `/answer` renders its
+    /// disabled notice when `None`.
     answer: Option<AnswerLoop>,
     /// The W5-01 fetch-and-index pipeline (`POST /api/pages`, the click
     /// beacon, MCP `fetch_and_index`). `None` when the `archive` feature
@@ -70,22 +66,75 @@ pub struct AppState {
     archive: Option<Archiver>,
 }
 
+/// What [`AppState::commit_config`] applied; handlers translate it into
+/// the `applied`/`requires_restart` wire fields.
+#[derive(Debug, Clone, Copy)]
+pub struct CommitOutcome {
+    /// The engine fan-out was rebuilt from the saved config. `false`
+    /// means no `engine_factory` is installed — `engines.*` changes are
+    /// in the file but keep the boot-time fan-out until restart.
+    pub engines_rebuilt: bool,
+}
+
+/// Builds the engine fan-out from a `Config` on hot apply — `cauce
+/// serve`/`mcp` install `cauce_engines::factory::build_engines` (the
+/// server crate has no `cauce-engines` dependency).
+type EngineFactory = dyn Fn(&Config) -> Vec<Arc<dyn Engine>> + Send + Sync;
+
+/// Shared handler state: the store, the live config (`commit_config`
+/// swaps it under the lock), the derived [`Runtime`] behind a `RwLock`
+/// (hot-applied on save), the W1-09 metrics handle (`GET /metrics`
+/// scrape off the owned in-process registry) and the engine factory.
+#[derive(Clone)]
+pub struct AppState {
+    runtime: Arc<RwLock<Runtime>>,
+    store: Arc<dyn Store>,
+    /// `std::sync::Mutex` is deliberate: the critical sections hold a clone,
+    /// a file write and a `Config::load()` — sync IO, no `.await` inside.
+    config: Arc<Mutex<Config>>,
+    /// `None` keeps the boot-time set and reports `engines.*` changes as
+    /// restart-required.
+    engine_factory: Option<Arc<EngineFactory>>,
+    metrics: MetricsHandle,
+}
+
 impl AppState {
     pub fn new(pipeline: Arc<SearchPipeline>, store: Arc<dyn Store>, config: Config) -> Self {
         rust_i18n::set_locale(&config.ui.locale);
         Self {
-            answer: build_answer_loop(&pipeline, &store, &config),
-            #[cfg(feature = "archive")]
-            archive: build_archive(&store, &config),
-            pipeline,
+            runtime: Arc::new(RwLock::new(Runtime {
+                answer: build_answer_loop(&pipeline, &store, &config),
+                #[cfg(feature = "archive")]
+                archive: build_archive(&store, &config),
+                pipeline,
+            })),
             metrics: MetricsHandle::new(store.clone()),
             store,
             config: Arc::new(Mutex::new(config)),
+            engine_factory: None,
         }
     }
 
-    pub fn pipeline(&self) -> &SearchPipeline {
-        &self.pipeline
+    /// Install the factory `commit_config` uses to rebuild the engine
+    /// fan-out on save (`cauce_engines::factory::build_engines` in
+    /// production). Left unset, `engines.*` changes report as
+    /// restart-required.
+    pub fn with_engine_factory(
+        mut self,
+        f: impl Fn(&Config) -> Vec<Arc<dyn Engine>> + Send + Sync + 'static,
+    ) -> Self {
+        self.engine_factory = Some(Arc::new(f));
+        self
+    }
+
+    /// The live search pipeline — a shared `Arc`, so the caller can hold
+    /// it across `.await` while a config save swaps in a rebuild.
+    pub fn pipeline(&self) -> Arc<SearchPipeline> {
+        self.runtime
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .pipeline
+            .clone()
     }
 
     pub fn store(&self) -> &Arc<dyn Store> {
@@ -104,17 +153,77 @@ impl AppState {
         f(&mut guard)
     }
 
+    /// Save `new_cfg`, swap it into the live config and hot-apply every
+    /// non-restart-required change — all under the config lock, so a
+    /// concurrent save cannot interleave. The file write goes first: a
+    /// failed save leaves the process untouched. Restart-required keys
+    /// ([`cauce_core::key_requires_restart`]) are still saved — they take
+    /// effect on the next boot and are reported by the caller.
+    pub fn commit_config(&self, new_cfg: &Config) -> Result<CommitOutcome, ConfigError> {
+        self.with_config(|cfg| self.commit_locked(cfg, new_cfg.clone()))
+    }
+
+    /// `commit_config` for callers already inside `with_config`
+    /// (`engine_set_enabled` builds its candidate tree there).
+    pub(crate) fn commit_locked(
+        &self,
+        cfg: &mut Config,
+        new_cfg: Config,
+    ) -> Result<CommitOutcome, ConfigError> {
+        new_cfg.save()?;
+        let (runtime, engines_rebuilt) = self.build_runtime(&new_cfg);
+        rust_i18n::set_locale(&new_cfg.ui.locale);
+        *cfg = new_cfg;
+        *self.runtime.write().unwrap_or_else(|e| e.into_inner()) = runtime;
+        Ok(CommitOutcome { engines_rebuilt })
+    }
+
+    /// Rebuild the derived runtime from `cfg` — the engine set via the
+    /// factory (the incumbent set when none is installed), a pipeline
+    /// reusing the shared [`cauce_core::HealthTracker`] so EWMA/breaker
+    /// state survives, a rebuilt answer loop and archiver. Synchronous —
+    /// called under the config lock by `commit_locked`.
+    fn build_runtime(&self, cfg: &Config) -> (Runtime, bool) {
+        let (engines, rebuilt) = match &self.engine_factory {
+            Some(factory) => (factory(cfg), true),
+            None => (self.pipeline().engines().to_vec(), false),
+        };
+        let health = self.pipeline().health().clone();
+        health.set_policy(HealthPolicy::from_config(&cfg.health));
+        let pipeline = Arc::new(
+            SearchPipeline::from_config(cfg, self.store.clone(), engines)
+                .with_health_tracker(health),
+        );
+        (
+            Runtime {
+                answer: build_answer_loop(&pipeline, &self.store, cfg),
+                #[cfg(feature = "archive")]
+                archive: build_archive(&self.store, cfg),
+                pipeline,
+            },
+            rebuilt,
+        )
+    }
+
     /// The grounded-answer loop; `None` when AI answers are off or the
-    /// provider client could not be built at startup.
-    pub fn answer(&self) -> Option<&AnswerLoop> {
-        self.answer.as_ref()
+    /// provider client could not be built.
+    pub fn answer(&self) -> Option<AnswerLoop> {
+        self.runtime
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .answer
+            .clone()
     }
 
     /// The fetch-and-index pipeline; `None` when the feature is off or the
-    /// fetcher could not be built at startup.
+    /// fetcher could not be built.
     #[cfg(feature = "archive")]
-    pub fn archive(&self) -> Option<&Archiver> {
-        self.archive.as_ref()
+    pub fn archive(&self) -> Option<Archiver> {
+        self.runtime
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .archive
+            .clone()
     }
 
     /// Whether the results-page click beacon posts indexing requests
@@ -122,7 +231,7 @@ impl AppState {
     /// only rendered when this is true.
     #[cfg(feature = "archive")]
     pub fn archive_index_on_click(&self) -> bool {
-        self.archive.is_some() && self.with_config(|c| c.archive.index_on_click)
+        self.archive().is_some() && self.with_config(|c| c.archive.index_on_click)
     }
 
     /// Without the `archive` cargo feature there is no beacon.

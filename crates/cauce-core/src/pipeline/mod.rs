@@ -120,9 +120,9 @@ use tokio::sync::mpsc;
 use tracing::{Instrument, info, info_span, warn};
 use uuid::Uuid;
 
-use crate::admission::{Admission, FlightResult, Lead};
+use crate::admission::{Admission, AdmissionLimits, FlightResult, Lead};
 use crate::cache::{CacheKey, normalize_query};
-use crate::config::LexicalConfig;
+use crate::config::{Config, LexicalConfig};
 use crate::engine::{Engine, EngineError, EngineId, Tier};
 use crate::health::{HealthPolicy, HealthTracker};
 use crate::metrics::Metrics;
@@ -524,6 +524,52 @@ impl SearchPipeline {
         }
         self.health = health;
         self
+    }
+
+    /// Adopt an existing tracker instead of owning a fresh one — the hot
+    /// config-apply path rebuilds the pipeline in place without losing
+    /// EWMA history or breaker state. Registers this pipeline's engine ids
+    /// on the shared tracker.
+    pub fn with_health_tracker(mut self, health: Arc<HealthTracker>) -> Self {
+        for engine in &self.engines {
+            health.register(&engine.id());
+        }
+        self.health = health;
+        self
+    }
+
+    /// Wire every `Config`-driven policy onto a fresh pipeline — the
+    /// builder chain `cauce serve`, `cauce mcp` and the hot config-apply
+    /// path share so a rebuild produces an identically-shaped pipeline.
+    ///
+    /// Health gets a *fresh* tracker built from `[health]`; callers
+    /// hot-applying a save should chain [`SearchPipeline::with_health_tracker`]
+    /// (plus [`HealthTracker::set_policy`]) to keep the incumbent tracker's
+    /// state instead.
+    pub fn from_config(cfg: &Config, store: Arc<dyn Store>, engines: Vec<Arc<dyn Engine>>) -> Self {
+        Self::new(store, engines)
+            .with_deadline(Duration::from_millis(cfg.search.deadline_ms))
+            .with_default_ttl(Duration::from_secs(cfg.search.ttl_s))
+            .with_ttl_cap(Duration::from_secs(cfg.search.ttl_cap_s))
+            .with_lexical(cfg.cache.lexical)
+            .with_admission(Admission::new(AdmissionLimits {
+                max_wait: Duration::from_millis(cfg.admission.max_wait_ms),
+                max_concurrent_per_engine: cfg.admission.max_concurrent_per_engine.max(1) as usize,
+            }))
+            .with_hedge(HedgePolicy {
+                floor: Duration::from_millis(cfg.search.hedge_floor_ms),
+                ceiling: Duration::from_millis(cfg.search.hedge_ceiling_ms),
+                min_results: cfg.search.min_results as usize,
+            })
+            .with_merge(MergePolicy {
+                rrf_k: cfg.merge.rrf_k as f32,
+                collapse_same_host_after: cfg.merge.collapse_same_host_after as usize,
+            })
+            .with_cache_policy(CachePolicy {
+                stale_grace: Duration::from_secs(cfg.cache.stale_grace_s),
+                degraded_ttl: Duration::from_secs(cfg.cache.degraded_ttl_s),
+            })
+            .with_health_policy(HealthPolicy::from_config(&cfg.health))
     }
 
     /// The live per-engine health tracker (EWMA, breaker state) — also

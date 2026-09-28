@@ -14,10 +14,8 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use cauce_core::SearchPipeline;
 use cauce_core::config::{Config, Resources, is_loopback_host};
-use cauce_core::{
-    Admission, AdmissionLimits, CachePolicy, HealthPolicy, HedgePolicy, MergePolicy, SearchPipeline,
-};
 use cauce_engines::factory::build_engines;
 use cauce_server::{AppState, RouterOptions, observability};
 use cauce_store_sqlite::{SqliteStore, spawn_eviction_task};
@@ -120,38 +118,7 @@ async fn serve_async(opts: ServeOpts, cfg: Config, host: String) -> i32 {
             "no engines enabled (see [[engines]] / CAUCE_ENGINES); /api/search will answer 503"
         );
     }
-    let pipeline = Arc::new(
-        SearchPipeline::new(store.clone(), engines)
-            .with_deadline(Duration::from_millis(cfg.search.deadline_ms))
-            .with_default_ttl(Duration::from_secs(cfg.search.ttl_s))
-            .with_ttl_cap(Duration::from_secs(cfg.search.ttl_cap_s))
-            .with_lexical(cfg.cache.lexical)
-            .with_admission(Admission::new(AdmissionLimits {
-                max_wait: Duration::from_millis(cfg.admission.max_wait_ms),
-                max_concurrent_per_engine: cfg.admission.max_concurrent_per_engine.max(1) as usize,
-            }))
-            .with_hedge(HedgePolicy {
-                floor: Duration::from_millis(cfg.search.hedge_floor_ms),
-                ceiling: Duration::from_millis(cfg.search.hedge_ceiling_ms),
-                min_results: cfg.search.min_results as usize,
-            })
-            .with_merge(MergePolicy {
-                rrf_k: cfg.merge.rrf_k as f32,
-                collapse_same_host_after: cfg.merge.collapse_same_host_after as usize,
-            })
-            .with_cache_policy(CachePolicy {
-                stale_grace: Duration::from_secs(cfg.cache.stale_grace_s),
-                degraded_ttl: Duration::from_secs(cfg.cache.degraded_ttl_s),
-            })
-            .with_health_policy(HealthPolicy {
-                degraded_threshold: cfg.health.degraded_threshold,
-                degraded_window: Duration::from_secs(cfg.health.degraded_window_s),
-                probe_window_min: Duration::from_secs(cfg.health.probe_window_s),
-                probe_window_max: Duration::from_secs(cfg.health.probe_window_max_s),
-                probe_tick: Duration::from_secs(cfg.health.probe_tick_s),
-                ..HealthPolicy::default()
-            }),
-    );
+    let pipeline = Arc::new(SearchPipeline::from_config(&cfg, store.clone(), engines));
     // Restore persisted breakers before serving (plan 4.4.6: a restart
     // must not hammer a blocked engine). A read failure degrades to
     // all-Closed rather than refusing to serve.
@@ -162,7 +129,6 @@ async fn serve_async(opts: ServeOpts, cfg: Config, host: String) -> i32 {
             tracing::warn!(error = %e, "engine health load failed; starting with closed breakers")
         }
     }
-    let evict = spawn_eviction_task(store.clone(), Duration::from_secs(cfg.cache.stale_grace_s));
     // Issue #227: the background recovery prober claims elapsed/idle
     // `HalfOpen` probes on `health.probe_tick_s`, so breakers close on
     // their own once engines can answer — no inbound traffic or manual
@@ -173,7 +139,15 @@ async fn serve_async(opts: ServeOpts, cfg: Config, host: String) -> i32 {
     if !opts.headless && !cfg!(feature = "ui") {
         tracing::warn!("binary built without the `ui` feature; no pages will be served");
     }
-    let state = AppState::new(pipeline.clone(), store, cfg);
+    // The engine factory lets a `/settings` or `PUT /api/config` save
+    // rebuild the fan-out in place (hot apply); the evictor re-reads the
+    // stale-serve grace from the live config on every sweep.
+    let state =
+        AppState::new(pipeline.clone(), store.clone(), cfg).with_engine_factory(build_engines);
+    let evict = spawn_eviction_task(store, {
+        let state = state.clone();
+        move || state.with_config(|c| Duration::from_secs(c.cache.stale_grace_s))
+    });
     let app = cauce_server::build_router_opts(
         state.clone(),
         RouterOptions {

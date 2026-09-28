@@ -296,3 +296,26 @@ global store, and is never shared with or copied into another project.
 - `CAUCE_AI_MODEL=openrouter/free` cannot converge the answer tool loop
   (tool call every iteration → max-iterations). e2e needs a real model
   (`openai/gpt-4o-mini` worked); the change itself is model-agnostic.
+
+## 2026-09-28 — Hot settings apply (#225, branch v3/hot-settings)
+
+- `AppState` now owns a `Runtime` (pipeline + answer loop + archiver) behind
+  `Arc<RwLock>`, rebuilt wholesale on save inside the config critical section;
+  handlers clone `Arc`s out — in-flight requests finish on the old runtime.
+- `engine_factory` is injected (`with_engine_factory`) so cauce-server keeps no
+  cauce-engines dep; absent → `engines.*` changes report restart-required.
+- The shared `Arc<HealthTracker>` survives pipeline rebuilds
+  (`with_health_tracker` + `set_policy`), so EWMA/breaker state carries over;
+  the per-tier latency histogram does not — first post-save search hedges at
+  the floor.
+- MutexGuard can't split-borrow disjoint fields (`inner.map` + `inner.policy`) —
+  clone the POD `HealthPolicy` out before `inner.map.entry()`.
+- `changed_config_paths` granularity is the changed TABLE: a brand-new `[logs]`
+  section diffs as `logs`, not `logs.retention_days`. Seed the section in
+  configs when a test asserts the leaf path.
+- Single-engine fan-out moved to t2 → `promote_deferred` runs it at t=0 and
+  `meta.hedged` stays false (correct). `hedged:true` needs a live t1 engine +
+  a deferred one AND `merge.map.len() < min_results` at the hedge point —
+  replay returns 10 ≥ default 5, so seed `search.min_results` high (~100).
+- `CAUCE_AI_*` env vars are provisioned in Devin shells — `env -u` all four
+  when the e2e needs a user-submittable `ai.enabled` on /settings.

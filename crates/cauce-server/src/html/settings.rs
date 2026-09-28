@@ -290,14 +290,26 @@ pub(crate) fn settings_status(
 ) -> Response {
     use rust_i18n::t;
     let (kind, text) = match &result {
-        Ok(_) => (
-            "ok",
-            format!(
+        Ok(json) => {
+            let mut text = format!(
                 "{} {}",
                 t!("settings.saved"),
                 chrono::Local::now().format("%H:%M")
-            ),
-        ),
+            );
+            let restart: Vec<&str> = json
+                .get("requires_restart")
+                .and_then(|v| v.as_array())
+                .map(|a| a.iter().filter_map(|v| v.as_str()).collect())
+                .unwrap_or_default();
+            if !restart.is_empty() {
+                text = format!(
+                    "{text} — {}: {}",
+                    t!("settings.restart_needed"),
+                    restart.join(", ")
+                );
+            }
+            ("ok", text)
+        }
         Err(e) => {
             let n = field_errors.len();
             if n > 0 {
