@@ -213,12 +213,17 @@ describe("assist SSE frames", () => {
     expect(refs.sources.querySelector("a.assist-chip")!.textContent).toBe("Plain");
   });
 
-  it("linkifies [n] markers in the done answer to the numbered chips", async () => {
+  it("injects rendered html and retargets cite placeholders to the chips", async () => {
     const refs = assistShell();
     const fetchImpl = fetchWithChunks([
       'event: sources\ndata: {"sources":[{"url":"https://a.example.com/x"},{"url":"https://b.example.com/y"}]}\n\n',
       'event: delta\ndata: {"text":"streaming text [1]"}\n\n',
-      'event: done\ndata: {"answer":"final [1] cites [2] and [9]"}\n\n',
+      `event: done\ndata: ${JSON.stringify({
+        answer: "final [1] cites [2] and [9]",
+        html:
+          '<p>final <a class="cite" data-cite="1" href="#cite-1">[1]</a> cites ' +
+          '<a class="cite" data-cite="2" href="#cite-2">[2]</a> and [9]</p>',
+      })}\n\n`,
     ]);
     initAssist(document, AS, ROWS, fetchImpl);
     refs.btn.click();
@@ -231,6 +236,26 @@ describe("assist SSE frames", () => {
     expect(cites[1].getAttribute("href")).toBe("#asrc-2");
     // [9] has no chip: left as plain text.
     expect(refs.card.getAttribute("aria-busy")).toBe("false");
+  });
+
+  it("keeps markup and outbound-link attrs from the done html", async () => {
+    const refs = assistShell();
+    const fetchImpl = fetchWithChunks([
+      `event: done\ndata: ${JSON.stringify({
+        answer: "use **cargo** [build](https://doc.rust-lang.org)",
+        html:
+          '<p>use <strong>cargo</strong> <a href="https://doc.rust-lang.org" ' +
+          'target="_blank" rel="noopener noreferrer">build</a></p>',
+      })}\n\n`,
+    ]);
+    initAssist(document, AS, ROWS, fetchImpl);
+    refs.btn.click();
+    await flush();
+    expect(refs.text.querySelector("strong")!.textContent).toBe("cargo");
+    const link = refs.text.querySelector('a[href="https://doc.rust-lang.org"]')!;
+    expect(link.getAttribute("target")).toBe("_blank");
+    expect(link.getAttribute("rel")).toBe("noopener noreferrer");
+    expect(refs.text.classList.contains("md")).toBe(true);
   });
 
   it("arms the grounded chip on the sources frame, before answer text", async () => {

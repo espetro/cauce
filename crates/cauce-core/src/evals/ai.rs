@@ -801,6 +801,7 @@ mod tests {
     fn done(answer: &str, ungrounded: bool) -> AnswerFrame {
         AnswerFrame::Done {
             answer: answer.to_string(),
+            html: format!("<p>{answer}</p>"),
             confidence: 8,
             model: "m".to_string(),
             related_questions: vec![],
