@@ -113,6 +113,21 @@ const ENV_OVERRIDES: &[(&str, &[&str], bool)] = &[
         &["health", "degraded_window_s"],
         true,
     ),
+    (
+        "CAUCE_HEALTH_PROBE_WINDOW_S",
+        &["health", "probe_window_s"],
+        true,
+    ),
+    (
+        "CAUCE_HEALTH_PROBE_WINDOW_MAX_S",
+        &["health", "probe_window_max_s"],
+        true,
+    ),
+    (
+        "CAUCE_HEALTH_PROBE_TICK_S",
+        &["health", "probe_tick_s"],
+        true,
+    ),
     ("CAUCE_MERGE_RRF_K", &["merge", "rrf_k"], true),
     (
         "CAUCE_MERGE_COLLAPSE_SAME_HOST_AFTER",
@@ -514,11 +529,15 @@ fn default_max_concurrent_per_engine() -> u32 {
     3
 }
 
-/// `[health]`: circuit-breaker knobs (W3-07). The other breaker rules
-/// (`RateLimited`/`Blocked` abuse window, the timeout streak) stay
-/// settled constants on `HealthPolicy`; this section holds the degraded
-/// pair: `degraded_threshold` consecutive `Parse`/`Transport` errors
-/// open the breaker for `degraded_window_s` seconds.
+/// `[health]`: circuit-breaker knobs (W3-07, issue #227). The other
+/// breaker rules (`RateLimited`/`Blocked` abuse window, the timeout
+/// streak) stay settled constants on `HealthPolicy`; this section holds
+/// the degraded pair — `degraded_threshold` consecutive
+/// `Parse`/`Transport` errors open the breaker for `degraded_window_s`
+/// seconds — plus the recovery trio: a failed half-open probe re-opens
+/// for an adaptive window starting at `probe_window_s` and doubling to
+/// `probe_window_max_s`, while `probe_tick_s` sets how often the
+/// background prober claims due probes (0 disables it).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct HealthConfig {
@@ -528,11 +547,29 @@ pub struct HealthConfig {
     #[serde(default = "default_degraded_threshold")]
     pub degraded_threshold: u32,
     /// Seconds the breaker stays open once the degraded streak trips it
-    /// (default 600) — also the re-open window for a half-open probe
-    /// that fails with `Parse`/`Transport`. `0` makes the breaker never
-    /// stay open (it flips to `HalfOpen` on the next gate).
+    /// (default 600) — also the ceiling on the re-open window for a
+    /// half-open probe that fails with `Parse`/`Transport`. `0` makes
+    /// the breaker never stay open (it flips to `HalfOpen` on the next
+    /// gate).
     #[serde(default = "default_degraded_window_s")]
     pub degraded_window_s: u64,
+    /// First re-open window after a failed probe (default 30 s) — the
+    /// floor of the adaptive retry backoff, which doubles per
+    /// consecutive probe failure up to `probe_window_max_s` and is
+    /// jittered per engine. Must be >= 1: `0` would let every tick
+    /// re-probe a dead engine.
+    #[serde(default = "default_probe_window_s")]
+    pub probe_window_s: u64,
+    /// Cap on the probe retry backoff (default 300 s) — the longest a
+    /// consecutively-failing engine waits between probes, which caps
+    /// how often a dead endpoint is probed.
+    #[serde(default = "default_probe_window_max_s")]
+    pub probe_window_max_s: u64,
+    /// Seconds between background recovery-prober passes (default 5).
+    /// `0` disables active probing: `Open -> HalfOpen` transitions then
+    /// only happen when a request happens to gate the engine.
+    #[serde(default = "default_probe_tick_s")]
+    pub probe_tick_s: u64,
 }
 
 impl Default for HealthConfig {
@@ -540,6 +577,9 @@ impl Default for HealthConfig {
         Self {
             degraded_threshold: default_degraded_threshold(),
             degraded_window_s: default_degraded_window_s(),
+            probe_window_s: default_probe_window_s(),
+            probe_window_max_s: default_probe_window_max_s(),
+            probe_tick_s: default_probe_tick_s(),
         }
     }
 }
@@ -550,6 +590,18 @@ fn default_degraded_threshold() -> u32 {
 
 fn default_degraded_window_s() -> u64 {
     600
+}
+
+fn default_probe_window_s() -> u64 {
+    30
+}
+
+fn default_probe_window_max_s() -> u64 {
+    300
+}
+
+fn default_probe_tick_s() -> u64 {
+    5
 }
 
 /// `[cache]`: cache-tier behaviour beyond TTLs (those live in `[search]`).
@@ -1222,6 +1274,27 @@ impl Config {
             return Err(ConfigError::InvalidValue {
                 path: "health.degraded_threshold".to_string(),
                 msg: "expected >= 1".to_string(),
+            });
+        }
+
+        // `health.probe_window_s` is the floor of the probe retry
+        // backoff: `0` would re-probe a dead engine on every tick
+        // instead of resting it between attempts.
+        if cfg.health.probe_window_s == 0 {
+            return Err(ConfigError::InvalidValue {
+                path: "health.probe_window_s".to_string(),
+                msg: "expected >= 1".to_string(),
+            });
+        }
+        // The backoff cap must cover its floor; an inverted pair is
+        // rejected like the hedge bounds rather than silently reordered.
+        if cfg.health.probe_window_max_s < cfg.health.probe_window_s {
+            return Err(ConfigError::InvalidValue {
+                path: "health.probe_window_max_s".to_string(),
+                msg: format!(
+                    "probe_window_max_s ({}) must be >= probe_window_s ({})",
+                    cfg.health.probe_window_max_s, cfg.health.probe_window_s
+                ),
             });
         }
 

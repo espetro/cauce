@@ -15,6 +15,17 @@
 //! - `Open` engines are skipped; once `breaker_until` passes the state
 //!   flips to `HalfOpen` and exactly one call is let through as a probe.
 //!   A successful probe closes the breaker; a failed one re-opens it.
+//! - Recovery is self-healing (issue #227): the transition out of
+//!   `Open` does not wait for an inbound search — `serve` runs a
+//!   background prober on a `probe_tick` cadence that claims any
+//!   elapsed/idle `HalfOpen` probe through the same admission gate and
+//!   calls the engine directly. A failed probe re-opens for
+//!   `min(error-kind window, probe backoff)`: the backoff starts at
+//!   `probe_window_min`, doubles per consecutive probe failure up to
+//!   `probe_window_max`, and is jittered per engine so a fleet that
+//!   tripped together does not probe in lockstep. A flaky engine
+//!   returns to service in bounded time once it answers again; a dead
+//!   one is probed at most once per `probe_window_max`.
 //! - `NoResults` is *not* a failure: the engine answered (the pipeline
 //!   already treats it as a 200-shaped empty response), so it resets the
 //!   failure counter like any other answer.
@@ -82,6 +93,20 @@ pub struct HealthPolicy {
     /// `Transport` errors, and the re-open window for a half-open probe
     /// that failed with one of them (10 min).
     pub degraded_window: Duration,
+    /// First re-open window after a failed probe (30 s, issue #227):
+    /// the floor of the adaptive retry backoff. A probe's re-open never
+    /// exceeds the failing error's kind window — this only shortens
+    /// retry cadence below it, so a recovered engine is re-admitted
+    /// quickly instead of waiting out another 5/10/15-minute window.
+    pub probe_window_min: Duration,
+    /// Cap on the probe retry backoff (5 min): the longest a
+    /// consecutively-failing engine goes between probes, which is also
+    /// the cap on how often a dead endpoint is probed.
+    pub probe_window_max: Duration,
+    /// Cadence of the background recovery prober `serve` spawns (5 s);
+    /// `Duration::ZERO` disables active probing, falling back to the
+    /// passive gate-time probes requests drive.
+    pub probe_tick: Duration,
 }
 
 impl Default for HealthPolicy {
@@ -92,6 +117,9 @@ impl Default for HealthPolicy {
             timeout_window: Duration::from_secs(5 * 60),
             degraded_threshold: 5,
             degraded_window: Duration::from_secs(10 * 60),
+            probe_window_min: Duration::from_secs(30),
+            probe_window_max: Duration::from_secs(5 * 60),
+            probe_tick: Duration::from_secs(5),
         }
     }
 }
@@ -131,6 +159,10 @@ pub struct EngineHealth {
     /// `HalfOpen` single-probe gate: true while a probe call is in flight.
     /// Runtime-only — a restarted process has no probes in flight.
     probe_in_flight: bool,
+    /// Consecutive failed probes (issue #227): drives the exponential
+    /// probe retry backoff. Runtime-only like the streaks — a restart
+    /// conservatively resumes at `probe_window_min`.
+    probe_failures: u32,
     /// Rolling latency histogram (W3-01): recent call latencies in ms the
     /// hedge trigger's `P90(tier-1 history)` reads. Whole-ms samples —
     /// HDR-style only in that the percentile is nearest-rank over the
@@ -154,6 +186,7 @@ impl Default for EngineHealth {
             timeout_streak: 0,
             degraded_streak: 0,
             probe_in_flight: false,
+            probe_failures: 0,
             latencies: VecDeque::new(),
         }
     }
@@ -181,6 +214,7 @@ impl EngineHealth {
             timeout_streak: 0,
             degraded_streak: 0,
             probe_in_flight: false,
+            probe_failures: 0,
             // No latency history persists either: the hedge falls back to
             // its floor until this process re-observes the engine.
             latencies: VecDeque::new(),
@@ -387,6 +421,7 @@ impl HealthTracker {
             health.failures = 0;
             health.timeout_streak = 0;
             health.degraded_streak = 0;
+            health.probe_failures = 0;
             health.last_ok_at = Some(Utc::now());
             health.probe_in_flight = false;
             if health.breaker != BreakerState::Closed {
@@ -448,8 +483,14 @@ impl HealthTracker {
             health.probe_in_flight = false;
 
             let open_for = if probe {
-                // A failed probe re-opens immediately, whatever the kind.
-                Some(self.open_window(err))
+                // A failed probe re-opens immediately, whatever the kind —
+                // but on the adaptive retry window, not the full error
+                // window (issue #227): `min(kind window, backoff)` so a
+                // flaky engine is re-probed within seconds rather than
+                // another 5/10/15-minute wait, while a dead engine's
+                // probe rate is still capped by `probe_window_max`.
+                health.probe_failures += 1;
+                Some(self.probe_retry_window(id, health.probe_failures, err))
             } else {
                 match err {
                     EngineError::RateLimited | EngineError::Blocked => {
@@ -676,11 +717,49 @@ impl HealthTracker {
         }
     }
 
+    /// The re-open window after a failed probe (issue #227):
+    /// `min(kind window, probe_window_min * 2^(attempt-1))` capped at
+    /// `probe_window_max`, multiplied by a per-engine jitter in
+    /// `[0.75, 1.25)` so a fleet that tripped on the same connectivity
+    /// loss does not retry in lockstep. Exponential growth keeps a
+    /// genuinely dead endpoint resting (one call per `probe_window_max`
+    /// at worst); the floor keeps a flaky one re-probing fast enough
+    /// that recovery lands in bounded time once it can answer.
+    fn probe_retry_window(&self, id: &EngineId, attempt: u32, err: &EngineError) -> Duration {
+        let shift = attempt.saturating_sub(1).min(31);
+        let base = self
+            .policy
+            .probe_window_min
+            .saturating_mul(1u32 << shift)
+            .min(self.policy.probe_window_max);
+        let jittered = base.mul_f64(probe_jitter(id, attempt));
+        jittered.min(self.open_window(err))
+    }
+
+    /// The prober loop's cadence (`probe_tick`; `Duration::ZERO` means
+    /// probing stays passive — only requests drive it).
+    pub fn probe_tick(&self) -> Duration {
+        self.policy.probe_tick
+    }
+
     fn lock(&self) -> std::sync::MutexGuard<'_, Inner> {
         // A poisoned lock means a previous closure panicked; the health map
         // is still consistent enough to keep serving (fail open).
         self.inner.lock().unwrap_or_else(|e| e.into_inner())
     }
+}
+
+/// Per-engine jitter multiplier in `[0.75, 1.25)` for the probe retry
+/// backoff (issue #227): keyed on `(engine id, consecutive failed
+/// probes)` so two engines that tripped together spread their retries
+/// while each attempt's bound stays predictable to tests. A
+/// `DefaultHasher` draw per call is enough — the goal is spread, not
+/// secrecy.
+fn probe_jitter(id: &EngineId, attempt: u32) -> f64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    (id.as_str(), attempt).hash(&mut h);
+    0.75 + (h.finish() % 500) as f64 / 1_000.0
 }
 
 /// Clears the `probe_in_flight` gate on drop — the normal path is the

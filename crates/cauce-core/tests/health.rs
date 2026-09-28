@@ -613,3 +613,190 @@ async fn p90_pools_rolling_latency_histograms() {
     assert_eq!(tracker.p90_ms(std::slice::from_ref(&b)), 900);
     assert_eq!(tracker.p90_ms(&[EngineId::from("unknown")]), 0);
 }
+
+/// Issue #227: a failed probe re-opens on the adaptive retry window —
+/// `min(kind window, jittered backoff)` — instead of another full kind
+/// window, and consecutive probe failures stretch the interval
+/// exponentially toward `probe_window_max` so a dead endpoint is not
+/// hammered. Failure counts and `last_error` stay honest throughout.
+#[tokio::test]
+async fn failed_probe_reopens_adaptively_and_backs_off() {
+    let store = Arc::new(StubStore::default());
+    let id = EngineId::from("flaky");
+    // Seed a persisted Open row whose window already elapsed — the state
+    // `load` hands a restarted process (plan 4.4.6).
+    store
+        .put_health(&cauce_core::EngineHealthRow {
+            engine: id.clone(),
+            ewma_ms: 0.0,
+            failures: 3,
+            breaker: BreakerState::Open,
+            breaker_until: Some(chrono::Utc::now() - chrono::Duration::seconds(1)),
+            last_ok_at: None,
+            last_error: Some("timed out".to_string()),
+        })
+        .await
+        .unwrap();
+    let tracker = HealthTracker::with_policy(
+        store,
+        HealthPolicy {
+            // A huge kind window the whole point is not to wait out.
+            timeout_window: Duration::from_secs(600),
+            probe_window_min: Duration::from_millis(50),
+            probe_window_max: Duration::from_millis(120),
+            ..HealthPolicy::default()
+        },
+    );
+    tracker.load().await.unwrap();
+
+    let mut prev_until = chrono::Utc::now();
+    // Attempt 1 -> base 50 ms, attempt 2 -> 100 ms, attempt 3 -> capped
+    // at the 120 ms max; each jittered x[0.75, 1.25). The ranges
+    // ([37.5,62.5], [75,125], [90,150]) grow disjointly, so strict
+    // `until` ordering is deterministic even across the sleeps.
+    for attempt in 1..=3u32 {
+        assert_eq!(tracker.admission(&id, Uuid::now_v7()), Gate::Probe);
+        let t = chrono::Utc::now();
+        tracker.record_err(
+            &id,
+            Duration::from_millis(10),
+            &EngineError::Timeout,
+            Uuid::now_v7(),
+        );
+        let row = tracker.health_row(&id).unwrap();
+        assert_eq!(row.breaker, BreakerState::Open, "failed probe re-opens");
+        let until = row.breaker_until.unwrap();
+        // The re-open is the adaptive window — far below the 10-minute
+        // timeout_window the pre-#227 code applied.
+        assert!(
+            until < t + chrono::Duration::seconds(10),
+            "attempt {attempt} re-open window should be ~ms, got {until}"
+        );
+        assert!(
+            until > prev_until,
+            "attempt {attempt} backoff must grow past the previous window"
+        );
+        // "Keep it honest": failures and the open-state reason survive.
+        assert_eq!(row.failures, 3 + attempt, "probe failures stay counted");
+        assert!(
+            row.last_error
+                .as_deref()
+                .is_some_and(|e| e.contains("timed out")),
+            "open-state reason stays visible"
+        );
+        prev_until = until;
+        // Wait out the window so the next admission admits the probe.
+        tokio::time::sleep(Duration::from_millis(160)).await;
+    }
+}
+
+/// Issue #227 acceptance: a flaky engine (opens on `Blocked`, then
+/// recovers upstream) returns to service through `probe_due` alone —
+/// no inbound searches, no manual reset — in bounded time, and the
+/// closed breaker then fans out normally.
+#[tokio::test]
+async fn prober_recovers_flaky_engine_without_traffic() {
+    let dir = tempfile::tempdir().unwrap();
+    let engine = Arc::new(GateEngine::new(replay_at(dir.path(), |_| {}), false));
+    let store = Arc::new(StubStore::default());
+    let pipe =
+        SearchPipeline::new(store.clone(), vec![engine.clone()]).with_health_policy(HealthPolicy {
+            abuse_window: Duration::from_millis(80),
+            probe_window_min: Duration::from_millis(40),
+            probe_window_max: Duration::from_millis(200),
+            ..HealthPolicy::default()
+        });
+
+    // The outage: one call trips the breaker for `abuse_window`.
+    pipe.search(&req("flap")).await.unwrap_err();
+    assert_eq!(engine.call_count(), 1);
+
+    // Past the window the prober runs the half-open probe itself; the
+    // still-dead engine fails it and re-opens on the adaptive window.
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    assert_eq!(pipe.probe_due().await, 1);
+    assert_eq!(engine.call_count(), 2, "prober ran the one probe");
+    let row = pipe.health().health_row(&EngineId::from("replay")).unwrap();
+    assert_eq!(row.breaker, BreakerState::Open, "failed probe re-opens");
+
+    // A pass inside the re-open window launches nothing — the prober
+    // does not hammer a dead endpoint.
+    assert_eq!(pipe.probe_due().await, 0);
+    assert_eq!(engine.call_count(), 2);
+
+    // The engine recovers upstream; the next due pass probes, succeeds,
+    // and closes the breaker — recovery in ~300 ms of wall time instead
+    // of another 15-minute window plus waiting on traffic.
+    engine.set_healthy(true);
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    assert_eq!(pipe.probe_due().await, 1);
+    let row = pipe.health().health_row(&EngineId::from("replay")).unwrap();
+    assert_eq!(
+        row.breaker,
+        BreakerState::Closed,
+        "probe_due closed the breaker without a search"
+    );
+    assert_eq!(row.failures, 0);
+    assert!(row.last_ok_at.is_some());
+
+    // And the recovered engine serves the next real search.
+    let resp = pipe.search(&req("after recovery")).await.unwrap();
+    assert_eq!(resp.results.len(), 10);
+    assert_eq!(engine.call_count(), 4);
+}
+
+/// `spawn_prober` drives the same passes on the configured tick: an
+/// engine opened on `Blocked` self-heals while no search ever gates it.
+#[tokio::test]
+async fn spawn_prober_loop_recovers_without_traffic() {
+    let dir = tempfile::tempdir().unwrap();
+    let engine = Arc::new(GateEngine::new(replay_at(dir.path(), |_| {}), false));
+    let store = Arc::new(StubStore::default());
+    let pipe =
+        SearchPipeline::new(store.clone(), vec![engine.clone()]).with_health_policy(HealthPolicy {
+            abuse_window: Duration::from_millis(60),
+            probe_window_min: Duration::from_millis(30),
+            probe_window_max: Duration::from_millis(120),
+            probe_tick: Duration::from_millis(15),
+            ..HealthPolicy::default()
+        });
+
+    pipe.search(&req("flap")).await.unwrap_err();
+    assert_eq!(engine.call_count(), 1);
+
+    let prober = pipe.spawn_prober().expect("tick > 0 spawns the loop");
+    // The engine stays dead: the loop probes it without ever exceeding
+    // one call per re-open window. A real-tick deadline bounds the
+    // whole scenario — nothing to poll for, so sample after a stretch.
+    tokio::time::sleep(Duration::from_millis(400)).await;
+    let calls_while_dead = engine.call_count();
+    assert!(
+        calls_while_dead <= 8,
+        "dead engine was hammered: {calls_while_dead} calls in 400 ms"
+    );
+    assert!(calls_while_dead >= 2, "prober did probe the open engine");
+
+    // Recovery upstream is picked up by the loop on its own.
+    engine.set_healthy(true);
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    prober.abort();
+    let row = pipe.health().health_row(&EngineId::from("replay")).unwrap();
+    assert_eq!(
+        row.breaker,
+        BreakerState::Closed,
+        "background prober closed the breaker with no searches"
+    );
+}
+
+/// `probe_tick = 0` keeps recovery passive: no prober task is spawned.
+#[tokio::test]
+async fn spawn_prober_disabled_on_zero_tick() {
+    let dir = tempfile::tempdir().unwrap();
+    let engine = Arc::new(GateEngine::new(replay_at(dir.path(), |_| {}), false));
+    let store = Arc::new(StubStore::default());
+    let pipe = SearchPipeline::new(store.clone(), vec![engine]).with_health_policy(HealthPolicy {
+        probe_tick: Duration::ZERO,
+        ..HealthPolicy::default()
+    });
+    assert!(pipe.spawn_prober().is_none());
+}
