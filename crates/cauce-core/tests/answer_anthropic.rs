@@ -429,29 +429,45 @@ async fn grounded_confident_answer_is_cached_and_replayed() {
     assert_eq!(calls.len(), 2, "cache hit makes no provider call");
 }
 
-/// The loop stops after `max_iterations` `tool_use` turns and ends in
-/// an `error` frame (settled cap: 5).
+/// #231: the turn budget (8 provider calls) spent on `tool_use` turns
+/// runs ONE forced-synthesize turn with `tool_choice: {"type":"none"}`
+/// and ends in `done`, not `error`. Every turn re-issues the same
+/// query, so only the first dispatches — the rest dedup in-band.
 #[tokio::test]
-async fn tool_calls_beyond_max_iterations_end_in_error() {
+async fn exhausted_turn_budget_forces_synthesis_not_error() {
     let server = MockServer::start().await;
-    // No cap: every call returns another tool_use block.
     Mock::given(method("POST"))
         .and(path("/v1/messages"))
         .respond_with(ResponseTemplate::new(200).set_body_raw(SSE_TOOLCALL, "text/event-stream"))
+        .up_to_n_times(8)
         .mount(&server)
         .await;
+    mount_sse(&server, SSE_ANSWER, 1).await;
 
     let store = Arc::new(StubStore::default());
     let loop_ = answer_loop(&server, store.clone());
     let frames = drain(loop_.stream_answer(&req("loop forever", Uuid::now_v7()))).await;
 
-    assert_eq!(steps(&frames).len(), 5, "one step frame per iteration");
-    match frames.last() {
-        Some(AnswerFrame::Error { message, .. }) => {
-            assert!(message.contains("5"), "cap is named: {message}");
-        }
-        other => panic!("expected terminal error frame, got {other:?}"),
-    }
+    assert_eq!(steps(&frames).len(), 8, "one step frame per turn");
+    assert!(
+        !frames
+            .iter()
+            .any(|f| matches!(f, AnswerFrame::Error { .. })),
+        "no error frame on exhaustion: {frames:?}"
+    );
+    assert!(
+        frames
+            .iter()
+            .any(|f| matches!(f, AnswerFrame::Sources { sources } if sources.len() == 2)),
+        "sources ship on the exhausted path: {frames:?}"
+    );
+    assert!(
+        matches!(frames.last(), Some(AnswerFrame::Done { .. })),
+        "exhaustion ends in done: {frames:?}"
+    );
+
     let calls = server.received_requests().await.expect("request log");
-    assert_eq!(calls.len(), 5, "the loop called the provider 5 times");
+    assert_eq!(calls.len(), 9, "8 loop turns + 1 forced-synthesize call");
+    let last: serde_json::Value = serde_json::from_slice(&calls[8].body).unwrap();
+    assert_eq!(last["tool_choice"], serde_json::json!({"type": "none"}));
 }

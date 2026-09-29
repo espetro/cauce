@@ -13,6 +13,15 @@
 //! and the loop shape mirrors `SearchPipeline::search_stream` (spawned
 //! task, unbounded channel, terminal frame on close).
 //!
+//! The #231 guards bound the loop: `max_turns` caps provider calls and
+//! `max_search_executions` the tool calls actually run (repeated
+//! queries and over-budget calls resolve in-band as `{"error": ...}`
+//! tool results — free). Exhaustion runs ONE forced-synthesize turn
+//! (`tool_choice: "none"`), so a spent budget degrades to
+//! `done{ungrounded|low-confidence}` instead of a bare `error` that
+//! discards the paid searches; `sources` ships on every terminal path
+//! once known.
+//!
 //! This Source Code Form is subject to the terms of the Mozilla Public
 //! License, v. 2.0. If a copy of the MPL was not distributed with this
 //! file, You can obtain one at <https://mozilla.org/MPL/2.0/>.
@@ -73,16 +82,31 @@ confidence >= 8 only when the results well support the answer; report lower when
 partially grounded. Never fabricate sources or citations.";
 
 /// System prompt of every answer request (v2 `SYSTEM_PROMPT`, extended
-/// to both shipped tools): cite inline as `[n]`, append the
-/// metadata JSON tail, report high confidence only when grounded.
+/// to both shipped tools and — #231 — the fan-out discipline): cite
+/// inline as `[n]`, fan a multi-part question out as parallel tool
+/// calls in ONE response, answer as soon as the results suffice,
+/// never re-issue a query already run; then append the metadata JSON
+/// tail with honest confidence.
 const SYSTEM_PROMPT: &str = "You are a metasearch answer engine. Answer the user's question \
 briefly and cite sources inline as [n], where n is the 1-based index of the source in the \
 search results you drew it from. Use the search_web tool whenever the question needs \
 current or external information, and search_archive for what the local archive already \
-holds (indexed pages and cached results). After your answer text, append a metadata JSON \
-object in exactly this form: {\"confidence\": <1-10>, \"related_questions\": [...]}. Report \
-confidence >= 8 only when the sources well support the answer; report lower when the \
-answer is partially grounded. Never fabricate sources or citations.";
+holds (indexed pages and cached results). For a multi-part question, emit one search call \
+per sub-question in a single response — parallel calls run together in one step. If the \
+results already returned cover the question, answer now instead of searching again, and \
+never re-issue a query you already ran (repeat queries fail). After your answer text, \
+append a metadata JSON object in exactly this form: {\"confidence\": <1-10>, \
+\"related_questions\": [...]}. Report confidence >= 8 only when the sources well support \
+the answer; report lower when the answer is partially grounded. Never fabricate sources \
+or citations.";
+
+/// #231 forced-synthesize turn: appended to the system prompt once the
+/// turn budget is spent. `tool_choice: "none"` forbids further calls —
+/// the model must answer from the sources it already paid for, with
+/// confidence reflecting how thin they are.
+const FORCED_SYNTH_SUFFIX: &str = " Your search budget is exhausted — answer now from the \
+results already gathered above. Cite them inline as [n] and report honest confidence \
+(low when the results only partially cover the question).";
 
 /// W7-04: appended to [`SYSTEM_PROMPT`] when the request carries prior
 /// turns. Earlier answers' `[n]` markers index THEIR turn's source
@@ -176,9 +200,18 @@ impl AnswerLoop {
         self
     }
 
-    /// Tool-loop cap override (settled default: 5).
-    pub fn with_max_iterations(mut self, n: usize) -> Self {
-        self.config.max_iterations = n;
+    /// Turn cap override (#231; settled default: 8 provider calls —
+    /// the forced-synthesize turn rides on top).
+    pub fn with_max_turns(mut self, n: usize) -> Self {
+        self.config.max_turns = n;
+        self
+    }
+
+    /// Search-execution cap override (#231; settled default: 6 tool
+    /// calls actually run — repeats and over-budget calls resolve
+    /// in-band for free).
+    pub fn with_max_search_executions(mut self, n: usize) -> Self {
+        self.config.max_search_executions = n;
         self
     }
 
@@ -337,158 +370,244 @@ impl AnswerLoop {
         // first-seen (citation) order the model saw them in.
         let mut sources: Vec<AnswerSource> = Vec::new();
         let mut seen: HashSet<String> = HashSet::new();
+        // #231 guards: `(tool, normalized query)` pairs already run
+        // this run — a repeat resolves in-band instead of re-hitting
+        // the pipeline — and the count of tool calls actually
+        // executed, the budget the model cannot see but must not burn.
+        let mut visited: HashSet<(String, String)> = HashSet::new();
+        let mut searches_used = 0usize;
 
-        for iteration in 0..self.config.max_iterations {
+        // The last provider turn of the run — the model's own
+        // tool-free answer, or the forced-synthesize turn after the
+        // turn budget is spent. Either way the finish below is shared.
+        let (completion, emitted) = 'finish: {
+            for iteration in 0..self.config.max_turns {
+                let chat = ChatRequest {
+                    messages: messages.clone(),
+                    tools: tools.clone(),
+                    tool_choice: Some(json!("auto")),
+                    ..ChatRequest::default()
+                };
+                let mut text = String::new();
+                // Bytes of `text` already emitted as deltas.
+                let mut emitted = 0usize;
+                let completion = match self
+                    .turn(&chat, &ctx, run, iteration, &tx, &mut text, &mut emitted)
+                    .await
+                {
+                    Turn::Completed(c) => c,
+                    Turn::Aborted => return,
+                    Turn::Failed(e) => {
+                        self.emit_collected(&tx, run, &sources);
+                        self.send_error(&tx, run, &e);
+                        return;
+                    }
+                };
+
+                if !completion.tool_calls.is_empty() {
+                    messages.push(ChatMessage::assistant_tool_calls(
+                        completion.tool_calls.clone(),
+                    ));
+                    for call in &completion.tool_calls {
+                        let query = tool_query(call);
+                        // Repeat of a query this run already ran: the
+                        // in-band error costs nothing and breaks the
+                        // circular-search trap (#231). Keyed per tool —
+                        // the same words against `search_archive` are a
+                        // different corpus, not a repeat.
+                        let visited_key = (call.name.clone(), normalize_query(&query));
+                        let label = format!(
+                            "Searching: {}",
+                            if query.is_empty() { &call.name } else { &query }
+                        );
+                        if !self.emit(
+                            &tx,
+                            run,
+                            AnswerFrame::Step {
+                                tool: call.name.clone(),
+                                query,
+                                label,
+                            },
+                        ) {
+                            return;
+                        }
+                        if !visited.insert(visited_key) {
+                            self.observer.on_event(
+                                run,
+                                &LoopEvent::ToolSkipped {
+                                    call,
+                                    reason: "duplicate query",
+                                },
+                            );
+                            messages.push(ChatMessage::tool_result(
+                                call.id.clone(),
+                                json!({"error": "query already searched; refine or answer"})
+                                    .to_string(),
+                            ));
+                            continue;
+                        }
+                        // The real budget: only calls that dispatch
+                        // count. Past the cap the model gets an
+                        // in-band error so it can still answer.
+                        if searches_used >= self.config.max_search_executions {
+                            self.observer.on_event(
+                                run,
+                                &LoopEvent::ToolSkipped {
+                                    call,
+                                    reason: "search budget exhausted",
+                                },
+                            );
+                            messages.push(ChatMessage::tool_result(
+                                call.id.clone(),
+                                json!({"error": "search budget exhausted; answer from what you have"})
+                                    .to_string(),
+                            ));
+                            continue;
+                        }
+                        self.observer
+                            .on_event(run, &LoopEvent::ToolStarted { call });
+                        let output = match self.tools.get(&call.name) {
+                            Some(executor) => {
+                                searches_used += 1;
+                                executor.execute(call, &tool_ctx).await
+                            }
+                            None => ToolOutput {
+                                json: json!({"error": format!("unknown tool: {}", call.name)})
+                                    .to_string(),
+                                results: Vec::new(),
+                            },
+                        };
+                        self.observer.on_event(
+                            run,
+                            &LoopEvent::ToolFinished {
+                                call,
+                                output: &output,
+                            },
+                        );
+                        for r in output.results {
+                            if seen.insert(r.url.as_str().to_string()) {
+                                sources.push(AnswerSource {
+                                    url: r.url,
+                                    title: r.title,
+                                    snippet: r.snippet,
+                                    engine: r.engine,
+                                });
+                            }
+                        }
+                        messages.push(ChatMessage::tool_result(call.id.clone(), output.json));
+                    }
+                    continue;
+                }
+
+                break 'finish (completion, emitted);
+            }
+
+            // Turn budget spent: ONE forced-synthesize turn — the
+            // `tool_choice: "none"` shape `run_assist` already proves
+            // on both protocols. Worst case degrades to
+            // `done{ungrounded|low-confidence}`; the collected sources
+            // still ship.
+            if let Some(sys) = messages.first_mut() {
+                let content = sys.content.take().unwrap_or_default();
+                sys.content = Some(format!("{content}{FORCED_SYNTH_SUFFIX}"));
+            }
             let chat = ChatRequest {
                 messages: messages.clone(),
-                tools: tools.clone(),
-                tool_choice: Some(json!("auto")),
+                tools: Vec::new(),
+                tool_choice: Some(json!("none")),
                 ..ChatRequest::default()
             };
             let mut text = String::new();
-            // Bytes of `text` already emitted as deltas.
             let mut emitted = 0usize;
-            let completion = match self
-                .turn(&chat, &ctx, run, iteration, &tx, &mut text, &mut emitted)
+            match self
+                .turn(
+                    &chat,
+                    &ctx,
+                    run,
+                    self.config.max_turns,
+                    &tx,
+                    &mut text,
+                    &mut emitted,
+                )
                 .await
             {
-                Turn::Completed(c) => c,
+                Turn::Completed(c) => break 'finish (c, emitted),
                 Turn::Aborted => return,
-            };
-
-            if !completion.tool_calls.is_empty() {
-                messages.push(ChatMessage::assistant_tool_calls(
-                    completion.tool_calls.clone(),
-                ));
-                for call in &completion.tool_calls {
-                    let query = tool_query(call);
-                    let label = format!(
-                        "Searching: {}",
-                        if query.is_empty() { &call.name } else { &query }
-                    );
-                    if !self.emit(
-                        &tx,
-                        run,
-                        AnswerFrame::Step {
-                            tool: call.name.clone(),
-                            query,
-                            label,
-                        },
-                    ) {
-                        return;
-                    }
-                    self.observer
-                        .on_event(run, &LoopEvent::ToolStarted { call });
-                    let output = match self.tools.get(&call.name) {
-                        Some(executor) => executor.execute(call, &tool_ctx).await,
-                        None => ToolOutput {
-                            json: json!({"error": format!("unknown tool: {}", call.name)})
-                                .to_string(),
-                            results: Vec::new(),
-                        },
-                    };
-                    self.observer.on_event(
-                        run,
-                        &LoopEvent::ToolFinished {
-                            call,
-                            output: &output,
-                        },
-                    );
-                    for r in output.results {
-                        if seen.insert(r.url.as_str().to_string()) {
-                            sources.push(AnswerSource {
-                                url: r.url,
-                                title: r.title,
-                                snippet: r.snippet,
-                                engine: r.engine,
-                            });
-                        }
-                    }
-                    messages.push(ChatMessage::tool_result(call.id.clone(), output.json));
-                }
-                continue;
-            }
-
-            // Final turn: tolerant tail parse, the unemitted remainder of
-            // the answer body as the last delta, then sources + done.
-            let (answer, confidence, related) = (self.config.tail_parser)(&completion.content);
-            if let Some(rest) = answer.get(emitted..)
-                && !rest.is_empty()
-                && !self.emit(
-                    &tx,
-                    run,
-                    AnswerFrame::Delta {
-                        text: rest.to_string(),
-                    },
-                )
-            {
-                return;
-            }
-            if !self.emit(
-                &tx,
-                run,
-                AnswerFrame::Sources {
-                    sources: sources.clone(),
-                },
-            ) {
-                return;
-            }
-            self.emit(
-                &tx,
-                run,
-                AnswerFrame::Done {
-                    html: render_answer_html(&answer, sources.len()),
-                    answer: answer.clone(),
-                    confidence,
-                    model: completion.model.clone().unwrap_or_else(|| model.clone()),
-                    related_questions: related.clone(),
-                    cached: false,
-                    request_id: run.request_id,
-                    ungrounded: sources.is_empty(),
-                },
-            );
-            // Grounded-only caching (settled input): >= 1 source,
-            // confidence >= CACHE_MIN_CONFIDENCE, no error — and only
-            // for single-turn requests (see `cacheable` above).
-            if cacheable && !sources.is_empty() && confidence >= CACHE_MIN_CONFIDENCE {
-                let row = AnswerRow {
-                    query: normalize_query(&req.q),
-                    model: model.clone(),
-                    payload: AnswerPayload {
-                        answer,
-                        confidence,
-                        related_questions: related,
-                    },
-                    sources,
-                };
-                if let Err(e) = self
-                    .store
-                    .put_answer(&key, &row, self.config.answers_ttl)
-                    .await
-                {
-                    self.observer.on_event(
-                        run,
-                        &LoopEvent::CacheFailed {
-                            op: "write",
-                            error: &e,
-                        },
-                    );
+                Turn::Failed(e) => {
+                    self.emit_collected(&tx, run, &sources);
+                    self.send_error(&tx, run, &e);
+                    return;
                 }
             }
+        };
+
+        // Final turn (the model's own answer or the forced synthesis):
+        // tolerant tail parse, the unemitted remainder of the answer
+        // body as the last delta, then sources + done.
+        let (answer, confidence, related) = (self.config.tail_parser)(&completion.content);
+        if let Some(rest) = answer.get(emitted..)
+            && !rest.is_empty()
+            && !self.emit(
+                &tx,
+                run,
+                AnswerFrame::Delta {
+                    text: rest.to_string(),
+                },
+            )
+        {
             return;
         }
-
+        if !self.emit(
+            &tx,
+            run,
+            AnswerFrame::Sources {
+                sources: sources.clone(),
+            },
+        ) {
+            return;
+        }
         self.emit(
             &tx,
             run,
-            AnswerFrame::Error {
-                message: format!(
-                    "exceeded max iterations ({}) without a final answer",
-                    self.config.max_iterations
-                ),
-                retry_after_s: None,
+            AnswerFrame::Done {
+                html: render_answer_html(&answer, sources.len()),
+                answer: answer.clone(),
+                confidence,
+                model: completion.model.clone().unwrap_or_else(|| model.clone()),
+                related_questions: related.clone(),
+                cached: false,
+                request_id: run.request_id,
+                ungrounded: sources.is_empty(),
             },
         );
+        // Grounded-only caching (settled input): >= 1 source,
+        // confidence >= CACHE_MIN_CONFIDENCE, no error — and only
+        // for single-turn requests (see `cacheable` above).
+        if cacheable && !sources.is_empty() && confidence >= CACHE_MIN_CONFIDENCE {
+            let row = AnswerRow {
+                query: normalize_query(&req.q),
+                model: model.clone(),
+                payload: AnswerPayload {
+                    answer,
+                    confidence,
+                    related_questions: related,
+                },
+                sources,
+            };
+            if let Err(e) = self
+                .store
+                .put_answer(&key, &row, self.config.answers_ttl)
+                .await
+            {
+                self.observer.on_event(
+                    run,
+                    &LoopEvent::CacheFailed {
+                        op: "write",
+                        error: &e,
+                    },
+                );
+            }
+        }
     }
 
     /// The assist turn behind [`AnswerLoop::stream_assist`]: cache probe
@@ -578,6 +697,12 @@ impl AnswerLoop {
         {
             Turn::Completed(c) => c,
             Turn::Aborted => return,
+            Turn::Failed(e) => {
+                // The supplied `sources` frame already went out before
+                // the call — only the terminal error is left.
+                self.send_error(&tx, run, &e);
+                return;
+            }
         };
 
         // Single turn, no tools: whatever text the turn produced is the
@@ -644,9 +769,11 @@ impl AnswerLoop {
     /// One provider turn folded to completion: opens `chat_stream`,
     /// emits deltas (holding back `TAIL_WINDOW` bytes), and resolves
     /// the assembled [`ChatCompletion`]. `ProviderTurn` fires before
-    /// the call, `ProviderCompleted`/`ProviderFailed` on resolution;
-    /// [`Turn::Aborted`] means a terminal frame was already emitted —
-    /// the run ends.
+    /// the call, `ProviderCompleted`/`ProviderFailed` on resolution.
+    /// [`Turn::Failed`] hands the error to the caller — it owns the
+    /// terminal frames, so collected `sources` ride ahead of `error`
+    /// (#231); [`Turn::Aborted`] means the receiver is gone and the
+    /// run just ends.
     #[allow(clippy::too_many_arguments)]
     async fn turn(
         &self,
@@ -679,8 +806,7 @@ impl AnswerLoop {
                             error: &e,
                         },
                     );
-                    self.send_error(tx, run, &e);
-                    return Turn::Aborted;
+                    return Turn::Failed(e);
                 }
             };
         let mut completion: Option<ChatCompletion> = None;
@@ -698,8 +824,8 @@ impl AnswerLoop {
                 }
                 AiStreamEvent::Error(e) => {
                     // Mid-stream failure: flush what the model already
-                    // produced (no tail parse runs on a failed turn),
-                    // then the terminal error frame.
+                    // produced (no tail parse runs on a failed turn) —
+                    // the caller emits the terminal frames.
                     self.flush(tx, run, text, emitted);
                     self.observer.on_event(
                         run,
@@ -708,8 +834,7 @@ impl AnswerLoop {
                             error: &e,
                         },
                     );
-                    self.send_error(tx, run, &e);
-                    return Turn::Aborted;
+                    return Turn::Failed(e);
                 }
             }
         }
@@ -724,17 +849,9 @@ impl AnswerLoop {
                 );
                 Turn::Completed(completion)
             }
-            None => {
-                self.emit(
-                    tx,
-                    run,
-                    AnswerFrame::Error {
-                        message: "provider stream ended without a completion".to_string(),
-                        retry_after_s: None,
-                    },
-                );
-                Turn::Aborted
-            }
+            None => Turn::Failed(AiError::Parse(
+                "provider stream ended without a completion".to_string(),
+            )),
         }
     }
 
@@ -750,6 +867,27 @@ impl AnswerLoop {
         self.observer
             .on_event(run, &LoopEvent::Frame { frame: &frame });
         tx.send(frame).is_ok()
+    }
+
+    /// `sources` ahead of a terminal `error` — paid searches are never
+    /// silently discarded (#231: the frame ships on every terminal
+    /// path once known). An empty pool emits nothing: a first-turn
+    /// failure keeps its bare `error` shape.
+    fn emit_collected(
+        &self,
+        tx: &mpsc::UnboundedSender<AnswerFrame>,
+        run: &RunContext,
+        sources: &[AnswerSource],
+    ) {
+        if !sources.is_empty() {
+            self.emit(
+                tx,
+                run,
+                AnswerFrame::Sources {
+                    sources: sources.to_vec(),
+                },
+            );
+        }
     }
 
     fn send_error(&self, tx: &mpsc::UnboundedSender<AnswerFrame>, run: &RunContext, e: &AiError) {
@@ -816,8 +954,11 @@ impl AnswerLoop {
 enum Turn {
     /// The stream closed with a `Done` completion.
     Completed(ChatCompletion),
-    /// Terminal error already emitted — the run ends.
+    /// The receiver dropped mid-stream — stop emitting, run ends.
     Aborted,
+    /// The provider call failed — the caller emits the terminal
+    /// `sources`/`error` frames.
+    Failed(AiError),
 }
 
 /// The [`ChatMessage`] a prior [`AnswerTurn`] replays as (W7-04

@@ -5,7 +5,7 @@
 //! License, v. 2.0. If a copy of the MPL was not distributed with this
 //! file, You can obtain one at <https://mozilla.org/MPL/2.0/>.
 
-use tracing::{Span, info_span, warn};
+use tracing::{Span, info, info_span, warn};
 use uuid::Uuid;
 
 use cauce_core::ai::{AiError, AnswerFrame, ChatCompletion, ChatRequest, ToolCall};
@@ -93,6 +93,17 @@ pub enum LoopEvent<'a> {
         /// What the executor produced for the model + source pool.
         output: &'a ToolOutput,
     },
+    /// A tool call was short-circuited before dispatch (#231): the
+    /// model gets an in-band `{"error": ...}` result instead of a real
+    /// execution — the duplicate-query dedup and the search budget
+    /// both report here. No `ToolStarted`/`ToolFinished` fire for it.
+    ToolSkipped {
+        /// The provider's assembled tool call.
+        call: &'a ToolCall,
+        /// Why it was skipped (`"duplicate query"` /
+        /// `"search budget exhausted"`).
+        reason: &'static str,
+    },
     /// The `answers` cache lookup or write failed; the run continues
     /// (fail-open policy lives in the loop — the observer only sees it).
     CacheFailed {
@@ -164,11 +175,15 @@ impl AgentObserver for TracingObserver {
     }
 
     fn on_event(&self, _run: &RunContext, event: &LoopEvent<'_>) {
-        if let LoopEvent::CacheFailed { op, error } = event {
-            match *op {
+        match event {
+            LoopEvent::CacheFailed { op, error } => match *op {
                 "lookup" => warn!(error = %error, "answers lookup failed; continuing uncached"),
                 _ => warn!(error = %error, "answers write failed"),
+            },
+            LoopEvent::ToolSkipped { call, reason } => {
+                info!(tool = %call.name, reason = reason, "tool call short-circuited");
             }
+            _ => {}
         }
     }
 }
