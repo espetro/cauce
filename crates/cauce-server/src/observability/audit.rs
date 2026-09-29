@@ -1,18 +1,20 @@
 //! `audit` helper: one call site per audited action.
 //!
 //! Emits a JSONL event with `audit = true` (so `cauce trace` and `/audit`
-//! tooling can pick it out of the stream) and appends the row to the
+//! tooling can pick it out of the stream), appends the row to the
 //! `audit` table through `Store::audit` (parent plan 6.1: config changes,
 //! cache deletes, breaker transitions, spec loads, AI provider calls, MCP
-//! tool invocations).
+//! tool invocations), and fans the event out to `cauce_core::report`'s
+//! registered sinks — the third write, added for #238's report seam.
 //!
 //! This Source Code Form is subject to the terms of the Mozilla Public
 //! License, v. 2.0. If a copy of the MPL was not distributed with this
 //! file, You can obtain one at <https://mozilla.org/MPL/2.0/>.
 
+use cauce_core::report::{self, ReportEvent};
 use cauce_core::{AuditRow, Store, StoreError};
 
-/// Emit the audit event and persist the row.
+/// Emit the audit event, fan it out to report sinks, and persist the row.
 ///
 /// `store` is `&dyn Store` friendly: pass `store.as_ref()` for
 /// `Arc<dyn Store>` holders. The event is emitted before the write so a
@@ -38,6 +40,14 @@ pub async fn audit<S: Store + ?Sized>(store: &S, row: AuditRow) -> Result<(), St
             "audit"
         ),
     }
+    // Third fan-out: report sinks see the same event (non-sensitive
+    // fields only — `ReportEvent::Audit` carries no `details` payload).
+    report::record(&ReportEvent::Audit {
+        actor: row.actor.clone(),
+        action: row.action.clone(),
+        target: row.target.clone(),
+        request_id: row.request_id,
+    });
     store.audit(row).await.inspect_err(|e| {
         tracing::error!(
             target: "cauce.audit",

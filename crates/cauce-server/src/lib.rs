@@ -28,6 +28,7 @@ pub mod mcp;
 mod metrics;
 mod middleware;
 pub mod observability;
+pub mod report;
 mod routes;
 mod settings;
 
