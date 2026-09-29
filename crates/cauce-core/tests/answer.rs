@@ -13,6 +13,7 @@
 //! file, You can obtain one at <https://mozilla.org/MPL/2.0/>.
 
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -44,9 +45,11 @@ const SSE_CONFIDENT: &str = include_str!("../fixtures/ai/sse_confident.raw");
 /// An engine returning the same two canned results on every call —
 /// the two sources carried by the recorded `req_answer.json` tool
 /// message. Distinct `search_web` queries therefore dedupe to exactly
-/// these 2 URLs.
+/// these 2 URLs. `calls` counts real dispatches so the #231 guards
+/// can be proven not to reach the pipeline.
 struct FixedEngine {
     results: Vec<SearchResult>,
+    calls: Arc<AtomicUsize>,
 }
 
 #[async_trait]
@@ -65,6 +68,7 @@ impl Engine for FixedEngine {
         _: &SearchRequest,
         _: Duration,
     ) -> Result<Vec<SearchResult>, EngineError> {
+        self.calls.fetch_add(1, Ordering::Relaxed);
         Ok(self.results.clone())
     }
 }
@@ -93,7 +97,30 @@ fn fixed_engine() -> FixedEngine {
                 "weather",
             ),
         ],
+        calls: Arc::new(AtomicUsize::new(0)),
     }
+}
+
+/// A minimal OpenAI SSE tool-call turn — one chunk carrying the full
+/// `(id, query)` `search_web` calls in `index` order, a closing
+/// `finish_reason: "tool_calls"` chunk, and the `[DONE]` sentinel:
+/// everything the pump needs to assemble the `ChatCompletion`.
+fn sse_toolcalls(calls: &[(String, String)]) -> String {
+    let deltas = calls
+        .iter()
+        .enumerate()
+        .map(|(i, (id, query))| {
+            format!(
+                "{{\"index\":{i},\"id\":\"{id}\",\"type\":\"function\",\"function\":{{\"name\":\"search_web\",\"arguments\":\"{{\\\"query\\\": \\\"{query}\\\"}}\"}}}}"
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(",");
+    format!(
+        "data: {{\"id\":\"gen-t\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"{MODEL}\",\"choices\":[{{\"index\":0,\"delta\":{{\"content\":null,\"role\":\"assistant\",\"tool_calls\":[{deltas}]}},\"finish_reason\":null}}]}}\n\n\
+         data: {{\"id\":\"gen-t\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"{MODEL}\",\"choices\":[{{\"index\":0,\"delta\":{{\"content\":\"\",\"role\":\"assistant\"}},\"finish_reason\":\"tool_calls\"}}],\"usage\":{{\"prompt_tokens\":10,\"completion_tokens\":5,\"total_tokens\":15}}}}\n\n\
+         data: [DONE]\n\n"
+    )
 }
 
 /// wiremock matches in mount order and skips mocks past `up_to_n_times`,
@@ -107,11 +134,18 @@ async fn mount_sse(server: &MockServer, body: &'static str, times: u64) {
         .await;
 }
 
-fn answer_loop(server: &MockServer, store: Arc<StubStore>) -> AnswerLoop {
-    let pipeline = SearchPipeline::new(
-        store.clone() as Arc<dyn Store>,
-        vec![Arc::new(fixed_engine())],
-    );
+/// `mount_sse` for generated bodies (owned `String`s).
+async fn mount_sse_owned(server: &MockServer, body: String, times: u64) {
+    Mock::given(method("POST"))
+        .and(path("/chat/completions"))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(body, "text/event-stream"))
+        .up_to_n_times(times)
+        .mount(server)
+        .await;
+}
+
+fn answer_loop_with(server: &MockServer, store: Arc<StubStore>, engine: FixedEngine) -> AnswerLoop {
+    let pipeline = SearchPipeline::new(store.clone() as Arc<dyn Store>, vec![Arc::new(engine)]);
     let provider: Arc<dyn ChatProvider> = Arc::new(
         OpenAiClient::new(&AiConfig {
             base_url: server.uri(),
@@ -123,6 +157,10 @@ fn answer_loop(server: &MockServer, store: Arc<StubStore>) -> AnswerLoop {
         .expect("client builds"),
     );
     AnswerLoop::new(pipeline, provider, store)
+}
+
+fn answer_loop(server: &MockServer, store: Arc<StubStore>) -> AnswerLoop {
+    answer_loop_with(server, store, fixed_engine())
 }
 
 fn req(q: &str, request_id: Uuid) -> AnswerRequest {
@@ -534,31 +572,158 @@ async fn grounded_confident_answer_is_cached_and_replayed() {
     assert_eq!(calls.len(), 2, "cache hit makes no provider call");
 }
 
-/// The loop stops after `max_iterations` tool-call turns and ends in an
-/// `error` frame (settled cap: 5).
+/// #231: when the turn budget (8 provider calls) is spent on tool-call
+/// turns, the loop runs ONE forced-synthesize turn with
+/// `tool_choice: "none"` and ends in `done`, not `error`. Fresh queries
+/// every turn also exhaust `max_search_executions` (6): the last two
+/// tool calls resolve in-band without reaching the pipeline.
 #[tokio::test]
-async fn tool_calls_beyond_max_iterations_end_in_error() {
+async fn exhausted_turn_budget_forces_synthesis_not_error() {
     let server = MockServer::start().await;
-    // No cap: every call returns another tool call.
-    Mock::given(method("POST"))
-        .and(path("/chat/completions"))
-        .respond_with(ResponseTemplate::new(200).set_body_raw(SSE_TOOLCALL, "text/event-stream"))
-        .mount(&server)
-        .await;
+    for i in 0..8 {
+        let body = sse_toolcalls(&[(format!("call-{i}"), format!("loop probe {i}"))]);
+        mount_sse_owned(&server, body, 1).await;
+    }
+    mount_sse(&server, SSE_ANSWER, 1).await;
 
-    let store = Arc::new(StubStore::default());
-    let loop_ = answer_loop(&server, store.clone());
+    let engine = fixed_engine();
+    let calls = engine.calls.clone();
+    let loop_ = answer_loop_with(&server, Arc::new(StubStore::default()), engine);
     let frames = drain(loop_.stream_answer(&req("loop forever", Uuid::now_v7()))).await;
 
-    assert_eq!(steps(&frames).len(), 5, "one step frame per iteration");
-    match frames.last() {
-        Some(AnswerFrame::Error { message, .. }) => {
-            assert!(message.contains("5"), "cap is named: {message}");
-        }
-        other => panic!("expected terminal error frame, got {other:?}"),
-    }
-    let calls = server.received_requests().await.expect("request log");
-    assert_eq!(calls.len(), 5, "the loop called the provider 5 times");
+    assert_eq!(steps(&frames).len(), 8, "one step frame per turn");
+    assert!(
+        !frames
+            .iter()
+            .any(|f| matches!(f, AnswerFrame::Error { .. })),
+        "no error frame on exhaustion: {frames:?}"
+    );
+    assert!(
+        frames
+            .iter()
+            .any(|f| matches!(f, AnswerFrame::Sources { sources } if sources.len() == 2)),
+        "sources ship on the exhausted path: {frames:?}"
+    );
+    assert!(
+        matches!(frames.last(), Some(AnswerFrame::Done { .. })),
+        "exhaustion ends in done: {frames:?}"
+    );
+    assert_eq!(
+        calls.load(Ordering::Relaxed),
+        6,
+        "max_search_executions ran, the last two resolved in-band"
+    );
+
+    let requests = server.received_requests().await.expect("request log");
+    assert_eq!(requests.len(), 9, "8 loop turns + 1 forced-synthesize call");
+    let last: serde_json::Value = serde_json::from_slice(&requests[8].body).unwrap();
+    assert_eq!(last["tool_choice"], serde_json::json!("none"));
+    assert!(
+        last.get("tools").is_none(),
+        "forced synthesize ships no tools: {last}"
+    );
+    let seventh: serde_json::Value = serde_json::from_slice(&requests[7].body).unwrap();
+    assert!(
+        seventh["messages"].as_array().unwrap().last().unwrap()["content"]
+            .as_str()
+            .unwrap()
+            .contains("search budget exhausted"),
+        "the skipped call got the in-band budget error: {seventh}"
+    );
+}
+
+/// #231: a re-issued query (normalized equal) resolves in-band — the
+/// pipeline is not called a second time — and the loop still answers.
+#[tokio::test]
+async fn repeated_query_short_circuits_without_pipeline_call() {
+    let server = MockServer::start().await;
+    mount_sse_owned(
+        &server,
+        sse_toolcalls(&[("c1".to_string(), "alpha beta".to_string())]),
+        1,
+    )
+    .await;
+    mount_sse_owned(
+        &server,
+        sse_toolcalls(&[("c2".to_string(), "  ALPHA   Beta ".to_string())]),
+        1,
+    )
+    .await;
+    mount_sse(&server, SSE_ANSWER, 1).await;
+
+    let engine = fixed_engine();
+    let calls = engine.calls.clone();
+    let loop_ = answer_loop_with(&server, Arc::new(StubStore::default()), engine);
+    let frames = drain(loop_.stream_answer(&req("repeat?", Uuid::now_v7()))).await;
+
+    assert_eq!(
+        calls.load(Ordering::Relaxed),
+        1,
+        "the repeat never reaches the pipeline"
+    );
+    assert!(
+        matches!(frames.last(), Some(AnswerFrame::Done { .. })),
+        "the loop still answers: {frames:?}"
+    );
+
+    let requests = server.received_requests().await.expect("request log");
+    assert_eq!(requests.len(), 3);
+    let answer_turn: serde_json::Value = serde_json::from_slice(&requests[2].body).unwrap();
+    let last_tool = answer_turn["messages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .rfind(|m| m["role"] == "tool")
+        .expect("the deduped call left a tool result");
+    assert!(
+        last_tool["content"]
+            .as_str()
+            .unwrap()
+            .contains("query already searched"),
+        "in-band dedup error: {}",
+        last_tool
+    );
+}
+
+/// #231 fan-out: ONE turn carrying two `search_web` calls dispatches
+/// both in the same iteration — two step frames, two tool results, then
+/// the answer turn.
+#[tokio::test]
+async fn parallel_tool_calls_share_one_iteration() {
+    let server = MockServer::start().await;
+    mount_sse_owned(
+        &server,
+        sse_toolcalls(&[
+            ("c1".to_string(), "part one".to_string()),
+            ("c2".to_string(), "part two".to_string()),
+        ]),
+        1,
+    )
+    .await;
+    mount_sse(&server, SSE_ANSWER, 1).await;
+
+    let engine = fixed_engine();
+    let calls = engine.calls.clone();
+    let loop_ = answer_loop_with(&server, Arc::new(StubStore::default()), engine);
+    let frames = drain(loop_.stream_answer(&req("multi-part?", Uuid::now_v7()))).await;
+
+    assert_eq!(steps(&frames).len(), 2, "both calls stepped in one turn");
+    assert_eq!(calls.load(Ordering::Relaxed), 2, "both executed");
+
+    let requests = server.received_requests().await.expect("request log");
+    assert_eq!(requests.len(), 2, "one tool turn + the answer turn");
+    let answer_turn: serde_json::Value = serde_json::from_slice(&requests[1].body).unwrap();
+    let tool_msgs = answer_turn["messages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|m| m["role"] == "tool")
+        .count();
+    assert_eq!(tool_msgs, 2, "both tool results ride the next request");
+    assert!(
+        matches!(frames.last(), Some(AnswerFrame::Done { .. })),
+        "ends in done: {frames:?}"
+    );
 }
 
 /// `AnswerKey` folds query case and whitespace like `CacheKey`.
