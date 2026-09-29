@@ -31,6 +31,7 @@ postgres = ["cauce-server/postgres"]
 otlp = ["cauce-server/otlp"]
 
 [dependencies]
+cauce-agent = { path = "../cauce-agent" }
 cauce-core = { path = "../cauce-core" }
 cauce-engines = { path = "../cauce-engines" }
 cauce-server = { path = "../cauce-server", default-features = false }

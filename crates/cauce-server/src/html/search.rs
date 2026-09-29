@@ -339,7 +339,7 @@ fn ask_url(state: &AppState, q: &str) -> String {
 
 /// W7-02: the top-K SERP rows serialized in the `AnswerSource` wire
 /// shape (`{url,title,snippet,engine}`) — what the Assist button POSTs
-/// as `context_results`. `AnswerLoop::stream_assist` re-caps at
+/// as `context_results`. `cauce_agent::AnswerLoop::stream_assist` re-caps at
 /// `ASSIST_MAX_SOURCES` (10) server-side; matching it here keeps the
 /// prompt's `[n]` indices aligned with the visible top rows.
 fn assist_context(resp: &SearchResponse) -> String {

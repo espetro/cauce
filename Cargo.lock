@@ -347,9 +347,22 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fc652a48c352aef3ea3aed32080501cf3ef6ed5da78602a020c991775b0aff04"
 
 [[package]]
+name = "cauce-agent"
+version = "0.7.0"
+dependencies = [
+ "async-trait",
+ "cauce-core",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
 name = "cauce-cli"
 version = "0.7.0"
 dependencies = [
+ "cauce-agent",
  "cauce-core",
  "cauce-engines",
  "cauce-server",
@@ -370,6 +383,7 @@ version = "0.7.0"
 dependencies = [
  "ammonia",
  "async-trait",
+ "cauce-agent",
  "cauce-engines",
  "chrono",
  "dom_smoothie",
@@ -431,6 +445,7 @@ dependencies = [
  "askama",
  "async-trait",
  "axum",
+ "cauce-agent",
  "cauce-core",
  "cauce-engines",
  "cauce-store-sqlite",

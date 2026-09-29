@@ -31,8 +31,8 @@ mod store;
 
 pub use admission::{Admission, AdmissionLimits, FlightResult};
 pub use ai::{
-    AiCallCtx, AiError, AiStreamEvent, AnswerFrame, AnswerLoop, AnswerRequest, AnswerRole,
-    AnswerTurn, AnthropicClient, ChatCompletion, ChatMessage, ChatProvider, ChatRequest, ModelInfo,
+    AiCallCtx, AiError, AiStreamEvent, AnswerFrame, AnswerRequest, AnswerRole, AnswerTurn,
+    AnthropicClient, ChatCompletion, ChatMessage, ChatProvider, ChatRequest, ModelInfo,
     OpenAiClient, ToolCall, ToolSpec, Usage,
 };
 #[cfg(feature = "archive")]

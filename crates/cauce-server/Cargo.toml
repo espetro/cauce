@@ -41,6 +41,7 @@ otlp = [
 ]
 
 [dependencies]
+cauce-agent = { path = "../cauce-agent" }
 cauce-core = { path = "../cauce-core" }
 axum = "0.8"
 chrono = { version = "0.4", features = ["serde"] }

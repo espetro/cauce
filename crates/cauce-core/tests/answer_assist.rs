@@ -14,9 +14,10 @@
 
 use std::sync::Arc;
 
+use cauce_agent::AnswerLoop;
 use cauce_core::{
-    AiConfig, AnswerFrame, AnswerKey, AnswerLoop, AnswerRequest, AnswerSource, ChatProvider,
-    ClientKind, EngineId, OpenAiClient, SearchPipeline, Store,
+    AiConfig, AnswerFrame, AnswerKey, AnswerRequest, AnswerSource, ChatProvider, ClientKind,
+    EngineId, OpenAiClient, SearchPipeline, Store,
 };
 use url::Url;
 use uuid::Uuid;

@@ -12,9 +12,12 @@
 //! Messages API client (`POST {base_url}/v1/messages`) onto the same
 //! types — `[ai].protocol` picks between them. `sse`/`http`/`pump` are
 //! the framing, error-read and bookkeeping helpers both clients share.
-//! [`answer`] (W4-02) is the grounded-answer tool
-//! loop: [`AnswerLoop::stream_answer`](answer::AnswerLoop::stream_answer)
-//! + the [`AnswerFrame`](answer::AnswerFrame) wire union.
+//! [`answer`] (W4-02) holds the `/answer` wire contract — the
+//! [`AnswerFrame`](answer::AnswerFrame) union and the
+//! [`AnswerRequest`](answer::AnswerRequest)/[`AnswerTurn`](answer::AnswerTurn)
+//! inputs; [`ChatProvider`] is the trait a provider implements. The
+//! grounded-answer loop that consumes them lives in the `cauce-agent`
+//! crate (#230), behind its provider/tool/observer seam.
 //!
 //! This Source Code Form is subject to the terms of the Mozilla Public
 //! License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -29,12 +32,14 @@ pub mod render;
 mod sse;
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use serde::Serialize;
 use thiserror::Error;
+use tokio::sync::mpsc;
 use uuid::Uuid;
 
-pub use answer::{AnswerFrame, AnswerLoop, AnswerRequest, AnswerRole, AnswerTurn, ChatProvider};
+pub use answer::{AnswerFrame, AnswerRequest, AnswerRole, AnswerTurn};
 pub use anthropic::AnthropicClient;
 pub use openai::OpenAiClient;
 pub use render::render_answer_html;
@@ -66,6 +71,52 @@ pub fn provider_client(
                 None => client,
             }))
         }
+    }
+}
+
+/// The provider half of the agent seam (#230), kept behind a trait so
+/// the `cauce-agent` loop is testable without a live endpoint and
+/// `evals`' `RecordingProvider`/`TranscriptProvider` can drive it with
+/// fixtures.
+pub trait ChatProvider: Send + Sync {
+    /// Model id used for the `answers` key and the `done.model` fallback.
+    fn model(&self) -> &str;
+    /// One streamed turn; see [`OpenAiClient::chat_stream`].
+    fn chat_stream(
+        &self,
+        req: &ChatRequest,
+        budget: Duration,
+        ctx: AiCallCtx,
+    ) -> Result<mpsc::UnboundedReceiver<AiStreamEvent>, AiError>;
+}
+
+impl ChatProvider for OpenAiClient {
+    fn model(&self) -> &str {
+        self.model()
+    }
+
+    fn chat_stream(
+        &self,
+        req: &ChatRequest,
+        budget: Duration,
+        ctx: AiCallCtx,
+    ) -> Result<mpsc::UnboundedReceiver<AiStreamEvent>, AiError> {
+        OpenAiClient::chat_stream(self, req, budget, ctx)
+    }
+}
+
+impl ChatProvider for AnthropicClient {
+    fn model(&self) -> &str {
+        self.model()
+    }
+
+    fn chat_stream(
+        &self,
+        req: &ChatRequest,
+        budget: Duration,
+        ctx: AiCallCtx,
+    ) -> Result<mpsc::UnboundedReceiver<AiStreamEvent>, AiError> {
+        AnthropicClient::chat_stream(self, req, budget, ctx)
     }
 }
 
