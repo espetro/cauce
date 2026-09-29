@@ -149,3 +149,12 @@ rather than editing it away.
   are already settled inputs; W2-10 only adds W3 steps from findings. Holding W3 for seven
   calendar days after the last W2 page merged bought nothing. W3-01 now depends on
   W2-01..W2-09; W4-01 gains W2-10. (#42) — 2026-09-23
+- **`cauce-agent` owns the answer loop; observability is an observer seam, not a provider of
+  the loop.** `ChatProvider`/`ToolSpec`/`AnswerFrame` and the rest of the wire vocabulary stay
+  in cauce-core (`score_frames` consumes `AnswerFrame`; `RecordingProvider`/`TranscriptProvider`
+  impl `ChatProvider` — moving them would be a cyclic dep), while `AnswerLoop`, the tool
+  registry, `LoopConfig`, and the `AgentObserver`/`LoopEvent`/`RunContext` hook surface live in
+  `cauce-agent`. The hook shape mirrors rig-core's `AgentHook` (single `on_event` with a
+  run-scoped context), reduced to observe-only — nothing today needs to veto or rewrite the
+  loop's course, so hooks cannot change behavior by construction. `AnswerLoop::new` installs
+  `TracingObserver` for the exact pre-extraction span/warn surface. (#230) — 2026-09-28

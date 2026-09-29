@@ -43,6 +43,7 @@ with the proposed amendment to the parent plan. Do not improvise the contract.
 
 ```
 crates/cauce-core          domain types, pipeline, scheduler, Store + Engine traits (MPL-2.0)
+crates/cauce-agent         grounded-answer agent loop; provider/tool/observer seam (MPL-2.0)
 crates/cauce-store-sqlite  rusqlite Store impl (MPL-2.0)
 crates/cauce-engines       declarative / exec / replay engine runtimes (MPL-2.0)
 crates/cauce-server        axum, HTMX templates, SSE, MCP, Exa adapter (MPL-2.0)

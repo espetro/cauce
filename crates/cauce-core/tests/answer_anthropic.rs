@@ -15,10 +15,11 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
+use cauce_agent::AnswerLoop;
 use cauce_core::{
-    AiConfig, AiProtocol, AnswerFrame, AnswerKey, AnswerLoop, AnswerRequest, AnthropicClient,
-    ChatProvider, ClientKind, Engine, EngineError, EngineId, SearchPipeline, SearchRequest,
-    SearchResult, Store, Tier,
+    AiConfig, AiProtocol, AnswerFrame, AnswerKey, AnswerRequest, AnthropicClient, ChatProvider,
+    ClientKind, Engine, EngineError, EngineId, SearchPipeline, SearchRequest, SearchResult, Store,
+    Tier,
 };
 use url::Url;
 use uuid::Uuid;
