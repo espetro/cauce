@@ -43,6 +43,7 @@ otlp = [
 [dependencies]
 cauce-agent = { path = "../cauce-agent" }
 cauce-core = { path = "../cauce-core" }
+async-trait = "0.1"
 axum = "0.8"
 chrono = { version = "0.4", features = ["serde"] }
 serde = { version = "1", features = ["derive"] }
@@ -96,7 +97,6 @@ schemars = { version = "1", optional = true }
 ts-rs = { version = "12", features = ["uuid-impl", "url-impl", "chrono-impl", "no-serde-warnings"] }
 
 [dev-dependencies]
-async-trait = "0.1"
 # Test-store seeding helpers (`conformance::request`/`response`), same as
 # cauce-store-sqlite's dev-dependency.
 cauce-core = { path = "../cauce-core", features = ["conformance"] }

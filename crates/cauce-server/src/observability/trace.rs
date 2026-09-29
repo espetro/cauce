@@ -15,11 +15,13 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Utc};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
 /// One parsed JSONL record (schema `v = 1`, see `super::jsonl`).
-#[derive(Debug, Clone, Deserialize)]
+/// `Serialize` so the report bundle's `errors_tail` can re-emit records
+/// verbatim (minus redaction).
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LogRecord {
     #[serde(default)]
     pub kind: String,
@@ -41,7 +43,7 @@ pub struct LogRecord {
 }
 
 /// The `span` object on a record.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SpanPart {
     pub id: u64,
     #[serde(default)]
