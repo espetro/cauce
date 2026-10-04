@@ -27,6 +27,7 @@ use std::sync::{Arc, LazyLock};
 use async_trait::async_trait;
 use cauce_core::report::{self, ReportSection};
 use cauce_core::{AuditFilter, RedactionProfile, ReportBundle, ReportCtx, ReportError, evals};
+use chrono::Utc;
 use serde_json::{Value, json};
 use tokio::sync::Mutex;
 
@@ -99,6 +100,23 @@ fn log_file_list(dir: &Path) -> io::Result<Vec<PathBuf>> {
     }
 }
 
+/// The `YYYY-MM-DD` a `cauce-<date>.jsonl`/`cauce.<date>.jsonl` file name
+/// carries; `None` for undated names (which stay inside every window).
+fn log_file_date(path: &Path) -> Option<chrono::NaiveDate> {
+    let stem = path.file_stem()?.to_str()?;
+    let date = stem
+        .strip_prefix("cauce-")
+        .or_else(|| stem.strip_prefix("cauce."))?;
+    chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d").ok()
+}
+
+/// Whether `path` falls inside the `days` window: dated files older
+/// than the window are skipped, undated names are kept.
+fn within_days(path: &Path, days: u32) -> bool {
+    let cutoff = Utc::now().date_naive() - chrono::Duration::days(days as i64);
+    log_file_date(path).is_none_or(|d| d >= cutoff)
+}
+
 /// `cauce`: process metadata — build version, compiled features, bind
 /// address, uptime.
 struct CauceSection(AppState);
@@ -167,8 +185,9 @@ impl ReportSection for EnginesSection {
     }
 }
 
-/// `audit_tail`: newest [`AUDIT_TAIL`] `audit` rows (`details` query
-/// leaves stripped and free-form actors dropped under `safe`).
+/// `audit_tail`: newest [`AUDIT_TAIL`] `audit` rows inside the `days`
+/// window (`details` query leaves stripped and free-form actors dropped
+/// under `safe`).
 struct AuditSection(AppState);
 
 #[async_trait]
@@ -176,11 +195,12 @@ impl ReportSection for AuditSection {
     fn name(&self) -> &'static str {
         "audit_tail"
     }
-    async fn collect(&self, _ctx: &ReportCtx) -> Result<Value, ReportError> {
+    async fn collect(&self, ctx: &ReportCtx) -> Result<Value, ReportError> {
         let rows = self
             .0
             .store()
             .list_audit(&AuditFilter {
+                since: Some(Utc::now() - chrono::Duration::days(ctx.days as i64)),
                 limit: AUDIT_TAIL,
                 ..AuditFilter::default()
             })
@@ -190,8 +210,9 @@ impl ReportSection for AuditSection {
 }
 
 /// `errors_tail`: newest [`ERRORS_TAIL`] warn/error `LogRecord`s across
-/// the JSONL files, `ts` descending (span `fields` query leaves stripped
-/// and URL query components dropped under `safe`).
+/// the JSONL files inside the `days` window, `ts` descending (span
+/// `fields` query leaves stripped and URL query components dropped under
+/// `safe`).
 struct ErrorsSection;
 
 #[async_trait]
@@ -202,6 +223,9 @@ impl ReportSection for ErrorsSection {
     async fn collect(&self, ctx: &ReportCtx) -> Result<Value, ReportError> {
         let mut records = Vec::new();
         for path in log_file_list(&ctx.logs_dir)? {
+            if !within_days(&path, ctx.days) {
+                continue;
+            }
             for line in std::fs::read_to_string(&path)?.lines() {
                 let Ok(record) = serde_json::from_str::<trace::LogRecord>(line) else {
                     continue;
@@ -232,8 +256,11 @@ impl ReportSection for StorageSection {
     async fn collect(&self, ctx: &ReportCtx) -> Result<Value, ReportError> {
         let snap = self.0.store().stats(ctx.days).await?;
         let retention_days = with_config(&self.0, |c| c.logs.retention_days);
+        // `logs_files` lists the files inside the export window, matching
+        // what `errors_tail` read.
         let logs_files: Vec<String> = log_file_list(&ctx.logs_dir)?
             .iter()
+            .filter(|p| within_days(p, ctx.days))
             .filter_map(|p| p.file_name()?.to_str().map(str::to_string))
             .collect();
         Ok(json!({

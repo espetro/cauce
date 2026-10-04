@@ -8,6 +8,7 @@
 
 use std::collections::BTreeMap;
 
+use axum::http::{StatusCode, header};
 use cauce_core::config::{Config, EnvMap};
 use cauce_core::report::ReportBundle;
 use cauce_core::{
@@ -275,4 +276,97 @@ async fn collect_verbose_keeps_queries_only() {
     }
     assert_eq!(bundle.sections["config"]["ai"]["api_key"], "<redacted>");
     assert_eq!(bundle.sections["audit_tail"][0]["actor"], "<redacted>");
+}
+
+// ---------------------------------------------------------------------------
+// `GET /api/report` (#240): the download surface — attachment headers,
+// the share URL, safe-by-default and the per-request verbose opt-in.
+// ---------------------------------------------------------------------------
+
+/// `fixture` + `build_router` for the route tests.
+async fn report_app() -> (axum::Router, tempfile::TempDir, tempfile::TempDir) {
+    let (state, store_tmp, cfg_tmp) = fixture(TOML).await;
+    let router = cauce_server::build_router(state.clone());
+    // Keep the state's TempDir alive through the caller too.
+    (router, store_tmp, cfg_tmp)
+}
+
+#[tokio::test]
+async fn api_report_downloads_a_safe_v1_bundle() {
+    let _env = env_lock().await;
+    let (router, _s, cfg_tmp) = report_app().await;
+    write_logs(&cfg_tmp);
+
+    let (status, headers, body) = get(&router, "/api/report").await;
+    assert_eq!(status, StatusCode::OK);
+    let cd = headers[header::CONTENT_DISPOSITION].to_str().unwrap();
+    assert!(
+        cd.starts_with("attachment; filename=\"cauce-report-") && cd.ends_with(".json\""),
+        "content-disposition: {cd}"
+    );
+    assert_eq!(headers[header::CONTENT_TYPE], "application/json");
+    let issue = headers["x-report-issue-url"].to_str().unwrap();
+    assert!(
+        issue.starts_with("https://github.com/espetro/cauce/issues/new?title="),
+        "issue url: {issue}"
+    );
+    assert_eq!(body["v"], 1);
+    assert_eq!(body["profile"], "safe");
+    assert!(body["cauce"]["version"].is_string());
+}
+
+#[tokio::test]
+async fn api_report_days_bounds_the_window() {
+    let _env = env_lock().await;
+    let (router, _s, cfg_tmp) = report_app().await;
+    write_logs(&cfg_tmp);
+    // A dated file outside the window is skipped by `errors_tail` and
+    // dropped from `storage.logs_files`.
+    let logs = cfg_tmp.path().join("data/logs");
+    let old = json!({"v": 1, "kind": "event", "ts": "2026-09-01T00:00:00Z",
+                     "level": "ERROR", "target": "cauce::old",
+                     "fields": {"message": "ancient failure"}});
+    std::fs::write(logs.join("cauce-2026-09-01.jsonl"), format!("{old}\n")).unwrap();
+
+    let (status, _h, body) = get(&router, "/api/report?days=1").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["stats"]["window_days"], 1);
+    let files: Vec<&str> = body["storage"]["logs_files"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(Value::as_str)
+        .collect();
+    assert_eq!(files, ["cauce-2026-09-28.jsonl"]);
+    let tail = body.to_string();
+    assert!(!tail.contains("ancient failure"));
+    assert!(tail.contains("engine failed"));
+}
+
+#[tokio::test]
+async fn api_report_verbose_is_explicit_opt_in() {
+    let _env = env_lock().await;
+    let (router, store_tmp, _c) = report_app().await;
+    let _ = store_tmp; // keep the store dir alive for the state's lifetime
+    // The default export is `safe`; either flag selects `verbose` once.
+    let (_status, _h, body) = get(&router, "/api/report?verbose=1").await;
+    assert_eq!(body["profile"], "verbose");
+    let (_status, _h, body) = get(&router, "/api/report?include_queries=1").await;
+    assert_eq!(body["profile"], "verbose");
+    let (_status, _h, body) = get(&router, "/api/report?verbose=0").await;
+    assert_eq!(body["profile"], "safe");
+}
+
+#[tokio::test]
+async fn api_report_rejects_bad_params() {
+    let _env = env_lock().await;
+    let (router, _s, _c) = report_app().await;
+    for uri in [
+        "/api/report?days=abc",
+        "/api/report?bogus=1",
+        "/api/report?verbose=maybe",
+    ] {
+        let (status, _h, body) = get(&router, uri).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{uri}: {body}");
+    }
 }

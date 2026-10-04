@@ -119,6 +119,9 @@ pub const ROUTES: &[RouteSpec] = &[
     // The suggestions Url the W2-11 descriptor advertises; a wave-2
     // omission like the favicon (#150).
     json("GET", "/api/suggest", 2),
+    // #240: the support-report download (`Content-Disposition:
+    // attachment` + the `X-Report-Issue-Url` share header).
+    json("GET", "/api/report", 2),
     html("/history", 2),
     html("/dashboard", 2),
     html("/cache", 2),

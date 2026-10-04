@@ -53,6 +53,17 @@ pub enum RedactionProfile {
     Verbose,
 }
 
+impl RedactionProfile {
+    /// The serde spelling (`"safe"`/`"verbose"`) — what the bundle's
+    /// `profile` field serializes as.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Safe => "safe",
+            Self::Verbose => "verbose",
+        }
+    }
+}
+
 /// `display_tree`'s marker, reused for leaves this pass redacts.
 const REDACTED: &str = "<redacted>";
 

@@ -57,9 +57,11 @@ const EXPECTED_WAVE1_MOUNTED: &[(&str, &str)] = &[
 /// Wave-2 API rows mounted so far: the SSE stream endpoint (W2-01),
 /// W2-02's audited history-row delete, W2-05's enable/disable posts and
 /// the OpenSearch suggestions endpoint the W2-11 descriptor advertises
-/// (#150). They mount in every build including headless.
+/// (#150), plus the support-report download (#240). They mount in every
+/// build including headless.
 const EXPECTED_WAVE2_MOUNTED: &[(&str, &str)] = &[
     ("DELETE", "/api/history/{id}"),
+    ("GET", "/api/report"),
     ("GET", "/api/search/stream"),
     ("GET", "/api/suggest"),
     ("POST", "/api/engines/{id}/enable"),

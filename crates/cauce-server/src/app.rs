@@ -492,6 +492,7 @@ fn handler_for(spec: &RouteSpec, state: &AppState) -> Option<MethodRouter<AppSta
         #[cfg(feature = "ui")]
         ("GET", "/answer", RouteKind::Html) => Some(get(html::answer)),
         ("GET", "/api/suggest", RouteKind::Json) => Some(get(handlers::suggest)),
+        ("GET", "/api/report", RouteKind::Json) => Some(get(handlers::report)),
         ("GET", "/api/history", RouteKind::Json) => Some(get(handlers::history)),
         ("DELETE", "/api/history/{id}", RouteKind::Json) => Some(delete(handlers::history_delete)),
         ("POST", "/api/click", RouteKind::Json) => Some(post(handlers::click)),

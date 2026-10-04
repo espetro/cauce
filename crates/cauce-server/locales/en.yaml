@@ -191,6 +191,8 @@ settings:
   max_concurrent: Max concurrent per engine
   section_logging: Logging
   retention: JSONL retention (days)
+  report_link: Download support report
+  report_hint: redacted JSON bundle to attach when filing an issue
   section_cache: Cache
   entries: entries
   unexpired: unexpired

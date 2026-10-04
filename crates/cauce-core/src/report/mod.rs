@@ -70,8 +70,9 @@ pub enum ReportError {
 /// time, keeping this struct free of `cauce-server` shapes.
 #[derive(Debug)]
 pub struct ReportCtx {
-    /// Stats window in days for `stats`-family sections (7 for the
-    /// default export).
+    /// The export window in days (7 for the default export): the
+    /// `stats`-family sections' aggregate window and the cutoff for
+    /// `audit_tail` rows and the log files `errors_tail`/`storage` read.
     pub days: u32,
     /// `<data_dir>/logs`, for the `errors_tail`/`storage` sections.
     pub logs_dir: PathBuf,
@@ -270,6 +271,77 @@ impl ReportBundle {
 /// Collect every registered section into a redacted [`ReportBundle`].
 pub async fn collect(ctx: &ReportCtx) -> ReportBundle {
     ReportBundle::collect(ctx).await
+}
+
+// ---------------------------------------------------------------------------
+// Share flow (#240/#242)
+// ---------------------------------------------------------------------------
+
+/// `issues/new` endpoint the share flow points at.
+const ISSUES_NEW_URL: &str = "https://github.com/espetro/cauce/issues/new";
+
+/// The export file name for `ts` — `cauce-report-20260929T093000Z.json`.
+/// `GET /api/report` serves it in `Content-Disposition`; `cauce report`
+/// writes it under cwd when `--out` is not given.
+pub fn filename(ts: &DateTime<Utc>) -> String {
+    format!("cauce-report-{}.json", ts.format("%Y%m%dT%H%M%SZ"))
+}
+
+/// Title + body for the prefilled GitHub issue — shared by
+/// [`issue_url`] (the `X-Report-Issue-Url` response header) and `cauce
+/// report --gh`, which feeds the same text to `gh issue create`.
+#[derive(Debug, Clone)]
+pub struct IssueDraft {
+    pub title: String,
+    /// The issue body: a one-paragraph bundle summary plus the attach
+    /// instructions — URL parameters carry no file payload, so the
+    /// bundle itself still has to be dragged in or pasted.
+    pub body: String,
+}
+
+/// The issue text a bundle shares. High-signal fields (`cauce`,
+/// `stats.searches`) are read opportunistically — a bundle missing them
+/// still produces a usable draft.
+pub fn issue_draft(bundle: &ReportBundle) -> IssueDraft {
+    let generated = bundle.generated_at.format("%Y-%m-%d %H:%M UTC");
+    let title = format!("cauce report {generated}");
+    let mut body = format!(
+        "Report bundle v{} ({} profile), generated {}.",
+        bundle.v,
+        bundle.profile.as_str(),
+        bundle.generated_at.to_rfc3339(),
+    );
+    if let Some(cauce) = bundle.sections.get("cauce") {
+        let version = cauce.get("version").and_then(Value::as_str).unwrap_or("?");
+        let bind = cauce.get("bind").and_then(Value::as_str).unwrap_or("?");
+        let uptime = cauce.get("uptime_s").and_then(Value::as_u64).unwrap_or(0);
+        body.push_str(&format!("\n\ncauce {version} on {bind}, uptime {uptime}s."));
+    }
+    if let Some(searches) = bundle
+        .sections
+        .get("stats")
+        .and_then(|s| s.get("searches"))
+        .and_then(Value::as_u64)
+    {
+        body.push_str(&format!(" {searches} searches in the window."));
+    }
+    body.push_str(&format!(
+        "\n\nAttach `{}` — download it from `GET /api/report` \
+         (the `/settings` Logging section links it) or produce one \
+         with `cauce report --out <file>.json`.",
+        filename(&bundle.generated_at),
+    ));
+    IssueDraft { title, body }
+}
+
+/// The prefilled `issues/new` URL for `bundle`.
+pub fn issue_url(bundle: &ReportBundle) -> String {
+    let draft = issue_draft(bundle);
+    let mut url = url::Url::parse(ISSUES_NEW_URL).expect("issues/new URL parses");
+    url.query_pairs_mut()
+        .append_pair("title", &draft.title)
+        .append_pair("body", &draft.body);
+    url.into()
 }
 
 #[cfg(test)]

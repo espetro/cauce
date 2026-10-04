@@ -11,6 +11,7 @@ pub mod eval_ai;
 #[cfg(feature = "mcp")]
 pub mod mcp;
 pub mod record;
+pub mod report;
 pub mod search;
 pub mod serve;
 pub mod tail;
