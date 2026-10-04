@@ -144,6 +144,18 @@ async fn mount_sse_owned(server: &MockServer, body: String, times: u64) {
         .await;
 }
 
+/// A minimal OpenAI SSE answer turn: one content chunk streaming
+/// `text`, a `finish_reason: "stop"` chunk with usage, and `[DONE]` —
+/// the shape the pump assembles into a tool-less `ChatCompletion`.
+fn sse_answer_body(text: &str) -> String {
+    let content = serde_json::to_string(text).expect("text encodes");
+    format!(
+        "data: {{\"id\":\"gen-t\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"{MODEL}\",\"choices\":[{{\"index\":0,\"delta\":{{\"content\":{content},\"role\":\"assistant\"}},\"finish_reason\":null}}]}}\n\n\
+         data: {{\"id\":\"gen-t\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"{MODEL}\",\"choices\":[{{\"index\":0,\"delta\":{{\"content\":\"\",\"role\":\"assistant\"}},\"finish_reason\":\"stop\"}}],\"usage\":{{\"prompt_tokens\":10,\"completion_tokens\":5,\"total_tokens\":15}}}}\n\n\
+         data: [DONE]\n\n"
+    )
+}
+
 fn answer_loop_with(server: &MockServer, store: Arc<StubStore>, engine: FixedEngine) -> AnswerLoop {
     let pipeline = SearchPipeline::new(store.clone() as Arc<dyn Store>, vec![Arc::new(engine)]);
     let provider: Arc<dyn ChatProvider> = Arc::new(
@@ -205,9 +217,9 @@ fn delta_text(frames: &[AnswerFrame]) -> String {
 }
 
 /// Acceptance: recorded tool-call turn + hand-authored second tool call +
-/// recorded grounded answer ⇒ 2 `step` frames, deltas, `sources` with
-/// the 2 fixture URLs, `done` (confidence 0 — the recording carries no
-/// metadata tail — so no `answers` row).
+/// recorded answer ⇒ 2 `step` frames, deltas, `sources` with
+/// the 2 fixture URLs, `done` (the recording carries no `[n]` citations —
+/// ungrounded under the #232 gate, so no `answers` row).
 #[tokio::test]
 async fn tool_loop_yields_steps_deltas_sources_and_done() {
     let server = MockServer::start().await;
@@ -293,12 +305,137 @@ async fn tool_loop_yields_steps_deltas_sources_and_done() {
         "chatcmpl-tool-b0d6032a45b725d0"
     );
 
-    // Confidence 0 is below the cache floor — nothing was written.
+    // #232: the recorded answer's second line ("Source: JMA … both
+    // report these conditions.") carries no `[n]` — uncovered, hence
+    // ungrounded under the citation gate, so no `answers` row.
     let key = AnswerKey::new("current weather in Tokyo right now", MODEL);
     assert!(
         store.get_answer(&key).await.unwrap().is_none(),
-        "sub-floor confidence must not be cached"
+        "an uncited answer is ungrounded — never cached"
     );
+}
+
+/// #232: verbalized confidence no longer gates the cache. An answer
+/// with sources and self-reported confidence 9 but ZERO `[n]`
+/// citations is ungrounded — no `answers` row is written (the old
+/// `confidence >= 4` gate would have cached it). The score still
+/// reaches `done.confidence` for display.
+#[tokio::test]
+async fn uncited_confident_answer_is_not_cached() {
+    let server = MockServer::start().await;
+    mount_sse(&server, SSE_TOOLCALL, 1).await;
+    mount_sse_owned(
+        &server,
+        sse_answer_body("Tokyo is 22C and clear.\n{\"confidence\": 9}"),
+        1,
+    )
+    .await;
+
+    let store = Arc::new(StubStore::default());
+    let loop_ = answer_loop(&server, store.clone());
+    let q = "uncited but confident";
+    let frames = drain(loop_.stream_answer(&req(q, Uuid::now_v7()))).await;
+
+    let AnswerFrame::Done {
+        confidence,
+        ungrounded,
+        ..
+    } = frames
+        .iter()
+        .find_map(|f| match f {
+            AnswerFrame::Done { .. } => Some(f.clone()),
+            _ => None,
+        })
+        .expect("terminal done frame")
+    else {
+        unreachable!()
+    };
+    assert_eq!(confidence, 9, "the verbalized score still reaches done");
+    assert!(!ungrounded, "sources exist — only the cites are missing");
+
+    let key = AnswerKey::new(q, MODEL);
+    assert!(
+        store.get_answer(&key).await.unwrap().is_none(),
+        "uncited answers do not cache, confidence 9 notwithstanding"
+    );
+    let calls = server.received_requests().await.expect("request log");
+    assert_eq!(calls.len(), 2, "tool turn + answer turn");
+}
+
+/// #232: index validity — an answer citing `[7]` when only 2 sources
+/// exist is ungrounded even though every sentence carries a marker.
+#[tokio::test]
+async fn out_of_range_citation_is_not_cached() {
+    let server = MockServer::start().await;
+    mount_sse(&server, SSE_TOOLCALL, 1).await;
+    mount_sse_owned(
+        &server,
+        sse_answer_body("Tokyo is 22C and clear [7].\n{\"confidence\": 9}"),
+        1,
+    )
+    .await;
+
+    let store = Arc::new(StubStore::default());
+    let loop_ = answer_loop(&server, store.clone());
+    let q = "out of range cite";
+    drain(loop_.stream_answer(&req(q, Uuid::now_v7()))).await;
+
+    assert!(
+        store
+            .get_answer(&AnswerKey::new(q, MODEL))
+            .await
+            .unwrap()
+            .is_none(),
+        "a citation to a source that was never shown is not grounded"
+    );
+}
+
+/// #232, the other direction: a fully-cited answer with NO metadata
+/// tail (verbalized confidence 0) is still grounded — it caches and
+/// replays `done{cached:true}`.
+#[tokio::test]
+async fn grounded_answer_caches_without_verbalized_confidence() {
+    let server = MockServer::start().await;
+    mount_sse(&server, SSE_TOOLCALL, 1).await;
+    mount_sse_owned(
+        &server,
+        sse_answer_body("Tokyo is 22C and clear [1][2]."),
+        1,
+    )
+    .await;
+
+    let store = Arc::new(StubStore::default());
+    let loop_ = answer_loop(&server, store.clone());
+    let q = "grounded without a tail";
+    let frames = drain(loop_.stream_answer(&req(q, Uuid::now_v7()))).await;
+    let AnswerFrame::Done { confidence, .. } = frames
+        .iter()
+        .find_map(|f| match f {
+            AnswerFrame::Done { .. } => Some(f.clone()),
+            _ => None,
+        })
+        .expect("terminal done frame")
+    else {
+        unreachable!()
+    };
+    assert_eq!(confidence, 0, "no metadata tail was sent");
+
+    assert!(
+        store
+            .get_answer(&AnswerKey::new(q, MODEL))
+            .await
+            .unwrap()
+            .is_some(),
+        "grounded answers cache regardless of verbalized confidence"
+    );
+
+    let second = drain(loop_.stream_answer(&req(q, Uuid::now_v7()))).await;
+    assert!(matches!(
+        second.last(),
+        Some(AnswerFrame::Done { cached: true, .. })
+    ));
+    let calls = server.received_requests().await.expect("request log");
+    assert_eq!(calls.len(), 2, "the cache hit made no provider call");
 }
 
 /// W5-03: a `search_archive` tool call runs the archive fusion — the
