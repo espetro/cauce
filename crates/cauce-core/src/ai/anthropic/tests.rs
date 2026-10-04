@@ -40,6 +40,7 @@ fn client_for(server: &MockServer, model: &str) -> AnthropicClient {
         model: model.to_string(),
         enabled: true,
         protocol: crate::config::AiProtocol::Anthropic,
+        ..Default::default()
     })
     .unwrap()
 }
@@ -480,6 +481,7 @@ async fn empty_model_and_messages_rejected() {
         model: String::new(),
         enabled: true,
         protocol: crate::config::AiProtocol::Anthropic,
+        ..Default::default()
     })
     .unwrap();
     assert!(matches!(

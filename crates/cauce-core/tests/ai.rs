@@ -44,6 +44,7 @@ async fn provider_call_writes_audit_row() {
         model: model.to_string(),
         enabled: true,
         protocol: AiProtocol::OpenAi,
+        ..Default::default()
     })
     .unwrap()
     .with_audit(store.clone() as Arc<dyn cauce_core::Store>);
@@ -109,6 +110,7 @@ async fn failed_provider_call_still_writes_audit_row() {
         model: "test-openai-audit-429".to_string(),
         enabled: true,
         protocol: AiProtocol::OpenAi,
+        ..Default::default()
     })
     .unwrap()
     .with_audit(store.clone() as Arc<dyn cauce_core::Store>);
@@ -163,6 +165,7 @@ async fn anthropic_provider_call_writes_audit_row() {
         model: model.to_string(),
         enabled: true,
         protocol: AiProtocol::Anthropic,
+        ..Default::default()
     })
     .unwrap()
     .with_audit(store.clone() as Arc<dyn cauce_core::Store>);

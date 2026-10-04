@@ -153,6 +153,7 @@ fn answer_loop_with(server: &MockServer, store: Arc<StubStore>, engine: FixedEng
             model: MODEL.to_string(),
             enabled: true,
             protocol: cauce_core::AiProtocol::OpenAi,
+            ..Default::default()
         })
         .expect("client builds"),
     );

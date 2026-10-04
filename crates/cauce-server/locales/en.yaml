@@ -208,6 +208,9 @@ settings:
   ai_api_key_placeholder: ${env:CAUCE_AI_API_KEY}
   ai_model: Model
   ai_model_placeholder: model name
+  ai_max_turns: Max turns
+  ai_max_searches: Max searches
+  ai_provider_budget: Provider budget (s)
   models_unreachable: model list unreachable; type a model name
   applies_after_restart: (applies after restart)
   restart_needed: restart needed
