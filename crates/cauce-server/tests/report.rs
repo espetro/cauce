@@ -73,6 +73,12 @@ fn log_row(q: &str, result_count: u32) -> SearchLogRow {
     }
 }
 
+/// The dated log-file name the fixture uses — today's date so the file
+/// lands inside any `days` window regardless of when the test runs.
+fn today_log_name() -> String {
+    format!("cauce-{}.jsonl", Utc::now().format("%Y-%m-%d"))
+}
+
 /// Warn/error fixture records written as `<data_dir>/logs/…jsonl`.
 fn write_logs(cfg_tmp: &tempfile::TempDir) {
     let logs = cfg_tmp.path().join("data/logs");
@@ -101,7 +107,7 @@ fn write_logs(cfg_tmp: &tempfile::TempDir) {
         .collect::<Vec<_>>()
         .join("\n")
         + "\n";
-    std::fs::write(logs.join("cauce-2026-09-28.jsonl"), body).unwrap();
+    std::fs::write(logs.join(today_log_name()), body).unwrap();
 }
 
 const TOML: &str = r#"
@@ -216,7 +222,7 @@ async fn collect_builds_safe_v1_bundle() {
     assert_eq!(bundle.sections["storage"]["retention_days"], json!(7));
     assert_eq!(
         bundle.sections["storage"]["logs_files"],
-        json!(["cauce-2026-09-28.jsonl"])
+        json!([today_log_name()])
     );
     assert!(bundle.sections["eval_latest"].is_null());
 
@@ -337,7 +343,7 @@ async fn api_report_days_bounds_the_window() {
         .iter()
         .filter_map(Value::as_str)
         .collect();
-    assert_eq!(files, ["cauce-2026-09-28.jsonl"]);
+    assert_eq!(files, vec![today_log_name().as_str()]);
     let tail = body.to_string();
     assert!(!tail.contains("ancient failure"));
     assert!(tail.contains("engine failed"));
