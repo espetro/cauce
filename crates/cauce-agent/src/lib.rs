@@ -51,13 +51,12 @@
 //! repeats until the model answers plainly or a bound trips — the
 //! ReAct shape (reason → act → observe → repeat). The loop itself
 //! only orchestrates and enforces safety bounds: [`LoopConfig`]'s
-//! per-turn provider budget and iteration cap, plus termination on a
-//! tool-free completion. The loop guards from the #231 follow-up
-//! (split budgets, tool-result dedup, forced-synthesize) land inside
-//! this same iteration — the architecture does not preclude deeper
-//! autonomy. `run_assist` is deliberately single-turn: the SERP
-//! grounding set is fixed inline, so there are no tools to reason
-//! over.
+//! per-turn provider budget, the #231 guards (split turn/search
+//! budgets, per-tool query dedup, a forced-synthesize turn on
+//! exhaustion), and termination on a tool-free completion. The
+//! architecture does not preclude deeper autonomy. `run_assist` is
+//! deliberately single-turn: the SERP grounding set is fixed inline,
+//! so there are no tools to reason over.
 //!
 //! This Source Code Form is subject to the terms of the Mozilla Public
 //! License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -70,7 +69,8 @@ mod tools;
 
 pub use answer::AnswerLoop;
 pub use config::{
-    DEFAULT_ANSWERS_TTL, DEFAULT_MAX_ITERATIONS, DEFAULT_PROVIDER_BUDGET, LoopConfig,
+    DEFAULT_ANSWERS_TTL, DEFAULT_MAX_SEARCH_EXECUTIONS, DEFAULT_MAX_TURNS, DEFAULT_PROVIDER_BUDGET,
+    LoopConfig,
 };
 pub use observer::{AgentObserver, LoopEvent, NoopObserver, RunContext, RunKind, TracingObserver};
 pub use tools::{SearchArchive, SearchWeb, ToolCtx, ToolExecutor, ToolOutput};

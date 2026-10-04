@@ -170,6 +170,48 @@ process — you cannot give tier-1 and tier-2 different latencies from env. Mult
   enters `history` and the follow-up bar stays usable; only `error` frames exclude
   the turn.
 
+### Live `/answer` runs — engine choice and 0-source traps (#231 era)
+
+- **The `wikipedia` declarative engine is a weak corpus for answer-loop e2e.** Its
+  OpenSearch spec (`$[1]` positional array) only resolves short entity-title
+  phrasings; the SYSTEM_PROMPT's fan-out discipline makes models emit long
+  sub-question queries ("Eiffel Tower construction date and height") that return
+  `0 results` — AND each empty response counts as a parse-error engine failure
+  (`parse error: 0 results, selector "$[1]" matched nothing`), so ONE empty
+  result opens the wikipedia breaker and every later search is breaker-skipped
+  (2ms `pipeline.search` spans, no `engine` child span). Net effect: a correct
+  full loop that still lands `0 sources` / `ungrounded` — fine for proving
+  terminal-path behavior, useless for source-card/`[n]`-cite evidence.
+- **For grounded evidence (numbered `.source-card`s + `[n]` cites), seed replay
+  cassettes for the observed step-chip phrasings** — do a first live run, harvest
+  the `Searching:` labels, then write
+  `<fixtures>/replay/<sha8(" ".join(q.split()).lower())>.json` covering those
+  phrasings (any uncovered phrasing still gets replay's synthetic fallback, which
+  also produces sources). Restart serve with
+  `CAUCE_ENGINES=wikipedia,replay CAUCE_REPLAY_FIXTURES_DIR=<dir>
+  CAUCE_REPLAY_CASSETTE_ENGINE=replay`. A grounded done (≥1 source + confidence
+  ≥4) then caches — reloading the same `?q=` replays `done{cached:true}` in ~1ms
+  with no provider call (deterministic chip-state proof).
+- **Enabling wikipedia takes a config entry**: the spec ships `enabled:false`, so
+  `[[engines]] id="wikipedia" kind="declarative"` in `$CAUCE_CONFIG_DIR/config.toml`
+  plus `CAUCE_ENGINES=wikipedia` (pin) — tier 3 "specialised" runs in the t=0
+  wave, not the hedge set. Breaker state is resettable via
+  `POST /api/engines/wikipedia/reset` (→ `half_open`).
+- **Loop-guard evidence lives in `cauce_agent::observer` events**, not spans:
+  `{"message":"tool call short-circuited","reason":"duplicate query"|"search
+  budget exhausted","tool":"search_web"}` — the UI still emits a `Searching:` step
+  chip for a short-circuited call, so chip count ≥ `pipeline.search` span count is
+  the tell. Count provider calls by `ai_http` span opens; searches actually
+  dispatched by `pipeline.search` span closes.
+- **Log filename varies per instance**: one serve wrote
+  `cauce-2026-09-29.jsonl`, a second wrote `cauce.2026-09-29.jsonl` (dash vs dot)
+  in the same `$CAUCE_DATA_DIR/logs/` — glob both patterns when mining.
+- **Model-side caveat**: `openai/gpt-4o-mini` reported `confidence 9/10` while
+  citing zero sources (ungrounded) on thin corpora — the self-reported number is
+  not a grounding signal; check `0 sources` + the ungrounded badge instead.
+  Multi-part fan-out arrives as 1–2 calls per turn more often than one big
+  parallel batch; both are valid (parallel calls share a turn's dispatch).
+
 ## Archive / click-beacon e2e (`/api/pages`, W5-01+)
 
 - `archive.index_on_click` defaults true; `CAUCE_ARCHIVE_INDEX_ON_CLICK=false` removes the
