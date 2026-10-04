@@ -105,6 +105,7 @@
   </label>
   {% if !retention.env.is_empty() %}<p class="hint">{{ crate::i18n::tr("settings.set_by") }} {{ retention.env }}</p>{% endif %}
   <p class="field-error" id="fe-logs-dretention_days"></p>
+  <p class="hint"><a href="/api/report">{{ crate::i18n::tr("settings.report_link") }}</a> — {{ crate::i18n::tr("settings.report_hint") }}</p>
 </fieldset>
 
 {{ cache_block|safe }}

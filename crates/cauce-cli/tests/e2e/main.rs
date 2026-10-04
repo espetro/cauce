@@ -8,5 +8,6 @@ mod headless;
 mod health;
 mod help;
 mod mcp_stdio;
+mod report;
 mod search;
 mod smoke;

@@ -44,6 +44,7 @@ mod engines;
 mod history;
 #[cfg(feature = "archive")]
 mod pages;
+mod report;
 mod search;
 mod suggest;
 
@@ -62,6 +63,7 @@ pub(crate) use history::{HISTORY_LIMIT, audit_list_data, history_inner};
 pub use history::{audit_list, click, health, history, history_delete, metrics, stats};
 #[cfg(feature = "archive")]
 pub use pages::{pages_delete, pages_get, pages_index};
+pub use report::report;
 pub(crate) use search::{parse_search_request, search_error, search_inner, search_inner_classed};
 pub use search::{search, search_stream};
 pub use suggest::suggest;
