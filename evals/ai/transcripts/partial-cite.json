@@ -1,0 +1,45 @@
+{
+ "model": "openai/gpt-4o-mini",
+ "provider": "https://api.openai.com/v1",
+ "recorded_at": "2026-10-05T00:00:00Z",
+ "turns": [
+  {
+   "deltas": [],
+   "completion": {
+    "id": "chatcmpl-partial-1",
+    "model": "openai/gpt-4o-mini",
+    "content": "",
+    "tool_calls": [
+     {
+      "id": "call_partial_1",
+      "name": "search_web",
+      "arguments": "{\"query\": \"cauce metasearch engine github\"}"
+     }
+    ],
+    "finish_reason": "tool_calls",
+    "usage": {
+     "prompt_tokens": 490,
+     "completion_tokens": 24,
+     "total_tokens": 514
+    }
+   }
+  },
+  {
+   "deltas": [
+    "Cauce is a **metasearch** engine written in **Rust** [1]. It ships an MCP server, a Python SDK, and a self-updating engine registry.\n",
+    "{\"confidence\": 9, \"related_questions\": [\"How do I self-host cauce?\"]}"
+   ],
+   "completion": {
+    "id": "chatcmpl-partial-final",
+    "model": "openai/gpt-4o-mini",
+    "content": "Cauce is a **metasearch** engine written in **Rust** [1]. It ships an MCP server, a Python SDK, and a self-updating engine registry.\n{\"confidence\": 9, \"related_questions\": [\"How do I self-host cauce?\"]}",
+    "finish_reason": "stop",
+    "usage": {
+     "prompt_tokens": 700,
+     "completion_tokens": 55,
+     "total_tokens": 755
+    }
+   }
+  }
+ ]
+}

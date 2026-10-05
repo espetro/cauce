@@ -1,0 +1,192 @@
+{
+ "model": "openai/gpt-4o-mini",
+ "provider": "https://api.openai.com/v1",
+ "recorded_at": "2026-10-05T00:00:00Z",
+ "turns": [
+  {
+   "deltas": [],
+   "completion": {
+    "id": "chatcmpl-exhaust-1",
+    "model": "openai/gpt-4o-mini",
+    "content": "",
+    "tool_calls": [
+     {
+      "id": "call_exhaust_1",
+      "name": "search_web",
+      "arguments": "{\"query\": \"current weather in Tokyo right now\"}"
+     }
+    ],
+    "finish_reason": "tool_calls",
+    "usage": {
+     "prompt_tokens": 480,
+     "completion_tokens": 24,
+     "total_tokens": 504
+    }
+   }
+  },
+  {
+   "deltas": [],
+   "completion": {
+    "id": "chatcmpl-exhaust-2",
+    "model": "openai/gpt-4o-mini",
+    "content": "",
+    "tool_calls": [
+     {
+      "id": "call_exhaust_2",
+      "name": "search_web",
+      "arguments": "{\"query\": \"tokyo hourly weather forecast\"}"
+     }
+    ],
+    "finish_reason": "tool_calls",
+    "usage": {
+     "prompt_tokens": 620,
+     "completion_tokens": 22,
+     "total_tokens": 642
+    }
+   }
+  },
+  {
+   "deltas": [],
+   "completion": {
+    "id": "chatcmpl-exhaust-3",
+    "model": "openai/gpt-4o-mini",
+    "content": "",
+    "tool_calls": [
+     {
+      "id": "call_exhaust_3",
+      "name": "search_web",
+      "arguments": "{\"query\": \"cauce metasearch engine github\"}"
+     }
+    ],
+    "finish_reason": "tool_calls",
+    "usage": {
+     "prompt_tokens": 780,
+     "completion_tokens": 20,
+     "total_tokens": 800
+    }
+   }
+  },
+  {
+   "deltas": [],
+   "completion": {
+    "id": "chatcmpl-exhaust-4",
+    "model": "openai/gpt-4o-mini",
+    "content": "",
+    "tool_calls": [
+     {
+      "id": "call_exhaust_4",
+      "name": "search_web",
+      "arguments": "{\"query\": \"rust vs go error handling\"}"
+     }
+    ],
+    "finish_reason": "tool_calls",
+    "usage": {
+     "prompt_tokens": 940,
+     "completion_tokens": 19,
+     "total_tokens": 959
+    }
+   }
+  },
+  {
+   "deltas": [],
+   "completion": {
+    "id": "chatcmpl-exhaust-5",
+    "model": "openai/gpt-4o-mini",
+    "content": "",
+    "tool_calls": [
+     {
+      "id": "call_exhaust_5",
+      "name": "search_web",
+      "arguments": "{\"query\": \"obscure fact nobody knows\"}"
+     }
+    ],
+    "finish_reason": "tool_calls",
+    "usage": {
+     "prompt_tokens": 1100,
+     "completion_tokens": 21,
+     "total_tokens": 1121
+    }
+   }
+  },
+  {
+   "deltas": [],
+   "completion": {
+    "id": "chatcmpl-exhaust-6",
+    "model": "openai/gpt-4o-mini",
+    "content": "",
+    "tool_calls": [
+     {
+      "id": "call_exhaust_6",
+      "name": "search_web",
+      "arguments": "{\"query\": \"current weather in Tokyo right now\"}"
+     }
+    ],
+    "finish_reason": "tool_calls",
+    "usage": {
+     "prompt_tokens": 1260,
+     "completion_tokens": 20,
+     "total_tokens": 1280
+    }
+   }
+  },
+  {
+   "deltas": [],
+   "completion": {
+    "id": "chatcmpl-exhaust-7",
+    "model": "openai/gpt-4o-mini",
+    "content": "",
+    "tool_calls": [
+     {
+      "id": "call_exhaust_7",
+      "name": "search_web",
+      "arguments": "{\"query\": \"latest tokyo weather radar imagery\"}"
+     }
+    ],
+    "finish_reason": "tool_calls",
+    "usage": {
+     "prompt_tokens": 1420,
+     "completion_tokens": 18,
+     "total_tokens": 1438
+    }
+   }
+  },
+  {
+   "deltas": [],
+   "completion": {
+    "id": "chatcmpl-exhaust-8",
+    "model": "openai/gpt-4o-mini",
+    "content": "",
+    "tool_calls": [
+     {
+      "id": "call_exhaust_8",
+      "name": "search_web",
+      "arguments": "{\"query\": \"tokyo pollen forecast\"}"
+     }
+    ],
+    "finish_reason": "tool_calls",
+    "usage": {
+     "prompt_tokens": 1580,
+     "completion_tokens": 18,
+     "total_tokens": 1598
+    }
+   }
+  },
+  {
+   "deltas": [
+    "Tokyo is at **22°C** with clear skies right now, and the hourly forecast stays clear through the evening [1][2].\n",
+    "{\"confidence\": 6, \"related_questions\": [\"Will it rain in Tokyo this weekend?\"]}"
+   ],
+   "completion": {
+    "id": "chatcmpl-exhaust-forced",
+    "model": "openai/gpt-4o-mini",
+    "content": "Tokyo is at **22°C** with clear skies right now, and the hourly forecast stays clear through the evening [1][2].\n{\"confidence\": 6, \"related_questions\": [\"Will it rain in Tokyo this weekend?\"]}",
+    "finish_reason": "stop",
+    "usage": {
+     "prompt_tokens": 1900,
+     "completion_tokens": 58,
+     "total_tokens": 1958
+    }
+   }
+  }
+ ]
+}

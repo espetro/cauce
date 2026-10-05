@@ -213,6 +213,16 @@ impl Thresholds {
                     ));
                 }
             }
+            // The confidence gate is a 1..=10 scale — a 0 or >10 value
+            // would misread the calibration rows.
+            if let Some(c) = ai.cache_min_confidence
+                && !(1..=10).contains(&c)
+            {
+                return Err(EvalError::Thresholds(
+                    path.to_path_buf(),
+                    format!("ai.cache_min_confidence = {c}: confidence must be within 1..=10"),
+                ));
+            }
         }
         Ok(t)
     }

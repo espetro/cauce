@@ -1,0 +1,21 @@
+{
+ "query": "latest tokyo weather radar imagery",
+ "engine": "replay",
+ "recorded_at": "2026-10-05T00:00:00Z",
+ "results": [
+  {
+   "url": "https://www.jma.go.jp/bosai/radar/",
+   "title": "JMA weather radar — Tokyo",
+   "snippet": "Live radar imagery over the Kanto region, updated every 5 minutes",
+   "engine": "replay",
+   "score": 1.0
+  },
+  {
+   "url": "https://weather.yahoo.co.jp/weather/zoomradar/",
+   "title": "Yahoo weather radar",
+   "snippet": "Zoomable precipitation radar for Japan",
+   "engine": "replay",
+   "score": 0.5
+  }
+ ]
+}
