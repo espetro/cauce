@@ -32,6 +32,24 @@
 //! run — is a reported metric; whether it gates is `ungrounded_max`'s
 //! call in `evals/thresholds.toml`.
 //!
+//! #234 calibration: every scored case also carries the
+//! (verbalized confidence, deterministic [`groundedness`], score)
+//! triple — the model's self-rating beside the actual cache gate — and
+//! the report's [`Calibration`] block measures how well a
+//! `confidence >= t` rule would have reproduced the gate, per
+//! threshold `t`. `cache_min_confidence` in `evals/thresholds.toml` is
+//! the data-derived successor of v2's hardcoded `CACHE_MIN_CONFIDENCE
+//! = 4` (informational today: the deterministic gate, not the number,
+//! decides what caches). A case may assert the gate's observable
+//! effect with `expect_cache_write` — the runner then probes the
+//! `answers` table post-run and folds a fourth `cache_rate` into the
+//! score.
+//!
+//! ```json
+//! {"query": "...", "transcript": "partial-cite",
+//!  "expect_cache_write": false, "tags": ["edge", "cache_gating"]}
+//! ```
+//!
 //! This Source Code Form is subject to the terms of the Mozilla Public
 //! License, v. 2.0. If a copy of the MPL was not distributed with this
 //! file, You can obtain one at <https://mozilla.org/MPL/2.0/>.
@@ -45,6 +63,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
 
+use crate::ai::grounded::groundedness;
 use crate::ai::{
     AiCallCtx, AiError, AiStreamEvent, ChatCompletion, ChatProvider, ChatRequest, Usage,
 };
@@ -75,6 +94,14 @@ pub struct AiEvalCase {
     /// Selector tags; `cauce eval ai --tag smoke` runs the CI fast gate.
     #[serde(default)]
     pub tags: Vec<String>,
+    /// #234: when set, the runner probes the `answers` store after the
+    /// run and scores whether the groundedness gate cached the answer
+    /// the way the case asserts — `true` for a grounded answer that
+    /// must land in `answers`, `false` for an ungrounded or uncited one
+    /// that must not. Absent = the cache write is not checked and no
+    /// `cache_rate` enters the score.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expect_cache_write: Option<bool>,
 }
 
 /// Parse every case in a JSONL file, mirroring
@@ -556,6 +583,25 @@ pub struct AiCaseOutcome {
     pub leaked_strings: Vec<String>,
     /// `done.ungrounded` — the answer drew on no sources.
     pub ungrounded: bool,
+    /// #234 calibration triple: `done.confidence`, the model's
+    /// self-rating (display-only — it never gates). Absent when the
+    /// run ended without a `done` frame.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub verbalized_conf: Option<u8>,
+    /// #234 calibration triple: [`groundedness`] over
+    /// (`done.answer`, `sources`) — the predicate the `answers` cache
+    /// gate actually applies.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub grounded: Option<bool>,
+    /// Observed `answers`-row write, probed post-run — present only
+    /// when the case asserts `expect_cache_write`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_write: Option<bool>,
+    /// 1.0 when the observed write matched `expect_cache_write`, 0.0
+    /// on mismatch — a fourth score component only when the case
+    /// asserts the gate.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_rate: Option<f64>,
     /// Why the case could not score (missing transcript, no done frame,
     /// cassette misses — never a silent 0).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -580,6 +626,10 @@ impl AiCaseOutcome {
             missing_strings: case.must_contain.clone(),
             leaked_strings: vec![],
             ungrounded: true,
+            verbalized_conf: None,
+            grounded: None,
+            cache_write: None,
+            cache_rate: None,
             note: Some(note.into()),
             protocol: default_protocol(),
         }
@@ -605,7 +655,19 @@ fn rate(hits: usize, expected: usize) -> f64 {
 /// answer text. No `done` (provider error, iterations exhausted, missing
 /// transcript upstream) is a 0-scored outcome with the terminal error as
 /// the note — like `eval engines`' missing-cassette miss, never silent.
-pub fn score_frames(case: &AiEvalCase, frames: &[crate::ai::AnswerFrame]) -> AiCaseOutcome {
+///
+/// #234: every `done`-reaching outcome carries the calibration triple
+/// — `verbalized_conf` (`done.confidence`), `grounded` (the
+/// [`groundedness`] cache-gate predicate over the answer + sources),
+/// `score`. `observed_cache_write` is the runner's post-run `answers`
+/// probe; when the case asserts `expect_cache_write` the observed
+/// value must match, folding `cache_rate` into the score as a fourth
+/// component (the mean stays three-way for cases that do not assert).
+pub fn score_frames(
+    case: &AiEvalCase,
+    frames: &[crate::ai::AnswerFrame],
+    observed_cache_write: Option<bool>,
+) -> AiCaseOutcome {
     use crate::ai::AnswerFrame;
 
     let sources: Vec<AnswerSource> = frames
@@ -624,7 +686,10 @@ pub fn score_frames(case: &AiEvalCase, frames: &[crate::ai::AnswerFrame]) -> AiC
         .iter()
         .find(|f| matches!(f, AnswerFrame::Done { .. }));
     let Some(AnswerFrame::Done {
-        answer, ungrounded, ..
+        answer,
+        ungrounded,
+        confidence,
+        ..
     }) = done
     else {
         let message = frames.iter().find_map(|f| match f {
@@ -668,12 +733,35 @@ pub fn score_frames(case: &AiEvalCase, frames: &[crate::ai::AnswerFrame]) -> AiC
         case.must_not_contain.len() - leaked_strings.len(),
         case.must_not_contain.len(),
     );
-    let score = (cited_recall + contain_rate + clean_rate) / 3.0;
+    // #234: the cache-gating assertion is a fourth score component
+    // when the case carries one — a `Some(expect)` with no probe
+    // (or a store error observed as `None`) cannot have matched.
+    let (cache_rate, note) = match case.expect_cache_write {
+        Some(expect) => {
+            let hit = observed_cache_write == Some(expect);
+            let note = (!hit).then(|| {
+                format!(
+                    "answers cache write expected {expect}, observed {}",
+                    observed_cache_write
+                        .map(|w| w.to_string())
+                        .unwrap_or_else(|| "unknown".to_string())
+                )
+            });
+            (Some(f64::from(u8::from(hit))), note)
+        }
+        None => (None, None),
+    };
+    let rates = [cited_recall, contain_rate, clean_rate]
+        .into_iter()
+        .chain(cache_rate)
+        .collect::<Vec<_>>();
+    let score = rates.iter().sum::<f64>() / rates.len() as f64;
+    let ok = rates.iter().all(|r| *r == 1.0);
     AiCaseOutcome {
         query: case.query.clone(),
         transcript: case.transcript.clone(),
         score,
-        ok: cited_recall == 1.0 && contain_rate == 1.0 && clean_rate == 1.0,
+        ok,
         cited_recall,
         contain_rate,
         clean_rate,
@@ -682,7 +770,13 @@ pub fn score_frames(case: &AiEvalCase, frames: &[crate::ai::AnswerFrame]) -> AiC
         missing_strings,
         leaked_strings,
         ungrounded: *ungrounded,
-        note: None,
+        verbalized_conf: Some(*confidence),
+        grounded: Some(groundedness(answer, &sources)),
+        cache_write: case
+            .expect_cache_write
+            .map(|_| observed_cache_write.unwrap_or(false)),
+        cache_rate,
+        note,
         protocol: default_protocol(),
     }
 }
@@ -702,6 +796,14 @@ pub struct AiThresholds {
     /// Ceiling on the ungrounded-case rate; absent = report only.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ungrounded_max: Option<f64>,
+    /// #234: the data-derived verbalized-confidence floor a
+    /// CACHE_MIN-style gate would apply — the value [`Calibration`]
+    /// reports agreement against. Informational, never gating: the
+    /// deterministic [`groundedness`] predicate decides cache writes;
+    /// this number exists so the corpus picks the cutoff a future
+    /// verifier (`[ai].verify`) would read, instead of v2's hardcoded 4.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_min_confidence: Option<u8>,
 }
 
 /// The CI smoke rule: `score >= baseline - tolerance` and, when
@@ -737,6 +839,8 @@ pub struct AiEvalReport {
     /// Per-case detail, in case-file order (deterministic — not
     /// completion order).
     pub outcomes: Vec<AiCaseOutcome>,
+    /// #234 verbalized-vs-grounded agreement across the scored corpus.
+    pub calibration: Calibration,
 }
 
 impl AiEvalReport {
@@ -756,6 +860,7 @@ impl AiEvalReport {
             .map(|o| o.query.clone())
             .collect();
         let ungrounded_rate = rate(ungrounded_cases.len(), cases as usize);
+        let calibration = Calibration::compute(&outcomes, thresholds.cache_min_confidence);
         Self {
             kind: "ai".to_string(),
             date: now.format("%Y-%m-%d").to_string(),
@@ -768,6 +873,117 @@ impl AiEvalReport {
             gate_ok: gate_ok(score, ungrounded_rate, thresholds),
             tags,
             outcomes,
+            calibration,
+        }
+    }
+}
+
+/// #234: verbalized-confidence calibration across the run — how often a
+/// `confidence >= t` self-rating gate would have reproduced the
+/// deterministic [`groundedness`] decision, per threshold. This is the
+/// data a CACHE_MIN/verifier cutoff is derived from.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Calibration {
+    /// Outcomes that reached `done` (both signals present).
+    pub scored: u32,
+    /// Mean `done.confidence` among grounded outcomes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mean_confidence_grounded: Option<f64>,
+    /// Mean `done.confidence` among ungrounded outcomes — the gap to
+    /// `mean_confidence_grounded` is the self-rating's discriminative
+    /// power (zero means the number carries no gate signal at all).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mean_confidence_ungrounded: Option<f64>,
+    /// Agreement of `confidence >= t` with `grounded`, one row per
+    /// `t` in 1..=10.
+    pub thresholds: Vec<CalibrationRow>,
+    /// The least restrictive `t` maximizing agreement — the
+    /// data-derived `cache_min_confidence` the corpus suggests.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub suggested_cache_min_confidence: Option<u8>,
+    /// `[ai].cache_min_confidence` as configured, when set.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub configured_cache_min_confidence: Option<u8>,
+    /// Agreement rate at the configured threshold.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agreement_at_configured: Option<f64>,
+}
+
+/// One `confidence >= t` row of [`Calibration`].
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct CalibrationRow {
+    pub min_confidence: u8,
+    /// Fraction of scored outcomes where `conf >= t` equals `grounded`.
+    pub agreement: f64,
+    /// Grounded answers a `conf >= t` gate would wrongly refuse
+    /// (false negatives).
+    pub grounded_below: u32,
+    /// Ungrounded answers it would wrongly admit (false positives).
+    pub ungrounded_at_or_above: u32,
+}
+
+impl Calibration {
+    /// Build the calibration block from the scored outcomes — those
+    /// carrying both `verbalized_conf` and `grounded`.
+    pub fn compute(outcomes: &[AiCaseOutcome], configured: Option<u8>) -> Self {
+        let scored: Vec<(u8, bool)> = outcomes
+            .iter()
+            .filter_map(|o| o.verbalized_conf.zip(o.grounded))
+            .collect();
+        let n = scored.len();
+        let mean = |want: bool| -> Option<f64> {
+            let group: Vec<u8> = scored
+                .iter()
+                .filter(|(_, g)| *g == want)
+                .map(|(c, _)| *c)
+                .collect();
+            (!group.is_empty())
+                .then(|| group.iter().map(|c| *c as f64).sum::<f64>() / group.len() as f64)
+        };
+        let mut thresholds: Vec<CalibrationRow> = (1..=10u8)
+            .map(|t| {
+                let grounded_below = scored.iter().filter(|(c, g)| *g && *c < t).count() as u32;
+                let ungrounded_at_or_above =
+                    scored.iter().filter(|(c, g)| !*g && *c >= t).count() as u32;
+                let agree = scored.iter().filter(|(c, g)| (*c >= t) == *g).count();
+                CalibrationRow {
+                    min_confidence: t,
+                    agreement: rate(agree, n),
+                    grounded_below,
+                    ungrounded_at_or_above,
+                }
+            })
+            .collect();
+        // Most permissive first among equal agreement: a CACHE_MIN
+        // gate that wrongly refuses a grounded answer costs a re-run,
+        // so ties break toward the lower cutoff.
+        let suggested = (n > 0).then(|| {
+            thresholds
+                .iter()
+                .max_by(|a, b| {
+                    a.agreement
+                        .partial_cmp(&b.agreement)
+                        .expect("agreement is finite")
+                        // smaller min_confidence wins ties
+                        .then(b.min_confidence.cmp(&a.min_confidence))
+                })
+                .map(|r| r.min_confidence)
+                .expect("threshold grid is non-empty")
+        });
+        let agreement_at_configured = configured.and_then(|t| {
+            (n > 0)
+                .then(|| thresholds.iter().find(|r| r.min_confidence == t))
+                .flatten()
+                .map(|r| r.agreement)
+        });
+        Self {
+            scored: n as u32,
+            mean_confidence_grounded: mean(true),
+            mean_confidence_ungrounded: mean(false),
+            thresholds: std::mem::take(&mut thresholds),
+            suggested_cache_min_confidence: suggested,
+            configured_cache_min_confidence: configured,
+            agreement_at_configured,
         }
     }
 }
@@ -795,6 +1011,7 @@ mod tests {
             must_contain: vec!["22".to_string()],
             must_not_contain: vec!["related_questions".to_string()],
             tags: vec!["smoke".to_string()],
+            expect_cache_write: None,
         }
     }
 
@@ -831,10 +1048,14 @@ mod tests {
             sources(&["jma.go.jp", "timeanddate.com"]),
             done("Tokyo is **22°C** [1]", false),
         ];
-        let o = score_frames(&case(), &frames);
+        let o = score_frames(&case(), &frames, None);
         assert_eq!(o.score, 1.0);
         assert!(o.ok);
         assert!(!o.ungrounded);
+        // #234: the calibration triple rides every scored outcome.
+        assert_eq!(o.verbalized_conf, Some(8));
+        assert_eq!(o.grounded, Some(true));
+        assert_eq!(o.cache_write, None);
     }
 
     #[test]
@@ -848,10 +1069,14 @@ mod tests {
                 false,
             ),
         ];
-        let o = score_frames(&case(), &frames);
+        let o = score_frames(&case(), &frames, None);
         assert_eq!(o.leaked_strings, vec!["related_questions".to_string()]);
         assert!((o.score - 2.0 / 3.0).abs() < 1e-9);
         assert!(!o.ok);
+        // The leaked tail is not cited — deterministic groundedness
+        // reads false even though done.ungrounded is false (sources
+        // did exist).
+        assert_eq!(o.grounded, Some(false));
     }
 
     #[test]
@@ -860,9 +1085,11 @@ mod tests {
             message: "provider rate limited".to_string(),
             retry_after_s: Some(3),
         }];
-        let o = score_frames(&case(), &frames);
+        let o = score_frames(&case(), &frames, None);
         assert_eq!(o.score, 0.0);
         assert_eq!(o.note.as_deref(), Some("provider rate limited"));
+        assert_eq!(o.verbalized_conf, None);
+        assert_eq!(o.grounded, None);
     }
 
     #[test]
@@ -870,9 +1097,45 @@ mod tests {
         let mut c = case();
         c.must_cite_domains.push("example.org".to_string());
         let frames = vec![sources(&["jma.go.jp"]), done("22", false)];
-        let o = score_frames(&c, &frames);
+        let o = score_frames(&c, &frames, None);
         assert_eq!(o.cited_recall, 0.5);
         assert_eq!(o.missing_domains, vec!["example.org".to_string()]);
+    }
+
+    #[test]
+    fn score_frames_cache_assertion_folds_fourth_rate() {
+        // expect_cache_write scores the observed `answers` probe as a
+        // fourth rate: a matching write keeps 1.0, a miss drops the
+        // case to 3/4 and notes the mismatch.
+        let mut c = case();
+        c.expect_cache_write = Some(true);
+        let frames = vec![sources(&["jma.go.jp"]), done("Tokyo is 22 [1]", false)];
+
+        let hit = score_frames(&c, &frames, Some(true));
+        assert_eq!(hit.cache_rate, Some(1.0));
+        assert_eq!(hit.cache_write, Some(true));
+        assert_eq!(hit.score, 1.0);
+        assert!(hit.ok);
+
+        let miss = score_frames(&c, &frames, Some(false));
+        assert_eq!(miss.cache_rate, Some(0.0));
+        assert!((miss.score - 0.75).abs() < 1e-9);
+        assert!(!miss.ok);
+        assert!(
+            miss.note
+                .as_deref()
+                .unwrap()
+                .contains("cache write expected true, observed false")
+        );
+    }
+
+    #[test]
+    fn score_frames_unasserted_cache_write_keeps_three_way_mean() {
+        let frames = vec![sources(&["jma.go.jp"]), done("Tokyo is 22 [1]", false)];
+        let o = score_frames(&case(), &frames, Some(true));
+        assert_eq!(o.cache_rate, None);
+        assert_eq!(o.cache_write, None);
+        assert_eq!(o.score, 1.0);
     }
 
     #[test]
@@ -954,6 +1217,7 @@ mod tests {
             baseline: 1.0,
             tolerance: 0.2,
             ungrounded_max: Some(0.5),
+            cache_min_confidence: None,
         };
         assert!(gate_ok(1.0, 0.0, &t));
         assert!(gate_ok(0.8, 0.4, &t));
@@ -968,6 +1232,76 @@ mod tests {
         let out = tagged(vec![case(), other], &["smoke".to_string()]);
         assert_eq!(out.len(), 1);
         assert_eq!(tagged(vec![case()], &[]).len(), 1);
+    }
+
+    /// A `done`-reaching outcome with the given confidence/grounded
+    /// pair, for calibration math.
+    fn conf_outcome(confidence: u8, grounded: bool) -> AiCaseOutcome {
+        AiCaseOutcome {
+            query: "q".to_string(),
+            transcript: "t".to_string(),
+            protocol: "openai".to_string(),
+            score: 1.0,
+            ok: true,
+            cited_recall: 1.0,
+            contain_rate: 1.0,
+            clean_rate: 1.0,
+            cited_hosts: vec![],
+            missing_domains: vec![],
+            missing_strings: vec![],
+            leaked_strings: vec![],
+            ungrounded: !grounded,
+            verbalized_conf: Some(confidence),
+            grounded: Some(grounded),
+            cache_write: None,
+            cache_rate: None,
+            note: None,
+        }
+    }
+
+    #[test]
+    fn calibration_finds_the_agreement_threshold() {
+        // grounded{8,9,2} + ungrounded{7,1,0}: the conf-2 grounded and
+        // conf-7 ungrounded answers invert the ordering — the best a
+        // verbalized gate does is 4/6, and ties break to the least
+        // restrictive cutoff, 2. A hardcoded CACHE_MIN=4 also sits at
+        // 4/6: it refuses the grounded conf-2 and admits the
+        // ungrounded conf-7.
+        let outcomes = vec![
+            conf_outcome(8, true),
+            conf_outcome(9, true),
+            conf_outcome(2, true),
+            conf_outcome(7, false),
+            conf_outcome(1, false),
+            conf_outcome(0, false),
+        ];
+        let cal = Calibration::compute(&outcomes, Some(4));
+        assert_eq!(cal.scored, 6);
+        assert_eq!(cal.suggested_cache_min_confidence, Some(2));
+        let at4 = cal
+            .thresholds
+            .iter()
+            .find(|r| r.min_confidence == 4)
+            .unwrap();
+        assert!((at4.agreement - 4.0 / 6.0).abs() < 1e-9);
+        assert_eq!(at4.grounded_below, 1);
+        assert_eq!(at4.ungrounded_at_or_above, 1);
+        assert_eq!(cal.agreement_at_configured, Some(at4.agreement));
+        // The means expose the weak self-rating signal: grounded
+        // answers average below the ungrounded spike.
+        assert!(
+            cal.mean_confidence_ungrounded.unwrap() < cal.mean_confidence_grounded.unwrap() + 1.0
+        );
+    }
+
+    #[test]
+    fn calibration_empty_when_nothing_scored() {
+        let skipped = AiCaseOutcome::skipped(&case(), "no transcript");
+        let cal = Calibration::compute(&[skipped], Some(4));
+        assert_eq!(cal.scored, 0);
+        assert_eq!(cal.suggested_cache_min_confidence, None);
+        assert_eq!(cal.agreement_at_configured, None);
+        assert_eq!(cal.thresholds.len(), 10);
     }
 
     #[test]

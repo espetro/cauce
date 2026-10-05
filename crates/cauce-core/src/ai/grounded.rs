@@ -1,5 +1,10 @@
 //! Deterministic groundedness for the `answers` cache gate (#232).
 //!
+//! The predicate lives in cauce-core (moved out of `cauce-agent` for
+//! #234) so the eval scorer runs the *identical* function the cache
+//! gate applies — calibration compares the verbalized confidence
+//! against the real gate, not a reimplementation.
+//!
 //! Verbalized confidence — the model rating the answer it just wrote —
 //! is uncalibrated, so it no longer decides what caches for 24 h (it
 //! still rides `done.confidence` for display). [`groundedness`] is the
@@ -24,7 +29,7 @@
 //! License, v. 2.0. If a copy of the MPL was not distributed with this
 //! file, You can obtain one at <https://mozilla.org/MPL/2.0/>.
 
-use cauce_core::AnswerSource;
+use crate::AnswerSource;
 
 /// Whether `answer` is grounded in `sources` — the `answers` write
 /// gate. Every check is deterministic text analysis; no provider call.
@@ -182,7 +187,7 @@ fn cite_indices(sentence: &str) -> Vec<usize> {
 #[cfg(test)]
 mod tests {
     use super::groundedness;
-    use cauce_core::{AnswerSource, EngineId};
+    use crate::{AnswerSource, EngineId};
     use url::Url;
 
     fn sources(n: usize) -> Vec<AnswerSource> {

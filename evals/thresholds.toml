@@ -14,7 +14,17 @@ ddgs = 0.6
 # --gate`) fails when the mean case score drops below
 # `baseline - tolerance`, or the ungrounded-case rate tops
 # `ungrounded_max`. The committed transcripts score 1.0 today.
+#
+# `cache_min_confidence` (#234) is the verbalized-confidence floor the
+# corpus derives — the report's calibration block measures every
+# `conf >= t` gate against the deterministic groundedness predicate
+# (v2 hardcoded CACHE_MIN_CONFIDENCE = 4; this corpus suggests 1:
+# a grounded answer scored conf 2, and ungrounded answers still
+# claim conf 6-9 — no verbalized cutoff reproduces the gate). It is
+# informational, never gating: the groundedness predicate decides
+# `answers` writes; a future verifier ([ai].verify) reads this value.
 [ai]
 baseline = 1.0
 tolerance = 0.2
 ungrounded_max = 0.5
+cache_min_confidence = 1

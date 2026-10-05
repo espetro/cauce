@@ -1,0 +1,14 @@
+{
+ "query": "tokyo pollen forecast",
+ "engine": "replay",
+ "recorded_at": "2026-10-05T00:00:00Z",
+ "results": [
+  {
+   "url": "https://www.jma.go.jp/bosai/pollen/",
+   "title": "JMA pollen outlook",
+   "snippet": "Seasonal pollen dispersion outlook for Japan",
+   "engine": "replay",
+   "score": 1.0
+  }
+ ]
+}

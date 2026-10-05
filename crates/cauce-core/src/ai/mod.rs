@@ -25,6 +25,7 @@
 
 pub mod answer;
 pub mod anthropic;
+pub mod grounded;
 mod http;
 pub mod openai;
 mod pump;

@@ -37,6 +37,7 @@ use tokio::sync::mpsc;
 use tracing::{Instrument, Span};
 use uuid::Uuid;
 
+use cauce_core::ai::grounded::groundedness;
 use cauce_core::ai::{
     AiCallCtx, AiError, AiStreamEvent, AnswerFrame, AnswerRequest, AnswerRole, AnswerTurn,
     ChatCompletion, ChatMessage, ChatProvider, ChatRequest, render_answer_html,
@@ -46,7 +47,6 @@ use cauce_core::{
 };
 
 use crate::config::LoopConfig;
-use crate::grounded::groundedness;
 use crate::observer::{AgentObserver, LoopEvent, RunContext, RunKind, TracingObserver};
 use crate::tools::{
     SearchArchive, SearchWeb, ToolCtx, ToolExecutor, ToolOutput, ToolRegistry, tool_query,

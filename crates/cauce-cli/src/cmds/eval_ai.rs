@@ -37,7 +37,7 @@ use cauce_core::evals::ai::{
     transcript_variants, write_report,
 };
 use cauce_core::evals::{Thresholds, results_dir};
-use cauce_core::{ClientKind, Engine, EngineId, SearchPipeline, Store, StoreTuning};
+use cauce_core::{AnswerKey, ClientKind, Engine, EngineId, SearchPipeline, Store, StoreTuning};
 use cauce_engines::cassette::cassette_path;
 use cauce_engines::{Replay, ReplayOpts};
 use cauce_store_sqlite::SqliteStore;
@@ -246,6 +246,10 @@ fn panic_outcome(e: &tokio::task::JoinError) -> AiCaseOutcome {
         missing_strings: vec![],
         leaked_strings: vec![],
         ungrounded: true,
+        verbalized_conf: None,
+        grounded: None,
+        cache_write: None,
+        cache_rate: None,
         note: Some(format!("case task panicked: {e}")),
         protocol: "openai".to_string(),
     }
@@ -301,6 +305,11 @@ async fn run_case(
         };
 
     let pipeline = SearchPipeline::new(store.clone(), vec![replay]);
+    // #234: cache-gating cases probe `answers` post-run under the same
+    // `AnswerKey` the loop wrote to — keep a handle and the model id
+    // the key folds in.
+    let probe_store = store.clone();
+    let model = provider.model().to_string();
     let loop_ = AnswerLoop::new(pipeline, provider, store);
     let req = AnswerRequest {
         q: case.query.clone(),
@@ -315,7 +324,19 @@ async fn run_case(
         frames.push(frame);
     }
 
-    let mut outcome = stamp(score_frames(&case, &frames));
+    // The loop is terminal once `rx` closes, so the write it made (or
+    // refused) is already in `answers`.
+    let observed_cache_write = match case.expect_cache_write {
+        Some(_) => match probe_store
+            .get_answer(&AnswerKey::new(&case.query, &model))
+            .await
+        {
+            Ok(hit) => Some(hit.is_some()),
+            Err(_) => None,
+        },
+        None => None,
+    };
+    let mut outcome = stamp(score_frames(&case, &frames, observed_cache_write));
 
     // A tool query with no cassette silently falls back to synthetic
     // replay results — flag those on the outcome so a case that only
@@ -357,13 +378,31 @@ fn print_summary(report: &AiEvalReport, thresholds: &AiThresholds) {
             "openai" => String::new(),
             proto => format!(" [{proto}]"),
         };
+        // #234 calibration columns: the model's verbalized confidence,
+        // the deterministic groundedness verdict, and the observed
+        // `answers` write — `-` when the run never reached `done`.
+        let conf = o
+            .verbalized_conf
+            .map(|c| c.to_string())
+            .unwrap_or_else(|| "-".to_string());
+        let grounded = o
+            .grounded
+            .map(|g| if g { "yes" } else { "no" }.to_string())
+            .unwrap_or_else(|| "-".to_string());
+        let cache = o
+            .cache_write
+            .map(|w| if w { "written" } else { "skipped" }.to_string())
+            .unwrap_or_else(|| "-".to_string());
         println!(
-            "{:<40} score {:.2} cited {:.2} contain {:.2} clean {:.2} {}{}{}",
+            "{:<40} score {:.2} cited {:.2} contain {:.2} clean {:.2} conf {:>2} grounded {:>3} cache {:>7} {}{}{}",
             truncate(&o.query, 40),
             o.score,
             o.cited_recall,
             o.contain_rate,
             o.clean_rate,
+            conf,
+            grounded,
+            cache,
             if o.ok { "ok" } else { "FAIL" },
             variant,
             o.note
@@ -383,6 +422,28 @@ fn print_summary(report: &AiEvalReport, thresholds: &AiThresholds) {
         report.ungrounded_cases.len(),
         report.cases,
     );
+    // #234: one calibration line — the corpus's suggested CACHE_MIN
+    // and how the configured value agrees with the groundedness gate.
+    let cal = &report.calibration;
+    if cal.scored > 0 {
+        let mut line = format!(
+            "calibration: {} scored — suggest cache_min_confidence={}",
+            cal.scored,
+            cal.suggested_cache_min_confidence
+                .map(|t| t.to_string())
+                .unwrap_or_else(|| "?".to_string()),
+        );
+        if let (Some(t), Some(agree)) = (
+            cal.configured_cache_min_confidence,
+            cal.agreement_at_configured,
+        ) {
+            line.push_str(&format!(", configured {t} agrees {:.0}%", agree * 100.0));
+        }
+        if let (Some(g), Some(u)) = (cal.mean_confidence_grounded, cal.mean_confidence_ungrounded) {
+            line.push_str(&format!(", mean conf grounded {g:.1} vs ungrounded {u:.1}"));
+        }
+        println!("{line}");
+    }
 }
 
 /// Display-trim a query to `n` chars for the summary table.
