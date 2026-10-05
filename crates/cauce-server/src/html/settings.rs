@@ -74,6 +74,9 @@ struct SettingsPage {
     /// `"NAME: set"` / `"NAME: not set"` for a `${env:NAME}` api_key.
     ai_key_status: String,
     ai_model: Field,
+    ai_max_turns: Field,
+    ai_max_searches: Field,
+    ai_provider_budget: Field,
     ai_enabled: bool,
     /// `"CAUCE_AI_ENABLED"` when the env var pins `ai.enabled`, else `""`.
     ai_enabled_env: String,
@@ -212,6 +215,9 @@ pub async fn settings(
         },
         ai_key_status,
         ai_model: field("ai.model"),
+        ai_max_turns: field("ai.max_turns"),
+        ai_max_searches: field("ai.max_searches"),
+        ai_provider_budget: field("ai.provider_budget_s"),
         ai_enabled: ai.enabled,
         ai_enabled_env: env_override("ai.enabled").unwrap_or_default(),
         ai_models,
@@ -413,6 +419,9 @@ fn env_override(path: &str) -> Option<String> {
         "ai.base_url" => "CAUCE_AI_BASE_URL",
         "ai.api_key" => "CAUCE_AI_API_KEY",
         "ai.model" => "CAUCE_AI_MODEL",
+        "ai.max_turns" => "CAUCE_AI_MAX_TURNS",
+        "ai.max_searches" => "CAUCE_AI_MAX_SEARCHES",
+        "ai.provider_budget_s" => "CAUCE_AI_PROVIDER_BUDGET_S",
         "ai.enabled" => "CAUCE_AI_ENABLED",
         _ => return None,
     };

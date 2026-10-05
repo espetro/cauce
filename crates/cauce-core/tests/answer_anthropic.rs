@@ -116,6 +116,7 @@ fn answer_loop(server: &MockServer, store: Arc<StubStore>) -> AnswerLoop {
             model: MODEL.to_string(),
             enabled: true,
             protocol: AiProtocol::Anthropic,
+            ..Default::default()
         })
         .expect("client builds"),
     );

@@ -49,6 +49,7 @@ async fn ai_app() -> (
         model: MODEL.to_string(),
         enabled: true,
         protocol: cauce_core::AiProtocol::OpenAi,
+        ..AiConfig::default()
     };
     let (state, tmp) = test_state_with_config(config);
     (build_router(state.clone()), state, tmp, server)

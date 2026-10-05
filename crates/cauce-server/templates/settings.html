@@ -132,6 +132,21 @@
   {% if !ai_model.env.is_empty() %}<p class="hint">{{ crate::i18n::tr("settings.set_by") }} {{ ai_model.env }}</p>{% endif %}
   {% if ai_models_failed %}<p class="hint">{{ crate::i18n::tr("settings.models_unreachable") }}</p>{% endif %}
   <p class="field-error" id="fe-ai-dmodel"></p>
+  <label>{{ crate::i18n::tr("settings.ai_max_turns") }}
+    <input type="text" name="ai.max_turns" value="{{ ai_max_turns.value }}" {% if !ai_max_turns.env.is_empty() %}disabled{% endif %}>
+  </label>
+  {% if !ai_max_turns.env.is_empty() %}<p class="hint">{{ crate::i18n::tr("settings.set_by") }} {{ ai_max_turns.env }}</p>{% endif %}
+  <p class="field-error" id="fe-ai-dmax_turns"></p>
+  <label>{{ crate::i18n::tr("settings.ai_max_searches") }}
+    <input type="text" name="ai.max_searches" value="{{ ai_max_searches.value }}" {% if !ai_max_searches.env.is_empty() %}disabled{% endif %}>
+  </label>
+  {% if !ai_max_searches.env.is_empty() %}<p class="hint">{{ crate::i18n::tr("settings.set_by") }} {{ ai_max_searches.env }}</p>{% endif %}
+  <p class="field-error" id="fe-ai-dmax_searches"></p>
+  <label>{{ crate::i18n::tr("settings.ai_provider_budget") }}
+    <input type="text" name="ai.provider_budget_s" value="{{ ai_provider_budget.value }}" {% if !ai_provider_budget.env.is_empty() %}disabled{% endif %}>
+  </label>
+  {% if !ai_provider_budget.env.is_empty() %}<p class="hint">{{ crate::i18n::tr("settings.set_by") }} {{ ai_provider_budget.env }}</p>{% endif %}
+  <p class="field-error" id="fe-ai-dprovider_budget_s"></p>
   <label>
     <input type="hidden" name="ai.enabled" value="false" {% if !ai_enabled_env.is_empty() %}disabled{% endif %}>
     <input type="checkbox" name="ai.enabled" value="true" {% if ai_enabled %}checked{% endif %} {% if !ai_enabled_env.is_empty() %}disabled{% endif %}> {{ crate::i18n::tr("settings.enabled") }}
