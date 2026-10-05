@@ -64,16 +64,16 @@
 
 mod answer;
 mod config;
-mod grounded;
+
 mod observer;
 mod tools;
 
 pub use answer::AnswerLoop;
+pub use cauce_core::ai::grounded::groundedness;
 pub use config::{
     DEFAULT_ANSWERS_TTL, DEFAULT_MAX_SEARCH_EXECUTIONS, DEFAULT_MAX_TURNS, DEFAULT_PROVIDER_BUDGET,
     LoopConfig,
 };
-pub use grounded::groundedness;
 pub use observer::{AgentObserver, LoopEvent, NoopObserver, RunContext, RunKind, TracingObserver};
 pub use tools::{SearchArchive, SearchWeb, ToolCtx, ToolExecutor, ToolOutput};
 
