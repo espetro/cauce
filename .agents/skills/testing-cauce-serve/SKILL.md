@@ -112,8 +112,11 @@ process — you cannot give tier-1 and tier-2 different latencies from env. Mult
 - `/answer?q=…` auto-POSTs `/api/answer` via inline fetch-SSE: `step` frames →
   `#answer-steps` `<li>`s, `delta` → `#answer-text` (literal text — markdown is NOT
   rendered), `sources` → numbered `.source-card`s, `done` → status + `confidence: N`.
-  A fixture answer without a `{"confidence":…}` JSON tail ends `confidence=0` and is NOT
-  cached (grounded cache needs ≥4), so repeat runs stay clean.
+  Since #232 the cache gate is deterministic groundedness (≥1 source, every prose
+  sentence carries an in-range `[n]`, no out-of-range cites) — the verbalized
+  `confidence` score is display-only. A fixture answer with an uncited sentence
+  (e.g. `sse_answer.raw`'s trailing "Source: …" line) is NOT cached, so repeat
+  runs stay clean.
 - Two answer modes share `/api/answer` (W7-02+): the tool loop sends a `"tools"` array
   (serve `sse_toolcall.raw` then `sse_answer.raw` per pair); the SERP **Assist** card
   POSTs `{q, context_results}` with NO tools key — dispatch on `'"tools"' in body` and
@@ -143,15 +146,14 @@ process — you cannot give tier-1 and tier-2 different latencies from env. Mult
   phrasings (`evals/ai/cassettes/replay/` has a seed set). Once the first search returns
   realistic results the model usually answers on the next turn.
 - **Cached answers are deterministic chip-state proof.** A grounded done
-  (≥1 source, confidence ≥4) writes an `answers` row; reloading the same `?q=` replays
+  (≥1 source, every sentence cited in-range) writes an `answers` row; reloading the same `?q=` replays
   `sources` + `done{cached:true}` with **no provider call** — immune to rate limits.
   The cache key includes the model, so the row persists across restarts under the same
   `CAUCE_MODEL` inside `CAUCE_DATA_DIR`.
-- If the model wraps the metadata tail in a ```` ```json ```` fence, `parse_final_answer`
-  misses it → `done.confidence=0` and the fenced JSON renders as literal answer text.
-  Pre-existing parser behavior; pick a better-behaved model when a nonzero confidence
-  chip matters for evidence. Observed live with `openai/gpt-4o-mini` on follow-up
-  turns (turn 1 clean, turns 2+ fenced).
+- If the model wraps the metadata tail in a ```` ```json ```` fence (common with
+  `openai/gpt-4o-mini` on follow-up turns), `parse_final_answer` strips the fence
+  and parses the tail; an unrecoverable tail is dropped, never leaked into the
+  answer (#232/#217).
 
 ### Multi-turn `/answer` threads (W7-04)
 
@@ -189,9 +191,10 @@ process — you cannot give tier-1 and tier-2 different latencies from env. Mult
   phrasings (any uncovered phrasing still gets replay's synthetic fallback, which
   also produces sources). Restart serve with
   `CAUCE_ENGINES=wikipedia,replay CAUCE_REPLAY_FIXTURES_DIR=<dir>
-  CAUCE_REPLAY_CASSETTE_ENGINE=replay`. A grounded done (≥1 source + confidence
-  ≥4) then caches — reloading the same `?q=` replays `done{cached:true}` in ~1ms
-  with no provider call (deterministic chip-state proof).
+  CAUCE_REPLAY_CASSETTE_ENGINE=replay`. A grounded done (≥1 source + every
+  sentence cited in-range) then caches — reloading the same `?q=` replays
+  `done{cached:true}` in ~1ms with no provider call (deterministic chip-state
+  proof).
 - **Enabling wikipedia takes a config entry**: the spec ships `enabled:false`, so
   `[[engines]] id="wikipedia" kind="declarative"` in `$CAUCE_CONFIG_DIR/config.toml`
   plus `CAUCE_ENGINES=wikipedia` (pin) — tier 3 "specialised" runs in the t=0
@@ -342,6 +345,7 @@ None — all local, no auth.
   Drive the flow in the CDP-attached window (`wmctrl -l` to find it, then navigate it),
   and verify `location.href`/DOM reads match what the screenshot shows before trusting
   console assertions.
-- Assist answers are query-cached (confidence ≥4): reusing the same SERP query for
-  `/answer?q=` afterwards replays `done{cached:true}` with no step frames — pick a
-  different question for the tool-loop run.
+- Assist answers are query-cached when grounded (every sentence cites in-range):
+  reusing the same SERP query for `/answer?q=` afterwards replays
+  `done{cached:true}` with no step frames — pick a different question for the
+  tool-loop run.

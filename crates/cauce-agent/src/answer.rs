@@ -7,8 +7,10 @@
 //! metadata tail is held back and never reaches the client), `sources`
 //! once the cited set is known, then terminal `done` or `error`. A fresh
 //! `answers` row replays as `sources` then `done{cached:true}`; a row is
-//! written only when the caching rule holds (at least one source,
-//! confidence at or above [`CACHE_MIN_CONFIDENCE`], no error).
+//! written only when the caching rule holds (#232: the answer is
+//! [`grounded`](crate::groundedness) — at least one source and every
+//! sentence cited in-range — with no error; the verbalized confidence
+//! score is display-only and never gates).
 //! `parse_final_answer` ports v2's tolerant tail parse (`oxe/ai.py`),
 //! and the loop shape mirrors `SearchPipeline::search_stream` (spawned
 //! task, unbounded channel, terminal frame on close).
@@ -44,14 +46,11 @@ use cauce_core::{
 };
 
 use crate::config::LoopConfig;
+use crate::grounded::groundedness;
 use crate::observer::{AgentObserver, LoopEvent, RunContext, RunKind, TracingObserver};
 use crate::tools::{
     SearchArchive, SearchWeb, ToolCtx, ToolExecutor, ToolOutput, ToolRegistry, tool_query,
 };
-
-/// `answers` rows are written only at or above this self-reported
-/// confidence (settled input; v2 `CACHE_MIN_CONFIDENCE`).
-pub const CACHE_MIN_CONFIDENCE: u8 = 4;
 
 /// Bytes held back from `delta` frames until `Done`: the metadata tail
 /// (`{"confidence": ..., "related_questions": [...]}`) is parsed out of
@@ -580,10 +579,13 @@ impl AnswerLoop {
                 ungrounded: sources.is_empty(),
             },
         );
-        // Grounded-only caching (settled input): >= 1 source,
-        // confidence >= CACHE_MIN_CONFIDENCE, no error — and only
-        // for single-turn requests (see `cacheable` above).
-        if cacheable && !sources.is_empty() && confidence >= CACHE_MIN_CONFIDENCE {
+        // Grounded-only caching (#232): the deterministic groundedness
+        // check — >= 1 source, every sentence carrying an in-range [n],
+        // every [n] resolving to a real source — replaces the
+        // verbalized-confidence gate, which was uncalibrated and
+        // post-hoc. `confidence` still flows to `done` (display only).
+        // Only single-turn requests cache (see `cacheable` above).
+        if cacheable && groundedness(&answer, &sources) {
             let row = AnswerRow {
                 query: normalize_query(&req.q),
                 model: model.clone(),
@@ -735,11 +737,12 @@ impl AnswerLoop {
                 ungrounded: results.is_empty(),
             },
         );
-        // Grounded-only caching (settled input): >= 1 source,
-        // confidence >= CACHE_MIN_CONFIDENCE, no error — under the
-        // assist key, so a tool-loop answer for the same `q` cannot be
-        // replayed as an assist answer or vice versa.
-        if !results.is_empty() && confidence >= CACHE_MIN_CONFIDENCE {
+        // Grounded-only caching (#232, same rule as the tool loop):
+        // the supplied result set must exist and every answer sentence
+        // must carry an in-range [n] — under the assist key, so a
+        // tool-loop answer for the same `q` cannot be replayed as an
+        // assist answer or vice versa.
+        if groundedness(&answer, &results) {
             let row = AnswerRow {
                 query: normalize_query(&req.q),
                 model: model.clone(),
@@ -993,10 +996,15 @@ fn assist_user_prompt(q: &str, results: &[AnswerSource]) -> String {
     )
 }
 
+/// `confidence` from the metadata tail: ints, floats (#232 — models
+/// do emit `7.5`, and dropping the parse leaked raw JSON into
+/// `done.answer`), and numeric strings — rounded to the nearest int
+/// and clamped by the caller. Non-finite or non-numeric values fail.
 fn parse_confidence(v: &serde_json::Value) -> Option<i64> {
+    let to_int = |f: f64| f.is_finite().then(|| f.round() as i64);
     match v {
-        serde_json::Value::Number(n) => n.as_i64(),
-        serde_json::Value::String(s) => s.trim().parse().ok(),
+        serde_json::Value::Number(n) => n.as_f64().and_then(to_int),
+        serde_json::Value::String(s) => s.trim().parse::<f64>().ok().and_then(to_int),
         _ => None,
     }
 }
@@ -1023,10 +1031,49 @@ fn parse_related(v: Option<&serde_json::Value>) -> Vec<String> {
 /// `TAIL_WINDOW` bytes of the rstripped text are scanned for `{`
 /// positions, newest first; the first whose JSON parses to an object
 /// containing a usable `confidence` wins and the body ends just before
-/// it. A garbled or absent tail yields `(whole text, 0, [])` — tolerant,
+/// it. A tail wrapped in a ```json fence (#217) is peeled first; a
+/// trailing block that LOOKS like the metadata object but won't parse
+/// is dropped rather than leaked into `done.answer` as raw JSON. A
+/// garbled or absent tail yields `(whole text, 0, [])` — tolerant,
 /// never raising on what the model sent.
 pub(crate) fn parse_final_answer(text: &str) -> (String, u8, Vec<String>) {
     let stripped = text.trim_end();
+
+    // #217: the metadata tail may arrive inside a closed fenced block
+    // ("```json\n{…}\n```") — the `{`-scan alone cannot see past the
+    // trailing ```. When the fence contents look like the metadata
+    // object, the whole fence is metadata: parse it, or drop it when
+    // unrecoverable — raw JSON must not leak into `done.answer`.
+    if let Some((body, inner)) = split_trailing_fence(stripped)
+        && looks_like_metadata(inner)
+    {
+        return match find_metadata_tail(inner) {
+            Some((_, conf, related)) => (body.to_string(), conf, related),
+            None => (body.to_string(), 0, Vec::new()),
+        };
+    }
+
+    if let Some((idx, conf, related)) = find_metadata_tail(stripped) {
+        // A dangling fence opener right before the tail ("…```json\n{…}")
+        // is part of the metadata wrapper — never answer text.
+        let body = strip_dangling_fence_opener(&stripped[..idx]);
+        return (body.to_string(), conf, related);
+    }
+
+    // No parseable tail: an UNCLOSED trailing fence whose contents look
+    // like metadata is still intent — drop it too rather than leak raw
+    // JSON into the answer.
+    if let Some(body) = drop_unrecoverable_metadata_block(stripped) {
+        return (body.to_string(), 0, Vec::new());
+    }
+    (stripped.to_string(), 0, Vec::new())
+}
+
+/// Scan the last `TAIL_WINDOW` bytes of `stripped` for the metadata
+/// object: `{` positions newest-first; the first whose trailing slice
+/// parses to a JSON object holding a usable `confidence` wins. Returns
+/// the `{` index, the clamped confidence, and `related_questions`.
+fn find_metadata_tail(stripped: &str) -> Option<(usize, u8, Vec<String>)> {
     let mut start = stripped.len().saturating_sub(TAIL_WINDOW);
     while !stripped.is_char_boundary(start) {
         start += 1;
@@ -1043,11 +1090,88 @@ pub(crate) fn parse_final_answer(text: &str) -> (String, u8, Vec<String>) {
         let Some(conf) = parsed.get("confidence").and_then(parse_confidence) else {
             continue;
         };
-        let answer = stripped[..*idx].trim_end().to_string();
         let related = parse_related(parsed.get("related_questions"));
-        return (answer, conf.clamp(0, 10) as u8, related);
+        return Some((*idx, conf.clamp(0, 10) as u8, related));
     }
-    (stripped.to_string(), 0, Vec::new())
+    None
+}
+
+/// If `stripped` ends with a closed fenced block ("```…\n<inner>\n```"),
+/// return `(body before the fence opener, inner)`. Fence lines are
+/// tracked by parity so an earlier balanced code block cannot claim the
+/// final ``` as its own opener.
+fn split_trailing_fence(stripped: &str) -> Option<(&str, &str)> {
+    let closer_start = stripped.rfind('\n').map(|i| i + 1).unwrap_or(0);
+    if stripped[closer_start..].trim() != "```" {
+        return None;
+    }
+    let mut opener: Option<usize> = None;
+    let mut pos = 0;
+    for line in stripped[..closer_start].split_inclusive('\n') {
+        if line.trim_start().starts_with("```") {
+            opener = if opener.is_none() { Some(pos) } else { None };
+        }
+        pos += line.len();
+    }
+    let opener = opener?;
+    let inner_start = stripped[opener..].find('\n').map(|i| opener + i + 1)?;
+    Some((
+        stripped[..opener].trim_end(),
+        stripped[inner_start..closer_start].trim(),
+    ))
+}
+
+/// The body cut just before a bare (unfenced) metadata tail may still
+/// end on the opener the model wrapped it in ("…```json\n{…}"). When the
+/// body's fence lines are unbalanced the last line is that opener —
+/// drop it so the fence never leaks into `done.answer`.
+fn strip_dangling_fence_opener(body: &str) -> &str {
+    let body = body.trim_end();
+    let fences = body
+        .lines()
+        .filter(|l| l.trim_start().starts_with("```"))
+        .count();
+    if fences % 2 == 0 {
+        return body;
+    }
+    match body.rfind('\n') {
+        Some(nl) if body[nl + 1..].trim_start().starts_with("```") => body[..nl].trim_end(),
+        None if body.trim_start().starts_with("```") => "",
+        _ => body,
+    }
+}
+
+/// An unclosed trailing fence whose contents look like the metadata
+/// object is intent, not answer text — return the body before its
+/// opener so the raw JSON is dropped rather than leaked.
+fn drop_unrecoverable_metadata_block(stripped: &str) -> Option<&str> {
+    let mut opener: Option<(usize, usize)> = None;
+    let mut pos = 0;
+    for line in stripped.split_inclusive('\n') {
+        if line.trim_start().starts_with("```") {
+            opener = match opener {
+                None => Some((pos, pos + line.len())),
+                Some(_) => None,
+            };
+        }
+        pos += line.len();
+    }
+    let (start, inner_start) = opener?;
+    if looks_like_metadata(&stripped[inner_start..]) {
+        Some(stripped[..start].trim_end())
+    } else {
+        None
+    }
+}
+
+/// Fence contents that were meant to be the metadata tail: they start
+/// with `{` and name a `confidence` field (quoted or not — a broken
+/// tail may have already lost its quotes). The `starts_with` keeps a
+/// real code block that merely mentions confidence (e.g. a JSON
+/// literal inside ```rust) from being eaten.
+fn looks_like_metadata(inner: &str) -> bool {
+    let inner = inner.trim_start();
+    inner.starts_with('{') && inner.contains("confidence")
 }
 
 #[cfg(test)]
@@ -1089,11 +1213,78 @@ mod tests {
     }
 
     #[test]
-    fn confidence_accepts_numeric_strings_rejects_floats() {
+    fn confidence_accepts_numeric_strings_and_floats() {
+        // #232: models emit `7.5`; rejecting floats dropped the tail and
+        // leaked raw JSON into the answer.
         let (_, confidence, _) = parse_final_answer("a\n{\"confidence\": \"7\"}");
         assert_eq!(confidence, 7);
         let (answer, confidence, _) = parse_final_answer("a\n{\"confidence\": 7.5}");
-        assert_eq!(answer, "a\n{\"confidence\": 7.5}");
+        assert_eq!(answer, "a");
+        assert_eq!(confidence, 8, "float confidence rounds to the nearest int");
+        let (answer, confidence, _) = parse_final_answer("a\n{\"confidence\": 7.4}");
+        assert_eq!(answer, "a");
+        assert_eq!(confidence, 7);
+        let (answer, confidence, _) = parse_final_answer("a\n{\"confidence\": \"7.5\"}");
+        assert_eq!(answer, "a");
+        assert_eq!(confidence, 8);
+    }
+
+    #[test]
+    fn fenced_metadata_tail_is_parsed_off() {
+        // #217: models wrap the tail in a ```json fence — the fence
+        // peels, the object parses, no fence text survives in the body.
+        let (answer, confidence, related) = parse_final_answer(
+            "the answer [1]\n```json\n{\"confidence\": 8, \"related_questions\": [\"q1\"]}\n```",
+        );
+        assert_eq!(answer, "the answer [1]");
+        assert_eq!(confidence, 8);
+        assert_eq!(related, ["q1"]);
+    }
+
+    #[test]
+    fn bare_fence_tail_is_parsed_off() {
+        let (answer, confidence, _) =
+            parse_final_answer("the answer\n```\n{\"confidence\": 6}\n```");
+        assert_eq!(answer, "the answer");
+        assert_eq!(confidence, 6);
+    }
+
+    #[test]
+    fn unclosed_fence_opener_before_tail_is_stripped() {
+        // The model opened ```json but never closed it: the bare-JSON
+        // scan still finds the tail and the dangling opener goes too.
+        let (answer, confidence, _) =
+            parse_final_answer("the answer [1]\n```json\n{\"confidence\": 6}");
+        assert_eq!(answer, "the answer [1]");
+        assert_eq!(confidence, 6);
+    }
+
+    #[test]
+    fn unrecoverable_fenced_tail_does_not_leak_json() {
+        // Clearly metadata intent (starts with `{`, names `confidence`)
+        // but unparseable — drop the whole fence rather than leak raw
+        // JSON into `done.answer`.
+        let (answer, confidence, _) =
+            parse_final_answer("the answer\n```json\n{confidence: broken}\n```");
+        assert_eq!(answer, "the answer");
+        assert_eq!(confidence, 0);
+    }
+
+    #[test]
+    fn unclosed_unrecoverable_metadata_block_is_dropped() {
+        let (answer, confidence, _) =
+            parse_final_answer("the answer\n```json\n{confidence: still broken");
+        assert_eq!(answer, "the answer");
+        assert_eq!(confidence, 0);
+    }
+
+    #[test]
+    fn code_fence_without_metadata_is_kept() {
+        // A real code block that merely contains a JSON literal is
+        // answer text — the fence survives.
+        let text = "example\n```rust\nlet x = {\"a\": 1};\n```";
+        let (answer, confidence, _) = parse_final_answer(text);
+        assert_eq!(answer, text);
         assert_eq!(confidence, 0);
     }
 
