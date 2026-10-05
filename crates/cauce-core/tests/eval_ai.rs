@@ -84,6 +84,7 @@ fn case() -> AiEvalCase {
         must_contain: vec!["22".to_string(), "clear skies".to_string()],
         must_not_contain: vec!["related_questions".to_string()],
         tags: vec!["smoke".to_string()],
+        expect_cache_write: None,
     }
 }
 
@@ -92,6 +93,7 @@ fn thresholds() -> AiThresholds {
         baseline: 1.0,
         tolerance: 0.2,
         ungrounded_max: Some(0.5),
+        cache_min_confidence: None,
     }
 }
 
@@ -159,11 +161,16 @@ async fn grounded_case_scores_full_and_passes_gate() {
     let dir = tempfile::tempdir().unwrap();
     write_cassette(dir.path());
     let frames = run_frames(tokyo_transcript(), dir.path().to_path_buf(), None).await;
-    let outcome = score_frames(&case(), &frames);
+    let outcome = score_frames(&case(), &frames, None);
 
     assert_eq!(outcome.score, 1.0, "outcome: {outcome:?}");
     assert!(outcome.ok);
     assert!(!outcome.ungrounded);
+    // #234: the calibration triple — verbalized conf 8, deterministically
+    // grounded, and no cache assertion on this case.
+    assert_eq!(outcome.verbalized_conf, Some(8));
+    assert_eq!(outcome.grounded, Some(true));
+    assert_eq!(outcome.cache_write, None);
     assert_eq!(
         outcome.cited_hosts,
         vec![
@@ -192,7 +199,7 @@ async fn broken_tail_parser_drops_score_below_baseline() {
         Some(broken_tail_parser),
     )
     .await;
-    let outcome = score_frames(&case(), &frames);
+    let outcome = score_frames(&case(), &frames, None);
 
     let t = thresholds();
     assert!(
@@ -223,7 +230,7 @@ async fn error_turn_scores_zero_with_note() {
     let dir = tempfile::tempdir().unwrap();
     write_cassette(dir.path());
     let frames = run_frames(t, dir.path().to_path_buf(), None).await;
-    let outcome = score_frames(&case(), &frames);
+    let outcome = score_frames(&case(), &frames, None);
 
     assert_eq!(outcome.score, 0.0);
     assert_eq!(

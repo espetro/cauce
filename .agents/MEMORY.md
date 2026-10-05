@@ -319,3 +319,33 @@ global store, and is never shared with or copied into another project.
   replay returns 10 ≥ default 5, so seed `search.min_results` high (~100).
 - `CAUCE_AI_*` env vars are provisioned in Devin shells — `env -u` all four
   when the e2e needs a user-submittable `ai.enabled` on /settings.
+
+## 2026-10-05 — Eval calibration (#234, branch v3/eval-calibration)
+
+- `groundedness` moved to `cauce_core::ai::grounded` so `score_frames`
+  runs the identical predicate the `answers` gate applies —
+  `cauce_agent::groundedness` is now a re-export, callers unchanged.
+- `score_frames(case, frames, observed_cache_write)`: the third arg is
+  the runner's post-run `answers` probe, consulted only when the case
+  asserts `expect_cache_write`; `cache_rate` then folds into the score
+  as a fourth component (the mean stays three-way otherwise). Outcomes
+  carry `verbalized_conf`/`grounded`/`cache_write` — the calibration
+  triple — skipped when the run never reaches `done`.
+- The report's `calibration` block scores every `conf >= t` (1..=10)
+  against groundedness and suggests the least restrictive max-agreement
+  cutoff; `[ai].cache_min_confidence` in evals/thresholds.toml is the
+  derived, informational value a future `[ai].verify` reads — it never
+  gates.
+- Corpus finding: a grounded answer scored conf 2 and ungrounded ones
+  claimed conf 6-9, so the derived cutoff is 1 — v2's hardcoded
+  CACHE_MIN_CONFIDENCE=4 would have refused a grounded write. Live
+  gpt-4o-mini confirmed the same skew: conf 9 on every run, zero
+  grounded answers (`[1, 2]` and markdown links are not `[n]` cites).
+- Loop-guard transcripts are hand-authored like the rest: exhaustion
+  needs `max_turns` tool_call turns (8) + the forced-synthesize answer
+  as turn 9; dedup/`search budget exhausted` resolve in-band so their
+  Step chips still need a cassette on disk to avoid the no-cassette
+  note.
+- `cauce eval ai evals/ai/loop.jsonl --tag loop --gate` is the new-case
+  e2e; run the harness from the repo root or the default
+  fixtures/transcripts dirs won't resolve.

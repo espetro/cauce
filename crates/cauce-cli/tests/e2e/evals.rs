@@ -375,6 +375,91 @@ async fn eval_ai_missing_transcript_scores_zero_with_note() {
     );
 }
 
+/// #234 acceptance: the `loop`-tagged committed cases replay the #231
+/// guard transcripts — 8-turn exhaustion degrading to forced-synthesize
+/// `done`, a repeat query resolving as the in-band dedup error, a
+/// parallel two-tool fan-out, and an ungrounded partial citation — and
+/// each `expect_cache_write` assertion scores the post-run `answers`
+/// probe. Exit 0 at score 1.0; the report carries the calibration
+/// block (verbalized vs grounded agreement, suggested cutoff).
+#[tokio::test]
+async fn eval_ai_loop_gate_passes_on_committed_cases() {
+    let root = workspace_root();
+    let results_dir = tempfile::tempdir().unwrap();
+    let output = Command::new(cauce_bin())
+        .current_dir(root)
+        .arg("eval")
+        .arg("ai")
+        .arg(root.join("evals/ai/loop.jsonl"))
+        .arg("--tag")
+        .arg("loop")
+        .arg("--gate")
+        .arg("--results-dir")
+        .arg(results_dir.path())
+        .output()
+        .await
+        .expect("spawn cauce eval ai");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        output.status.success(),
+        "loop gate should exit 0\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+
+    let entry = std::fs::read_dir(results_dir.path())
+        .unwrap()
+        .filter_map(Result::ok)
+        .next()
+        .expect("one report file")
+        .file_name()
+        .into_string()
+        .unwrap();
+    let report: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(results_dir.path().join(entry)).unwrap())
+            .unwrap();
+    assert_eq!(report["cases"], 4, "four loop cases: {report}");
+    assert_eq!(report["score"], 1.0, "loop cases score 1.0: {report}");
+    assert_eq!(report["gate_ok"], true);
+
+    let outcomes = report["outcomes"].as_array().unwrap();
+    // Every outcome carries the calibration triple.
+    for o in outcomes {
+        assert!(
+            o["verbalized_conf"].is_number() && o["grounded"].is_boolean(),
+            "calibration triple on every scored outcome: {o}"
+        );
+    }
+    // Exhaustion ended in `done`, not an error frame.
+    let exhaust = &outcomes[0];
+    assert_eq!(exhaust["transcript"], "exhaust-budget");
+    assert!(
+        exhaust["note"].is_null(),
+        "exhaustion scores clean: {exhaust}"
+    );
+    // Grounded answers wrote to `answers`; the partial-cite did not.
+    let cache: Vec<_> = outcomes
+        .iter()
+        .map(|o| o["cache_write"].as_bool().unwrap())
+        .collect();
+    assert_eq!(
+        cache,
+        [true, true, true, false],
+        "gate observations: {report}"
+    );
+    // The calibration block reports the derived cutoff.
+    assert_eq!(
+        report["calibration"]["suggested_cache_min_confidence"], 1,
+        "corpus-derived cutoff: {report}"
+    );
+    assert_eq!(
+        report["calibration"]["thresholds"]
+            .as_array()
+            .unwrap()
+            .len(),
+        10
+    );
+}
+
 /// `cauce eval` on its own prints combined usage; an unknown kind is a
 /// usage error (exit 2).
 #[tokio::test]

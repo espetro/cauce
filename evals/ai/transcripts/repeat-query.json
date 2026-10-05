@@ -1,0 +1,66 @@
+{
+ "model": "openai/gpt-4o-mini",
+ "provider": "https://api.openai.com/v1",
+ "recorded_at": "2026-10-05T00:00:00Z",
+ "turns": [
+  {
+   "deltas": [],
+   "completion": {
+    "id": "chatcmpl-repeat-1",
+    "model": "openai/gpt-4o-mini",
+    "content": "",
+    "tool_calls": [
+     {
+      "id": "call_repeat_1",
+      "name": "search_web",
+      "arguments": "{\"query\": \"tokyo hourly weather forecast\"}"
+     }
+    ],
+    "finish_reason": "tool_calls",
+    "usage": {
+     "prompt_tokens": 480,
+     "completion_tokens": 22,
+     "total_tokens": 502
+    }
+   }
+  },
+  {
+   "deltas": [],
+   "completion": {
+    "id": "chatcmpl-repeat-2",
+    "model": "openai/gpt-4o-mini",
+    "content": "",
+    "tool_calls": [
+     {
+      "id": "call_repeat_2",
+      "name": "search_web",
+      "arguments": "{\"query\": \"tokyo hourly weather forecast\"}"
+     }
+    ],
+    "finish_reason": "tool_calls",
+    "usage": {
+     "prompt_tokens": 660,
+     "completion_tokens": 22,
+     "total_tokens": 682
+    }
+   }
+  },
+  {
+   "deltas": [
+    "The **hourly** forecast for Tokyo stays clear through the evening [1][2].\n",
+    "{\"confidence\": 7, \"related_questions\": [\"Will it rain in Tokyo tomorrow?\"]}"
+   ],
+   "completion": {
+    "id": "chatcmpl-repeat-final",
+    "model": "openai/gpt-4o-mini",
+    "content": "The **hourly** forecast for Tokyo stays clear through the evening [1][2].\n{\"confidence\": 7, \"related_questions\": [\"Will it rain in Tokyo tomorrow?\"]}",
+    "finish_reason": "stop",
+    "usage": {
+     "prompt_tokens": 720,
+     "completion_tokens": 40,
+     "total_tokens": 760
+    }
+   }
+  }
+ ]
+}

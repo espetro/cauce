@@ -1,0 +1,50 @@
+{
+ "model": "openai/gpt-4o-mini",
+ "provider": "https://api.openai.com/v1",
+ "recorded_at": "2026-10-05T00:00:00Z",
+ "turns": [
+  {
+   "deltas": [],
+   "completion": {
+    "id": "chatcmpl-fanout-1",
+    "model": "openai/gpt-4o-mini",
+    "content": "",
+    "tool_calls": [
+     {
+      "id": "call_fanout_1",
+      "name": "search_web",
+      "arguments": "{\"query\": \"current weather in Tokyo right now\"}"
+     },
+     {
+      "id": "call_fanout_2",
+      "name": "search_web",
+      "arguments": "{\"query\": \"tokyo hourly weather forecast\"}"
+     }
+    ],
+    "finish_reason": "tool_calls",
+    "usage": {
+     "prompt_tokens": 500,
+     "completion_tokens": 46,
+     "total_tokens": 546
+    }
+   }
+  },
+  {
+   "deltas": [
+    "Tokyo is **22°C** with **clear skies** right now [1]. The **hourly** forecast stays clear through the evening [4].\n",
+    "{\"confidence\": 8, \"related_questions\": [\"Will it rain in Tokyo tomorrow?\"]}"
+   ],
+   "completion": {
+    "id": "chatcmpl-fanout-final",
+    "model": "openai/gpt-4o-mini",
+    "content": "Tokyo is **22°C** with **clear skies** right now [1]. The **hourly** forecast stays clear through the evening [4].\n{\"confidence\": 8, \"related_questions\": [\"Will it rain in Tokyo tomorrow?\"]}",
+    "finish_reason": "stop",
+    "usage": {
+     "prompt_tokens": 900,
+     "completion_tokens": 52,
+     "total_tokens": 952
+    }
+   }
+  }
+ ]
+}
