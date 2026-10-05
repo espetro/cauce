@@ -4,9 +4,10 @@
 //! carries `tool_choice: "none"` and no tools; the pipeline/engine is
 //! never touched (no engine re-fetch); the `answers` write lands under
 //! the `AnswerKey::assist` key (never colliding with a tool-loop
-//! answer for the same `q`); grounded+confident replays
-//! `done{cached:true}`; an empty result set answers `ungrounded` and
-//! caches nothing; a mid-stream error flushes partial deltas.
+//! answer for the same `q`); a grounded answer replays
+//! `done{cached:true}` while an uncited one never caches; an empty
+//! result set answers `ungrounded` and caches nothing; a mid-stream
+//! error flushes partial deltas.
 //!
 //! This Source Code Form is subject to the terms of the Mozilla Public
 //! License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -100,6 +101,26 @@ async fn mount_sse(server: &MockServer, body: &'static str, times: u64) {
         .up_to_n_times(times)
         .mount(server)
         .await;
+}
+
+async fn mount_sse_owned(server: &MockServer, body: String, times: u64) {
+    Mock::given(method("POST"))
+        .and(path("/chat/completions"))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(body, "text/event-stream"))
+        .up_to_n_times(times)
+        .mount(server)
+        .await;
+}
+
+/// A minimal SSE answer turn streaming `text` (same shape as the
+/// `sse_answer_body` helper in `tests/answer.rs`).
+fn sse_answer_body(text: &str) -> String {
+    let content = serde_json::to_string(text).expect("text encodes");
+    format!(
+        "data: {{\"id\":\"gen-t\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"{MODEL}\",\"choices\":[{{\"index\":0,\"delta\":{{\"content\":{content},\"role\":\"assistant\"}},\"finish_reason\":null}}]}}\n\n\
+         data: {{\"id\":\"gen-t\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"{MODEL}\",\"choices\":[{{\"index\":0,\"delta\":{{\"content\":\"\",\"role\":\"assistant\"}},\"finish_reason\":\"stop\"}}],\"usage\":{{\"prompt_tokens\":10,\"completion_tokens\":5,\"total_tokens\":15}}}}\n\n\
+         data: [DONE]\n\n"
+    )
 }
 
 async fn drain(rx: tokio::sync::mpsc::UnboundedReceiver<AnswerFrame>) -> Vec<AnswerFrame> {
@@ -213,8 +234,9 @@ fn assist_key_separates_from_tool_loop_and_tracks_results() {
     );
 }
 
-/// Grounded + confident (>= 4) assist answers cache under the assist
-/// key and replay `sources` → `done{cached:true}` with no provider
+/// A grounded assist answer (every sentence cites an in-range
+/// `[n]` — #232) caches under the assist key and replays
+/// `sources` → `done{cached:true}` with no provider
 /// call; the tool-loop key for the same `q` stays empty.
 #[tokio::test]
 async fn assist_grounded_confident_is_cached_and_replayed() {
@@ -259,6 +281,39 @@ async fn assist_grounded_confident_is_cached_and_replayed() {
 
     let calls = server.received_requests().await.expect("request log");
     assert_eq!(calls.len(), 1, "cache hit makes no provider call");
+}
+
+/// #232: the assist gate is the same groundedness rule — an answer
+/// over a supplied result set that cites nothing is ungrounded, so no
+/// `answers` row is written even at self-reported confidence 9.
+#[tokio::test]
+async fn assist_uncited_confident_is_not_cached() {
+    let server = MockServer::start().await;
+    mount_sse_owned(
+        &server,
+        sse_answer_body("Tokyo is 22C and clear.\n{\"confidence\": 9}"),
+        1,
+    )
+    .await;
+
+    let store = Arc::new(StubStore::default());
+    let (loop_, _engine, _tmp) = assist_loop(&server, store.clone());
+    let q = "assist uncited";
+    let sources = serp_sources();
+    let frames = drain(loop_.stream_assist(&req(q), sources.clone())).await;
+
+    let AnswerFrame::Done { confidence, .. } = done_of(&frames) else {
+        unreachable!()
+    };
+    assert_eq!(confidence, 9, "the verbalized score still reaches done");
+    assert!(
+        store
+            .get_answer(&AnswerKey::assist(q, MODEL, &sources))
+            .await
+            .unwrap()
+            .is_none(),
+        "uncited assist answers do not cache"
+    );
 }
 
 /// An empty `context_results` is the degenerate assist: the done frame

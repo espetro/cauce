@@ -458,8 +458,9 @@ pub struct AnswerPayload {
 }
 
 /// One `answers` row as written (`put_answer`): the caching rule
-/// (>= 1 source, confidence >= 4, no error) has already applied; `query`
-/// is the normalized form the key hashes.
+/// (#232: the answer is grounded — >= 1 source, every sentence cited
+/// in-range — and no error) has already applied; `query` is the
+/// normalized form the key hashes.
 #[derive(Debug, Clone)]
 pub struct AnswerRow {
     pub query: String,
@@ -849,8 +850,9 @@ pub trait Store: Send + Sync {
     async fn get_answer(&self, key: &AnswerKey) -> Result<Option<CachedAnswer>, StoreError>;
 
     /// Insert or replace the `answers` row for `key`. The caching rule
-    /// (>= 1 source, confidence >= 4, no error) is the caller's — the
-    /// store writes what it is given.
+    /// (#232: the answer is grounded — >= 1 source, every sentence
+    /// cited in-range — and no error) is the caller's — the store
+    /// writes what it is given.
     async fn put_answer(
         &self,
         key: &AnswerKey,
