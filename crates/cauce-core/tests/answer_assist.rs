@@ -74,6 +74,7 @@ fn assist_loop(
             model: MODEL.to_string(),
             enabled: true,
             protocol: cauce_core::AiProtocol::OpenAi,
+            ..Default::default()
         })
         .expect("client builds"),
     );

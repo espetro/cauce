@@ -82,6 +82,25 @@ kind = "declarative"
 enabled = true
 ```
 
+AI answers (`/answer`, `POST /api/answer`) are configured under `[ai]` —
+provider settings plus the answer loop's budget knobs. Every key takes a
+`CAUCE_AI_*` env override (`CAUCE_AI_MAX_TURNS`, `CAUCE_AI_MAX_SEARCHES`,
+`CAUCE_AI_PROVIDER_BUDGET_S`, `CAUCE_AI_VERIFY`) and applies on save
+without a restart:
+
+```toml
+[ai]
+enabled = true
+base_url = "https://openrouter.ai/api/v1"
+api_key = "${env:PROVIDER_API_KEY}"
+model = "openai/gpt-4o-mini"
+protocol = "openai"          # or "anthropic"
+max_turns = 8                # provider turns before the loop must synthesize
+max_searches = 6             # tool calls actually executed per run
+provider_budget_s = 60       # per-call provider timeout, seconds (>= 1)
+verify = false               # reserved for the groundedness verifier (#232)
+```
+
 ## Supervision (oxmgr / launchd)
 
 oxmgr supervises long-running apps on this machine; it owns the launchd

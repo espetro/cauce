@@ -212,6 +212,51 @@ process — you cannot give tier-1 and tier-2 different latencies from env. Mult
   Multi-part fan-out arrives as 1–2 calls per turn more often than one big
   parallel batch; both are valid (parallel calls share a turn's dispatch).
 
+### Answer-loop budget knobs (`ai.max_turns` / `ai.max_searches` / `ai.provider_budget_s`, #233)
+
+**Count spans by record kind, never by substring.** jsonl records are
+`kind: "event" | "span_open" | "span_close"`; `span.name` lives on the
+record's own `span` object while span names ALSO appear in every descendant
+event's `spans` parent array — `grep -c '"pipeline.search"'` overcounts
+(34 vs the true 2). Correct recipe:
+
+    python3 -c "import json,collections
+    opens=collections.Counter()
+    for l in open('$LOG'):
+        r=json.loads(l); sp=r.get('span') or {}
+        if r.get('kind')=='span_open': opens[sp.get('name')]+=1
+    print(opens)"
+
+Provider calls = `ai_http` opens; real searches = `pipeline.search` opens;
+guard hits = `kind:event` records with `fields.reason` =
+`"search budget exhausted"` / `"duplicate query"`.
+
+**Deterministic budget proof:** a stub serving a `search_web` toolcall SSE
+with a **unique query per POST index** is the sharpest fixture — unique
+queries dodge the dedup guard so every turn either executes (counts toward
+`ai.max_searches`) or short-circuits with `search budget exhausted`.
+Dispatch on the request body: `tool_choice == "none"` or empty `tools` is
+the forced-synthesize turn — serve the answer SSE then. Loop math:
+provider calls = `max_turns + 1`, `pipeline.search` spans =
+min(turns, `max_searches`), exhausted events = turns − searches. A
+repeating SAME-query fixture instead trips `duplicate query` after turn 1
+and never reaches the budget branch.
+
+- `CAUCE_AI_MAX_SEARCHES=2` run → 2 `pipeline.search` spans, N−2
+  `search budget exhausted` events, and the SSE `sources` frame only
+  contains results from the first 2 query phrasings (each capped query
+  contributes zero sources — a one-glance check that also works in the
+  `/answer` UI: `Searching:` chip count > executed searches).
+- `ai.max_turns` + hot-reload: `ai.*` applies on settings save — change Max
+  turns to 3, save (`saved HH:MM`, no restart flag), next `/api/answer`
+  run shows `3+1` `ai_http` opens without a restart.
+- `ai.provider_budget_s`: save `1`, then a query whose request makes the
+  stub sleep >1 s → SSE `event: error` `"provider request timed out"` on
+  the FIRST call (loop never reaches a tool call).
+- env-beats-file is visible on `/settings`: env-pinned knobs render
+  disabled inputs with `set by CAUCE_AI_*` hints showing the env value
+  even when `config.toml` says otherwise; unpinned knobs stay editable.
+
 ## Archive / click-beacon e2e (`/api/pages`, W5-01+)
 
 - `archive.index_on_click` defaults true; `CAUCE_ARCHIVE_INDEX_ON_CLICK=false` removes the

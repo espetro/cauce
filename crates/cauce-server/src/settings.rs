@@ -76,7 +76,10 @@ fn apply_field(
         | "search.hedge_ceiling_ms"
         | "admission.max_wait_ms"
         | "admission.max_concurrent_per_engine"
-        | "logs.retention_days" => {
+        | "logs.retention_days"
+        | "ai.max_turns"
+        | "ai.max_searches"
+        | "ai.provider_budget_s" => {
             let n = value
                 .trim()
                 .parse::<i64>()

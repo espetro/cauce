@@ -144,6 +144,14 @@ const ENV_OVERRIDES: &[(&str, &[&str], bool)] = &[
     ("CAUCE_AI_MODEL", &["ai", "model"], false),
     ("CAUCE_AI_ENABLED", &["ai", "enabled"], true),
     ("CAUCE_AI_PROTOCOL", &["ai", "protocol"], false),
+    ("CAUCE_AI_MAX_TURNS", &["ai", "max_turns"], true),
+    ("CAUCE_AI_MAX_SEARCHES", &["ai", "max_searches"], true),
+    (
+        "CAUCE_AI_PROVIDER_BUDGET_S",
+        &["ai", "provider_budget_s"],
+        true,
+    ),
+    ("CAUCE_AI_VERIFY", &["ai", "verify"], true),
     (
         "CAUCE_ARCHIVE_INDEX_ON_CLICK",
         &["archive", "index_on_click"],
@@ -725,11 +733,11 @@ fn default_retention_days() -> u32 {
     7
 }
 
-/// `[ai]`: provider settings. Disabled until wave 4 and blank by default —
-/// `base_url`/`api_key` are empty strings, not a reference to anyone's
-/// local gateway; point them at an OpenAI-compatible endpoint (e.g. an
-/// `api_key = "${env:...}"` template) to use them.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+/// `[ai]`: provider settings plus the answer loop's budget knobs (#233).
+/// `base_url`/`api_key` are empty strings by default, not a reference to
+/// anyone's local gateway; point them at an OpenAI-compatible endpoint
+/// (e.g. an `api_key = "${env:...}"` template) to use them.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct AiConfig {
     /// OpenAI-compatible endpoint.
@@ -748,6 +756,52 @@ pub struct AiConfig {
     /// `openai` (default, `chat/completions`) or `anthropic` (`/v1/messages`).
     #[serde(default)]
     pub protocol: AiProtocol,
+    /// Provider turns the answer loop may take before it must synthesize
+    /// (#231's `LoopConfig::max_turns`; a forced-synthesize turn rides on
+    /// top, so the run is bounded at `max_turns + 1` provider calls).
+    #[serde(default = "default_ai_max_turns")]
+    pub max_turns: u32,
+    /// Tool calls the answer loop may execute per run (#231's
+    /// `LoopConfig::max_search_executions`): repeated or over-budget calls
+    /// resolve in-band for free, so this is the real cost budget.
+    #[serde(default = "default_ai_max_searches")]
+    pub max_searches: u32,
+    /// Per-call provider timeout in seconds, applied to every `chat_stream`
+    /// invocation (#231's `LoopConfig::provider_budget`). Must be >= 1.
+    #[serde(default = "default_ai_provider_budget_s")]
+    pub provider_budget_s: u64,
+    /// Reserved for the marginal-groundedness verifier (#232): parsed and
+    /// hot-reloaded like the rest of `[ai]` but not yet consulted.
+    #[serde(default)]
+    pub verify: bool,
+}
+
+impl Default for AiConfig {
+    fn default() -> Self {
+        Self {
+            base_url: String::new(),
+            api_key: String::new(),
+            model: String::new(),
+            enabled: false,
+            protocol: AiProtocol::default(),
+            max_turns: default_ai_max_turns(),
+            max_searches: default_ai_max_searches(),
+            provider_budget_s: default_ai_provider_budget_s(),
+            verify: false,
+        }
+    }
+}
+
+fn default_ai_max_turns() -> u32 {
+    8
+}
+
+fn default_ai_max_searches() -> u32 {
+    6
+}
+
+fn default_ai_provider_budget_s() -> u64 {
+    60
 }
 
 /// The `[ai].protocol` vocabulary (W4-05): which provider client the
@@ -1311,6 +1365,16 @@ impl Config {
             });
         }
 
+        // `ai.provider_budget_s` is the per-call provider timeout: `0`
+        // would time every `chat_stream` out instantly rather than disable
+        // AI (that is `ai.enabled = false`), so it is rejected.
+        if cfg.ai.provider_budget_s == 0 {
+            return Err(ConfigError::InvalidValue {
+                path: "ai.provider_budget_s".to_string(),
+                msg: "expected >= 1".to_string(),
+            });
+        }
+
         // Built-ins fill in entries the file did not define.
         for builtin in builtin_engines() {
             if !cfg.engines.iter().any(|e| e.id == builtin.id) {
@@ -1604,6 +1668,11 @@ mod tests {
         assert_eq!(cfg.ai.base_url, "");
         assert_eq!(cfg.ai.api_key, "");
         assert!(!cfg.ai.enabled);
+        // #233 loop knobs: settled defaults mirror `LoopConfig::default`.
+        assert_eq!(cfg.ai.max_turns, 8);
+        assert_eq!(cfg.ai.max_searches, 6);
+        assert_eq!(cfg.ai.provider_budget_s, 60);
+        assert!(!cfg.ai.verify);
         assert!(!cfg.auth.enabled);
         assert!(cfg.config.interpolation);
     }
@@ -1998,6 +2067,70 @@ mod tests {
             Some("https://search.localhost")
         );
         assert!(cfg.ai.enabled);
+    }
+
+    /// `[ai]` loop knobs (#233): file values load, `CAUCE_AI_*` env pins
+    /// beat them, a partial section fills from defaults and `verify`
+    /// parses but stays inert until #232 wires it.
+    #[test]
+    fn ai_loop_knobs_load() {
+        let (tmp, env) = sandbox(&[]);
+        write_config(
+            &tmp.path().join("cfg"),
+            "[ai]\nmax_turns = 3\nmax_searches = 2\nprovider_budget_s = 15\nverify = true\n",
+        );
+        let cfg = Config::load_with(&env).unwrap();
+        assert_eq!(cfg.ai.max_turns, 3);
+        assert_eq!(cfg.ai.max_searches, 2);
+        assert_eq!(cfg.ai.provider_budget_s, 15);
+        assert!(cfg.ai.verify);
+
+        // Partial section: untouched knobs keep the settled defaults.
+        write_config(&tmp.path().join("cfg"), "[ai]\nmax_searches = 1\n");
+        let cfg = Config::load_with(&env).unwrap();
+        assert_eq!(cfg.ai.max_turns, 8);
+        assert_eq!(cfg.ai.max_searches, 1);
+        assert_eq!(cfg.ai.provider_budget_s, 60);
+        assert!(!cfg.ai.verify);
+
+        // `CAUCE_*` pins beat the file, from either source.
+        let (_tmp2, env_override) = sandbox(&[
+            ("CAUCE_AI_MAX_TURNS", "4"),
+            ("CAUCE_AI_MAX_SEARCHES", "5"),
+            ("CAUCE_AI_PROVIDER_BUDGET_S", "30"),
+            ("CAUCE_AI_VERIFY", "true"),
+        ]);
+        let cfg = Config::load_with(&env_override).unwrap();
+        assert_eq!(cfg.ai.max_turns, 4);
+        assert_eq!(cfg.ai.max_searches, 5);
+        assert_eq!(cfg.ai.provider_budget_s, 30);
+        assert!(cfg.ai.verify);
+
+        // Unknown keys inside the section are still rejected.
+        write_config(&tmp.path().join("cfg"), "[ai]\nbogus = 1\n");
+        assert!(matches!(
+            Config::load_with(&env),
+            Err(ConfigError::Invalid(_))
+        ));
+    }
+
+    /// `ai.provider_budget_s = 0` would time every provider call out
+    /// instantly — rejected from either source rather than re-interpreted
+    /// (`ai.enabled = false` is the real off switch).
+    #[test]
+    fn ai_provider_budget_zero_is_rejected() {
+        let (tmp, env) = sandbox(&[]);
+        write_config(&tmp.path().join("cfg"), "[ai]\nprovider_budget_s = 0\n");
+        assert!(matches!(
+            Config::load_with(&env),
+            Err(ConfigError::InvalidValue { ref path, .. }) if path == "ai.provider_budget_s"
+        ));
+
+        let (_tmp2, env_override) = sandbox(&[("CAUCE_AI_PROVIDER_BUDGET_S", "0")]);
+        assert!(matches!(
+            Config::load_with(&env_override),
+            Err(ConfigError::InvalidValue { ref path, .. }) if path == "ai.provider_budget_s"
+        ));
     }
 
     #[test]

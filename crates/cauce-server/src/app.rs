@@ -270,11 +270,14 @@ fn build_answer_loop(
         return None;
     }
     match cauce_core::ai::provider_client(&config.ai, Some(store.clone())) {
-        Ok(client) => Some(AnswerLoop::new(
-            pipeline.as_ref().clone(),
-            client,
-            store.clone(),
-        )),
+        Ok(client) => Some(
+            AnswerLoop::new(pipeline.as_ref().clone(), client, store.clone())
+                // #233: the loop's budget knobs live in `[ai]`; `verify`
+                // is reserved for #232 and not yet consulted.
+                .with_max_turns(config.ai.max_turns as usize)
+                .with_max_search_executions(config.ai.max_searches as usize)
+                .with_provider_budget(Duration::from_secs(config.ai.provider_budget_s)),
+        ),
         Err(e) => {
             tracing::warn!(
                 error = %e,

@@ -45,6 +45,7 @@ page; v3 gives settings a route.
 |   API key    [ ${env:PROVIDER_API_KEY}                ]           |
 |              PROVIDER_API_KEY is set                              |
 |   Model      [ claude-sonnet-4-5          v]                     |
+|   Max turns  [ 8     ]  Max searches [ 6  ]  Budget (s) [ 60   ] |
 |   [ ] enabled  (the answer pipeline arrives in wave 4)           |
 |                                                                  |
 |                                        [Save]  saved 01:12       |

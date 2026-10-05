@@ -65,6 +65,10 @@ async fn settings_page_renders_sections_and_request_id() {
         "name=\"ai.base_url\"",
         "name=\"ai.api_key\"",
         "name=\"ai.model\"",
+        // #233 loop budget knobs are editable fields.
+        "name=\"ai.max_turns\"",
+        "name=\"ai.max_searches\"",
+        "name=\"ai.provider_budget_s\"",
         "engines.replay.enabled",
         "engines.ddgs.enabled",
         "engines.replay.egress.proxy",
@@ -182,6 +186,56 @@ async fn api_key_template_survives_roundtrip() {
         body.contains("value=\"${env:PROVIDER_API_KEY}\""),
         "reloaded page must still show the template: {body}"
     );
+    clear_env();
+}
+
+/// #233: the `[ai]` loop knobs save through the form whitelist, land in
+/// `config.toml` hot-applied and render back on reload.
+#[tokio::test]
+async fn ai_loop_knobs_save_and_reload() {
+    let _guard = env_lock().await;
+    clear_env();
+    let tmp = config_env("[ai]\nmax_turns = 8\n");
+    let app = app(&tmp);
+
+    let (status, body) = put_form(
+        &app,
+        "ai.max_turns=4&ai.max_searches=2&ai.provider_budget_s=30",
+        false,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let json: Value = serde_json::from_str(&body).expect("json response");
+    assert_eq!(json["ai"]["max_turns"], 4);
+    assert_eq!(json["ai"]["max_searches"], 2);
+    assert_eq!(json["ai"]["provider_budget_s"], 30);
+    // `ai.*` is hot-applicable (#236): the knobs apply in place.
+    assert_eq!(json["requires_restart"], serde_json::json!([]));
+
+    let on_disk = saved_config(&tmp);
+    for needle in [
+        "max_turns = 4",
+        "max_searches = 2",
+        "provider_budget_s = 30",
+    ] {
+        assert!(
+            on_disk.contains(needle),
+            "file should carry {needle}: {on_disk}"
+        );
+    }
+
+    let (status, body) = get_html(&app, "/settings").await;
+    assert_eq!(status, StatusCode::OK);
+    for needle in [
+        "name=\"ai.max_turns\" value=\"4\"",
+        "name=\"ai.max_searches\" value=\"2\"",
+        "name=\"ai.provider_budget_s\" value=\"30\"",
+    ] {
+        assert!(
+            body.contains(needle),
+            "reloaded page missing {needle:?}: {body}"
+        );
+    }
     clear_env();
 }
 
