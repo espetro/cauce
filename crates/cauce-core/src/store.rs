@@ -24,7 +24,7 @@ use uuid::Uuid;
 use crate::Tier;
 use crate::cache::{CacheKey, CachedSearch, normalize_query, push_str};
 use crate::engine::EngineId;
-use crate::request::ClientKind;
+use crate::request::{ClientKind, SearchOrigin};
 use crate::response::SearchResponse;
 
 /// Errors returned by `Store` impls. Backend details (SQL, IO) are flattened
@@ -68,6 +68,12 @@ pub struct SearchLogRow {
     /// this request.
     pub engines: Vec<EngineId>,
     pub deadline_hit: bool,
+    /// Who originated the search (`origin` column, #254): `user` for a
+    /// search typed into the UI, `agent` for answer-loop tool calls and
+    /// api/mcp/cli clients. `#[serde(default)]` keeps pre-column wire
+    /// payloads decodable.
+    #[serde(default)]
+    pub origin: SearchOrigin,
 }
 
 /// `source` column of `search_log` (`cache` | `network`). Distinct from
@@ -318,17 +324,23 @@ pub struct AuditRow {
     pub request_id: Option<Uuid>,
 }
 
-/// Filters for `Store::list_history` (`GET /api/history?since&q&cached&limit`).
+/// Filters for `Store::list_history` (`GET /api/history?since&q&cached&limit&origin`).
 #[derive(Debug, Clone)]
 pub struct HistoryFilter {
     /// Only rows at or after this instant.
     pub since: Option<DateTime<Utc>>,
-    /// Substring match on the stored query (searches only; clicks are not
-    /// filtered by it).
+    /// Substring match on the stored query (searches and answers; clicks
+    /// are not filtered by it).
     pub q: Option<String>,
     /// `cached=1` (W2-02 amendment): only rows whose `query_hash` has a
-    /// live (unexpired) `cache_entries` row.
+    /// live (unexpired) `cache_entries` row. Answer rows have no cache
+    /// entry and are excluded under it.
     pub cached: bool,
+    /// `?origin=` (#254): `Some` keeps only rows of that origin (search
+    /// and answer rows carry it stored; a click derives it from its
+    /// client — `ui` is `user`, anything else `agent`). `None` is the
+    /// unfiltered feed.
+    pub origin: Option<SearchOrigin>,
     /// Max items, newest first.
     pub limit: u32,
 }
@@ -340,18 +352,21 @@ impl Default for HistoryFilter {
             since: None,
             q: None,
             cached: false,
+            origin: None,
             limit: 50,
         }
     }
 }
 
-/// One history item: a logged search or a click, merged newest-first by the
-/// route (`GET /api/history` reads one plane: `search_log` + `clicks`).
+/// One history item: a logged search, a click or an answer run, merged
+/// newest-first by the route (`GET /api/history` reads one plane:
+/// `search_log` + `clicks` + `answer_log`).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum HistoryItem {
     Search(SearchLogRow),
     Click(ClickRow),
+    Answer(AnswerLogRow),
 }
 
 /// Live cache state for one `query_hash` (the history page's `source`
@@ -483,6 +498,76 @@ pub struct CachedAnswer {
     pub expires_at: DateTime<Utc>,
 }
 
+/// `answer_log` row (#254): the durable, non-TTL'd record of one
+/// terminal `stream_answer` run — the human-facing counterpart of
+/// `search_log` for questions asked in AI mode. Written by
+/// `AnswerLoop::run` on every terminal path; `id` is `None` on insert.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AnswerLogRow {
+    #[serde(default)]
+    pub id: Option<i64>,
+    pub ts: DateTime<Utc>,
+    /// The normalized question (`normalize_query`), matching `search_log`.
+    pub query: String,
+    /// The question exactly as submitted, for history displays.
+    #[serde(default)]
+    pub query_raw: Option<String>,
+    /// Model the answer ran on (`done.model`, else the provider's).
+    pub model: String,
+    /// The answer markdown; empty on `status = error` rows.
+    #[serde(default)]
+    pub answer: String,
+    /// The verbalized confidence (display only); absent on error rows.
+    #[serde(default)]
+    pub confidence: Option<u8>,
+    /// The cited source set (`sources_json` column).
+    #[serde(default)]
+    pub sources: Vec<AnswerSource>,
+    /// The `related_questions` tail (`related_json` column).
+    #[serde(default)]
+    pub related_questions: Vec<String>,
+    /// The inbound request id (`done.request_id`).
+    #[serde(default)]
+    pub request_id: Option<Uuid>,
+    /// The inbound surface's client, same convention as `search_log`.
+    pub client: ClientKind,
+    /// `user` iff `client == Ui` — the human's own question; `agent`
+    /// for api/mcp/cli-driven runs.
+    pub origin: SearchOrigin,
+    pub status: AnswerStatus,
+    /// `done.ungrounded` — the answer drew on no sources.
+    #[serde(default)]
+    pub ungrounded: bool,
+    /// The terminal error message on `status = error` rows.
+    #[serde(default)]
+    pub error: Option<String>,
+}
+
+/// `answer_log.status` (`done` | `cached` | `error`): which terminal
+/// path the run took.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AnswerStatus {
+    /// A fresh answer completed (`done` frame, possibly ungrounded).
+    Done,
+    /// The `answers` cache replayed a stored answer (`done{cached:true}`).
+    Cached,
+    /// The run ended on an `error` frame (provider failure, exhausted
+    /// budget that still failed).
+    Error,
+}
+
+impl AnswerStatus {
+    /// The `status` column string.
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Done => "done",
+            Self::Cached => "cached",
+            Self::Error => "error",
+        }
+    }
+}
+
 /// Aggregates for the `/history` header line and cap note (W2-02).
 #[derive(Debug, Clone, Copy, Default)]
 pub struct HistoryStats {
@@ -492,8 +577,8 @@ pub struct HistoryStats {
     pub searches_total: u64,
     /// `clicks` rows since UTC midnight.
     pub clicks_today: u64,
-    /// `search_log` rows matching the page's filters (ignoring `limit`):
-    /// the `N` in "showing 200 of N".
+    /// `search_log` + `answer_log` rows matching the page's filters
+    /// (ignoring `limit`): the `N` in "showing 200 of N".
     pub matching: u64,
 }
 
@@ -508,6 +593,16 @@ pub struct DeleteSearchLog {
     /// `query_hash` — a click belongs to the query, and a surviving row
     /// still displays them.
     pub clicks_removed: u64,
+}
+
+/// Outcome of [`Store::delete_answer_log`] (`DELETE /api/answer-log/{id}`,
+/// #254): enough context for the audit row without a second read.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeleteAnswerLog {
+    /// The removed row's query text.
+    pub query: String,
+    /// The removed row's terminal status.
+    pub status: AnswerStatus,
 }
 
 /// Filters for `Store::list_audit` (`GET /api/audit`).
@@ -894,6 +989,24 @@ pub trait Store: Send + Sync {
 
     /// Unconditional request log: called for every search, hit or not.
     async fn log_search(&self, row: SearchLogRow) -> Result<(), StoreError>;
+
+    /// Unconditional answer-run log (#254): `AnswerLoop::run` appends
+    /// one `answer_log` row on every terminal path (fresh done, cached
+    /// replay, error). Durable — no TTL eviction — and `stream_assist`
+    /// runs do not log here (their parent search is already a
+    /// `search_log` row). Returns the new row's id — the terminal
+    /// `done`/`error` frame carries it as `log_id` for the durable
+    /// `/answer/{id}` URL.
+    async fn log_answer(&self, row: AnswerLogRow) -> Result<i64, StoreError>;
+
+    /// One `answer_log` row by id (#254) — backs `GET /answer/{id}` and
+    /// `GET /api/answer-log/{id}`. `None` when the id is unknown.
+    async fn get_answer_log(&self, id: i64) -> Result<Option<AnswerLogRow>, StoreError>;
+
+    /// `DELETE /api/answer-log/{id}` (#254): remove one `answer_log`
+    /// row. Returns `None` when no row has that id. The caller writes
+    /// the audit row.
+    async fn delete_answer_log(&self, id: i64) -> Result<Option<DeleteAnswerLog>, StoreError>;
 
     /// Click-through beacon (`POST /api/click`).
     async fn record_click(&self, row: ClickRow) -> Result<(), StoreError>;

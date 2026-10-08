@@ -112,6 +112,13 @@ pub enum LoopEvent<'a> {
         /// The store error.
         error: &'a StoreError,
     },
+    /// The durable `answer_log` write failed (#254); the run continues —
+    /// a logging outage must not break answers, same fail-open policy as
+    /// the answers cache.
+    LogFailed {
+        /// The store error.
+        error: &'a StoreError,
+    },
     /// A frame is about to be emitted. Fires before `tx.send`, so a
     /// receiver that already dropped still shows in transcripts — the
     /// event reports the frame *produced*, not delivered.
@@ -180,6 +187,9 @@ impl AgentObserver for TracingObserver {
                 "lookup" => warn!(error = %error, "answers lookup failed; continuing uncached"),
                 _ => warn!(error = %error, "answers write failed"),
             },
+            LoopEvent::LogFailed { error } => {
+                warn!(error = %error, "answer_log write failed")
+            }
             LoopEvent::ToolSkipped { call, reason } => {
                 info!(tool = %call.name, reason = reason, "tool call short-circuited");
             }

@@ -14,7 +14,7 @@ use axum::Extension;
 use axum::extract::State;
 use axum::http::{HeaderMap, Uri};
 use axum::response::{Html, IntoResponse, Response};
-use cauce_core::{CacheKey, ClickRow, HistoryItem};
+use cauce_core::{CacheKey, ClickRow, HistoryItem, SearchOrigin};
 
 use super::{STYLE_CSS, render_err};
 use crate::app::AppState;
@@ -49,9 +49,23 @@ struct ClickLine {
 /// never hides recorded clicks).
 #[derive(Debug)]
 struct HistRow {
+    /// A `search_log` row (carries clicks, rerun/json/payload actions).
     is_search: bool,
-    /// `search_log` id (drives the delete button); unused on click rows.
-    id: i64,
+    /// An `answer_log` row (#254): query links to `/answer?q=`, the
+    /// `engines` cell shows the model, `n` the source count.
+    is_answer: bool,
+    /// The delete endpoint — `/api/history/{id}` for searches,
+    /// `/api/answer-log/{id}` for answers (#254).
+    delete_url: String,
+    /// `agent` chip next to the client label on search rows whose
+    /// `origin` is `agent` (#254).
+    origin_chip: bool,
+    /// `ai` chip after the query on answer rows (#254).
+    query_chip: String,
+    /// The `c-query` cell link: `/search?q=` on searches,
+    /// `/answer/{id}` on answers (#254 — durable past the `answers`
+    /// TTL; the `re-run` action keeps the explicit `/answer?q=` re-ask).
+    query_url: String,
     /// `YYYY-MM-DD` group header, set on the first row of each local day.
     day_header: Option<String>,
     /// `HH:MM` local time.
@@ -97,6 +111,12 @@ struct History {
     cached: bool,
     /// Any filter active → the `clear` link is shown.
     filters_active: bool,
+    /// Selected `origin` filter as the select's value (`user` | `agent`
+    /// | `all`) — #254; `user` is the page's implicit "mine" default.
+    origin: String,
+    /// `/history?origin=all` link in the empty state when the
+    /// default-on `origin=user` filter hid every row (#254).
+    origin_all_url: String,
     /// `N searches in last 24h · N total · N clicks today`.
     stats_line: String,
     /// Empty-state sentence (fresh store or filtered-empty wording).
@@ -128,8 +148,16 @@ pub(crate) async fn history_page(
     Extension(ctx): Extension<RequestCtx>,
     uri: Uri,
 ) -> Result<Response, ApiError> {
-    let (params, filter, items) =
-        crate::handlers::history_inner(&state, &ctx, &uri, crate::handlers::HISTORY_LIMIT).await?;
+    // #254: the page defaults `origin=user` ("mine") when the param is
+    // absent; `/api/history` keeps the unfiltered JSON default.
+    let (params, filter, items) = crate::handlers::history_inner(
+        &state,
+        &ctx,
+        &uri,
+        crate::handlers::HISTORY_LIMIT,
+        Some(SearchOrigin::User),
+    )
+    .await?;
     let stats = state
         .store()
         .history_stats(&filter)
@@ -192,11 +220,40 @@ pub(crate) async fn history_page(
         .collect();
 
     let rows = history_rows(items, &cache, &off_window);
-    let filters_active = filter.cached || filter.q.is_some() || filter.since.is_some();
-    let empty_message = if rows.is_empty() {
-        empty_message(&params, &filter)
+    // `origin != user` counts as a filter (#254): `origin=all` and
+    // `origin=agent` both surface the clear link.
+    let filters_active = filter.cached
+        || filter.q.is_some()
+        || filter.since.is_some()
+        || filter.origin != Some(SearchOrigin::User);
+    let (empty_message, origin_all_url) = if rows.is_empty() {
+        // #254: `ef_origin` names the case where the default-on
+        // `origin=user` filter emptied the feed — not a genuinely
+        // empty store. Probe without the origin bound to tell them
+        // apart (only pays for a second query on an empty page).
+        if filter.origin == Some(SearchOrigin::User) {
+            let probe = cauce_core::HistoryFilter {
+                origin: None,
+                ..filter.clone()
+            };
+            let unfiltered = state
+                .store()
+                .list_history(&probe)
+                .await
+                .map_err(|e| ctx.store(&e))?;
+            if unfiltered.is_empty() {
+                empty_message(&params, &probe)
+            } else {
+                (
+                    t!("history.ef_origin").to_string(),
+                    "/history?origin=all".to_string(),
+                )
+            }
+        } else {
+            empty_message(&params, &filter)
+        }
     } else {
-        String::new()
+        (String::new(), String::new())
     };
     let capped_line = if stats.matching as usize > rows.len() && !rows.is_empty() {
         format!(
@@ -227,6 +284,13 @@ pub(crate) async fn history_page(
         q: params.get("q").unwrap_or("").to_string(),
         cached: filter.cached,
         filters_active,
+        origin: match filter.origin {
+            Some(SearchOrigin::User) => "user",
+            Some(SearchOrigin::Agent) => "agent",
+            None => "all",
+        }
+        .to_string(),
+        origin_all_url,
         stats_line,
         empty_message,
         rows,
@@ -242,10 +306,12 @@ pub(crate) async fn history_page(
 }
 
 /// The one-sentence empty state: plain `empty` when nothing is stored, or
-/// the filtered-empty sentence naming the active filters.
-fn empty_message(params: &QueryParams, filter: &cauce_core::HistoryFilter) -> String {
+/// the filtered-empty sentence naming the active filters. #254: the
+/// `origin=user`-filtered-empty case is decided by the caller (it probes
+/// the unfiltered store); this fn only sees the origin-free filter then.
+fn empty_message(params: &QueryParams, filter: &cauce_core::HistoryFilter) -> (String, String) {
     if !filter.cached && filter.q.is_none() && filter.since.is_none() {
-        return t!("history.empty").to_string();
+        return (t!("history.empty").to_string(), String::new());
     }
     let mut msg = match params.get("q").filter(|v| !v.trim().is_empty()) {
         Some(q) => format!("{} \"{q}\"", t!("history.ef_match")),
@@ -263,7 +329,7 @@ fn empty_message(params: &QueryParams, filter: &cauce_core::HistoryFilter) -> St
         msg.push_str(&format!(" {}", t!("history.ef_cached")));
     }
     msg.push('.');
-    msg
+    (msg, String::new())
 }
 
 /// Compact entry age for `cached · <age>`: `42s`, `41m`, `3h`, `2d`.
@@ -388,9 +454,13 @@ fn history_rows(
                         clicks_word
                     )
                 };
+                let id = s_row.id.unwrap_or(0);
                 rows.push(HistRow {
                     is_search: true,
-                    id: s_row.id.unwrap_or(0),
+                    is_answer: false,
+                    delete_url: format!("/api/history/{id}"),
+                    origin_chip: s_row.origin == SearchOrigin::Agent,
+                    query_chip: String::new(),
                     day_header: day_header(s_row.ts, &mut last_day),
                     when: s_row
                         .ts
@@ -413,6 +483,7 @@ fn history_rows(
                     clicks,
                     clicks_word,
                     delete_confirm,
+                    query_url: format!("/search?q={encoded}"),
                     rerun_url: format!("/search?q={encoded}"),
                     json_url: format!("/api/search?q={encoded}"),
                 });
@@ -426,7 +497,10 @@ fn history_rows(
                 }
                 rows.push(HistRow {
                     is_search: false,
-                    id: 0,
+                    is_answer: false,
+                    delete_url: String::new(),
+                    origin_chip: false,
+                    query_chip: String::new(),
                     day_header: day_header(c.ts, &mut last_day),
                     when: c
                         .ts
@@ -446,7 +520,45 @@ fn history_rows(
                     // unused there.
                     clicks_word: t!("history.clicks_word"),
                     delete_confirm: t!("history.delete_confirm").to_string(),
+                    query_url: String::new(),
                     rerun_url: String::new(),
+                    json_url: String::new(),
+                });
+            }
+            HistoryItem::Answer(a) => {
+                let query = a.query_raw.clone().unwrap_or_else(|| a.query.clone());
+                let id = a.id.unwrap_or(0);
+                let rerun = format!("/answer?q={}", urlencoding::encode(&query));
+                // #254: the query cell links the durable `/answer/{id}`
+                // render (survives the `answers` TTL); the `ask again`
+                // action keeps `/answer?q=` as an explicit re-ask. The
+                // `engines` cell shows the model, `n` the source count,
+                // latency is a dash.
+                rows.push(HistRow {
+                    is_search: false,
+                    is_answer: true,
+                    delete_url: format!("/api/answer-log/{id}"),
+                    origin_chip: false,
+                    query_chip: t!("history.chip_ai").to_string(),
+                    day_header: day_header(a.ts, &mut last_day),
+                    when: a
+                        .ts
+                        .with_timezone(&chrono::Local)
+                        .format("%H:%M")
+                        .to_string(),
+                    query,
+                    source: a.status.label().to_string(),
+                    source_url: String::new(),
+                    cached_live: false,
+                    engines: a.model.clone(),
+                    result_count: a.sources.len().to_string(),
+                    latency: t!("common.dash").to_string(),
+                    client: a.client.label(),
+                    clicks: Vec::new(),
+                    clicks_word: t!("history.clicks_word"),
+                    delete_confirm: t!("history.delete_confirm_answer").to_string(),
+                    query_url: format!("/answer/{id}"),
+                    rerun_url: rerun,
                     json_url: String::new(),
                 });
             }

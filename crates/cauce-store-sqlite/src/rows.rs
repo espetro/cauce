@@ -9,8 +9,9 @@
 //! file, You can obtain one at <https://mozilla.org/MPL/2.0/>.
 
 use cauce_core::{
-    AuditRow, BreakerState, CacheKey, CachedAnswer, CachedSearch, ClickRow, ClientKind,
-    EngineHealthRow, EngineId, LogSource, PageRow, SearchLogRow, SearchResponse, StoreError, Tier,
+    AnswerLogRow, AnswerStatus, AuditRow, BreakerState, CacheKey, CachedAnswer, CachedSearch,
+    ClickRow, ClientKind, EngineHealthRow, EngineId, LogSource, PageRow, SearchLogRow,
+    SearchOrigin, SearchResponse, StoreError, Tier,
 };
 use chrono::{DateTime, Utc};
 use rusqlite::Row;
@@ -28,6 +29,9 @@ pub const ANSWER_COLS: &str =
 
 /// Column list shared by every `pages` read.
 pub const PAGE_COLS: &str = "url, fetched_at, title, markdown, byte_len, source_query_hash";
+
+/// Column list shared by every `answer_log` read.
+pub const ANSWER_LOG_COLS: &str = "id, ts, query, query_raw, model, answer, confidence, sources_json, related_json, request_id, client, origin, status, ungrounded, error";
 
 /// Wrap a `StoreError` for a rusqlite row closure; `as_store` unwraps it again
 /// at the outer boundary so `Corrupt` is not flattened into `Backend`.
@@ -111,6 +115,27 @@ fn parse_source(s: &str) -> Result<LogSource, StoreError> {
     }
 }
 
+/// `origin` column decode (`search_log` and `answer_log`).
+pub fn parse_origin(s: &str) -> Result<SearchOrigin, StoreError> {
+    match s {
+        "user" => Ok(SearchOrigin::User),
+        "agent" => Ok(SearchOrigin::Agent),
+        other => Err(StoreError::Corrupt(format!("unknown origin: {other}"))),
+    }
+}
+
+/// `answer_log.status` decode (`done` | `cached` | `error`).
+pub fn parse_answer_status(s: &str) -> Result<AnswerStatus, StoreError> {
+    match s {
+        "done" => Ok(AnswerStatus::Done),
+        "cached" => Ok(AnswerStatus::Cached),
+        "error" => Ok(AnswerStatus::Error),
+        other => Err(StoreError::Corrupt(format!(
+            "unknown answer status: {other}"
+        ))),
+    }
+}
+
 pub fn source_str(s: LogSource) -> &'static str {
     match s {
         LogSource::Cache => "cache",
@@ -191,7 +216,7 @@ pub fn page(row: &Row) -> Result<PageRow, StoreError> {
 }
 
 /// Decode one `search_log` row selected as
-/// `id, ts, query_hash, query, client, source, tier, latency_ms, result_count, engines_json, deadline_hit, query_raw`.
+/// `id, ts, query_hash, query, client, source, tier, latency_ms, result_count, engines_json, deadline_hit, query_raw, origin`.
 pub fn search_log(row: &Row) -> Result<SearchLogRow, StoreError> {
     Ok(SearchLogRow {
         id: Some(int(row, 0, "id")?),
@@ -206,6 +231,30 @@ pub fn search_log(row: &Row) -> Result<SearchLogRow, StoreError> {
         result_count: int(row, 8, "result_count")? as u32,
         engines: json(row, 9, "engines_json")?,
         deadline_hit: int(row, 10, "deadline_hit")? != 0,
+        origin: parse_origin(&text(row, 12, "origin")?)?,
+    })
+}
+
+/// Decode one `answer_log` row selected with [`ANSWER_LOG_COLS`].
+pub fn answer_log(row: &Row) -> Result<AnswerLogRow, StoreError> {
+    Ok(AnswerLogRow {
+        id: Some(int(row, 0, "id")?),
+        ts: from_ms(int(row, 1, "ts")?)?,
+        query: text(row, 2, "query")?,
+        query_raw: opt_text(row, 3, "query_raw")?,
+        model: text(row, 4, "model")?,
+        answer: text(row, 5, "answer")?,
+        confidence: opt_int(row, 6, "confidence")?.map(|v| v as u8),
+        sources: json(row, 7, "sources_json")?,
+        related_questions: json(row, 8, "related_json")?,
+        request_id: opt_text(row, 9, "request_id")?
+            .map(|s| Uuid::parse_str(&s).map_err(|e| corrupt("request_id", e)))
+            .transpose()?,
+        client: parse_client(&text(row, 10, "client")?)?,
+        origin: parse_origin(&text(row, 11, "origin")?)?,
+        status: parse_answer_status(&text(row, 12, "status")?)?,
+        ungrounded: int(row, 13, "ungrounded")? != 0,
+        error: opt_text(row, 14, "error")?,
     })
 }
 

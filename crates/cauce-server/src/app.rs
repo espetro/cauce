@@ -494,10 +494,17 @@ fn handler_for(spec: &RouteSpec, state: &AppState) -> Option<MethodRouter<AppSta
         // page can render its disabled notice instead of 404ing.
         #[cfg(feature = "ui")]
         ("GET", "/answer", RouteKind::Html) => Some(get(html::answer)),
+        // #254: same `ui` gate — the stored render needs no answer loop.
+        #[cfg(feature = "ui")]
+        ("GET", "/answer/{id}", RouteKind::Html) => Some(get(html::answer_view)),
         ("GET", "/api/suggest", RouteKind::Json) => Some(get(handlers::suggest)),
         ("GET", "/api/report", RouteKind::Json) => Some(get(handlers::report)),
         ("GET", "/api/history", RouteKind::Json) => Some(get(handlers::history)),
         ("DELETE", "/api/history/{id}", RouteKind::Json) => Some(delete(handlers::history_delete)),
+        ("DELETE", "/api/answer-log/{id}", RouteKind::Json) => {
+            Some(delete(handlers::answer_log_delete))
+        }
+        ("GET", "/api/answer-log/{id}", RouteKind::Json) => Some(get(handlers::answer_log_get)),
         ("POST", "/api/click", RouteKind::Json) => Some(post(handlers::click)),
         ("GET", "/api/stats", RouteKind::Json) => Some(get(handlers::stats)),
         ("GET", "/api/cache", RouteKind::Json) => Some(get(handlers::cache_list)),

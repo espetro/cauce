@@ -201,6 +201,7 @@ pub fn run_pair(spec: &CompiledSpec, pair: &FixturePair) -> Result<FixtureReport
         safesearch: SafeSearch::Moderate,
         engines: None,
         client: ClientKind::Cli,
+        origin: cauce_core::SearchOrigin::User,
     };
     // No fetch happened, so the rendered request URL is the resolution
     // base (what `res.url` would be for a redirect-free live fetch).

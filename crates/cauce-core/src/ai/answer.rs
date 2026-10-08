@@ -61,6 +61,13 @@ pub enum AnswerFrame {
         /// tells ts-rs the field may be absent on the wire.)
         #[serde(default, skip_serializing_if = "is_false")]
         ungrounded: bool,
+        /// The durable `answer_log` row id written for this run (#254) —
+        /// the page `replaceState`s `/answer/{log_id}` so back/forward
+        /// re-reads the stored row instead of re-running the loop.
+        /// Absent when the log write failed open.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(type = "number")]
+        log_id: Option<i64>,
     },
     /// Terminal frame for failures that abort the stream before a `done`
     /// can be built — provider error, iterations exhausted.
@@ -70,6 +77,12 @@ pub enum AnswerFrame {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[ts(type = "number")]
         retry_after_s: Option<u64>,
+        /// The `answer_log` row written for this failed run (#254) —
+        /// same `/answer/{id}` swap contract as `done.log_id`. Absent
+        /// on `stream_assist` (which never logs) and on failed writes.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(type = "number")]
+        log_id: Option<i64>,
     },
 }
 

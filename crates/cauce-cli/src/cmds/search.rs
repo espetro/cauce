@@ -150,6 +150,7 @@ async fn search_async(cfg: &Config, opts: &SearchArgs) -> i32 {
         safesearch: SafeSearch::default(),
         engines: opts.engines.clone(),
         client: ClientKind::Cli,
+        origin: cauce_core::SearchOrigin::User,
     };
     // Mint the id here so it is printed even when the pipeline errors —
     // the search_log row and JSONL spans carry it either way.

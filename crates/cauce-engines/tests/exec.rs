@@ -67,6 +67,7 @@ fn req(q: &str) -> SearchRequest {
         safesearch: SafeSearch::Moderate,
         engines: None,
         client: ClientKind::Api,
+        origin: cauce_core::SearchOrigin::User,
     }
 }
 

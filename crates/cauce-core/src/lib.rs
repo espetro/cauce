@@ -60,15 +60,16 @@ pub use pipeline::{
 pub use report::{
     RedactionProfile, ReportBundle, ReportCtx, ReportError, ReportEvent, ReportSection, ReportSink,
 };
-pub use request::{ClientKind, SafeSearch, SearchRequest, TimeRange};
+pub use request::{ClientKind, SafeSearch, SearchOrigin, SearchRequest, TimeRange};
 pub use response::{
     EngineReport, EngineStatus, ResultsFrame, SearchMeta, SearchResponse, SearchResult, Source,
     StreamEvent, StreamMeta, StreamResult,
 };
 pub use store::{
-    AdmissionStats, AnswerKey, AnswerPayload, AnswerRow, AnswerSource, AuditFacets, AuditFilter,
-    AuditRow, BreakerState, CacheResultHit, CacheState, CachedAnswer, ClickRow, ClientCount,
-    DayCount, DeleteSearchLog, EngineHealthRow, EngineStatsRow, HistoryFilter, HistoryItem,
-    HistoryStats, LatencyPercentiles, LogSource, PAGE_MARK_CLOSE, PAGE_MARK_OPEN, PageHit, PageRow,
-    PhaseStats, QueryCount, SearchLogRow, StatsSnapshot, Store, StoreError, StoreTuning, TierHit,
+    AdmissionStats, AnswerKey, AnswerLogRow, AnswerPayload, AnswerRow, AnswerSource, AnswerStatus,
+    AuditFacets, AuditFilter, AuditRow, BreakerState, CacheResultHit, CacheState, CachedAnswer,
+    ClickRow, ClientCount, DayCount, DeleteAnswerLog, DeleteSearchLog, EngineHealthRow,
+    EngineStatsRow, HistoryFilter, HistoryItem, HistoryStats, LatencyPercentiles, LogSource,
+    PAGE_MARK_CLOSE, PAGE_MARK_OPEN, PageHit, PageRow, PhaseStats, QueryCount, SearchLogRow,
+    StatsSnapshot, Store, StoreError, StoreTuning, TierHit,
 };

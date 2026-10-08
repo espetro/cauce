@@ -302,6 +302,14 @@ export function createAnswerSession(
     });
     T.status.textContent = S.complete;
     T.terminal = true;
+    // #254: the terminal frame carries the durable `answer_log` id —
+    // swap the `?q=` history entry for `/answer/{id}` so reload and
+    // back/forward land on the stored render, never a re-run.
+    // (`history` here is the turns array; the browser's is
+    // `window.history`.)
+    if (done.log_id != null) {
+      window.history.replaceState({}, "", "/answer/" + done.log_id);
+    }
     // The turn is complete: it joins the replayed thread, the input is
     // free for the next question.
     history.push({ role: "user", content: T.q });
@@ -342,6 +350,10 @@ export function createAnswerSession(
       let message = frame.message || S.stream_failed;
       if (frame.retry_after_s) {
         message += " (" + fmt(S.retry_after, { n: frame.retry_after_s }) + ")";
+      }
+      // #254: failed runs log a row too — same durable-URL swap.
+      if (frame.log_id != null) {
+        window.history.replaceState({}, "", "/answer/" + frame.log_id);
       }
       fail(T, message);
     }

@@ -40,10 +40,10 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use cauce_core::{
-    AnswerKey, AnswerRow, AuditFacets, AuditFilter, AuditRow, CacheKey, CacheResultHit, CacheState,
-    CachedAnswer, CachedSearch, ClickRow, DeleteSearchLog, EngineHealthRow, HistoryFilter,
-    HistoryItem, HistoryStats, PageHit, PageRow, SearchLogRow, SearchResponse, StatsSnapshot,
-    Store, StoreError, StoreTuning,
+    AnswerKey, AnswerLogRow, AnswerRow, AuditFacets, AuditFilter, AuditRow, CacheKey,
+    CacheResultHit, CacheState, CachedAnswer, CachedSearch, ClickRow, DeleteAnswerLog,
+    DeleteSearchLog, EngineHealthRow, HistoryFilter, HistoryItem, HistoryStats, PageHit, PageRow,
+    SearchLogRow, SearchResponse, StatsSnapshot, Store, StoreError, StoreTuning,
 };
 use rusqlite::Connection;
 use tokio::task::{JoinError, spawn_blocking};
@@ -311,6 +311,18 @@ impl Store for SqliteStore {
 
     async fn log_search(&self, row: SearchLogRow) -> Result<(), StoreError> {
         self.log_search(row).await
+    }
+
+    async fn log_answer(&self, row: AnswerLogRow) -> Result<i64, StoreError> {
+        self.log_answer(row).await
+    }
+
+    async fn get_answer_log(&self, id: i64) -> Result<Option<AnswerLogRow>, StoreError> {
+        self.get_answer_log(id).await
+    }
+
+    async fn delete_answer_log(&self, id: i64) -> Result<Option<DeleteAnswerLog>, StoreError> {
+        self.delete_answer_log(id).await
     }
 
     async fn record_click(&self, row: ClickRow) -> Result<(), StoreError> {

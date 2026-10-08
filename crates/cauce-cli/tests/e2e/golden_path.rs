@@ -112,6 +112,7 @@ async fn replay_golden_path() {
         safesearch: SafeSearch::default(),
         engines: None,
         client: ClientKind::Api,
+        origin: cauce_core::SearchOrigin::User,
     };
     let key = CacheKey::from(&cache_req);
 

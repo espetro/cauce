@@ -12,10 +12,10 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use cauce_core::{
-    AnswerKey, AnswerRow, AuditFilter, AuditRow, CacheKey, CacheResultHit, CacheState,
-    CachedAnswer, CachedSearch, ClickRow, DeleteSearchLog, EngineHealthRow, EngineStatus,
-    HistoryFilter, HistoryItem, HistoryStats, PageHit, PageRow, SearchLogRow, SearchResponse,
-    StatsSnapshot, Store, StoreError,
+    AnswerKey, AnswerLogRow, AnswerRow, AuditFilter, AuditRow, CacheKey, CacheResultHit,
+    CacheState, CachedAnswer, CachedSearch, ClickRow, DeleteAnswerLog, DeleteSearchLog,
+    EngineHealthRow, EngineStatus, HistoryFilter, HistoryItem, HistoryStats, PageHit, PageRow,
+    SearchLogRow, SearchResponse, StatsSnapshot, Store, StoreError,
 };
 use chrono::{DateTime, Utc};
 
@@ -73,6 +73,8 @@ pub struct StubStore {
     pub audits: Mutex<Vec<AuditRow>>,
     /// `answers` table stand-in (W4-02): rows by `AnswerKey` hex.
     pub answers: Mutex<HashMap<String, StoredAnswer>>,
+    /// Every `log_answer` call (#254), in order.
+    pub answer_logs: Mutex<Vec<AnswerLogRow>>,
     /// `pages` table stand-in (W5-01): rows by normalized URL.
     pub pages: Mutex<HashMap<String, PageRow>>,
     pub fail_get: AtomicBool,
@@ -241,6 +243,29 @@ impl Store for StubStore {
     async fn log_search(&self, row: SearchLogRow) -> Result<(), StoreError> {
         self.logs.lock().unwrap().push(row);
         Ok(())
+    }
+
+    async fn log_answer(&self, mut row: AnswerLogRow) -> Result<i64, StoreError> {
+        let mut logs = self.answer_logs.lock().unwrap();
+        // Sequential ids like AUTOINCREMENT, starting at 1.
+        let id = logs.iter().filter_map(|r| r.id).max().unwrap_or(0) + 1;
+        row.id = Some(id);
+        logs.push(row);
+        Ok(id)
+    }
+
+    async fn get_answer_log(&self, id: i64) -> Result<Option<AnswerLogRow>, StoreError> {
+        Ok(self
+            .answer_logs
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|r| r.id == Some(id))
+            .cloned())
+    }
+
+    async fn delete_answer_log(&self, _: i64) -> Result<Option<DeleteAnswerLog>, StoreError> {
+        unimplemented!()
     }
 
     async fn record_click(&self, _: ClickRow) -> Result<(), StoreError> {

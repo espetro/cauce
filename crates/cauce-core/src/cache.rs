@@ -95,6 +95,7 @@ pub(crate) fn token_jaccard(a: &BTreeSet<String>, b: &BTreeSet<String>) -> f64 {
 ///     safesearch: SafeSearch::Off,
 ///     engines: None,
 ///     client: ClientKind::Api,
+///     origin: cauce_core::SearchOrigin::User,
 /// };
 ///
 /// // engines=None twice is equal.
@@ -245,6 +246,7 @@ mod tests {
             safesearch: SafeSearch::Moderate,
             engines,
             client: ClientKind::Api,
+            origin: crate::SearchOrigin::User,
         }
     }
 

@@ -6,8 +6,8 @@
 //! file, You can obtain one at <https://mozilla.org/MPL/2.0/>.
 
 use cauce_core::{
-    ClickRow, DeleteSearchLog, HistoryFilter, HistoryItem, HistoryStats, SearchLogRow, StoreError,
-    normalize_query,
+    AnswerLogRow, ClickRow, DeleteAnswerLog, DeleteSearchLog, HistoryFilter, HistoryItem,
+    HistoryStats, SearchLogRow, StoreError, normalize_query,
 };
 use rusqlite::{OptionalExtension, params};
 
@@ -21,8 +21,8 @@ impl SqliteStore {
             conn.execute(
                 "INSERT INTO search_log
                     (ts, query_hash, query, client, source, tier, latency_ms,
-                     result_count, engines_json, deadline_hit, query_raw)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+                     result_count, engines_json, deadline_hit, query_raw, origin)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
                 params![
                     rows::to_ms(&row.ts),
                     row.query_hash.as_str(),
@@ -35,10 +35,45 @@ impl SqliteStore {
                     rows::engines_to_json(&row.engines)?,
                     row.deadline_hit,
                     row.query_raw,
+                    row.origin.label(),
                 ],
             )
             .map_err(sql_err)?;
             Ok(())
+        })
+        .await
+    }
+
+    /// `Store::log_answer` (#254): one durable `answer_log` row per
+    /// terminal answer run. No TTL — `evict_expired` never touches it.
+    /// Returns the inserted row's id (`/answer/{id}` URLs).
+    pub(super) async fn log_answer(&self, row: AnswerLogRow) -> Result<i64, StoreError> {
+        self.with_writer(move |conn| {
+            conn.execute(
+                "INSERT INTO answer_log
+                    (ts, query, query_raw, model, answer, confidence,
+                     sources_json, related_json, request_id, client, origin,
+                     status, ungrounded, error)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+                params![
+                    rows::to_ms(&row.ts),
+                    row.query,
+                    row.query_raw,
+                    row.model,
+                    row.answer,
+                    row.confidence.map(i64::from),
+                    serde_json::to_string(&row.sources)?,
+                    serde_json::to_string(&row.related_questions)?,
+                    row.request_id.map(|id| id.to_string()),
+                    row.client.label(),
+                    row.origin.label(),
+                    row.status.label(),
+                    row.ungrounded,
+                    row.error,
+                ],
+            )
+            .map_err(sql_err)?;
+            Ok(conn.last_insert_rowid())
         })
         .await
     }
@@ -63,16 +98,21 @@ impl SqliteStore {
         .await
     }
 
-    /// Merged feed: searches honour `q` (substring, case-insensitive-ish via
-    /// LIKE), clicks are never filtered by `q`; `since` applies to both.
-    /// `cached=1` (W2-02) keeps only rows whose `query_hash` has a live
-    /// `cache_entries` row — one EXISTS subquery, no join.
+    /// Merged feed: searches and answers honour `q` (substring,
+    /// case-insensitive-ish via LIKE), clicks are never filtered by `q`;
+    /// `since` applies to all three kinds. `cached=1` (W2-02) keeps only
+    /// rows whose `query_hash` has a live `cache_entries` row — one
+    /// EXISTS subquery, no join; `answer_log` rows carry no `query_hash`
+    /// so `cached` excludes them. `origin` (#254) filters searches and
+    /// answers on the stored column, and clicks on the same rule derived
+    /// from their client (`ui` is `user`, anything else `agent`).
     pub(super) async fn list_history(
         &self,
         filter: &HistoryFilter,
     ) -> Result<Vec<HistoryItem>, StoreError> {
         let since = filter.since.map(|t| rows::to_ms(&t));
         let q = filter.q.as_deref().map(like_pattern);
+        let origin = filter.origin.map(|o| o.label());
         let limit = i64::from(filter.limit);
         let cached = filter.cached;
         self.with_reader(move |conn| {
@@ -81,7 +121,7 @@ impl SqliteStore {
                 .prepare(
                     "SELECT id, ts, query_hash, query, client, source, tier,
                             latency_ms, result_count, engines_json, deadline_hit,
-                            query_raw
+                            query_raw, origin
                        FROM search_log
                       WHERE (?1 IS NULL OR ts >= ?1)
                         AND (?2 IS NULL OR query LIKE ?2 ESCAPE '\\')
@@ -89,12 +129,13 @@ impl SqliteStore {
                             SELECT 1 FROM cache_entries ce
                              WHERE ce.key = search_log.query_hash
                                AND ce.expires_at > ?4))
+                        AND (?6 IS NULL OR origin = ?6)
                       ORDER BY ts DESC, id DESC
                       LIMIT ?5",
                 )
                 .map_err(sql_err)?;
             let searches = stmt
-                .query_map(params![since, q, cached, now, limit], |r| {
+                .query_map(params![since, q, cached, now, limit, origin], |r| {
                     rows::search_log(r).map_err(rows::as_sql)
                 })
                 .map_err(sql_err)?
@@ -110,17 +151,44 @@ impl SqliteStore {
                             SELECT 1 FROM cache_entries ce
                              WHERE ce.key = clicks.query_hash
                                AND ce.expires_at > ?3))
+                        AND (?5 IS NULL OR
+                             (CASE WHEN client = 'ui' THEN 'user' ELSE 'agent' END) = ?5)
                       ORDER BY ts DESC, id DESC
                       LIMIT ?4",
                 )
                 .map_err(sql_err)?;
             let clicks = stmt
-                .query_map(params![since, cached, now, limit], |r| {
+                .query_map(params![since, cached, now, limit, origin], |r| {
                     rows::click(r).map_err(rows::as_sql)
                 })
                 .map_err(sql_err)?
                 .collect::<Result<Vec<_>, _>>()
                 .map_err(sql_err)?;
+
+            // `cached=1` cannot match an `answer_log` row (no
+            // `cache_entries` join), so the query is skipped outright.
+            let answers = if cached {
+                Vec::new()
+            } else {
+                let mut stmt = conn
+                    .prepare(&format!(
+                        "SELECT {}
+                           FROM answer_log
+                          WHERE (?1 IS NULL OR ts >= ?1)
+                            AND (?2 IS NULL OR query LIKE ?2 ESCAPE '\\')
+                            AND (?3 IS NULL OR origin = ?3)
+                          ORDER BY ts DESC, id DESC
+                          LIMIT ?4",
+                        rows::ANSWER_LOG_COLS
+                    ))
+                    .map_err(sql_err)?;
+                stmt.query_map(params![since, q, origin, limit], |r| {
+                    rows::answer_log(r).map_err(rows::as_sql)
+                })
+                .map_err(sql_err)?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(sql_err)?
+            };
 
             // Merge newest-first by (ts, id) and cap at the requested limit.
             let mut items: Vec<(i64, i64, HistoryItem)> = searches
@@ -137,6 +205,13 @@ impl SqliteStore {
                         c.ts.timestamp_millis(),
                         c.id.unwrap_or(0),
                         HistoryItem::Click(c),
+                    )
+                }))
+                .chain(answers.into_iter().map(|a| {
+                    (
+                        a.ts.timestamp_millis(),
+                        a.id.unwrap_or(0),
+                        HistoryItem::Answer(a),
                     )
                 }))
                 .collect();
@@ -156,6 +231,7 @@ impl SqliteStore {
         let since = filter.since.map(|t| rows::to_ms(&t));
         let q = filter.q.as_deref().map(like_pattern);
         let cached = filter.cached;
+        let origin = filter.origin.map(|o| o.label());
         self.with_reader(move |conn| {
             let now = rows::now_ms();
             let day_ago = now - 24 * 60 * 60 * 1_000;
@@ -169,14 +245,21 @@ impl SqliteStore {
                    (SELECT COUNT(*) FROM search_log WHERE ts >= ?1),
                    (SELECT COUNT(*) FROM search_log),
                    (SELECT COUNT(*) FROM clicks WHERE ts >= ?2),
-                   (SELECT COUNT(*) FROM search_log
+                   ((SELECT COUNT(*) FROM search_log
                      WHERE (?3 IS NULL OR ts >= ?3)
                        AND (?4 IS NULL OR query LIKE ?4 ESCAPE '\\')
                        AND (?5 = 0 OR EXISTS (
                            SELECT 1 FROM cache_entries ce
                             WHERE ce.key = search_log.query_hash
-                              AND ce.expires_at > ?6)))",
-                params![day_ago, today_start, since, q, cached, now],
+                              AND ce.expires_at > ?6))
+                       AND (?7 IS NULL OR origin = ?7))
+                    +
+                    (SELECT COUNT(*) FROM answer_log
+                     WHERE (?5 = 0)
+                       AND (?3 IS NULL OR ts >= ?3)
+                       AND (?4 IS NULL OR query LIKE ?4 ESCAPE '\\')
+                       AND (?7 IS NULL OR origin = ?7)))",
+                params![day_ago, today_start, since, q, cached, now, origin],
                 |r| {
                     Ok(HistoryStats {
                         searches_24h: r.get::<_, i64>(0)? as u64,
@@ -264,6 +347,53 @@ impl SqliteStore {
             Ok(Some(DeleteSearchLog {
                 query,
                 clicks_removed,
+            }))
+        })
+        .await
+    }
+
+    /// `GET /answer/{id}` + `GET /api/answer-log/{id}` (#254): one
+    /// `answer_log` row by id; `None` when the id is unknown.
+    pub(super) async fn get_answer_log(&self, id: i64) -> Result<Option<AnswerLogRow>, StoreError> {
+        self.with_reader(move |conn| {
+            conn.query_row(
+                &format!(
+                    "SELECT {} FROM answer_log WHERE id = ?1",
+                    rows::ANSWER_LOG_COLS
+                ),
+                params![id],
+                |r| rows::answer_log(r).map_err(rows::as_sql),
+            )
+            .optional()
+            .map_err(sql_err)
+        })
+        .await
+    }
+
+    /// `DELETE /api/answer-log/{id}` (#254): one `answer_log` row; the
+    /// query text and status come back for the audit row. Returns `None`
+    /// when the id is missing — not an error.
+    pub(super) async fn delete_answer_log(
+        &self,
+        id: i64,
+    ) -> Result<Option<DeleteAnswerLog>, StoreError> {
+        self.with_writer(move |conn| {
+            let found: Option<(String, String)> = conn
+                .query_row(
+                    "SELECT query, status FROM answer_log WHERE id = ?1",
+                    params![id],
+                    |r| Ok((r.get(0)?, r.get(1)?)),
+                )
+                .optional()
+                .map_err(sql_err)?;
+            let Some((query, status)) = found else {
+                return Ok(None);
+            };
+            conn.execute("DELETE FROM answer_log WHERE id = ?1", params![id])
+                .map_err(sql_err)?;
+            Ok(Some(DeleteAnswerLog {
+                query,
+                status: rows::parse_answer_status(&status)?,
             }))
         })
         .await

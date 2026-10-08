@@ -229,6 +229,7 @@ async fn tool_loop_yields_steps_deltas_sources_and_done() {
         cached,
         request_id: got_id,
         ungrounded,
+        log_id: _,
     } = done
     else {
         unreachable!()
@@ -357,6 +358,7 @@ async fn mid_stream_error_event_yields_partial_deltas_then_error() {
         Some(AnswerFrame::Error {
             message,
             retry_after_s,
+            log_id: _,
         }) => {
             assert!(
                 message.contains("upstream connection terminated"),

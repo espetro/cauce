@@ -44,6 +44,7 @@ pub async fn record(
         safesearch: SafeSearch::Moderate,
         engines: Some(vec![engine.id()]),
         client: ClientKind::Cli,
+        origin: cauce_core::SearchOrigin::User,
     };
     let results = engine.search(&req, RECORD_BUDGET).await?;
     let path = cassette_path(out_dir, engine.id().as_str(), query);

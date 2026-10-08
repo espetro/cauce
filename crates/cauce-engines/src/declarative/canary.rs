@@ -80,6 +80,7 @@ fn request_for(baseline: &ExpectedFixture, page: u8) -> SearchRequest {
         safesearch: SafeSearch::Moderate,
         engines: None,
         client: ClientKind::Cli,
+        origin: cauce_core::SearchOrigin::User,
     }
 }
 

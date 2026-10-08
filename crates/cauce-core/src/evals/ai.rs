@@ -1025,6 +1025,7 @@ mod tests {
             cached: false,
             request_id: Uuid::nil(),
             ungrounded,
+            log_id: None,
         }
     }
 
@@ -1084,6 +1085,7 @@ mod tests {
         let frames = vec![AnswerFrame::Error {
             message: "provider rate limited".to_string(),
             retry_after_s: Some(3),
+            log_id: None,
         }];
         let o = score_frames(&case(), &frames, None);
         assert_eq!(o.score, 0.0);

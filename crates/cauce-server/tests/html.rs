@@ -407,6 +407,7 @@ async fn query_hash_matches_canonical_request() {
         safesearch: SafeSearch::default(),
         engines: Some(vec![EngineId::from(engines)]),
         client: ClientKind::Ui,
+        origin: cauce_core::SearchOrigin::User,
     };
     let expected = CacheKey::from(&req).as_str().to_string();
 

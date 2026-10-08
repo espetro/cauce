@@ -240,6 +240,13 @@ history:
   # `aria-label` for the `since` select; the control renders no
   # visible label, so the accessible name comes from the attribute.
   since_label: time window
+  # `aria-label` for the `origin` select (#254); like `since_label`,
+  # the control renders no visible label.
+  origin_label: origin filter
+  # `origin` select options — `user` shows as "mine" (#254).
+  origin_mine: mine
+  origin_agent: agent
+  origin_all: all
   # `aria-label` for the `q` input; the placeholder is not an
   # accessible name.
   query_label: filter by query text
@@ -256,6 +263,10 @@ history:
   in_30d: in the last 30 days
   in_since: since
   ef_cached: that are still cached
+  # `origin=user` emptied the feed (#254): the sentence plus the
+  # `?origin=all` escape link rendered beside it.
+  ef_origin: this feed shows your searches only.
+  ef_origin_all: show everything
   # Cap note: `showing 200 of N · use the filters to reach older searches`.
   capped_showing: showing
   capped_of: of
@@ -281,11 +292,19 @@ history:
   click_one: click
   click_only: (click only)
   rerun: re-run
+  # The `rerun` action on `ai` (answer) rows — an explicit re-ask, since
+  # the query link itself opens the stored `/answer/{id}` render (#254).
+  rerun_answer: ask again
   copy_json: copy json
   copied: copied
   payload: payload
   delete: delete
   delete_confirm: Delete this search?
+  delete_confirm_answer: Delete this answer?
+  # Chips (#254): `agent` next to the client on agent-origin search
+  # rows; `ai` after the query on answer rows.
+  chip_agent: agent
+  chip_ai: ai
   # `hx-confirm` prefix when the row has nested clicks, composed as
   # `Delete this search and its {n} {click|clicks}?`.
   delete_confirm_clicks_pre: Delete this search and its

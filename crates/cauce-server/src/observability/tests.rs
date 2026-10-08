@@ -189,10 +189,10 @@ fn audit_writes_event_and_row() {
     use std::sync::Mutex;
 
     use cauce_core::{
-        AnswerKey, AnswerRow, AuditFilter, AuditRow, CacheKey, CacheResultHit, CacheState,
-        CachedAnswer, CachedSearch, ClickRow, DeleteSearchLog, EngineHealthRow, HistoryFilter,
-        HistoryItem, HistoryStats, PageHit, PageRow, SearchLogRow, SearchResponse, StatsSnapshot,
-        Store, StoreError,
+        AnswerKey, AnswerLogRow, AnswerRow, AuditFilter, AuditRow, CacheKey, CacheResultHit,
+        CacheState, CachedAnswer, CachedSearch, ClickRow, DeleteAnswerLog, DeleteSearchLog,
+        EngineHealthRow, HistoryFilter, HistoryItem, HistoryStats, PageHit, PageRow, SearchLogRow,
+        SearchResponse, StatsSnapshot, Store, StoreError,
     };
 
     struct Spy {
@@ -242,6 +242,15 @@ fn audit_writes_event_and_row() {
             unimplemented!()
         }
         async fn log_search(&self, _: SearchLogRow) -> Result<(), StoreError> {
+            unimplemented!()
+        }
+        async fn log_answer(&self, _: AnswerLogRow) -> Result<i64, StoreError> {
+            unimplemented!()
+        }
+        async fn get_answer_log(&self, _: i64) -> Result<Option<AnswerLogRow>, StoreError> {
+            unimplemented!()
+        }
+        async fn delete_answer_log(&self, _: i64) -> Result<Option<DeleteAnswerLog>, StoreError> {
             unimplemented!()
         }
         async fn record_click(&self, _: ClickRow) -> Result<(), StoreError> {
