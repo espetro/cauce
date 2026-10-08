@@ -176,6 +176,40 @@ process — you cannot give tier-1 and tier-2 different latencies from env. Mult
 - Log filename varies per instance: glob both `cauce-*.jsonl` and `cauce.*.jsonl` under
   `$CAUCE_DATA_DIR/logs/`.
 
+## Durable answer_log + /answer/{id} e2e (#254)
+
+- **Per-run fixture dispatch**: detect `"role":"tool"` in the POST body — a run's
+  second+ provider call carries tool results back, so first call → `sse_toolcall.raw`,
+  later calls → answer fixture. Dispatch on a query-marker substring in the body
+  (e.g. `"grounded probe" in body`) to choose between a cacheable and a
+  non-cacheable answer fixture per question.
+- **Authoring a metadata tail**: append a final SSE delta whose content is
+  `\n\n{"confidence": 8, "related_questions": ["q1","q2"]}` — `parse_final_answer`
+  scans the tail for the last `{` that parses to an object with `confidence`.
+  That drives the confidence chip + related-question links on both the live and
+  stored renders.
+- **A `cached` answer_log row needs a grounded (fully-cited) answer**: every prose
+  sentence must carry an in-range `[n]` cite AND ≥1 source — a single-sentence
+  fixture like `"Tokyo is 22°C [1]."` + tail caches; the stock `sse_answer.raw`
+  does NOT (uncited "Source:" line). Second identical `?q=` → cached replay
+  (zero provider calls) that still mints a FRESH answer_log row with
+  `status='cached'` → the stored render shows the `cached` chip.
+- **No-re-run proof for the session-ID URL fix**: every live run costs exactly
+  2 stub POSTs (toolcall + answer). Reload/back/forward on `/answer/{id}` must
+  leave the stub request count and `answer_log` count unchanged — serve a stub
+  `GET /log` page and screenshot it as evidence.
+- **`GET /api/answer-log/{id}` has no HTML arm** — browser URL-bar GET renders
+  the raw JSON row (good for on-video evidence). `GET /answer/{id}` of a
+  deleted/unknown id → `{"error":{"code":"not_found"}}` JSON, not an HTML page.
+  `DELETE /api/answer-log/{id}` is audited (`answer_log.delete`).
+- **Model field quirk**: fresh rows store the provider RESPONSE's `model`
+  (fixture model name, e.g. `liquid/lfm-2.5-2.6b:free`), while `cached` rows
+  store the configured `CAUCE_AI_MODEL` — chips on `/answer/{id}` differ between
+  a fresh run and its cached replay. Cosmetic, not a bug.
+- **`/history` stats line is origin-agnostic**: "N total" counts all rows even
+  under the default `origin=user` filter (e.g. "7 total" with an empty feed).
+  Cosmetic inconsistency observed on the pre-SPA page; recheck on `/app/history`.
+
 ## Archive / click-beacon e2e (`/api/pages`)
 
 - `archive.index_on_click` defaults true; `CAUCE_ARCHIVE_INDEX_ON_CLICK=false` disables the
