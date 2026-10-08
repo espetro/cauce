@@ -4,6 +4,23 @@ The frontend bundle: framework-free TypeScript (`src/`) compiled by rolldown
 (`build.mjs` → committed `assets/app.js`), unit-tested by vitest + happy-dom
 (`tests/`). The repository-root AGENTS.md still applies.
 
+## The SPA (`src/spa/`)
+
+Svelte 5 + Vite (`pnpm run build:spa` → committed `assets/spa/`, embedded by
+rust-embed, served at `GET /app`) — FX-02 toolchain; pages land in FX-03+.
+Layout (`src/spa/`): `app/` entry + shell + `app.css`; `ui/` vendored
+primitives; `lib/` api/sse/i18n; `features/`; `routes/` thin shells.
+Rules: `svelte-check` (`pnpm run check:spa`) is the typecheck — plain tsc
+excludes this tree; Tailwind v4 is the only styling system (tokens in
+`app.css` `@theme inline`, ported from `assets/style.css` — never import
+the legacy sheet); features import `ui/` + `lib/` only, no cross-feature
+imports.
+
+Two typescripts coexist deliberately: `typescript ~6` is the classic API
+svelte-check drives internally, and `@typescript/native` (an npm alias of
+typescript@7) provides the native `tsc` binary and the `--tsgo` diagnostics
+pass — do not rename or merge them, svelte-check refuses `typescript >= 7`.
+
 ## TypeScript conventions
 
 - Strict `tsc --noEmit` (`pnpm run typecheck`) covers `src/` and `tests/`.

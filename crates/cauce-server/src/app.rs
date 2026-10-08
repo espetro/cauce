@@ -497,6 +497,12 @@ fn handler_for(spec: &RouteSpec, state: &AppState) -> Option<MethodRouter<AppSta
         // #254: same `ui` gate — the stored render needs no answer loop.
         #[cfg(feature = "ui")]
         ("GET", "/answer/{id}", RouteKind::Html) => Some(get(html::answer_view)),
+        // FX-02: the Svelte SPA — shell at `/app`, embedded assets +
+        // client-route fallback under `/app/*`. `ui` gate like the pages.
+        #[cfg(feature = "ui")]
+        ("GET", "/app", RouteKind::Html) => Some(get(html::spa)),
+        #[cfg(feature = "ui")]
+        ("GET", "/app/{*rest}", RouteKind::Html) => Some(get(html::spa_nested)),
         ("GET", "/api/suggest", RouteKind::Json) => Some(get(handlers::suggest)),
         ("GET", "/api/report", RouteKind::Json) => Some(get(handlers::report)),
         ("GET", "/api/history", RouteKind::Json) => Some(get(handlers::history)),

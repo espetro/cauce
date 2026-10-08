@@ -1,0 +1,13 @@
+{
+  // The SPA's typecheck boundary: `svelte-check` is the only checker for
+  // this tree (the strict-tsc pass in web/tsconfig.json excludes src/spa —
+  // plain tsc cannot resolve `.svelte` imports). Same strict/bundler
+  // settings as the HTMX modules.
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    // svelte-check emits no build-info; the base sets incremental for tsc.
+    "incremental": false,
+    "types": ["vite/client"]
+  },
+  "include": ["**/*.ts", "**/*.svelte"]
+}

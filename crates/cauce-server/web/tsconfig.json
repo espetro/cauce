@@ -16,5 +16,8 @@
     // `gen_i18n` from the rust-i18n catalog).
     "resolveJsonModule": true
   },
-  "include": ["src/**/*.ts", "tests/**/*.ts"]
+  "include": ["src/**/*.ts", "tests/**/*.ts"],
+  // The SPA (src/spa) is checked by `pnpm run check:spa` (svelte-check),
+  // not plain tsc — tsc cannot resolve `.svelte` module imports.
+  "exclude": ["src/spa"]
 }

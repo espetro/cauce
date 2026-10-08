@@ -2,24 +2,32 @@
   "name": "cauce-server-web",
   "private": true,
   "type": "module",
-  "description": "Web UI toolchain for cauce-server: bundles web/src/ into assets/app.js (rolldown), typechecks the .ts modules (typescript@7 native tsc), and unit-tests the modules (vitest + happy-dom).",
+  "description": "Web UI toolchain for cauce-server: bundles web/src/ into assets/app.js (rolldown), typechecks the .ts modules (native tsc via @typescript/native), and unit-tests the modules (vitest + happy-dom). The Svelte 5 SPA under web/src/spa/ builds via vite into assets/spa/ (rust-embed, served at /app); svelte-check drives the classic typescript@6 API internally and tsgo (--tsgo) for diagnostics.",
   "scripts": {
     "build": "node web/build.mjs",
+    "build:spa": "vite build --config web/vite.config.ts",
     "watch": "node web/build.mjs --watch",
     "test": "vitest run",
     "test:watch": "vitest",
-    "typecheck": "tsc --project web/tsconfig.json"
+    "typecheck": "tsc --project web/tsconfig.json",
+    "check:spa": "svelte-check --tsgo --tsconfig web/src/spa/tsconfig.json"
   },
   "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "^7.3.1",
+    "@tailwindcss/vite": "^4.3.3",
     "happy-dom": "20.14.5",
     "rolldown": "1.2.11",
-    "typescript": "7.0.2",
+    "svelte": "^5.57.2",
+    "svelte-check": "^4.7.6",
+    "tailwindcss": "^4.3.3",
+    "typescript": "~6",
+    "vite": "8.2.2",
     "vitest": "5.0.1",
-    "vite": "8.2.2"
+    "@typescript/native": "npm:typescript@7"
   },
   "packageManager": "pnpm@11.21.0",
   "dependencies": {
-    "htmx.org": "2.0.4",
-    "htmx-ext-json-enc": "2.0.2"
+    "htmx-ext-json-enc": "2.0.2",
+    "htmx.org": "2.0.4"
   }
 }

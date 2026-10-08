@@ -103,6 +103,10 @@ const EXPECTED_WAVE5_ARCHIVE_MOUNTED: &[(&str, &str)] = &[
 ];
 const EXPECTED_WAVE5_UI_MOUNTED: &[(&str, &str)] = &[("GET", "/archive")];
 
+/// FX rows mounted so far (FX-02): the SPA shell and its asset /
+/// client-route fallback, riding the `ui` gate like the HTMX pages.
+const EXPECTED_WAVE8_UI_MOUNTED: &[(&str, &str)] = &[("GET", "/app"), ("GET", "/app/{*rest}")];
+
 // ---------------------------------------------------------------------------
 // Plan-table parsing (parent plan section 6)
 // ---------------------------------------------------------------------------
@@ -287,6 +291,7 @@ fn mounted_routes_match_declaration() {
                 .chain(EXPECTED_WAVE2_UI_MOUNTED)
                 .chain(EXPECTED_WAVE4_UI_MOUNTED)
                 .chain(EXPECTED_WAVE5_UI_MOUNTED)
+                .chain(EXPECTED_WAVE8_UI_MOUNTED)
                 .map(|(m, p)| (m.to_string(), p.to_string())),
         );
     }
@@ -342,6 +347,7 @@ async fn headless_drops_ui_routes_keeps_api() {
         .iter()
         .chain(EXPECTED_WAVE2_UI)
         .chain(EXPECTED_WAVE2_UI_MOUNTED)
+        .chain(EXPECTED_WAVE8_UI_MOUNTED)
     {
         assert!(
             !headless.contains(&(ui_row.0.to_string(), ui_row.1.to_string())),
@@ -361,6 +367,8 @@ async fn headless_drops_ui_routes_keeps_api() {
         "/history",
         "/dashboard",
         "/audit",
+        "/app",
+        "/app/search",
     ] {
         let (status, _, body) = get(&router, uri).await;
         assert_eq!(status, StatusCode::NOT_FOUND, "{uri}: {body}");
@@ -430,7 +438,10 @@ async fn live_router_matches_routes_table() {
             .path
             .replace("{key}", &key)
             .replace("{id}", "replay")
-            .replace("{url}", "https%3A%2F%2Fexample.com");
+            .replace("{url}", "https%3A%2F%2Fexample.com")
+            // `{*rest}` is a wildcard segment, not a URI literal — probe a
+            // real client-route path (the SPA fallback answers it).
+            .replace("{*rest}", "spa");
         // `*` is not an HTTP method; probe the MCP endpoint with POST (a
         // bare POST without the MCP accept/content headers answers 4xx,
         // which still proves the route is mounted).

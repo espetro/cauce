@@ -22,6 +22,8 @@ node_modules/
 *.tsbuildinfo
 
 # caches / local state
+.svelte-check/
+
 .playwright-cli/
 .DS_Store
 *.log
