@@ -133,9 +133,9 @@ pub async fn settings(
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
     if prefers_json(accept) {
-        return crate::handlers::config_get(State(state), Extension(ctx))
+        return Ok(crate::handlers::config_get(State(state))
             .await
-            .map(|j| j.into_response());
+            .into_response());
     }
 
     let rid = ctx.request_id.as_uuid();
@@ -289,7 +289,7 @@ fn human_bytes(n: u64) -> String {
 /// under each field `field_errors` names (`saved HH:MM`,
 /// `not saved: N errors`, `error: could not save (<status>)`).
 pub(crate) fn settings_status(
-    result: Result<Json<Value>, ApiError>,
+    result: Result<Json<crate::handlers::ConfigPutResponse>, ApiError>,
     field_errors: Vec<(String, String)>,
     submitted: Vec<String>,
     engine_ids: &[String],
@@ -302,11 +302,7 @@ pub(crate) fn settings_status(
                 t!("settings.saved"),
                 chrono::Local::now().format("%H:%M")
             );
-            let restart: Vec<&str> = json
-                .get("requires_restart")
-                .and_then(|v| v.as_array())
-                .map(|a| a.iter().filter_map(|v| v.as_str()).collect())
-                .unwrap_or_default();
+            let restart: Vec<&str> = json.requires_restart.iter().map(String::as_str).collect();
             if !restart.is_empty() {
                 text = format!(
                     "{text} — {}: {}",

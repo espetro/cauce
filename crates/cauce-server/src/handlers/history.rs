@@ -14,7 +14,9 @@ use cauce_core::{
     AuditFilter, AuditRow, ClickRow, HistoryFilter, HistoryItem, SearchOrigin, StatsSnapshot, Store,
 };
 use chrono::Utc;
-use serde_json::{Value, json};
+use serde::Serialize;
+use serde_json::json;
+use ts_rs::TS;
 
 use super::{MAX_LIMIT, QueryParams, write_audit};
 use crate::app::AppState;
@@ -98,7 +100,7 @@ pub async fn history_delete(
     Extension(ctx): Extension<RequestCtx>,
     headers: HeaderMap,
     Path(id): Path<String>,
-) -> Result<Json<Value>, ApiError> {
+) -> Result<Json<HistoryDeleteAck>, ApiError> {
     let id = id
         .parse::<i64>()
         .map_err(|_| ctx.bad_request(format!("invalid history id {id:?}")))?;
@@ -119,11 +121,32 @@ pub async fn history_delete(
         json!({ "query": outcome.query, "clicks_removed": outcome.clicks_removed }),
     )
     .await?;
-    Ok(Json(json!({
-        "deleted": true,
-        "id": id,
-        "clicks_removed": outcome.clicks_removed,
-    })))
+    Ok(Json(HistoryDeleteAck {
+        deleted: true,
+        id,
+        clicks_removed: outcome.clicks_removed,
+    }))
+}
+
+/// `DELETE /api/history/{id}` acknowledgement.
+#[derive(Debug, Clone, Serialize, TS)]
+pub struct HistoryDeleteAck {
+    pub deleted: bool,
+    /// The deleted `search_log.id`.
+    #[ts(type = "number")]
+    pub id: i64,
+    /// Click rows the delete cascaded to.
+    #[ts(type = "number")]
+    pub clicks_removed: u64,
+}
+
+/// `DELETE /api/answer-log/{id}` acknowledgement.
+#[derive(Debug, Clone, Serialize, TS)]
+pub struct AnswerLogDeleteAck {
+    pub deleted: bool,
+    /// The deleted `answer_log.id`.
+    #[ts(type = "number")]
+    pub id: i64,
 }
 
 /// `DELETE /api/answer-log/{id}` (#254): audited `answer_log` delete —
@@ -133,7 +156,7 @@ pub async fn answer_log_delete(
     Extension(ctx): Extension<RequestCtx>,
     headers: HeaderMap,
     Path(id): Path<String>,
-) -> Result<Json<Value>, ApiError> {
+) -> Result<Json<AnswerLogDeleteAck>, ApiError> {
     let id = id
         .parse::<i64>()
         .map_err(|_| ctx.bad_request(format!("invalid answer-log id {id:?}")))?;
@@ -154,7 +177,7 @@ pub async fn answer_log_delete(
         json!({ "query": outcome.query, "status": outcome.status.label() }),
     )
     .await?;
-    Ok(Json(json!({ "deleted": true, "id": id })))
+    Ok(Json(AnswerLogDeleteAck { deleted: true, id }))
 }
 
 /// `GET /api/answer-log/{id}` (#254): one `answer_log` row as JSON —
@@ -163,7 +186,7 @@ pub async fn answer_log_get(
     State(state): State<AppState>,
     Extension(ctx): Extension<RequestCtx>,
     Path(id): Path<String>,
-) -> Result<Json<Value>, ApiError> {
+) -> Result<Json<cauce_core::AnswerLogRow>, ApiError> {
     let id = id
         .parse::<i64>()
         .map_err(|_| ctx.bad_request(format!("invalid answer-log id {id:?}")))?;
@@ -175,9 +198,7 @@ pub async fn answer_log_get(
     else {
         return Err(ctx.not_found(format!("no answer-log row {id}")));
     };
-    Ok(Json(
-        serde_json::to_value(&row).expect("AnswerLogRow serializes"),
-    ))
+    Ok(Json(row))
 }
 
 /// `POST /api/click`: the result-click beacon. `id`, `ts` and `client` are

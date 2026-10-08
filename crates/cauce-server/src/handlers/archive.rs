@@ -12,8 +12,9 @@ use axum::http::{HeaderMap, Uri};
 use axum::response::{IntoResponse, Json, Response};
 use cauce_core::PageHit;
 use serde::Serialize;
-use serde_json::Value;
+use ts_rs::TS;
 use url::Url;
+use uuid::Uuid;
 
 use super::{MAX_LIMIT, QueryParams};
 use crate::app::AppState;
@@ -27,14 +28,34 @@ pub(crate) const ARCHIVE_LIMIT: u32 = 50;
 /// One archive row on the JSON wire: a `PageHit` with its snippet's
 /// `PAGE_MARK_*` delimiters stripped (the marks are the HTML contract,
 /// not part of the wire text).
-#[derive(Debug, Serialize)]
-pub(crate) struct ArchiveRow {
+#[derive(Debug, Serialize, TS)]
+pub struct ArchiveRow {
     pub url: Url,
     pub title: String,
     pub snippet: String,
     pub fetched_at: chrono::DateTime<chrono::Utc>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub score: Option<f64>,
+}
+
+/// `GET /api/archive` envelope (`{query,limit,offset,has_more,results,
+/// request_id}`) — the `/api/search` envelope's convention: request id
+/// top level, results carrying `{url,title,snippet,fetched_at[,score]}`.
+#[derive(Debug, Serialize, TS)]
+pub struct ArchiveResponse {
+    /// The `?q=` text as typed; `null` on the browsing arm.
+    pub query: Option<String>,
+    /// Page size the request resolved to.
+    pub limit: u32,
+    /// `?offset=` the request resolved to.
+    pub offset: u32,
+    /// A further page exists.
+    pub has_more: bool,
+    /// `limit` hits in bm25 rank order (search arm) or newest first
+    /// (browsing arm).
+    pub results: Vec<ArchiveRow>,
+    /// The request id (`RequestCtx`).
+    pub request_id: Uuid,
 }
 
 impl From<&PageHit> for ArchiveRow {
@@ -84,7 +105,7 @@ pub async fn archive_search(
     let _ = &headers;
     archive_inner(&state, &ctx, &uri)
         .await
-        .map(|data| Json(archive_json(&ctx, &data)).into_response())
+        .map(|data| Json(archive_response(&ctx, &data)).into_response())
 }
 
 /// One data path for `GET /api/archive` and the `/archive` page. The
@@ -133,16 +154,16 @@ pub(crate) async fn archive_inner(
     })
 }
 
-/// The JSON payload: `{query, results, request_id}` — the `/api/search`
-/// envelope's convention (request id top level, results carrying
-/// `{url,title,snippet,fetched_at[,score]}`).
-fn archive_json(ctx: &RequestCtx, data: &ArchiveData) -> Value {
-    serde_json::json!({
-        "query": data.query,
-        "limit": data.limit,
-        "offset": data.offset,
-        "has_more": data.has_more,
-        "results": data.hits.iter().map(ArchiveRow::from).collect::<Vec<_>>(),
-        "request_id": ctx.request_id.as_uuid(),
-    })
+/// The JSON payload (`ArchiveResponse`): `{query, results, request_id}`
+/// — the `/api/search` envelope's convention (request id top level,
+/// results carrying `{url,title,snippet,fetched_at[,score]}`).
+fn archive_response(ctx: &RequestCtx, data: &ArchiveData) -> ArchiveResponse {
+    ArchiveResponse {
+        query: data.query.clone(),
+        limit: data.limit,
+        offset: data.offset,
+        has_more: data.has_more,
+        results: data.hits.iter().map(ArchiveRow::from).collect(),
+        request_id: ctx.request_id.as_uuid(),
+    }
 }

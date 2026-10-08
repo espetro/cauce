@@ -15,6 +15,7 @@ use cauce_core::{
 };
 use chrono::Utc;
 use serde_json::json;
+use ts_rs::TS;
 
 use super::{MAX_LIMIT, write_audit};
 use crate::app::AppState;
@@ -49,7 +50,7 @@ pub async fn engines_list(
 
 /// One row of the shared `/api/engines` + `/engines` data plane: the live
 /// health row plus every field an engines-page card renders.
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, TS)]
 pub struct EngineView {
     /// W1-06 health fields, flattened so the wire names are unchanged.
     #[serde(flatten)]
@@ -82,13 +83,27 @@ pub struct EngineView {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reliability_pct: Option<f64>,
     /// Searches that named this engine since UTC midnight (`search_log`).
+    #[ts(type = "number")]
     pub requests_today: u64,
     /// The live health tracker knows this engine (registered or a
     /// persisted row), so `POST .../reset` will not 404. Card-only: the
     /// JSON wire predates it and stays unchanged.
     #[serde(skip_serializing)]
+    #[ts(skip)]
     #[cfg_attr(not(feature = "ui"), allow(dead_code))]
     pub tracked: bool,
+}
+
+/// `POST /api/engines/{id}/enable|disable` acknowledgement.
+#[derive(Debug, Clone, serde::Serialize, TS)]
+pub struct EngineToggleAck {
+    /// The toggled engine id.
+    pub id: String,
+    /// The resolved `enabled` flag now persisted.
+    pub enabled: bool,
+    /// `true` when the pipeline did not rebuild in place and the flag
+    /// applies on the next `cauce serve` start.
+    pub effective_after_restart: bool,
 }
 
 /// The shared `/api/engines` + `/engines` data plane: one row per engine
@@ -361,11 +376,11 @@ async fn engine_set_enabled(
         };
         return crate::engines_page::card(state, &id, ctx.request_id.as_uuid(), Some(hint)).await;
     }
-    Ok(Json(json!({
-        "id": id.to_string(),
-        "enabled": enabled,
-        "effective_after_restart": !outcome.engines_rebuilt,
-    }))
+    Ok(Json(EngineToggleAck {
+        id: id.to_string(),
+        enabled,
+        effective_after_restart: !outcome.engines_rebuilt,
+    })
     .into_response())
 }
 
