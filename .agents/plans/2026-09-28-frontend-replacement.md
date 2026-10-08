@@ -227,6 +227,8 @@ implementation every phase is diffed against, and v2's lesson (decisions.md,
 2026-09-21) is that the framework *wasn't* the cost — ungated cross-cutting
 retrofits were.
 
+**Status: PASSED 2026-10-08** — owner approved proceeding to implementation.
+
 ### 5.1 Phases → proposed issues (EPIC "W8 frontend replacement", effort S/M/L)
 
 | # | Step | Effort | Do | Acceptance |
