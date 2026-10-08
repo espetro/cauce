@@ -12,6 +12,7 @@ use std::str::FromStr;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use ts_rs::TS;
 
 use crate::engine::EngineId;
 use crate::request::{SafeSearch, SearchRequest, TimeRange};
@@ -114,7 +115,7 @@ pub(crate) fn token_jaccard(a: &BTreeSet<String>, b: &BTreeSet<String>) -> f64 {
 /// ```
 // No `transparent`: it cannot combine with `try_from`, and a derived
 // newtype struct already serializes as its inner string anyway.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, TS)]
 #[serde(try_from = "String")]
 pub struct CacheKey(String);
 
@@ -213,7 +214,7 @@ impl From<&SearchRequest> for CacheKey {
 ///
 /// `get_exact` only returns rows where `expires_at` is still in the future;
 /// `get_cache` (admin route) returns the row regardless.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 pub struct CachedSearch {
     pub key: CacheKey,
     /// The query as stored (`response.query` normalised form is in `params`).
@@ -225,6 +226,7 @@ pub struct CachedSearch {
     pub created_at: DateTime<Utc>,
     pub expires_at: DateTime<Utc>,
     /// Number of times this row served a hit.
+    #[ts(type = "number")]
     pub hits: u64,
     /// Engines that produced the stored response (`engines_json` column).
     pub engines: Vec<EngineId>,

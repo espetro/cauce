@@ -11,7 +11,9 @@ use axum::extract::State;
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Json, Response};
 use cauce_core::config::{Config, key_requires_restart, system_env};
-use serde_json::{Value, json};
+use serde::Serialize;
+use serde_json::json;
+use ts_rs::TS;
 
 use super::{changed_config_paths, write_audit};
 use crate::app::AppState;
@@ -21,14 +23,25 @@ use crate::middleware::RequestCtx;
 /// `GET /api/config`: the effective config, redacted. `Config`'s `Serialize`
 /// impl renders `${env:...}`/`${file:...}` templates literally, so resolved
 /// secrets can never appear in the response.
-pub async fn config_get(
-    State(state): State<AppState>,
-    Extension(ctx): Extension<RequestCtx>,
-) -> Result<Json<Value>, ApiError> {
-    state
-        .with_config(|cfg| serde_json::to_value(cfg))
-        .map(Json)
-        .map_err(|e| ctx.err(StatusCode::INTERNAL_SERVER_ERROR, "internal", e.to_string()))
+pub async fn config_get(State(state): State<AppState>) -> Json<Config> {
+    Json(state.with_config(|cfg| cfg.clone()))
+}
+
+/// `PUT /api/config` response: the effective config, redacted (same
+/// shape as `GET /api/config`), plus the `applied` /
+/// `requires_restart` partition of the paths that changed.
+#[derive(Debug, Serialize, TS)]
+pub struct ConfigPutResponse {
+    /// The new effective config, redacted — flattened so the wire keys
+    /// are the config sections (`server`, `search`, ..., `config`).
+    #[serde(flatten)]
+    pub config: Config,
+    /// Dotted paths hot-applied in place.
+    pub applied: Vec<String>,
+    /// Dotted paths that take effect on the next `cauce serve` start.
+    pub requires_restart: Vec<String>,
+    /// `!requires_restart.is_empty()` — the flag the UI shows.
+    pub effective_after_restart: bool,
 }
 
 /// `PUT /api/config`: replace the config file with the submitted tree.
@@ -99,7 +112,7 @@ async fn config_put_inner(
     headers: &HeaderMap,
     body: &Bytes,
     form: bool,
-) -> Result<Json<Value>, ApiError> {
+) -> Result<Json<ConfigPutResponse>, ApiError> {
     let text = std::str::from_utf8(body)
         .map_err(|_| ctx.bad_request("PUT /api/config expects a UTF-8 TOML or form body"))?;
     // Snapshot the file layer before the merge so the audit row can name the
@@ -191,15 +204,10 @@ async fn config_put_inner(
         json!({"changed": changed}),
     )
     .await?;
-    let mut body = serde_json::to_value(&new_cfg)
-        .map_err(|e| ctx.err(StatusCode::INTERNAL_SERVER_ERROR, "internal", e.to_string()))?;
-    if let Value::Object(m) = &mut body {
-        m.insert("applied".to_string(), json!(applied));
-        m.insert("requires_restart".to_string(), json!(requires_restart));
-        m.insert(
-            "effective_after_restart".to_string(),
-            json!(!requires_restart.is_empty()),
-        );
-    }
-    Ok(Json(body))
+    Ok(Json(ConfigPutResponse {
+        config: new_cfg,
+        applied,
+        effective_after_restart: !requires_restart.is_empty(),
+        requires_restart,
+    }))
 }

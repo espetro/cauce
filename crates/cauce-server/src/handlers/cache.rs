@@ -9,7 +9,9 @@ use axum::Extension;
 use axum::extract::{Path, State};
 use axum::http::{HeaderMap, Uri};
 use axum::response::{IntoResponse, Json, Response};
-use serde_json::{Value, json};
+use serde::Serialize;
+use serde_json::json;
+use ts_rs::TS;
 
 use super::{MAX_LIMIT, QueryParams, cache_key, write_audit};
 use crate::app::AppState;
@@ -34,11 +36,28 @@ pub async fn cache_list(
 /// requests one additional unfiltered row to determine whether a next page
 /// exists; parsing, filter semantics, limits, and store selection remain
 /// authoritative here for both surfaces.
-pub(crate) struct CacheListing {
+#[derive(Debug, Clone, TS)]
+pub struct CacheListing {
     pub(crate) entries: Vec<cauce_core::CachedSearch>,
     pub(crate) limit: u32,
     pub(crate) offset: u32,
     pub(crate) query: Option<String>,
+}
+
+/// `DELETE /api/cache/{key}` acknowledgement (`{"deleted":true,"key":...}`).
+#[derive(Debug, Clone, Serialize, TS)]
+pub struct CacheDeleteAck {
+    pub deleted: bool,
+    /// The deleted entry's 64-hex cache key.
+    pub key: String,
+}
+
+/// `DELETE /api/cache?expired=true|all=true` acknowledgement.
+#[derive(Debug, Clone, Serialize, TS)]
+pub struct CacheBulkDeleteAck {
+    /// Rows the delete removed (`evict_expired` or `clear_cache`).
+    #[ts(type = "number")]
+    pub removed: u64,
 }
 
 pub(crate) async fn cache_list_data(
@@ -136,7 +155,7 @@ pub async fn cache_delete(
     Extension(ctx): Extension<RequestCtx>,
     headers: HeaderMap,
     Path(key): Path<String>,
-) -> Result<Json<Value>, ApiError> {
+) -> Result<Json<CacheDeleteAck>, ApiError> {
     let key = cache_key(&ctx, &key)?;
     if !state
         .store()
@@ -155,7 +174,10 @@ pub async fn cache_delete(
         json!({}),
     )
     .await?;
-    Ok(Json(json!({ "deleted": true, "key": key.as_str() })))
+    Ok(Json(CacheDeleteAck {
+        deleted: true,
+        key: key.as_str().to_string(),
+    }))
 }
 
 /// `DELETE /api/cache?expired=true|all=true`: bulk delete, exactly one flag
@@ -165,7 +187,7 @@ pub async fn cache_bulk_delete(
     Extension(ctx): Extension<RequestCtx>,
     headers: HeaderMap,
     uri: Uri,
-) -> Result<Json<Value>, ApiError> {
+) -> Result<Json<CacheBulkDeleteAck>, ApiError> {
     let params = QueryParams::parse(uri.query(), &ctx)?;
     params.allow(&ctx, &["expired", "all"])?;
     let expired = params.flag(&ctx, "expired")?;
@@ -202,5 +224,5 @@ pub async fn cache_bulk_delete(
         json!({ "removed": removed }),
     )
     .await?;
-    Ok(Json(json!({ "removed": removed })))
+    Ok(Json(CacheBulkDeleteAck { removed }))
 }

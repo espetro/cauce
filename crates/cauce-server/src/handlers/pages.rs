@@ -14,8 +14,9 @@ use axum::extract::{Path, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Json, Response};
 use cauce_core::{ArchiveError, CacheKey, EngineError, PageRow, normalize_url};
-use serde::Deserialize;
-use serde_json::{Value, json};
+use serde::{Deserialize, Serialize};
+use serde_json::json;
+use ts_rs::TS;
 use url::Url;
 
 use crate::app::AppState;
@@ -26,12 +27,21 @@ use super::write_audit;
 
 /// `POST /api/pages` body: the URL to index plus, for the click beacon,
 /// the `CacheKey` of the search that surfaced it.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, TS)]
 #[serde(deny_unknown_fields)]
-struct IndexBody {
+pub struct IndexBody {
     url: String,
     #[serde(default)]
     query_hash: Option<CacheKey>,
+}
+
+/// `DELETE /api/pages/{url}` acknowledgement: echoes the normalized key
+/// the row was stored under (`{"deleted":true,"url":...}`).
+#[derive(Debug, Clone, Serialize, TS)]
+pub struct PageDeleteAck {
+    pub deleted: bool,
+    /// Normalized URL key the deleted row was stored under.
+    pub url: Url,
 }
 
 fn archive_unavailable(ctx: &RequestCtx) -> ApiError {
@@ -167,7 +177,7 @@ pub async fn pages_delete(
     Extension(ctx): Extension<RequestCtx>,
     headers: HeaderMap,
     Path(url): Path<String>,
-) -> Result<Json<Value>, ApiError> {
+) -> Result<Json<PageDeleteAck>, ApiError> {
     let parsed = Url::parse(&url)
         .map_err(|e| ctx.bad_request(format!("invalid url path parameter: {e}")))?;
     let key = normalize_url(&parsed);
@@ -188,8 +198,8 @@ pub async fn pages_delete(
         json!({}),
     )
     .await?;
-    Ok(Json(json!({
-        "deleted": true,
-        "url": key,
-    })))
+    Ok(Json(PageDeleteAck {
+        deleted: true,
+        url: key,
+    }))
 }

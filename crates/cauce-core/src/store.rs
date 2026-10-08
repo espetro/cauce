@@ -41,9 +41,10 @@ pub enum StoreError {
 
 /// `search_log` row (section 5). Written unconditionally for every request,
 /// cache hit or not. `id` is `None` on insert and `Some` when read back.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 pub struct SearchLogRow {
     #[serde(default)]
+    #[ts(type = "number | null")]
     pub id: Option<i64>,
     pub ts: DateTime<Utc>,
     /// The `CacheKey` of the request; joins to `clicks.query_hash`.
@@ -59,6 +60,8 @@ pub struct SearchLogRow {
     pub client: ClientKind,
     pub source: LogSource,
     /// Cache tier that served the hit; `None` on `source = network`.
+    /// Serializes as the tier integer (1-3).
+    #[ts(type = "number | null")]
     pub tier: Option<Tier>,
     pub latency_ms: u32,
     pub result_count: u32,
@@ -78,7 +81,7 @@ pub struct SearchLogRow {
 
 /// `source` column of `search_log` (`cache` | `network`). Distinct from
 /// `Source`, which additionally carries hit metadata on the wire.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
 pub enum LogSource {
     Cache,
@@ -87,10 +90,11 @@ pub enum LogSource {
 
 /// `clicks` row (section 5). Also the `POST /api/click` body: the beacon omits
 /// `id`, `ts` and `client`, which the server fills.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(deny_unknown_fields)]
 pub struct ClickRow {
     #[serde(default)]
+    #[ts(type = "number | null")]
     pub id: Option<i64>,
     /// Server always fills this on write; the serde default exists only so the
     /// inbound beacon body can omit it.
@@ -133,7 +137,7 @@ fn u32_or_string<'de, D: serde::Deserializer<'de>>(d: D) -> Result<u32, D::Error
 
 /// One `pages` row (W5-01): a fetched page, readability-extracted to
 /// markdown. The only writer is `archive::Archiver::fetch_and_index`.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 pub struct PageRow {
     /// Normalized final URL (the `pages` primary key).
     pub url: Url,
@@ -144,6 +148,7 @@ pub struct PageRow {
     /// Article body as markdown (at most `archive::MAX_MARKDOWN_BYTES`).
     pub markdown: String,
     /// Bytes of HTML read from the network (post-cap: `<= MAX_FETCH_BYTES`).
+    #[ts(type = "number")]
     pub byte_len: u64,
     /// `CacheKey` of the search the page was clicked from (UI click
     /// beacon); `None` for direct `POST /api/pages` and MCP calls.
@@ -247,7 +252,7 @@ pub struct CacheResultHit {
 }
 
 /// Breaker state persisted in `engine_health` (scheduler section 4.4.6).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
 pub enum BreakerState {
     Closed,
@@ -256,7 +261,7 @@ pub enum BreakerState {
 }
 
 /// `engine_health` row (section 5): scheduler state across restarts.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 pub struct EngineHealthRow {
     pub engine: EngineId,
     /// EWMA latency in ms (`alpha = 0.3`, section 4.4.6).
@@ -304,9 +309,10 @@ impl Default for StoreTuning {
 ///
 /// `actor` follows the `ui | api | mcp:<client> | cli` convention
 /// (`ClientKind::label()`), with an optional `X-Actor` override string.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 pub struct AuditRow {
     #[serde(default)]
+    #[ts(type = "number | null")]
     pub id: Option<i64>,
     /// Server always fills this on write; the serde default exists only so a
     /// caller-built row can omit it.
@@ -361,7 +367,7 @@ impl Default for HistoryFilter {
 /// One history item: a logged search, a click or an answer run, merged
 /// newest-first by the route (`GET /api/history` reads one plane:
 /// `search_log` + `clicks` + `answer_log`).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum HistoryItem {
     Search(SearchLogRow),
@@ -502,9 +508,10 @@ pub struct CachedAnswer {
 /// terminal `stream_answer` run — the human-facing counterpart of
 /// `search_log` for questions asked in AI mode. Written by
 /// `AnswerLoop::run` on every terminal path; `id` is `None` on insert.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 pub struct AnswerLogRow {
     #[serde(default)]
+    #[ts(type = "number | null")]
     pub id: Option<i64>,
     pub ts: DateTime<Utc>,
     /// The normalized question (`normalize_query`), matching `search_log`.
@@ -545,7 +552,7 @@ pub struct AnswerLogRow {
 
 /// `answer_log.status` (`done` | `cached` | `error`): which terminal
 /// path the run took.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
 pub enum AnswerStatus {
     /// A fresh answer completed (`done` frame, possibly ungrounded).
@@ -636,16 +643,18 @@ pub struct AuditFacets {
 }
 
 /// Searches per UTC day, for the dashboard chart.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 pub struct DayCount {
     pub day: NaiveDate,
+    #[ts(type = "number")]
     pub searches: u64,
+    #[ts(type = "number")]
     pub cache_hits: u64,
 }
 
 /// Latency percentiles over `search_log.latency_ms` in the window (and the
 /// in-process TTFR rolling window, W2-03).
-#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, TS)]
 pub struct LatencyPercentiles {
     pub p50_ms: u32,
     pub p90_ms: u32,
@@ -653,31 +662,34 @@ pub struct LatencyPercentiles {
 }
 
 /// Request count for one `client` label.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 pub struct ClientCount {
     pub client: String,
+    #[ts(type = "number")]
     pub searches: u64,
 }
 
 /// Request count for one stored `query` string (dashboard top-queries panel).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 pub struct QueryCount {
     pub query: String,
+    #[ts(type = "number")]
     pub searches: u64,
 }
 
 /// Cache hits served by one tier (`search_log.tier` on `source = 'cache'`
 /// rows). The dashboard renders the per-tier hit rate as `hits / searches`.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 pub struct TierHit {
     pub tier: u8,
+    #[ts(type = "number")]
     pub hits: u64,
 }
 
 /// Median/p80/p95 of a millisecond sample window (engine phases, admission
 /// waits). Zeroed when no samples exist — percentiles are always numbers on
 /// the wire (the W1-09 acceptance contract).
-#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize, TS)]
 pub struct PhaseStats {
     pub median_ms: u32,
     pub p80_ms: u32,
@@ -688,7 +700,7 @@ pub struct PhaseStats {
 /// fields plus the in-process request metrics merged in by the HTTP
 /// handler (`StatsSnapshot::merge_metrics`). Store impls fill only the
 /// health fields; the metric fields stay zeroed until the merge.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 pub struct EngineStatsRow {
     pub engine: EngineId,
     /// EWMA latency in ms (`engine_health.ewma_ms`; 0 when unseen).
@@ -699,8 +711,10 @@ pub struct EngineStatsRow {
     pub last_ok_at: Option<DateTime<Utc>>,
     pub last_error: Option<String>,
     /// Engine calls completed this process lifetime.
+    #[ts(type = "number")]
     pub requests: u64,
     /// Total results returned across calls.
+    #[ts(type = "number")]
     pub result_count: u64,
     /// Successful answers / requests * 100 (SearXNG reliability parity;
     /// `no_results` answers count as successful).
@@ -771,23 +785,28 @@ impl EngineStatsRow {
 /// impls emit it zeroed. Counts are per request (every waiter on a flight
 /// observes the same rejection/stale outcome) except `deadline_hits`, which
 /// is per flight — the deadline cuts the shared fan-out once.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
 pub struct AdmissionStats {
     /// Flight leader acquires that measured a bounded-queue wait
     /// (`cauce_admission_wait_ms` observations).
+    #[ts(type = "number")]
     pub waits: u64,
     pub wait_median_ms: u32,
     pub wait_p80_ms: u32,
     pub wait_p95_ms: u32,
     /// Requests rejected by admission (`cauce_admission_rejected_total`).
+    #[ts(type = "number")]
     pub rejected: u64,
     /// Rejections split by `reason` label (`queue_full`, `wait_timeout`).
+    #[ts(type = "Record<string, number>")]
     pub rejected_by_reason: std::collections::BTreeMap<String, u64>,
     /// Flights cut by the hard deadline (`cauce_deadline_hit_total`,
     /// per flight — shared across the flight's waiters).
+    #[ts(type = "number")]
     pub deadline_hits: u64,
     /// Responses served from an expired cache row
     /// (`cauce_stale_served_total`).
+    #[ts(type = "number")]
     pub stale_served: u64,
 }
 
@@ -796,11 +815,13 @@ pub struct AdmissionStats {
 ///
 /// `hit_rate` is `cache_hits / searches` over `search_log`, never derived from
 /// `cache_entries` (that was the v2 dashboard bug).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 pub struct StatsSnapshot {
     pub window_days: u32,
+    #[ts(type = "number")]
     pub searches: u64,
     /// Searches whose `source` was `cache`.
+    #[ts(type = "number")]
     pub cache_hits: u64,
     pub hit_rate: f64,
     /// None when the window has no searches.
@@ -819,23 +840,28 @@ pub struct StatsSnapshot {
     /// Search outcome counts (`ok` / `error` / `rejected`) folded from
     /// `cauce_search_requests_total`'s `outcome` label (W2-03 amendment).
     /// Filled by `merge_metrics`; empty in store results.
+    #[ts(type = "Record<string, number>")]
     pub outcomes: std::collections::BTreeMap<String, u64>,
     /// Searches in the window that hit the hard deadline
     /// (`search_log.deadline_hit`). The windowed counterpart of the
     /// lifetime `admission.deadline_hits` counter: the reliability panel
     /// rates this against `searches`, never the lifetime counter, so
     /// numerator and denominator share the window.
+    #[ts(type = "number")]
     pub deadline_hits: u64,
     pub per_day: Vec<DayCount>,
     /// Engine table: one row per engine in `engine_health`, extended with
     /// the in-process request metrics by `merge_metrics` (W1-09).
     pub engines: Vec<EngineStatsRow>,
     /// Live `cache_entries` rows (unexpired).
+    #[ts(type = "number")]
     pub cache_entries: u64,
     /// Rows past `expires_at` awaiting eviction.
+    #[ts(type = "number")]
     pub cache_entries_expired: u64,
     /// Database file size in bytes (`page_count * page_size`; 0 when the
     /// store cannot report it).
+    #[ts(type = "number")]
     pub cache_db_bytes: u64,
     /// `created_at` of the newest `cache_entries` row.
     pub cache_newest_at: Option<DateTime<Utc>>,

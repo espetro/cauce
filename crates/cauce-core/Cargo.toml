@@ -53,7 +53,7 @@ tokio = { version = "1", features = ["macros", "rt", "sync", "time", "net"] }
 tracing = "0.1"
 url = { version = "2", features = ["serde"] }
 uuid = { version = "1", features = ["v7", "serde"] }
-ts-rs = { version = "12", features = ["uuid-impl", "url-impl", "chrono-impl", "no-serde-warnings"] }
+ts-rs = { version = "12", features = ["uuid-impl", "url-impl", "chrono-impl", "no-serde-warnings", "serde-json-impl"] }
 pulldown-cmark = "0.13"
 ammonia = "4.2"
 pulldown-cmark-escape = "0.11"
