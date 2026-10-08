@@ -31,8 +31,21 @@ request_id: string,
  * (`default` is inert — `AnswerFrame` is never deserialized — but
  * tells ts-rs the field may be absent on the wire.)
  */
-ungrounded?: boolean, } | { "type": "error", message: string, 
+ungrounded?: boolean, 
+/**
+ * The durable `answer_log` row id written for this run (#254) —
+ * the page `replaceState`s `/answer/{log_id}` so back/forward
+ * re-reads the stored row instead of re-running the loop.
+ * Absent when the log write failed open.
+ */
+log_id?: number, } | { "type": "error", message: string, 
 /**
  * Provider retry hint, only on rate limits.
  */
-retry_after_s?: number, };
+retry_after_s?: number, 
+/**
+ * The `answer_log` row written for this failed run (#254) —
+ * same `/answer/{id}` swap contract as `done.log_id`. Absent
+ * on `stream_assist` (which never logs) and on failed writes.
+ */
+log_id?: number, };

@@ -211,6 +211,7 @@ async fn score_one(case: &EvalCase, engine: &dyn Engine, opts: &EvalArgs) -> Cas
         safesearch: SafeSearch::Moderate,
         engines: Some(vec![engine.id()]),
         client: ClientKind::Cli,
+        origin: cauce_core::SearchOrigin::User,
     };
     match engine.search(&req, CASE_BUDGET).await {
         Ok(results) => {

@@ -60,7 +60,10 @@ pub use config::{config_get, config_put};
 pub(crate) use engines::engine_views;
 pub use engines::{EngineView, engine_disable, engine_enable, engine_reset, engines_list};
 pub(crate) use history::{HISTORY_LIMIT, audit_list_data, history_inner};
-pub use history::{audit_list, click, health, history, history_delete, metrics, stats};
+pub use history::{
+    answer_log_delete, answer_log_get, audit_list, click, health, history, history_delete, metrics,
+    stats,
+};
 #[cfg(feature = "archive")]
 pub use pages::{pages_delete, pages_get, pages_index};
 pub use report::report;

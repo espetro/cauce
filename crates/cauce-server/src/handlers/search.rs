@@ -106,6 +106,7 @@ pub(crate) fn parse_search_request(
             })
             .filter(|v| !v.is_empty()),
         client: ctx.client.clone(),
+        origin: cauce_core::SearchOrigin::User,
     })
 }
 

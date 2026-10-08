@@ -60,6 +60,7 @@ fn log_row(q: &str, result_count: u32) -> SearchLogRow {
             safesearch: SafeSearch::default(),
             engines: None,
             client: ClientKind::Api,
+            origin: cauce_core::SearchOrigin::User,
         }),
         query: q.to_string(),
         query_raw: Some(q.to_string()),
@@ -70,6 +71,7 @@ fn log_row(q: &str, result_count: u32) -> SearchLogRow {
         result_count,
         engines: vec![],
         deadline_hit: false,
+        origin: cauce_core::SearchOrigin::User,
     }
 }
 

@@ -40,6 +40,7 @@ fn query_hash(q: &str) -> String {
         safesearch: SafeSearch::default(),
         engines: None,
         client: ClientKind::Api,
+        origin: cauce_core::SearchOrigin::User,
     })
     .as_str()
     .to_string()
@@ -57,6 +58,7 @@ fn log_row(ts: chrono::DateTime<chrono::Utc>, q: &str, source: LogSource) -> Sea
             safesearch: SafeSearch::default(),
             engines: None,
             client: ClientKind::Api,
+            origin: cauce_core::SearchOrigin::User,
         }),
         query: q.to_string(),
         query_raw: Some(q.to_string()),
@@ -70,6 +72,7 @@ fn log_row(ts: chrono::DateTime<chrono::Utc>, q: &str, source: LogSource) -> Sea
         result_count: 10,
         engines: vec![EngineId::from("replay")],
         deadline_hit: false,
+        origin: cauce_core::SearchOrigin::User,
     }
 }
 
@@ -85,7 +88,7 @@ async fn history_page_shows_replay_searches_with_sources() {
     search(&app, "w2-history-beta").await;
     search(&app, "w2-history-gamma").await;
 
-    let (status, body) = get_html(&app, "/history").await;
+    let (status, body) = get_html(&app, "/history?origin=all").await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(search_rows(&body), 3, "expected 3 search rows: {body}");
     for q in ["w2-history-alpha", "w2-history-beta", "w2-history-gamma"] {
@@ -112,7 +115,7 @@ async fn history_page_shows_replay_searches_with_sources() {
     // `cached ·` (the column is the query's live cache state, not the
     // fetch that produced the row).
     search(&app, "w2-history-alpha").await;
-    let (status, body) = get_html(&app, "/history").await;
+    let (status, body) = get_html(&app, "/history?origin=all").await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(search_rows(&body), 4);
     assert!(body.contains("cached ·"), "{body}");
@@ -126,7 +129,7 @@ async fn history_source_tracks_live_cache_state() {
     let (app, _state, _tmp) = app();
     search(&app, "w2-src-flip").await;
 
-    let (status, body) = get_html(&app, "/history").await;
+    let (status, body) = get_html(&app, "/history?origin=all").await;
     assert_eq!(status, StatusCode::OK);
     assert!(body.contains("cached ·"), "entry live: {body}");
 
@@ -141,7 +144,7 @@ async fn history_source_tracks_live_cache_state() {
     .await;
     assert_eq!(status, StatusCode::OK, "{body}");
 
-    let (status, body) = get_html(&app, "/history").await;
+    let (status, body) = get_html(&app, "/history?origin=all").await;
     assert_eq!(status, StatusCode::OK);
     assert!(
         body.contains("network"),
@@ -150,7 +153,7 @@ async fn history_source_tracks_live_cache_state() {
     assert!(!body.contains("cached ·"), "{body}");
 
     search(&app, "w2-src-flip").await;
-    let (status, body) = get_html(&app, "/history").await;
+    let (status, body) = get_html(&app, "/history?origin=all").await;
     assert_eq!(status, StatusCode::OK);
     assert!(body.contains("cached ·"), "entry refilled: {body}");
 }
@@ -175,7 +178,7 @@ async fn history_cached_filter() {
     .await;
     assert_eq!(status, StatusCode::OK);
 
-    let (status, body) = get_html(&app, "/history?cached=1").await;
+    let (status, body) = get_html(&app, "/history?origin=all&cached=1").await;
     assert_eq!(status, StatusCode::OK);
     assert!(body.contains("w2-cached-yes"), "{body}");
     assert!(
@@ -212,7 +215,7 @@ async fn history_cached_filter() {
     )
     .await;
     assert_eq!(status, StatusCode::OK);
-    let (status, body) = get_html(&app, "/history?cached=1").await;
+    let (status, body) = get_html(&app, "/history?origin=all&cached=1").await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(search_rows(&body), 0, "{body}");
     assert!(
@@ -238,7 +241,7 @@ async fn history_since_filter_hides_backdated_row() {
         .expect("backdated log row");
     search(&app, "w2-history-fresh").await;
 
-    let (status, body) = get_html(&app, "/history?since=24h").await;
+    let (status, body) = get_html(&app, "/history?origin=all&since=24h").await;
     assert_eq!(status, StatusCode::OK);
     assert!(body.contains("w2-history-fresh"), "{body}");
     assert!(
@@ -246,14 +249,14 @@ async fn history_since_filter_hides_backdated_row() {
         "backdated row must be hidden by since=24h: {body}"
     );
 
-    let (status, body) = get_html(&app, "/history?since=all").await;
+    let (status, body) = get_html(&app, "/history?origin=all&since=all").await;
     assert_eq!(status, StatusCode::OK);
     assert!(body.contains("w2-history-ancient"), "{body}");
     assert!(body.contains("w2-history-fresh"), "{body}");
 
     // The other advertised windows accept their tokens too.
     for window in ["7d", "30d"] {
-        let (status, _) = get_html(&app, &format!("/history?since={window}")).await;
+        let (status, _) = get_html(&app, &format!("/history?origin=all&since={window}")).await;
         assert_eq!(status, StatusCode::OK, "since={window}");
     }
     // And the API takes the same tokens (one filter grammar).
@@ -273,7 +276,7 @@ async fn history_q_filter_narrows_rows() {
     search(&app, "w2-filter-alpha").await;
     search(&app, "w2-filter-beta").await;
 
-    let (status, body) = get_html(&app, "/history?q=alpha").await;
+    let (status, body) = get_html(&app, "/history?origin=all&q=alpha").await;
     assert_eq!(status, StatusCode::OK);
     assert!(body.contains("w2-filter-alpha"), "{body}");
     assert!(!body.contains("w2-filter-beta"), "{body}");
@@ -288,7 +291,7 @@ async fn history_page_displays_original_query() {
     let (status, _) = get_json(&app, "/api/search?q=Rust%20%20History").await;
     assert_eq!(status, StatusCode::OK);
 
-    let (status, body) = get_html(&app, "/history").await;
+    let (status, body) = get_html(&app, "/history?origin=all").await;
     assert_eq!(status, StatusCode::OK);
     assert!(
         body.contains("Rust  History"),
@@ -325,7 +328,7 @@ async fn history_row_joins_clicks() {
     .await;
     assert_eq!(status, StatusCode::NO_CONTENT);
 
-    let (status, body) = get_html(&app, "/history").await;
+    let (status, body) = get_html(&app, "/history?origin=all").await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(
         search_rows(&body),
@@ -371,7 +374,7 @@ async fn history_unmatched_click_renders_click_only_row() {
     .await;
     assert_eq!(status, StatusCode::NO_CONTENT);
 
-    let (status, body) = get_html(&app, "/history").await;
+    let (status, body) = get_html(&app, "/history?origin=all").await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(search_rows(&body), 1, "one search row: {body}");
     assert!(body.contains("(click only)"), "{body}");
@@ -406,7 +409,7 @@ async fn history_delete_removes_row_clicks_and_audits() {
     .await;
     assert_eq!(status, StatusCode::NO_CONTENT);
 
-    let (status, body) = get_json(&app, "/api/history").await;
+    let (status, body) = get_json(&app, "/api/history?origin=all").await;
     assert_eq!(status, StatusCode::OK);
     let id = body
         .as_array()
@@ -432,10 +435,10 @@ async fn history_delete_removes_row_clicks_and_audits() {
     assert_eq!(body["clicks_removed"], 1);
 
     // Row and its clicks are gone from the page and the feed.
-    let (status, body) = get_html(&app, "/history").await;
+    let (status, body) = get_html(&app, "/history?origin=all").await;
     assert_eq!(status, StatusCode::OK);
     assert!(!body.contains("w2-delete-me"), "{body}");
-    let (_, feed) = get_json(&app, "/api/history").await;
+    let (_, feed) = get_json(&app, "/api/history?origin=all").await;
     assert!(
         !feed
             .as_array()
@@ -505,7 +508,7 @@ async fn history_row_actions_and_request_id() {
     let (app, _state, _tmp) = app();
     search(&app, "w2-actions").await;
 
-    let (status, body) = get_html(&app, "/history").await;
+    let (status, body) = get_html(&app, "/history?origin=all").await;
     assert_eq!(status, StatusCode::OK);
     assert!(
         body.contains(r#"href="/search?q=w2-actions""#),
@@ -562,7 +565,7 @@ async fn history_row_actions_and_request_id() {
 #[tokio::test]
 async fn history_page_empty_state() {
     let (app, _state, _tmp) = app();
-    let (status, body) = get_html(&app, "/history").await;
+    let (status, body) = get_html(&app, "/history?origin=all").await;
     assert_eq!(status, StatusCode::OK);
     assert!(
         body.contains("nothing searched yet. run a search and it lands here."),
@@ -570,14 +573,18 @@ async fn history_page_empty_state() {
     );
 
     search(&app, "w2-empty-check").await;
-    let (status, body) = get_html(&app, "/history?q=no-such-query").await;
+    let (status, body) = get_html(&app, "/history?origin=all&q=no-such-query").await;
     assert_eq!(status, StatusCode::OK);
     // Askama escapes the quotes around the query text.
     assert!(
         body.contains("no searches match") && body.contains("no-such-query"),
         "filtered-empty names the active q filter: {body}"
     );
-    // `clear` is offered while a filter is active, hidden otherwise.
+    // `clear` is offered while a filter is active. `origin=all` also
+    // counts as active (#254) — it deviates from the page's default
+    // `origin=user` filter.
+    assert!(body.contains(">clear<"), "{body}");
+    let (_, body) = get_html(&app, "/history?origin=all").await;
     assert!(body.contains(">clear<"), "{body}");
     let (_, body) = get_html(&app, "/history").await;
     assert!(!body.contains(">clear<"), "{body}");
@@ -591,14 +598,14 @@ async fn history_page_json_negotiation() {
     let (app, _state, _tmp) = app();
     search(&app, "w2-json-neg").await;
 
-    let (status, body) = get_json(&app, "/history").await;
+    let (status, body) = get_json(&app, "/history?origin=all").await;
     assert_eq!(status, StatusCode::OK);
     let rows = body.as_array().expect("json array");
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0]["kind"], "search");
     assert_eq!(rows[0]["query"], "w2-json-neg");
 
-    let (status, body) = get_html(&app, "/api/history").await;
+    let (status, body) = get_html(&app, "/api/history?origin=all").await;
     assert_eq!(status, StatusCode::OK);
     assert!(
         body.contains(r#"<table class="history">"#),
@@ -633,8 +640,11 @@ async fn history_page_html_rows_match_json_rows() {
     assert_eq!(status, StatusCode::NO_CONTENT);
 
     for (uri, api_uri) in [
-        ("/history", "/api/history"),
-        ("/api/history?since=24h", "/api/history?since=24h"),
+        ("/history?origin=all", "/api/history?origin=all"),
+        (
+            "/api/history?since=24h&origin=all",
+            "/api/history?since=24h&origin=all",
+        ),
     ] {
         let (status, feed) = get_json(&app, api_uri).await;
         assert_eq!(status, StatusCode::OK);
@@ -680,7 +690,7 @@ async fn history_stats_line_counts_searches_and_clicks() {
     .await;
     assert_eq!(status, StatusCode::NO_CONTENT);
 
-    let (status, body) = get_html(&app, "/history").await;
+    let (status, body) = get_html(&app, "/history?origin=all").await;
     assert_eq!(status, StatusCode::OK);
     assert!(
         body.contains("2 searches in last 24h · 2 total · 1 clicks today"),
@@ -705,7 +715,7 @@ async fn history_page_exactly_200_rows_is_not_marked_capped() {
             .expect("log_search");
     }
 
-    let (status, body) = get_html(&app, "/history").await;
+    let (status, body) = get_html(&app, "/history?origin=all").await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(search_rows(&body), 200);
     assert!(
@@ -731,7 +741,7 @@ async fn history_page_caps_at_200_rows() {
             .expect("log_search");
     }
 
-    let (status, body) = get_html(&app, "/history").await;
+    let (status, body) = get_html(&app, "/history?origin=all").await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(search_rows(&body), 200, "page caps at 200 rows: {body}");
     assert!(
@@ -816,7 +826,7 @@ async fn history_off_window_click_is_not_click_only() {
     assert_eq!(status, StatusCode::NO_CONTENT);
 
     // `q` filters searches only; both clicks remain in the feed.
-    let (status, body) = get_html(&app, "/history?since=all&q=no-such-query").await;
+    let (status, body) = get_html(&app, "/history?origin=all&since=all&q=no-such-query").await;
     assert_eq!(status, StatusCode::OK);
     assert!(
         !body.contains("offwin.example.com"),
@@ -856,6 +866,7 @@ async fn history_source_renders_expired_cache() {
                 safesearch: SafeSearch::default(),
                 engines: None,
                 client: ClientKind::Api,
+                origin: cauce_core::SearchOrigin::User,
             }),
             &resp,
             std::time::Duration::ZERO,
@@ -863,7 +874,7 @@ async fn history_source_renders_expired_cache() {
         .await
         .expect("put expired entry");
 
-    let (status, body) = get_html(&app, "/history").await;
+    let (status, body) = get_html(&app, "/history?origin=all").await;
     assert_eq!(status, StatusCode::OK);
     assert!(
         body.contains("cached · expired"),
@@ -893,7 +904,7 @@ async fn history_day_headers_group_rows() {
         .await
         .expect("log old");
 
-    let (status, body) = get_html(&app, "/history?since=all").await;
+    let (status, body) = get_html(&app, "/history?origin=all&since=all").await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(
         body.matches(r#"<tr class="day">"#).count(),
@@ -923,7 +934,7 @@ async fn history_since_validation_and_select_state() {
     );
 
     for window in ["24h", "7d", "30d"] {
-        let (status, body) = get_html(&app, &format!("/history?since={window}")).await;
+        let (status, body) = get_html(&app, &format!("/history?origin=all&since={window}")).await;
         assert_eq!(status, StatusCode::OK, "since={window}");
         assert!(
             body.contains(&format!(r#"value="{window}" selected"#)),

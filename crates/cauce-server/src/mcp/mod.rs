@@ -289,6 +289,7 @@ impl CauceMcp {
                 safesearch: SafeSearch::default(),
                 engines,
                 client: client.clone(),
+                origin: cauce_core::SearchOrigin::User,
             };
             let resp = self
                 .state
@@ -514,6 +515,7 @@ impl CauceMcp {
                 safesearch: SafeSearch::default(),
                 engines: None,
                 client: client.clone(),
+                origin: cauce_core::SearchOrigin::User,
             };
             let resp = self
                 .state
@@ -561,6 +563,7 @@ impl CauceMcp {
                 safesearch: SafeSearch::default(),
                 engines: None,
                 client: ClientKind::Api,
+                origin: cauce_core::SearchOrigin::User,
             })
         });
         let items = self
@@ -569,6 +572,7 @@ impl CauceMcp {
                 since: None,
                 q: None,
                 cached: false,
+                origin: None,
                 limit: HISTORY_LIMIT,
             })
             .await
@@ -577,7 +581,7 @@ impl CauceMcp {
             .into_iter()
             .filter_map(|item| match item {
                 HistoryItem::Click(row) => Some(row),
-                HistoryItem::Search(_) => None,
+                HistoryItem::Search(_) | HistoryItem::Answer(_) => None,
             })
             .filter(|row| {
                 query_hash

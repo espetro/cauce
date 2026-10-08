@@ -9,8 +9,10 @@ use url::Url;
 
 use super::{log_row, request};
 use crate::cache::CacheKey;
-use crate::request::ClientKind;
-use crate::store::{ClickRow, HistoryFilter, HistoryItem, LogSource, Store};
+use crate::request::{ClientKind, SearchOrigin};
+use crate::store::{
+    AnswerLogRow, AnswerStatus, ClickRow, HistoryFilter, HistoryItem, LogSource, Store,
+};
 
 /// `log_search`, `record_click` and the merged `list_history` feed with
 /// `since`, `q` and `limit` filters.
@@ -85,6 +87,7 @@ async fn verify_merged_feed(store: &impl Store) -> Vec<HistoryItem> {
             since: None,
             q: None,
             cached: false,
+            origin: None,
             limit: 50,
         })
         .await
@@ -131,6 +134,7 @@ async fn verify_history_filters(store: &impl Store, base: DateTime<Utc>) {
             since: None,
             q: Some(alpha.to_string()),
             cached: false,
+            origin: None,
             limit: 50,
         })
         .await
@@ -158,6 +162,7 @@ async fn verify_history_filters(store: &impl Store, base: DateTime<Utc>) {
             since: Some(base - chrono::Duration::milliseconds(1500)),
             q: None,
             cached: false,
+            origin: None,
             limit: 50,
         })
         .await
@@ -179,6 +184,7 @@ async fn verify_history_filters(store: &impl Store, base: DateTime<Utc>) {
             since: None,
             q: None,
             cached: false,
+            origin: None,
             limit: 1,
         })
         .await
@@ -213,6 +219,7 @@ async fn verify_delete_cascade(store: &impl Store, history: &[HistoryItem]) {
             since: None,
             q: None,
             cached: false,
+            origin: None,
             limit: 50,
         })
         .await
@@ -366,6 +373,7 @@ async fn verify_dup_delete(store: &impl Store) {
             since: None,
             q: Some(dup.to_string()),
             cached: false,
+            origin: None,
             limit: 50,
         })
         .await
@@ -414,5 +422,227 @@ async fn verify_dup_delete(store: &impl Store) {
     assert!(
         !present.iter().any(|k| *k == CacheKey::from(&request(dup))),
         "dup's rows are gone"
+    );
+}
+
+/// `log_answer` (#254): `answer_log` rows merge into `list_history`
+/// newest-first, honour `since`/`q`/`origin`, are excluded by `cached=1`,
+/// count into `history_stats.matching`, and `delete_answer_log` removes
+/// one row (missing id -> `None`).
+pub async fn answer_log(store: &impl Store) {
+    let base = Utc::now();
+    let row = |ts: DateTime<Utc>,
+               query: &str,
+               client: ClientKind,
+               origin: SearchOrigin,
+               status: AnswerStatus,
+               error: Option<&str>| AnswerLogRow {
+        id: None,
+        ts,
+        query: query.to_string(),
+        query_raw: Some(format!("  {query} ")),
+        model: "conf-model".to_string(),
+        answer: format!("answer for {query}"),
+        confidence: Some(7),
+        sources: Vec::new(),
+        related_questions: vec![format!("{query} again?")],
+        request_id: None,
+        client,
+        origin,
+        status,
+        ungrounded: false,
+        error: error.map(str::to_string),
+    };
+
+    // Three rows: a UI answer (`user`), an API answer (`agent`) and an
+    // errored UI run — plus one `user` search row to cross-check the
+    // origin filter across kinds.
+    let alpha_id = store
+        .log_answer(row(
+            base - chrono::Duration::seconds(2),
+            "conformance answer alpha",
+            ClientKind::Ui,
+            SearchOrigin::User,
+            AnswerStatus::Done,
+            None,
+        ))
+        .await
+        .expect("log_answer alpha");
+    // `log_answer` returns the row id `GET /answer/{id}` and
+    // `delete_answer_log` address.
+    let alpha = store
+        .get_answer_log(alpha_id)
+        .await
+        .expect("get_answer_log")
+        .expect("alpha row");
+    assert_eq!(alpha.query, "conformance answer alpha");
+    assert_eq!(alpha.status, AnswerStatus::Done);
+    assert!(
+        store
+            .get_answer_log(i64::MAX)
+            .await
+            .expect("missing id")
+            .is_none(),
+        "unknown id returns None"
+    );
+    store
+        .log_answer(row(
+            base - chrono::Duration::seconds(1),
+            "conformance answer beta",
+            ClientKind::Api,
+            SearchOrigin::Agent,
+            AnswerStatus::Cached,
+            None,
+        ))
+        .await
+        .expect("log_answer beta");
+    store
+        .log_answer(row(
+            base,
+            "conformance answer gamma",
+            ClientKind::Ui,
+            SearchOrigin::User,
+            AnswerStatus::Error,
+            Some("provider exploded"),
+        ))
+        .await
+        .expect("log_answer gamma");
+    store
+        .log_search(log_row(
+            base,
+            "conformance answer search",
+            ClientKind::Ui,
+            LogSource::Network,
+            5,
+            3,
+        ))
+        .await
+        .expect("log_search user row");
+
+    // Unfiltered merge: newest-first across kinds — the user search and
+    // gamma answer share `ts`, so id order breaks the tie.
+    let feed = store
+        .list_history(&HistoryFilter {
+            since: None,
+            q: Some("conformance answer".to_string()),
+            cached: false,
+            origin: None,
+            limit: 50,
+        })
+        .await
+        .expect("merged answer feed");
+    let has = |q: &str| {
+        feed.iter()
+            .any(|i| matches!(i, HistoryItem::Answer(a) if a.query == q))
+    };
+    assert!(has("conformance answer alpha"), "answer rows merged");
+    assert!(has("conformance answer beta"));
+    assert!(has("conformance answer gamma"));
+    let gamma = feed
+        .iter()
+        .find_map(|i| match i {
+            HistoryItem::Answer(a) if a.query == "conformance answer gamma" => Some(a),
+            _ => None,
+        })
+        .expect("gamma answer row");
+    assert_eq!(gamma.status, AnswerStatus::Error);
+    assert_eq!(gamma.error.as_deref(), Some("provider exploded"));
+    assert_eq!(
+        gamma.query_raw.as_deref(),
+        Some("  conformance answer gamma ")
+    );
+
+    // `origin` filters answers and searches alike.
+    for (origin, want_user, want_agent) in [
+        (Some(SearchOrigin::User), true, false),
+        (Some(SearchOrigin::Agent), false, true),
+        (None, true, true),
+    ] {
+        let got = store
+            .list_history(&HistoryFilter {
+                since: None,
+                q: Some("conformance answer".to_string()),
+                cached: false,
+                origin,
+                limit: 50,
+            })
+            .await
+            .expect("origin-filtered feed");
+        let user_hit = got
+            .iter()
+            .any(|i| matches!(i, HistoryItem::Answer(a) if a.query == "conformance answer alpha"));
+        let agent_hit = got
+            .iter()
+            .any(|i| matches!(i, HistoryItem::Answer(a) if a.query == "conformance answer beta"));
+        let search_hit = got
+            .iter()
+            .any(|i| matches!(i, HistoryItem::Search(s) if s.query == "conformance answer search"));
+        assert_eq!(user_hit, want_user, "origin {origin:?} keeps user rows");
+        assert_eq!(agent_hit, want_agent, "origin {origin:?} keeps agent rows");
+        assert_eq!(search_hit, want_user, "origin {origin:?} filters searches");
+    }
+
+    // `cached=1` excludes answer rows (they carry no cache hash) but
+    // keeps nothing else either here — no live cache entries exist.
+    let cached = store
+        .list_history(&HistoryFilter {
+            since: None,
+            q: Some("conformance answer".to_string()),
+            cached: true,
+            origin: None,
+            limit: 50,
+        })
+        .await
+        .expect("cached-filtered feed");
+    assert!(
+        !cached.iter().any(|i| matches!(i, HistoryItem::Answer(_))),
+        "cached=1 excludes answer rows"
+    );
+
+    // `history_stats.matching` counts searches + answers under the same
+    // filters: 3 answers + 1 search seeded above.
+    let stats = store
+        .history_stats(&HistoryFilter {
+            since: None,
+            q: Some("conformance answer".to_string()),
+            cached: false,
+            origin: None,
+            limit: 50,
+        })
+        .await
+        .expect("history_stats");
+    assert_eq!(stats.matching, 4, "matching counts searches + answers");
+
+    // `delete_answer_log` removes the row; a second delete is `None`.
+    let outcome = store
+        .delete_answer_log(alpha_id)
+        .await
+        .expect("delete_answer_log")
+        .expect("existing row");
+    assert_eq!(outcome.query, "conformance answer alpha");
+    assert_eq!(outcome.status, AnswerStatus::Done);
+    let after = store
+        .list_history(&HistoryFilter {
+            since: None,
+            q: Some("conformance answer".to_string()),
+            cached: false,
+            origin: None,
+            limit: 50,
+        })
+        .await
+        .expect("feed after answer delete");
+    assert!(
+        !after
+            .iter()
+            .any(|i| matches!(i, HistoryItem::Answer(a) if a.query == "conformance answer alpha")),
+        "deleted answer is gone"
+    );
+    assert!(
+        store
+            .delete_answer_log(alpha_id)
+            .await
+            .expect("second delete")
+            .is_none(),
+        "deleting a missing id returns None"
     );
 }

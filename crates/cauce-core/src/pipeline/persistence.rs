@@ -298,6 +298,9 @@ impl SearchPipeline {
             result_count: row.result_count,
             engines: row.engines,
             deadline_hit: row.deadline_hit,
+            // #254: tool-marked or non-UI client => `agent`; only a
+            // direct UI search stores `user`.
+            origin: req.resolved_origin(),
         };
         if let Err(e) = self.store.log_search(row).await {
             warn!(error = %e, "search_log write failed");

@@ -43,7 +43,8 @@ use cauce_core::ai::{
     ChatCompletion, ChatMessage, ChatProvider, ChatRequest, render_answer_html,
 };
 use cauce_core::{
-    AnswerKey, AnswerPayload, AnswerRow, AnswerSource, SearchPipeline, Store, normalize_query,
+    AnswerKey, AnswerLogRow, AnswerPayload, AnswerRow, AnswerSource, AnswerStatus, ClientKind,
+    SearchOrigin, SearchPipeline, Store, normalize_query,
 };
 
 use crate::config::LoopConfig;
@@ -308,6 +309,16 @@ impl AnswerLoop {
                     // markdown — deterministic, and keeps
                     // `answers.payload_json` free of a derived field.
                     let html = render_answer_html(&hit.payload.answer, hit.sources.len());
+                    // #254: a cached replay is a terminal run — log it
+                    // before the frames move `hit`'s fields out.
+                    let mut log = self.answer_log_row(run, &req);
+                    log.status = AnswerStatus::Cached;
+                    log.model = hit.model.clone();
+                    log.answer = hit.payload.answer.clone();
+                    log.confidence = Some(hit.payload.confidence);
+                    log.sources = hit.sources.clone();
+                    log.related_questions = hit.payload.related_questions.clone();
+                    let log_id = self.log_answer(run, log).await;
                     if self.emit(
                         &tx,
                         run,
@@ -327,6 +338,7 @@ impl AnswerLoop {
                                 cached: true,
                                 request_id: run.request_id,
                                 ungrounded: false,
+                                log_id,
                             },
                         );
                     }
@@ -398,7 +410,12 @@ impl AnswerLoop {
                     Turn::Aborted => return,
                     Turn::Failed(e) => {
                         self.emit_collected(&tx, run, &sources);
-                        self.send_error(&tx, run, &e);
+                        let mut log = self.answer_log_row(run, &req);
+                        log.status = AnswerStatus::Error;
+                        log.sources = sources.clone();
+                        log.error = Some(e.to_string());
+                        let log_id = self.log_answer(run, log).await;
+                        self.send_error(&tx, run, &e, log_id);
                         return;
                     }
                 };
@@ -534,7 +551,12 @@ impl AnswerLoop {
                 Turn::Aborted => return,
                 Turn::Failed(e) => {
                     self.emit_collected(&tx, run, &sources);
-                    self.send_error(&tx, run, &e);
+                    let mut log = self.answer_log_row(run, &req);
+                    log.status = AnswerStatus::Error;
+                    log.sources = sources.clone();
+                    log.error = Some(e.to_string());
+                    let log_id = self.log_answer(run, log).await;
+                    self.send_error(&tx, run, &e, log_id);
                     return;
                 }
             }
@@ -556,6 +578,18 @@ impl AnswerLoop {
         {
             return;
         }
+        // #254: the durable log row rides every terminal path — a fresh
+        // `done` here (the `ungrounded` flag mirrors the frame's). Write
+        // it before the frames so `done.log_id` carries the
+        // `/answer/{id}` URL's id.
+        let mut log = self.answer_log_row(run, &req);
+        log.model = completion.model.clone().unwrap_or_else(|| model.clone());
+        log.answer = answer.clone();
+        log.confidence = Some(confidence);
+        log.sources = sources.clone();
+        log.related_questions = related.clone();
+        log.ungrounded = sources.is_empty();
+        let log_id = self.log_answer(run, log).await;
         if !self.emit(
             &tx,
             run,
@@ -577,6 +611,7 @@ impl AnswerLoop {
                 cached: false,
                 request_id: run.request_id,
                 ungrounded: sources.is_empty(),
+                log_id,
             },
         );
         // Grounded-only caching (#232): the deterministic groundedness
@@ -608,6 +643,51 @@ impl AnswerLoop {
                         error: &e,
                     },
                 );
+            }
+        }
+    }
+
+    /// `answer_log` row skeleton (#254): the fields every terminal
+    /// path of `run` shares — normalized + raw query, run id, the
+    /// inbound client and its `origin` (the `user`/`agent` convention
+    /// `search_log` uses: `user` iff `client == Ui`). Callers set
+    /// `status`, `model`, `answer`, `confidence`, `sources`,
+    /// `related_questions`, `ungrounded`, `error` per outcome.
+    fn answer_log_row(&self, run: &RunContext, req: &AnswerRequest) -> AnswerLogRow {
+        AnswerLogRow {
+            id: None,
+            ts: chrono::Utc::now(),
+            query: run.query.clone(),
+            query_raw: Some(req.q.clone()),
+            model: self.provider.model().to_string(),
+            answer: String::new(),
+            confidence: None,
+            sources: Vec::new(),
+            related_questions: Vec::new(),
+            request_id: Some(run.request_id),
+            client: req.client.clone(),
+            origin: if matches!(req.client, ClientKind::Ui) {
+                SearchOrigin::User
+            } else {
+                SearchOrigin::Agent
+            },
+            status: AnswerStatus::Done,
+            ungrounded: false,
+            error: None,
+        }
+    }
+
+    /// Append the run's `answer_log` row (#254); fail-open like the
+    /// answers cache — a logging outage must not break the answer.
+    /// Returns the row id so the terminal frame can carry it as
+    /// `log_id` (`None` when the write failed).
+    async fn log_answer(&self, run: &RunContext, row: AnswerLogRow) -> Option<i64> {
+        match self.store.log_answer(row).await {
+            Ok(id) => Some(id),
+            Err(e) => {
+                self.observer
+                    .on_event(run, &LoopEvent::LogFailed { error: &e });
+                None
             }
         }
     }
@@ -648,6 +728,8 @@ impl AnswerLoop {
                             cached: true,
                             request_id: run.request_id,
                             ungrounded: false,
+                            // `stream_assist` never logs a row (#254).
+                            log_id: None,
                         },
                     );
                 }
@@ -702,7 +784,7 @@ impl AnswerLoop {
             Turn::Failed(e) => {
                 // The supplied `sources` frame already went out before
                 // the call — only the terminal error is left.
-                self.send_error(&tx, run, &e);
+                self.send_error(&tx, run, &e, None);
                 return;
             }
         };
@@ -733,6 +815,8 @@ impl AnswerLoop {
                 model: completion.model.clone().unwrap_or_else(|| model.clone()),
                 related_questions: related.clone(),
                 cached: false,
+                // `stream_assist` never logs a row (#254).
+                log_id: None,
                 request_id: run.request_id,
                 ungrounded: results.is_empty(),
             },
@@ -893,7 +977,13 @@ impl AnswerLoop {
         }
     }
 
-    fn send_error(&self, tx: &mpsc::UnboundedSender<AnswerFrame>, run: &RunContext, e: &AiError) {
+    fn send_error(
+        &self,
+        tx: &mpsc::UnboundedSender<AnswerFrame>,
+        run: &RunContext,
+        e: &AiError,
+        log_id: Option<i64>,
+    ) {
         self.emit(
             tx,
             run,
@@ -903,6 +993,7 @@ impl AnswerLoop {
                     AiError::RateLimited { retry_after_s } => *retry_after_s,
                     _ => None,
                 },
+                log_id,
             },
         );
     }

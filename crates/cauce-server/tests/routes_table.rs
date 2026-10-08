@@ -61,6 +61,8 @@ const EXPECTED_WAVE1_MOUNTED: &[(&str, &str)] = &[
 /// build including headless.
 const EXPECTED_WAVE2_MOUNTED: &[(&str, &str)] = &[
     ("DELETE", "/api/history/{id}"),
+    ("DELETE", "/api/answer-log/{id}"),
+    ("GET", "/api/answer-log/{id}"),
     ("GET", "/api/report"),
     ("GET", "/api/search/stream"),
     ("GET", "/api/suggest"),
@@ -87,7 +89,7 @@ const EXPECTED_WAVE2_UI_MOUNTED: &[(&str, &str)] = &[
 /// rides the `ai` gate; its page rides `ui` alone (it renders the
 /// disabled notice in `ai`-less builds rather than 404ing).
 const EXPECTED_WAVE4_AI_MOUNTED: &[(&str, &str)] = &[("POST", "/api/answer")];
-const EXPECTED_WAVE4_UI_MOUNTED: &[(&str, &str)] = &[("GET", "/answer")];
+const EXPECTED_WAVE4_UI_MOUNTED: &[(&str, &str)] = &[("GET", "/answer"), ("GET", "/answer/{id}")];
 
 /// Wave-5 rows mounted so far (W5-02): the archive index/read/delete
 /// endpoints and the archive listing, all riding the `archive` gate.
