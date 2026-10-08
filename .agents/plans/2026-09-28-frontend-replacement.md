@@ -21,6 +21,8 @@ runner-up SolidJS.
 - **Honest plan B exists**: the pain concentrates in three hand-rolled DOM
   modules; "HTMX + declarative islands" reaches most of the benefit at a fraction
   of the churn (§3.4, §5 alt path).
+- **Layout direction decided 2026-10-08**: variant E — omnibox duality; component
+  substrate and instance-modes scope recorded in §7.
 
 ## 1. Current frontend surface inventory
 
@@ -233,8 +235,13 @@ retrofits were.
 | FX-02 | SPA toolchain | S | `svelte` 5 + `vite` (rolldown) into `web/`; `vite build` → `assets/spa/`; extend `[tasks.web]` gate (`svelte-check`, bundle freshness); embed via `rust-embed` | `mise run web` green; `GET /app` serves shell in `ui` builds |
 | FX-03 | `/search` parity | M | SPA shell + router (history mode + `index.html` fallback); search page incl. SSE stream, badge/meta line, assist trigger, click beacon, theme toggle, i18n via generated `web/src/i18n/*.json` | golden-path parity vs HTMX page; `stream=1` behavior identical; hidden behind `/app` prefix |
 | FX-04 | `/answer` + Assist | M | SSE-over-POST pump ported from `sse.ts`; multi-turn thread, `[n]` citations, confidence/path chips, follow-up form; Assist card as component reused on `/search` | answer e2e parity (replay engine + stub provider, see `testing-cauce-serve` skill) |
-| FX-05 | Admin/read pages | L | `/history` `/dashboard` (SVG charts → components) `/cache` `/engines` (incl. inline test) `/audit` `/trace` `/settings` `/archive` | route-by-route parity checklist; htmx fragments deleted per page |
+| FX-05 | Admin/read pages | L | `/history` `/dashboard` (SVG charts → components) `/cache` `/engines` (incl. inline test) `/audit` `/trace` `/settings` `/archive`; if FX-07 lands first, build the merged `/admin` tabs instead of separate pages | route-by-route parity checklist; htmx fragments deleted per page |
 | FX-06 | Teardown | S/M | drop `askama`, `templates/`, `html/*`, `*_page.rs`, htmx deps; `RouteKind::Html` rows → SPA fallback; `ui_shell`/`routes_table` tests updated; header/nav absorbed into shell | `cargo check --no-default-features --features mcp` still green; binary no larger; plan + AGENTS.md updated |
+| FX-07 | Instance modes | L | `Capabilities` wire type + bootstrap payload (`mode`, `role`, `flags`); `public_instance` config; API authz on admin endpoints; capability-filtered nav/routes; per-user history (browser-local in public mode); archive index-vs-content split; merged `/admin` tabs (instance · engines · cache · audit); public dashboard card | public-mode e2e: no admin nav/401-403 on admin APIs for non-admin, history never hits server DB, archive disabled state honored; local mode = today's behavior bit-for-bit |
+
+FX-03/FX-04 land the variant-E surfaces (§7.1) — parity layout (A) is the
+engineering landing zone behind `/app`, E is the visual target before the page is
+considered ported.
 
 **What stays**: every `/api/*` route, both SSE endpoints, `/mcp`, pipeline,
 cache, `Store`, `HostGuard`/Origin guard, `routes.rs` as the single surface
@@ -250,7 +257,7 @@ components; DOM modules → runes-based components; `Page`/`Row` structs → pro
 Same as `ts-migration.md`: cross-wave file, one issue per FX step, `For
 Refinement` until picked, worktree `~/.worktrees/cauce-fx-<n>` on
 `v3/fx-<n>-<slug>`, PR `Closes #<issue>`. Classification labels: FX-01 `infra`,
-FX-02 `infra`, FX-03/04/05 `feature`, FX-06 `cleanup`→`feature`.
+FX-02 `infra`, FX-03/04/05 `feature`, FX-06 `cleanup`→`feature`, FX-07 `feature`.
 
 ## 6. Risks
 
@@ -277,3 +284,130 @@ FX-02 `infra`, FX-03/04/05 `feature`, FX-06 `cleanup`→`feature`.
   (`.agents/notes/2026-09-17-velocity-retro.md`). v3 already solved the gating
   (freshness check, strict tsc, wire_types test) — this plan keeps every one of
   those gates and adds svelte-check; the v2 failure mode stays covered.
+- **Public-instance privacy boundary (new, §7.4)**: in public mode the server
+  must not become the custodian of strangers' query history — history goes
+  browser-local by default and archiving can be disabled per-instance. The
+  `public_instance` flag and the SSRF egress surface (`Archiver`) are the server
+  side of the same decision; under-scoping this phase leaks multi-user state.
+
+## 7. Layout & UX direction (2026-10-08 addendum)
+
+Recorded after the mockup spike — static-HTML variants A–E rendered on the
+shipped design tokens + replay data, screenshotted desktop/mobile vs the live
+HTMX baseline (design brief + gallery attached to the originating session;
+mockup sources kept outside the repo).
+
+### 7.1 Direction: variant E — omnibox duality
+
+**The input is the app.** Three surfaces, one shared `<Omnibox>` component with
+an in-pill `[Search · ✦Ask]` segment (the DuckDuckGo "Search | Ask AI" pattern;
+same intent split as Google's AI Mode chip and Brave's Ask):
+
+- `/` hero — brand + tagline + omnibox + suggestion chips; the form on today's
+  home page is absorbed.
+- `/search` — compact sticky omnibox, result-kind tabs (all/dev/news/wiki →
+  engine categories), filter chips bound to existing `lang`/`time_range`/
+  `safesearch` params, assist card, hairline result rows (flatter than the
+  current bordered cards).
+- `/answer` — chat turn: query bubble, model chip, collapsible step lines
+  (`step` frames), streamed markdown with inline citation chips, numbered
+  `<SourcesRow>`, action row, pinned follow-up composer.
+
+Mobile-first: content centers in a ≤46rem column; everything verified at 390px.
+Variant A stays the FX-03 engineering landing zone; B (rail) is the fallback if
+the destination count grows; C is superseded by E; D's "AI needs a home"
+insight is absorbed without the inspector's surface area.
+
+### 7.2 AI-UX contract
+
+Non-negotiables for the answer surface, from the pattern sweep (AI UX primitive
+stack, citation-contract, assistant-ui/ai-elements taxonomy, shipped
+references):
+
+1. Staged reveal: `step` frames → streaming markdown → citations mount at
+   `done`. No citation ghosts mid-stream.
+2. Stop/edit stays stateful; interruption is a feature.
+3. Auto-scroll only while the user is already at the bottom.
+4. Layer answer / evidence / trace — steps collapsed by default.
+5. `<SourceCard>` carries missing / stale / inaccessible / low-confidence states
+   (needed once archived pages feed citations).
+6. Composer pinned; the omnibox segment toggle decides intent, never two inputs.
+
+### 7.3 Component substrate
+
+**Bits UI (headless, Svelte 5) + owned `ui/` wrappers** — the shadcn-svelte
+model: components are vendored into `web/src/ui/` and restyled on our tokens, so
+the design system is ours while accessibility/positioning stay maintained
+upstream. Adopt assistant-ui's component *taxonomy* (Thread, Message, Composer,
+Steps, CitationChip, SourceCard) but keep the existing AnswerFrame SSE client —
+their runtime assumes an AI-SDK transport we don't have.
+
+**Open decision (resolve at FX-02)**: Tailwind v4 for the wrappers (free
+shadcn-svelte registry, tokens map into `@theme`) vs keeping `style.css` +
+hand-rolled utilities. Default Tailwind; the dep-creep risk in §6 applies
+either way. Do not run both (§4 flag stands).
+
+Directory shape (feature slices, VSA-style):
+
+```
+web/src/
+  app/        entry, router, shell, theme
+  ui/         primitives: button, dialog, popover, tabs, chip, skeleton, toast
+  lib/        api (ts-rs), sse client, capabilities store, i18n, formatters
+  features/   search/ answer/ history/ archive/ dashboard/ admin/
+  routes/     ~30-line shells composing features, named after /api/* twins
+```
+
+Rule: features import `ui/` + `lib/` only — no cross-feature imports; each
+feature carries its components + `*.svelte.ts` store + `api.ts`.
+
+### 7.4 Instance modes — new scope (FX-07)
+
+Prior art: SearXNG `server.public_instance`, `preferences.lock`, `base_url`,
+`limiter`, `image_proxy`. Cauce version: a `Capabilities` wire type emitted in
+the SPA bootstrap and enforced on `/api/*` — **UI gating is UX, not authz**:
+
+```ts
+interface Capabilities {
+  mode: 'local' | 'public';
+  role: 'admin' | 'user';
+  flags: { adminSurface: boolean; serverHistory: boolean;
+           archiving: boolean; sharedStats: boolean };
+}
+```
+
+| Surface | local mode | public mode |
+|---|---|---|
+| Search / Ask | today | all users; prefs in web storage (lockable by admin) |
+| History | server DB | browser-local by default; server-side only behind login later |
+| Archive | today | split — content = shared server store keyed by URL (dedups like cache, admin may disable; SSRF egress surface); index = per-user |
+| Dashboard | full | public instance card (name, version, engine count, privacy note); ops telemetry → `/admin` |
+| Settings / Engines / Cache / Audit | today | merged `/admin` (tabs: instance · engines · cache · audit); nav hidden for non-admins |
+
+Conditional rendering is capability-driven: routes declare `requires: 'admin'`
+and a central filter hides them; no inline role checks in components.
+Public-mode copy drops TTL/cache jargon into a `details` expander.
+
+### 7.5 Validation
+
+The §5.0 gate is unchanged. Per-phase, the acceptance columns stand; the
+following checks join the gates:
+
+- **Parity**: HTMX baseline screenshots (light/dark × desktop/390px) kept as the
+  visual checklist for FX-03–FX-05; each ported page diffs against them plus
+  the golden-path e2e on the replay engine.
+- **Stream contract tests (FX-04)**: step ordering, citations absent until
+  `done`, stop/edit state retention, at-bottom-only auto-scroll — via the
+  replay engine + stub provider (`testing-cauce-serve` skill).
+- **Layout invariants (all UI phases)**: no horizontal overflow at 390px
+  (`minmax(0,1fr)` on page grids, `min-width:0` on flex items — the two traps
+  found in the mockups); dark/light token parity; animation ≤200ms compositor
+  props only; `prefers-reduced-motion` honored.
+- **UX sweep per phase**: the `ux-audit` battery as the bar — console errors 0,
+  network 5xx 0, layout collapse 0, axe Critical/Serious 0, perf budget green.
+- **FX-07 e2e**: public-mode boot shows no admin entry points; admin `/api/*`
+  returns 401/403 for non-admin (matrix test); history writes stay
+  browser-local; disabled-archiving state honored; local mode unchanged
+  bit-for-bit.
+- **noscript** (carried from §6): the pure SPA loses today's degradation path —
+  ship a static `<noscript>` shell or document the accepted loss in FX-06.
