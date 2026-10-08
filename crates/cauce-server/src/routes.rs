@@ -116,6 +116,10 @@ pub const ROUTES: &[RouteSpec] = &[
     json("POST", "/api/engines/{id}/enable", 2),
     json("POST", "/api/engines/{id}/disable", 2),
     json("DELETE", "/api/history/{id}", 2),
+    // #254: the answer-log counterpart — one audited row delete, plus
+    // the read surface `GET /answer/{id}` renders.
+    json("DELETE", "/api/answer-log/{id}", 2),
+    json("GET", "/api/answer-log/{id}", 2),
     // The suggestions Url the W2-11 descriptor advertises; a wave-2
     // omission like the favicon (#150).
     json("GET", "/api/suggest", 2),
@@ -153,6 +157,10 @@ pub const ROUTES: &[RouteSpec] = &[
     // The page stays on `ui` alone: in an `ai`-less build it renders the
     // disabled notice (and links `/settings`) rather than 404ing.
     html("/answer", 4),
+    // #254: durable answer URLs — `/answer/{id}` renders the stored
+    // `answer_log` row server-side (no stream), so back/forward and
+    // history links never re-run the loop. `ui`-gated like `/answer`.
+    html("/answer/{id}", 4),
     // ---- wave 5 ------------------------------------------------------------
     // W5-01 mounts the fetch-and-index pair; `/api/archive` and `/archive`
     // are the W5-02 listing surface. `requires` names the `archive` cargo

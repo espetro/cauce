@@ -34,7 +34,7 @@ use axum::response::Html;
 
 use crate::error::ApiError;
 
-pub use answer::answer;
+pub use answer::{answer, answer_view};
 pub use archive::archive;
 #[cfg(feature = "archive")]
 pub(crate) use archive::{archive_page, page_markdown, page_markdown_error};

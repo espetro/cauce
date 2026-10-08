@@ -11,7 +11,7 @@ use axum::extract::{Path, State};
 use axum::http::{HeaderMap, StatusCode, Uri};
 use axum::response::{IntoResponse, Json, Response};
 use cauce_core::{
-    AuditFilter, AuditRow, ClickRow, HistoryFilter, HistoryItem, StatsSnapshot, Store,
+    AuditFilter, AuditRow, ClickRow, HistoryFilter, HistoryItem, SearchOrigin, StatsSnapshot, Store,
 };
 use chrono::Utc;
 use serde_json::{Value, json};
@@ -41,7 +41,7 @@ pub async fn history(
     }
     #[cfg(not(feature = "ui"))]
     let _ = &headers;
-    history_inner(&state, &ctx, &uri, HISTORY_LIMIT)
+    history_inner(&state, &ctx, &uri, HISTORY_LIMIT, None)
         .await
         .map(|(_params, _filter, items)| Json(items).into_response())
 }
@@ -55,9 +55,12 @@ pub(crate) async fn history_inner(
     ctx: &RequestCtx,
     uri: &Uri,
     default_limit: u32,
+    // #254: `/history` passes `Some(User)` — the page defaults to "mine";
+    // `/api/history` passes `None`, keeping the JSON unfiltered for compat.
+    default_origin: Option<SearchOrigin>,
 ) -> Result<(QueryParams, HistoryFilter, Vec<HistoryItem>), ApiError> {
     let params = QueryParams::parse(uri.query(), ctx)?;
-    params.allow(ctx, &["since", "q", "cached", "limit"])?;
+    params.allow(ctx, &["since", "q", "cached", "limit", "origin"])?;
     let filter = HistoryFilter {
         since: params.since(ctx, "since")?,
         // Blank `q=` is no filter at all — JSON and the page must agree,
@@ -67,6 +70,14 @@ pub(crate) async fn history_inner(
             .filter(|v| !v.trim().is_empty())
             .map(str::to_string),
         cached: params.flag(ctx, "cached")?,
+        // `origin=all` is the explicit no-filter; a bad value is a 400.
+        origin: match params.get("origin") {
+            None => default_origin,
+            Some("all") => None,
+            Some(v) => Some(v.parse::<SearchOrigin>().map_err(|_| {
+                ctx.bad_request(format!("invalid origin {v:?}; expected user|agent|all"))
+            })?),
+        },
         limit: params
             .u32(ctx, "limit", default_limit)?
             .clamp(1, HISTORY_LIMIT),
@@ -113,6 +124,60 @@ pub async fn history_delete(
         "id": id,
         "clicks_removed": outcome.clicks_removed,
     })))
+}
+
+/// `DELETE /api/answer-log/{id}` (#254): audited `answer_log` delete —
+/// the answer rows' counterpart to [`history_delete`].
+pub async fn answer_log_delete(
+    State(state): State<AppState>,
+    Extension(ctx): Extension<RequestCtx>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+) -> Result<Json<Value>, ApiError> {
+    let id = id
+        .parse::<i64>()
+        .map_err(|_| ctx.bad_request(format!("invalid answer-log id {id:?}")))?;
+    let Some(outcome) = state
+        .store()
+        .delete_answer_log(id)
+        .await
+        .map_err(|e| ctx.store(&e))?
+    else {
+        return Err(ctx.not_found(format!("no answer-log row {id}")));
+    };
+    write_audit(
+        state.store(),
+        &ctx,
+        &headers,
+        "answer_log.delete",
+        id.to_string(),
+        json!({ "query": outcome.query, "status": outcome.status.label() }),
+    )
+    .await?;
+    Ok(Json(json!({ "deleted": true, "id": id })))
+}
+
+/// `GET /api/answer-log/{id}` (#254): one `answer_log` row as JSON —
+/// the machine surface behind `GET /answer/{id}`.
+pub async fn answer_log_get(
+    State(state): State<AppState>,
+    Extension(ctx): Extension<RequestCtx>,
+    Path(id): Path<String>,
+) -> Result<Json<Value>, ApiError> {
+    let id = id
+        .parse::<i64>()
+        .map_err(|_| ctx.bad_request(format!("invalid answer-log id {id:?}")))?;
+    let Some(row) = state
+        .store()
+        .get_answer_log(id)
+        .await
+        .map_err(|e| ctx.store(&e))?
+    else {
+        return Err(ctx.not_found(format!("no answer-log row {id}")));
+    };
+    Ok(Json(
+        serde_json::to_value(&row).expect("AnswerLogRow serializes"),
+    ))
 }
 
 /// `POST /api/click`: the result-click beacon. `id`, `ts` and `client` are

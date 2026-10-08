@@ -50,6 +50,7 @@ fn probe_request() -> SearchRequest {
         safesearch: SafeSearch::default(),
         engines: None,
         client: ClientKind::Api,
+        origin: crate::SearchOrigin::User,
     }
 }
 

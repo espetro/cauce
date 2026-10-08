@@ -124,6 +124,7 @@ fn run_live(spec: CompiledSpec, query: &str, opts: &EngineArgs) -> Result<i32, S
         safesearch: SafeSearch::Moderate,
         engines: Some(vec![engine.id()]),
         client: ClientKind::Cli,
+        origin: cauce_core::SearchOrigin::User,
     };
     let fetched = _rt
         .block_on(engine.fetch(&req, LIVE_BUDGET))

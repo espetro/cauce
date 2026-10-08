@@ -29,6 +29,7 @@ fn query_hash(q: &str) -> CacheKey {
         safesearch: SafeSearch::default(),
         engines: None,
         client: ClientKind::Api,
+        origin: cauce_core::SearchOrigin::User,
     })
 }
 
@@ -46,6 +47,7 @@ fn log_row(ts: DateTime<Utc>, q: &str) -> SearchLogRow {
         result_count: 10,
         engines: vec![EngineId::from("replay")],
         deadline_hit: false,
+        origin: cauce_core::SearchOrigin::Agent,
     }
 }
 

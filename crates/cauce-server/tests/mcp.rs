@@ -162,6 +162,7 @@ async fn mcp_http_tools_and_search() {
             since: None,
             q: None,
             cached: false,
+            origin: None,
             limit: 10,
         })
         .await
@@ -170,7 +171,7 @@ async fn mcp_http_tools_and_search() {
         .iter()
         .find_map(|item| match item {
             HistoryItem::Search(row) => Some(row),
-            HistoryItem::Click(_) => None,
+            HistoryItem::Click(_) | HistoryItem::Answer(_) => None,
         })
         .expect("one search_log row");
     assert_eq!(

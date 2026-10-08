@@ -128,6 +128,7 @@ impl ToolExecutor for SearchWeb {
             safesearch: SafeSearch::default(),
             engines: None,
             client: ctx.client.clone(),
+            origin: cauce_core::SearchOrigin::Agent,
         };
         match self.pipeline.search(&req).await {
             Ok(resp) => {

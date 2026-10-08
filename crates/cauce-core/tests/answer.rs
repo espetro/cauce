@@ -282,6 +282,7 @@ async fn tool_loop_yields_steps_deltas_sources_and_done() {
         cached,
         request_id: got_id,
         ungrounded,
+        log_id: _,
     } = done
     else {
         unreachable!()
@@ -492,6 +493,7 @@ async fn archive_tool_call_reads_the_local_archive() {
                 safesearch: Default::default(),
                 engines: None,
                 client: ClientKind::Api,
+                origin: cauce_core::SearchOrigin::User,
             }),
             &search_resp,
             Duration::from_secs(60),
@@ -635,6 +637,7 @@ async fn mid_stream_provider_error_yields_partial_deltas_then_error() {
         Some(AnswerFrame::Error {
             message,
             retry_after_s,
+            log_id: _,
         }) => {
             assert!(
                 message.contains("upstream connection terminated"),

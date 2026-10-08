@@ -39,7 +39,7 @@ pub use answers::answers_roundtrip;
 pub use audit::audit_trail;
 pub use cache::{cache_admin, cache_exact_roundtrip, cache_expiry_and_eviction};
 pub use health::engine_health;
-pub use history::{log_clicks_history, suggest};
+pub use history::{answer_log, log_clicks_history, suggest};
 pub use lexical::{cache_fts_search, lexical_search};
 pub use pages::{pages_roundtrip, pages_search_and_delete};
 pub use stats::stats_aggregates;
@@ -68,6 +68,7 @@ pub fn request(q: &str) -> SearchRequest {
         safesearch: SafeSearch::Moderate,
         engines: None,
         client: ClientKind::Api,
+        origin: crate::SearchOrigin::User,
     }
 }
 
@@ -123,6 +124,13 @@ pub fn log_row(
         query_hash: CacheKey::from(&request(query)),
         query: query.to_string(),
         query_raw: Some(query.to_string()),
+        // Mirror the pipeline's `resolved_origin` so conformance rows are
+        // honest: `ui` is `user`, every other client `agent` (#254).
+        origin: if matches!(client, ClientKind::Ui) {
+            crate::SearchOrigin::User
+        } else {
+            crate::SearchOrigin::Agent
+        },
         client,
         source,
         tier: match source {
@@ -145,6 +153,7 @@ pub async fn run_all(store: &impl Store) {
     lexical_search(store).await;
     cache_fts_search(store).await;
     log_clicks_history(store).await;
+    answer_log(store).await;
     suggest(store).await;
     stats_aggregates(store).await;
     engine_health(store).await;
