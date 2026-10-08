@@ -9,7 +9,9 @@ use axum::Extension;
 use axum::extract::State;
 use axum::http::{StatusCode, Uri, header};
 use axum::response::{IntoResponse, Response};
+use serde::Serialize;
 use serde_json::json;
+use ts_rs::TS;
 
 use super::QueryParams;
 use crate::app::AppState;
@@ -18,6 +20,16 @@ use crate::middleware::RequestCtx;
 
 /// Completion cap the descriptor's consumers see (#150).
 const SUGGEST_LIMIT: u32 = 10;
+
+/// `GET /api/suggest` response, documented for the typed client
+/// (FX-01): a fixed-length array `[term, completions]` where
+/// `term` echoes the `q=` parameter verbatim and `completions` are the
+/// prefix-matched suggestions — `['', []]` on an absent/blank `q`.
+/// Heterogeneous tuples have no Rust-struct shape, so the wire type is
+/// declared outright: `[string, string[]]`.
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(type = "[string, string[]]")]
+pub struct SuggestResponse;
 
 /// `GET /api/suggest?q=<term>`: the OpenSearch 1.1 suggestions shape
 /// `[term, [completions...]]`, completions sourced from `search_log` by

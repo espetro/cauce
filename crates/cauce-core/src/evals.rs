@@ -26,6 +26,7 @@ use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 use crate::{EngineId, SearchResult, normalize_url};
 
@@ -234,7 +235,7 @@ impl Thresholds {
 }
 
 /// Per-engine score row of the report.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 pub struct EngineScore {
     pub engine: EngineId,
     /// Cases naming this engine.
@@ -251,7 +252,7 @@ pub struct EngineScore {
 
 /// One case outcome for one engine — the auditable detail behind the
 /// aggregate `domain_hit_at5`.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 pub struct CaseOutcome {
     pub engine: EngineId,
     pub query: String,
@@ -268,7 +269,7 @@ pub struct CaseOutcome {
 }
 
 /// The `evals/results/<date>-engines.json` artifact.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 pub struct EvalReport {
     /// Always `"engines"` — future eval kinds get their own suffix.
     pub kind: String,

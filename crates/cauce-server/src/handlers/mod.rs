@@ -49,27 +49,32 @@ mod search;
 mod suggest;
 
 #[cfg(feature = "ai")]
-pub use answer::answer;
-#[cfg(feature = "archive")]
-pub use archive::archive_search;
+pub use answer::{AnswerBody, answer};
 #[cfg(feature = "archive")]
 pub(crate) use archive::{ARCHIVE_LIMIT, archive_inner};
-pub(crate) use cache::cache_list_data;
-pub use cache::{cache_bulk_delete, cache_delete, cache_get, cache_list};
-pub use config::{config_get, config_put};
-pub(crate) use engines::engine_views;
-pub use engines::{EngineView, engine_disable, engine_enable, engine_reset, engines_list};
-pub(crate) use history::{HISTORY_LIMIT, audit_list_data, history_inner};
-pub use history::{
-    answer_log_delete, answer_log_get, audit_list, click, health, history, history_delete, metrics,
-    stats,
-};
 #[cfg(feature = "archive")]
-pub use pages::{pages_delete, pages_get, pages_index};
+pub use archive::{ArchiveResponse, ArchiveRow, archive_search};
+pub(crate) use cache::cache_list_data;
+pub use cache::{
+    CacheBulkDeleteAck, CacheDeleteAck, CacheListing, cache_bulk_delete, cache_delete, cache_get,
+    cache_list,
+};
+pub use config::{ConfigPutResponse, config_get, config_put};
+pub(crate) use engines::engine_views;
+pub use engines::{
+    EngineToggleAck, EngineView, engine_disable, engine_enable, engine_reset, engines_list,
+};
+pub use history::{
+    AnswerLogDeleteAck, HistoryDeleteAck, answer_log_delete, answer_log_get, audit_list, click,
+    health, history, history_delete, metrics, stats,
+};
+pub(crate) use history::{HISTORY_LIMIT, audit_list_data, history_inner};
+#[cfg(feature = "archive")]
+pub use pages::{IndexBody, PageDeleteAck, pages_delete, pages_get, pages_index};
 pub use report::report;
 pub(crate) use search::{parse_search_request, search_error, search_inner, search_inner_classed};
 pub use search::{search, search_stream};
-pub use suggest::suggest;
+pub use suggest::{SuggestResponse, suggest};
 
 /// Cap on caller-supplied `limit`/`offset`-style page sizes.
 pub(super) const MAX_LIMIT: u32 = 1_000;

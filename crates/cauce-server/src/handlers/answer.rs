@@ -17,6 +17,7 @@ use axum::response::{
 use cauce_core::{AnswerFrame, AnswerRequest, AnswerRole, AnswerSource, AnswerTurn};
 use serde::Deserialize;
 use tokio_stream::StreamExt;
+use ts_rs::TS;
 
 use crate::app::AppState;
 use crate::error::ApiError;
@@ -31,9 +32,9 @@ const MAX_HISTORY_BYTES: usize = 64 * 1024;
 
 /// The `POST /api/answer` body; unknown fields are rejected like the
 /// query-side `deny_unknown_fields` contract.
-#[derive(Deserialize)]
+#[derive(Deserialize, TS)]
 #[serde(deny_unknown_fields)]
-struct AnswerBody {
+pub struct AnswerBody {
     q: String,
     /// W7-02 Search Assist: the result set the caller already has (the
     /// SERP's top rows). Present — even empty — selects

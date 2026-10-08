@@ -42,7 +42,9 @@ use super::ReportBundle;
 use crate::cache::{normalize_query, push_str};
 
 /// What the export's redaction profile means.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize, ts_rs::TS,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum RedactionProfile {
     /// The default: no query text, no secrets, no URL credentials.

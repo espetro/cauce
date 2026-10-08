@@ -5,6 +5,7 @@
 //! file, You can obtain one at <https://mozilla.org/MPL/2.0/>.
 
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 use crate::engine::EngineId;
 
@@ -71,7 +72,7 @@ impl std::str::FromStr for TimeRange {
 /// Which surface a request came in through.
 ///
 /// `Mcp` carries the MCP client name (`mcp:<name>` in logs and audit rows).
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Default, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
 pub enum ClientKind {
     Ui,
@@ -117,7 +118,7 @@ impl std::fmt::Display for ClientKind {
 /// call or any api/mcp/cli client. The stored value is resolved at
 /// write time ([`SearchRequest::resolved_origin`]) — a request cannot
 /// claim `user` over the wire.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
 pub enum SearchOrigin {
     /// A direct search typed into the web UI (`client = 'ui'` and not

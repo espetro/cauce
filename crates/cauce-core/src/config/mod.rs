@@ -31,6 +31,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 use crate::engine::{ENGINE_ID_PATTERN, EngineId, Tier};
 
@@ -301,7 +302,7 @@ fn home_dir(env: &EnvMap) -> PathBuf {
 }
 
 /// `[server]`: HTTP bind address. Loopback by default (settled inputs).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(deny_unknown_fields)]
 pub struct ServerConfig {
     /// Bind host; `127.0.0.1` unless explicitly exposed.
@@ -394,7 +395,7 @@ fn validate_public_url(value: &str) -> Result<(), String> {
 /// deferred to `v3/later/postgres-and-multi-instance.md`; until it lands,
 /// `enabled` is forced by the bind address — off on loopback, required off
 /// it, so `cauce serve` refuses a non-loopback bind.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(deny_unknown_fields)]
 pub struct AuthConfig {
     /// Master switch. Forced `true` when the bind is not loopback (see
@@ -443,11 +444,12 @@ pub fn is_loopback_host(authority: &str) -> bool {
 }
 
 /// `[search]`: pipeline tunables (parent plan sections 3 and 4.4).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(deny_unknown_fields)]
 pub struct SearchConfig {
     /// Hard fan-out deadline in milliseconds.
     #[serde(default = "default_deadline_ms")]
+    #[ts(type = "number")]
     pub deadline_ms: u64,
     /// Results wanted before the hedge point is considered satisfied.
     #[serde(default = "default_min_results")]
@@ -455,16 +457,20 @@ pub struct SearchConfig {
     /// Earliest tier-2 hedge point in ms (W3-01): tier-1 gets at least
     /// this long to answer before the hedge can fire.
     #[serde(default = "default_hedge_floor_ms")]
+    #[ts(type = "number")]
     pub hedge_floor_ms: u64,
     /// Latest tier-2 hedge point in ms (W3-01): a slow tier-1 history
     /// never delays the hedge past this.
     #[serde(default = "default_hedge_ceiling_ms")]
+    #[ts(type = "number")]
     pub hedge_ceiling_ms: u64,
     /// Default cache TTL in seconds.
     #[serde(default = "default_ttl_s")]
+    #[ts(type = "number")]
     pub ttl_s: u64,
     /// Upper bound for per-request `ttl_s` overrides.
     #[serde(default = "default_ttl_cap_s")]
+    #[ts(type = "number")]
     pub ttl_cap_s: u64,
 }
 
@@ -507,12 +513,13 @@ fn default_ttl_cap_s() -> u64 {
 
 /// `[admission]`: singleflight + bounded per-engine queue (parent plan
 /// 6.2, W1-07).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(deny_unknown_fields)]
 pub struct AdmissionConfig {
     /// Total milliseconds a request may wait for per-engine slots before
     /// admission overflows to a stale row or a 429. Default 1500.
     #[serde(default = "default_max_wait_ms")]
+    #[ts(type = "number")]
     pub max_wait_ms: u64,
     /// Concurrent upstream calls allowed per engine id. Default 3 matches
     /// the per-engine politeness burst (1 req/s burst 3).
@@ -546,7 +553,7 @@ fn default_max_concurrent_per_engine() -> u32 {
 /// for an adaptive window starting at `probe_window_s` and doubling to
 /// `probe_window_max_s`, while `probe_tick_s` sets how often the
 /// background prober claims due probes (0 disables it).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(deny_unknown_fields)]
 pub struct HealthConfig {
     /// Consecutive `Parse`/`Transport` errors that open the breaker
@@ -560,6 +567,7 @@ pub struct HealthConfig {
     /// the breaker never stay open (it flips to `HalfOpen` on the next
     /// gate).
     #[serde(default = "default_degraded_window_s")]
+    #[ts(type = "number")]
     pub degraded_window_s: u64,
     /// First re-open window after a failed probe (default 30 s) — the
     /// floor of the adaptive retry backoff, which doubles per
@@ -567,16 +575,19 @@ pub struct HealthConfig {
     /// jittered per engine. Must be >= 1: `0` would let every tick
     /// re-probe a dead engine.
     #[serde(default = "default_probe_window_s")]
+    #[ts(type = "number")]
     pub probe_window_s: u64,
     /// Cap on the probe retry backoff (default 300 s) — the longest a
     /// consecutively-failing engine waits between probes, which caps
     /// how often a dead endpoint is probed.
     #[serde(default = "default_probe_window_max_s")]
+    #[ts(type = "number")]
     pub probe_window_max_s: u64,
     /// Seconds between background recovery-prober passes (default 5).
     /// `0` disables active probing: `Open -> HalfOpen` transitions then
     /// only happen when a request happens to gate the engine.
     #[serde(default = "default_probe_tick_s")]
+    #[ts(type = "number")]
     pub probe_tick_s: u64,
 }
 
@@ -613,7 +624,7 @@ fn default_probe_tick_s() -> u64 {
 }
 
 /// `[cache]`: cache-tier behaviour beyond TTLs (those live in `[search]`).
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, TS)]
 #[serde(deny_unknown_fields)]
 pub struct CacheConfig {
     /// `[cache.lexical]`: the tier-2 FTS lookup (W1-10).
@@ -624,11 +635,13 @@ pub struct CacheConfig {
     /// `0` disables the stale serve; expired rows are only evicted once
     /// they are older than this window.
     #[serde(default = "default_stale_grace_s")]
+    #[ts(type = "number")]
     pub stale_grace_s: u64,
     /// TTL (seconds) applied to a response whose fan-out was partial —
     /// any engine `Failed` or the deadline hit (W3-02): a degraded
     /// answer never earns the full `search.ttl_s`.
     #[serde(default = "default_degraded_ttl_s")]
+    #[ts(type = "number")]
     pub degraded_ttl_s: u64,
 }
 
@@ -654,7 +667,7 @@ fn default_degraded_ttl_s() -> u64 {
 /// pipeline FTS-matches stored entries and serves the best-ranked row whose
 /// query shares `threshold` of the request's tokens (Jaccard after
 /// normalisation and stopword removal) under the same page/lang.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, TS)]
 #[serde(deny_unknown_fields)]
 pub struct LexicalConfig {
     /// Master switch for the tier-2 lookup.
@@ -682,7 +695,7 @@ fn default_lexical_threshold() -> f64 {
 /// `[merge]` section: RRF merge tuning (W3-03). The reliability weight
 /// itself is not a knob — it is computed from engine health; this section
 /// holds the RRF constant and the host-diversity cap.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, TS)]
 #[serde(deny_unknown_fields)]
 pub struct MergeConfig {
     /// The RRF constant: `score += weight / (rrf_k + rank)` per engine.
@@ -713,7 +726,7 @@ fn default_collapse_same_host_after() -> u32 {
 }
 
 /// `[logs]`: JSONL log retention (W0-05 consumes `retention_days`).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(deny_unknown_fields)]
 pub struct LogsConfig {
     /// Days a `logs/cauce-YYYY-MM-DD.jsonl` file is kept.
@@ -737,7 +750,7 @@ fn default_retention_days() -> u32 {
 /// `base_url`/`api_key` are empty strings by default, not a reference to
 /// anyone's local gateway; point them at an OpenAI-compatible endpoint
 /// (e.g. an `api_key = "${env:...}"` template) to use them.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(deny_unknown_fields)]
 pub struct AiConfig {
     /// OpenAI-compatible endpoint.
@@ -769,6 +782,7 @@ pub struct AiConfig {
     /// Per-call provider timeout in seconds, applied to every `chat_stream`
     /// invocation (#231's `LoopConfig::provider_budget`). Must be >= 1.
     #[serde(default = "default_ai_provider_budget_s")]
+    #[ts(type = "number")]
     pub provider_budget_s: u64,
     /// Reserved for the marginal-groundedness verifier (#232): parsed and
     /// hot-reloaded like the rest of `[ai]` but not yet consulted.
@@ -806,7 +820,7 @@ fn default_ai_provider_budget_s() -> u64 {
 
 /// The `[ai].protocol` vocabulary (W4-05): which provider client the
 /// AI surface builds. An unknown value fails config load.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub enum AiProtocol {
     /// OpenAI-compatible `POST {base_url}/chat/completions` (W4-01).
     #[default]
@@ -835,7 +849,7 @@ impl std::fmt::Display for AiProtocol {
 
 /// `[archive]` (W5-01): the fetch-and-index pipeline behind
 /// `POST /api/pages`, the UI click beacon and MCP `fetch_and_index`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(deny_unknown_fields)]
 pub struct ArchiveConfig {
     /// Whether clicking a result link in the UI fires the indexing beacon
@@ -878,7 +892,7 @@ fn default_archive_burst() -> u32 {
 /// `[ui]`: page-shell settings. Only `locale` today — one embedded
 /// catalog per build, picked at startup; per-request `Accept-Language`
 /// negotiation is deliberately out of scope (TS migration step 2/3).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(deny_unknown_fields)]
 pub struct UiConfig {
     /// Catalog name under `crates/cauce-server/locales/` (`en` ships).
@@ -900,7 +914,7 @@ fn default_ui_locale() -> String {
 }
 
 /// `[config]`: meta settings about the config file itself.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(deny_unknown_fields)]
 pub struct MetaConfig {
     /// Whether `${...}` interpolation runs at load. `false` is the
@@ -922,7 +936,7 @@ fn default_true() -> bool {
 }
 
 /// Runtime kind of an `[[engines]]` entry.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
 pub enum EngineKind {
     /// YAML-spec engine (W1 runtimes).
@@ -937,7 +951,7 @@ pub enum EngineKind {
 /// egress and politeness policy for that engine's HTTP calls (W1-01).
 /// Absent means a direct connection with a token bucket of 1 req/s,
 /// burst 3 (settled inputs).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(deny_unknown_fields)]
 pub struct EgressConfig {
     /// Static proxy URL (`http://`, `https://`, `socks5://`,
@@ -976,7 +990,7 @@ fn default_burst() -> u32 {
 ///
 /// Field order matters for TOML serialisation: scalars and plain arrays
 /// first, the `egress`/`env` tables last.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(deny_unknown_fields)]
 pub struct EngineEntry {
     /// Stable id (`ddgs`, `replay`, `bing`, ...).
@@ -1000,6 +1014,7 @@ pub struct EngineEntry {
     pub spec: Option<String>,
     /// Fan-out tier override (`Tier` serializes as 1/2/3).
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(type = "number")]
     pub tier: Option<Tier>,
     /// Results per page the engine reports back.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1062,7 +1077,7 @@ fn builtin_engines() -> Vec<EngineEntry> {
 /// (`display_tree`), so a resolved secret (e.g. `ai.api_key` from
 /// `${env:PROVIDER_API_KEY}`) can never leak through `format!("{cfg:?}")`,
 /// `serde_json::to_string(&cfg)` or a debug log line.
-#[derive(Clone, Deserialize)]
+#[derive(Clone, Deserialize, TS)]
 #[serde(deny_unknown_fields)]
 pub struct Config {
     /// `[server]` section.
