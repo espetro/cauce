@@ -15,7 +15,8 @@
 //! [`archive`] — the `/archive` search+listing page and the
 //! `/api/pages/{url}` markdown fragments (W5-02);
 //! [`settings`] — the `/settings` form page; [`assets`] — the embedded
-//! static assets and the `favicon`/`opensearch` endpoints.
+//! static assets and the `favicon`/`opensearch` endpoints;
+//! [`spa`] — the Svelte SPA shell + assets at `/app` (FX-02).
 //!
 //! This Source Code Form is subject to the terms of the Mozilla Public
 //! License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -27,6 +28,7 @@ mod assets;
 mod history;
 mod search;
 mod settings;
+mod spa;
 
 use askama::Template;
 use axum::http::HeaderMap;
@@ -46,6 +48,7 @@ pub(crate) use search::search_fragment;
 pub use search::{index, search};
 pub use settings::settings;
 pub(crate) use settings::settings_status;
+pub use spa::{spa, spa_nested};
 
 /// One rendered result row (plain strings so Askama only needs `Display`).
 #[derive(Debug)]

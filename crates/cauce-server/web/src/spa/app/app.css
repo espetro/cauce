@@ -1,0 +1,68 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
+
+/* FX-02 styling decision (plan §7.3): Tailwind v4 is the SPA's only
+ * styling system. The design tokens are a one-way port of
+ * `assets/style.css`'s `:root` layer — the legacy sheet is never imported
+ * here and dies with the HTMX pages in FX-06. Utilities (`bg-bg`,
+ * `text-fg`, `text-muted`, `border-border`, `bg-greyed-bg`,
+ * `font-mono`) resolve through these CSS vars so the three-state theme
+ * mechanism (light default / prefers-color-scheme / [data-theme]) keeps
+ * working unchanged. */
+
+@import "tailwindcss";
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-fg: var(--fg);
+  --color-muted: var(--muted);
+  --color-border: var(--border);
+  --color-accent: var(--accent);
+  --color-greyed-bg: var(--greyed-bg);
+  --font-mono: var(--mono);
+}
+
+:root {
+  --bg: #ffffff;
+  --fg: #1a1a1a;
+  --muted: #666666;
+  --border: #d1d5db;
+  --accent: #2563eb;
+  --greyed-bg: #f4f4f5;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f0f0f;
+    --fg: #e5e5e5;
+    --muted: #a3a3a3;
+    --border: #3f3f46;
+    --accent: #60a5fa;
+    --greyed-bg: #17171a;
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme="dark"] {
+  --bg: #0f0f0f;
+  --fg: #e5e5e5;
+  --muted: #a3a3a3;
+  --border: #3f3f46;
+  --accent: #60a5fa;
+  --greyed-bg: #17171a;
+  color-scheme: dark;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+}
+
+body {
+  font-family:
+    system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    sans-serif;
+}

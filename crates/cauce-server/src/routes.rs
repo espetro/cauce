@@ -196,4 +196,12 @@ pub const ROUTES: &[RouteSpec] = &[
         requires: Some("archive"),
     },
     html("/archive", 5),
+    // ---- FX: frontend replacement (W8 epic; plan
+    // `2026-09-28-frontend-replacement.md` §5.1) -------------------------
+    // FX-02: `GET /app` serves the Svelte SPA shell; `/app/{*rest}`
+    // serves the embedded hashed assets and falls back to the shell for
+    // client-side routes. `ui`-gated like the HTMX pages: rust-embed is
+    // a `ui` dependency and `--headless` serves no browser surface.
+    html("/app", 8),
+    html("/app/{*rest}", 8),
 ];

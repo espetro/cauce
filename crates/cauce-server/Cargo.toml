@@ -67,7 +67,7 @@ rust-i18n = "4.2.2"
 
 # `ui` feature: HTMX templates and embedded static assets.
 askama = { version = "0.13", optional = true }
-rust-embed = { version = "8", optional = true }
+rust-embed = { version = "8", optional = true, features = ["mime-guess"] }
 urlencoding = { version = "2", optional = true }
 # reqwest is used only for its header types in the /settings `/models`
 # listing (the client itself is cauce-core's `HttpClient`); features unify
