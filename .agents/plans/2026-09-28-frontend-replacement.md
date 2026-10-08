@@ -304,7 +304,19 @@ an in-pill `[Search · ✦Ask]` segment (the DuckDuckGo "Search | Ask AI" patter
 same intent split as Google's AI Mode chip and Brave's Ask):
 
 - `/` hero — brand + tagline + omnibox + suggestion chips; the form on today's
-  home page is absorbed.
+  home page is absorbed. Two settled sub-decisions:
+  - **Top nav everywhere** — every app surface uses the same sticky top chrome
+    (no bottom bar on home).
+  - **Composer-as-hero** (v0/lovable/stitch shape): the hero `<Omnibox>` is a
+    rounded composer box — input row + tool row (scope chip · segment · send) —
+    so it can grow to textarea/agent-tool inputs without redesign.
+- **Landing site ≠ app home**: the marketing landing (scrollable sections —
+  `what it does` triptych · privacy band · CLI/agent highlights · footer — below
+  a ~78dvh hero) is a separate deliverable for the project's public site, built
+  by a different session. It is **never** shipped in the binary or shown to
+  instance users in any mode; what crosses over is the shared primitives (top
+  chrome, composer hero) — the landing composes on top of them. The app's `/`
+  stays a working surface only.
 - `/search` — compact sticky omnibox, result-kind tabs (all/dev/news/wiki →
   engine categories), filter chips bound to existing `lang`/`time_range`/
   `safesearch` params, assist card, hairline result rows (flatter than the
