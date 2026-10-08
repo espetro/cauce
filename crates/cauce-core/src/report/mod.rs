@@ -214,7 +214,7 @@ pub fn record(ev: &ReportEvent) {
 /// The export document (`cauce-report-<ts>.json`, `v = 1`): the fixed
 /// envelope plus one flattened entry per registered section, so
 /// `cauce`, `config`, `stats`, ... sit beside the envelope keys.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ts_rs::TS)]
 pub struct ReportBundle {
     /// Schema version — always [`SCHEMA_VERSION`].
     pub v: u32,

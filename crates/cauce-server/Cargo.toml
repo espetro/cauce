@@ -94,7 +94,7 @@ rmcp = { version = "3", features = [
     "transport-io",
 ], optional = true }
 schemars = { version = "1", optional = true }
-ts-rs = { version = "12", features = ["uuid-impl", "url-impl", "chrono-impl", "no-serde-warnings"] }
+ts-rs = { version = "12", features = ["uuid-impl", "url-impl", "chrono-impl", "no-serde-warnings", "serde-json-impl"] }
 
 [dev-dependencies]
 # Test-store seeding helpers (`conformance::request`/`response`), same as
