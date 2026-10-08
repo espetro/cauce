@@ -356,10 +356,18 @@ upstream. Adopt assistant-ui's component *taxonomy* (Thread, Message, Composer,
 Steps, CitationChip, SourceCard) but keep the existing AnswerFrame SSE client —
 their runtime assumes an AI-SDK transport we don't have.
 
-**Open decision (resolve at FX-02)**: Tailwind v4 for the wrappers (free
-shadcn-svelte registry, tokens map into `@theme`) vs keeping `style.css` +
-hand-rolled utilities. Default Tailwind; the dep-creep risk in §6 applies
-either way. Do not run both (§4 flag stands).
+**Decision (resolved at FX-02, 2026-10-08): Tailwind v4** for the SPA and
+the `ui/` wrappers — the shadcn-svelte registry stays consumable and the
+tokens map cleanly into `@theme inline` (`web/src/spa/app/app.css`). The
+`style.css` `:root` layer is ported one-way into that file with the same
+three-state theme mechanism (light default / `prefers-color-scheme` /
+`[data-theme]`); the SPA never imports `style.css`, which dies with the
+HTMX pages in FX-06. Keeping `style.css` + hand-rolled utilities was
+rejected: the substrate above is adopted *because* it matches the
+registry's Tailwind output — hand-porting every vendored component's
+classes to bespoke CSS was the expensive direction for the same dep cost.
+Deps: `tailwindcss` + `@tailwindcss/vite` (+2 devDeps, none at runtime).
+One styling system per stack, never both (§4 flag stands).
 
 Directory shape (feature slices, VSA-style):
 
