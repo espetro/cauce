@@ -26,6 +26,8 @@
 // for plain tsc when tests pull this file into their program.
 
 import { errorFrom, postAnswer } from "../../lib/api.js";
+import { byokWire } from "../../lib/byok.svelte.js";
+import { capabilities } from "../../lib/capabilities.svelte.js";
 import { parseSseFrame, pumpSse, type SseResponse } from "../../lib/sse.js";
 import { SA, fmt } from "../../lib/i18n.js";
 import type { AnswerBody } from "../../../types/AnswerBody.js";
@@ -335,8 +337,9 @@ export class AnswerThread {
       q: turn.q,
       context_results: null,
       history: this.history.length ? [...this.history] : null,
-      // PUB-03: `null` lets `postAnswer` attach the browser's BYOK creds.
-      ai: null,
+      // PUB-03: the browser's BYOK creds, only the fields the instance
+      // advertises (a stale stored base_url can't 403 the request).
+      ai: byokWire(capabilities.flags),
     };
     try {
       const res = await this.#fetch(body, this.#abort.signal);

@@ -16,6 +16,8 @@
 <script lang="ts">
   import { tick } from "svelte";
   import { postAnswer, errorFrom } from "../../lib/api.js";
+  import { byokWire } from "../../lib/byok.svelte.js";
+  import { capabilities } from "../../lib/capabilities.svelte.js";
   import { faviconUrl, hostOf } from "../../lib/format.js";
   import { AS, spa, fmt } from "../../lib/i18n.js";
   import { parseSseFrame, pumpSse } from "../../lib/sse.js";
@@ -106,7 +108,8 @@
         q,
         context_results: contextCapped,
         history: null,
-        ai: null,
+        // PUB-03: BYOK creds, only fields the instance advertises.
+        ai: byokWire(capabilities.flags),
       });
       if (!res.ok) {
         const e = await errorFrom(res);

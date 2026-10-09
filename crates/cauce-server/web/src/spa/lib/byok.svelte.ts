@@ -14,6 +14,7 @@
 
 import type { AiOverride } from "../../types/AiOverride.js";
 import type { AiProtocol } from "../../types/AiProtocol.js";
+import type { CapabilityFlags } from "../../types/CapabilityFlags.js";
 
 const KEY = "cauce:byok";
 
@@ -57,15 +58,20 @@ export function setByok(next: ByokCreds): void {
 
 /**
  * The `ai` body field for `POST /api/answer` — `null` when no key is
- * set, so an unattached request bills the instance's `[ai]` (and its
- * `free_daily_answers` budget) exactly as before.
+ * set or the instance doesn't honour user keys at all, so an unattached
+ * request bills the instance's `[ai]` (and its `free_daily_answers`
+ * budget) exactly as before. Only fields the server advertises ride
+ * the wire: a stored `base_url` left over from before the operator
+ * closed `allow_user_base_url` is dropped here (the disabled input
+ * can't clear it), not turned into a 403 on every answer.
  */
-export function byokWire(): AiOverride | null {
-  if (byok.api_key === "") return null;
+export function byokWire(flags: CapabilityFlags): AiOverride | null {
+  if (byok.api_key === "" || !flags.allowUserKeys) return null;
   return {
     api_key: byok.api_key,
     model: byok.model === "" ? null : byok.model,
     protocol: byok.protocol === "" ? null : (byok.protocol as AiProtocol),
-    base_url: byok.base_url === "" ? null : byok.base_url,
+    base_url:
+      flags.allowUserBaseUrl && byok.base_url !== "" ? byok.base_url : null,
   };
 }
