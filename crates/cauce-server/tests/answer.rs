@@ -180,47 +180,14 @@ async fn answer_streams_frames_as_named_events() {
 /// `POST /api/answer` and the transcript's text lands before `done`
 /// (proved on the wire by `answer_streams_frames_as_named_events`'s
 /// order assertion).
-#[cfg(feature = "ui")]
+/// Acceptance 2: the no-tool transcript's terminal `done` carries
+/// `ungrounded`, `confidence` and `related_questions` for the SPA to
+/// render (the page-level marker assertions left with the SSR shell in
+/// FX-06; `/answer` now redirects to `/app/answer`).
 #[tokio::test]
-async fn answer_page_renders_stream_shell() {
-    let (router, _state, _tmp, _server) = ai_app().await;
-    let (status, body) = get_html(&router, "/answer?q=what+is+rust").await;
-    assert_eq!(status, StatusCode::OK, "{body}");
-    for marker in [
-        r#"id="answer-stream""#,
-        r#"id="answer-steps""#,
-        r#"id="answer-text""#,
-        r#"id="answer-sources""#,
-        r#"id="answer-related""#,
-        r#"id="answer-error""#,
-        "/api/answer",
-        "text/event-stream",
-        r#"var Q = "what is rust";"#,
-        "X-Cauce-Client",
-    ] {
-        assert!(body.contains(marker), "answer shell missing {marker}");
-    }
-    assert!(!body.contains("ai-disabled"), "enabled build has no notice");
-}
-
-/// Acceptance 2: the no-tool transcript's `done` carries `ungrounded`
-/// and the page ships the notice element the JS reveals on that flag.
-#[cfg(feature = "ui")]
-#[tokio::test]
-async fn answer_page_renders_ungrounded_notice() {
+async fn answer_done_carries_ungrounded_fields() {
     let (router, _state, _tmp, server) = ai_app().await;
     mount_sse(&server, SSE_NOTOOLS, 1).await;
-
-    let (status, page) = get_html(&router, "/answer?q=what+is+rust").await;
-    assert_eq!(status, StatusCode::OK);
-    assert!(
-        page.contains(r#"id="answer-ungrounded""#),
-        "the ungrounded notice element must render: {page}"
-    );
-    assert!(
-        page.contains("ungrounded"),
-        "the notice copy is in the page"
-    );
 
     let (status, _, body) = post_answer(&router, r#"{"q":"what is rust"}"#).await;
     assert_eq!(status, StatusCode::OK, "{body}");
@@ -251,68 +218,28 @@ async fn answer_page_renders_ungrounded_notice() {
     );
 }
 
-/// W7-03 acceptance: the answer shell ships the retrieval-path and
-/// confidence chips plus the JS that derives them from the existing
-/// frames — tool names from `step` frames, the count from `sources`,
-/// `ungrounded`/`confidence`/`cached` from `done`. A no-tool stream
-/// therefore renders "answered directly" while a searched one names
-/// the tools it used.
+/// FX-06: the legacy canonical page paths permanently redirect onto
+/// their `/app` twins, query string preserved — the SPA owns the ask
+/// form, stream shell, assist card and entry points these pages used
+/// to render.
 #[cfg(feature = "ui")]
 #[tokio::test]
-async fn answer_page_ships_path_and_confidence_chips() {
+async fn legacy_page_paths_redirect_to_app() {
     let (router, _state, _tmp, _server) = ai_app().await;
-    let (status, body) = get_html(&router, "/answer?q=what+is+rust").await;
-    assert_eq!(status, StatusCode::OK, "{body}");
-    for marker in [
-        // The chip carriers in the meta row.
-        r#"id="answer-path""#,
-        r#"id="answer-confidence""#,
-        r#"id="answer-ungrounded-badge""#,
-        "meta-chip warn",
-        // The derivation wiring ships in the bundled module (property
-        // names survive minification).
-        "dataset.path",
-        "dataset.confidence",
-        // The string bundle carries every chip label.
-        "path_direct",
-        "path_searched",
-        "path_replay",
-        "tool_web",
-        "tool_archive",
-        "answered directly — no search needed",
-        "searched {tools} · {n} sources",
-        "confidence {n}/10",
+    for (uri, target) in [
+        ("/answer", "/app/answer"),
+        ("/answer?q=what+is+rust", "/app/answer?q=what+is+rust"),
+        ("/search?q=tokyo+weather", "/app/search?q=tokyo+weather"),
+        (
+            "/search?q=tokyo+weather&stream=1",
+            "/app/search?q=tokyo+weather&stream=1",
+        ),
     ] {
-        assert!(body.contains(marker), "answer shell missing {marker}");
+        let (status, headers, _) = get_headers(&router, uri).await;
+        assert_eq!(status, StatusCode::PERMANENT_REDIRECT, "{uri}");
+        assert_eq!(headers["location"].to_str().unwrap(), target, "{uri}");
     }
 }
-
-/// W7-03: the SERP Assist card ships the same indicator treatment —
-/// grounded chip armed by the up-front `sources` frame, confidence and
-/// cached/ungrounded badges off `done`.
-#[cfg(feature = "ui")]
-#[tokio::test]
-async fn search_page_ships_assist_grounded_chips() {
-    let (router, _state, _tmp, _server) = ai_app().await;
-    let (status, body) = get_html(&router, "/search?q=tokyo+weather").await;
-    assert_eq!(status, StatusCode::OK, "{body}");
-    for marker in [
-        r#"id="assist-meta""#,
-        r#"id="assist-grounded""#,
-        r#"id="assist-confidence""#,
-        r#"id="assist-ungrounded""#,
-        r#"id="assist-cached""#,
-        "dataset.confidence",
-        // The assist string bundle's chip labels.
-        "grounded · {n} sources",
-        "confidence {n}/10",
-    ] {
-        assert!(body.contains(marker), "assist chrome missing {marker}");
-    }
-}
-
-/// A mid-stream provider error rides the wire as a terminal `error`
-/// event after the partial deltas — the page renders it inline.
 #[tokio::test]
 async fn answer_stream_error_is_a_terminal_event() {
     let (router, _state, _tmp, server) = ai_app().await;
@@ -427,176 +354,6 @@ async fn answer_rejects_bad_context_results() {
         assert_eq!(status, StatusCode::BAD_REQUEST, "{why}: {text}");
         let env: Value = serde_json::from_str(&text).unwrap();
         assert_eq!(env["error"]["code"], "bad_request", "{why}");
-    }
-}
-
-/// W7-02 acceptance: the SERP renders the on-demand Assist trigger and
-/// card chrome (label, disclaimer, 'Ask in AI mode' handoff) while an
-/// answer loop exists, and ships none of it when `ai` is off. The
-/// `stream=1` variant renders the trigger disabled until the `meta`
-/// frame arms it.
-#[cfg(feature = "ui")]
-#[tokio::test]
-async fn search_page_renders_assist_trigger() {
-    let (router, _state, _tmp, _server) = ai_app().await;
-    let (status, body) = get_html(&router, "/search?q=tokyo+weather").await;
-    assert_eq!(status, StatusCode::OK, "{body}");
-    for marker in [
-        r#"id="assist""#,
-        r#"id="assist-btn""#,
-        r#"id="assist-card""#,
-        ">Assist<",
-        "auto-generated — may contain inaccuracies",
-        "Ask in AI mode",
-        "context_results",
-    ] {
-        assert!(body.contains(marker), "assist chrome missing {marker}");
-    }
-
-    // The streaming page's trigger waits for the `meta` frame.
-    let (status, body) = get_html(&router, "/search?q=tokyo+weather&stream=1").await;
-    assert_eq!(status, StatusCode::OK, "{body}");
-    assert!(body.contains(r#"id="assist-btn""#), "{body}");
-    assert!(body.contains("var AS = {"), "{body}");
-    let btn = body.find(r#"id="assist-btn""#).unwrap();
-    let tag_end = body[btn..].find('>').unwrap();
-    assert!(
-        body[btn..btn + tag_end].contains("disabled"),
-        "stream=1 renders the trigger disabled: {}",
-        &body[btn..btn + tag_end]
-    );
-
-    // Disabled AI ships no assist markup or wiring at all.
-    let (router, _state, _tmp) = app();
-    let (status, body) = get_html(&router, "/search?q=tokyo+weather").await;
-    assert_eq!(status, StatusCode::OK, "{body}");
-    assert!(
-        !body.contains(r#"id="assist""#) && !body.contains("var AS = {"),
-        "no assist while ai is disabled: {body}"
-    );
-}
-
-/// `ai.enabled=false` renders the disabled notice with the `/settings`
-/// link and no stream shell; the bare form page always renders.
-#[cfg(feature = "ui")]
-#[tokio::test]
-async fn answer_page_disabled_notice() {
-    let (router, _state, _tmp) = app();
-    let (status, body) = get_html(&router, "/answer?q=x").await;
-    assert_eq!(status, StatusCode::OK, "{body}");
-    assert!(body.contains("AI mode is disabled"), "{body}");
-    assert!(body.contains(r#"href="/settings""#), "{body}");
-    assert!(
-        !body.contains(r#"id="answer-stream""#),
-        "no stream shell while disabled: {body}"
-    );
-}
-
-/// Bare `/answer` (no `q`) is just the ask form — enabled or not.
-#[cfg(feature = "ui")]
-#[tokio::test]
-async fn answer_page_bare_is_the_ask_form() {
-    let (router, _state, _tmp, _server) = ai_app().await;
-    let (status, body) = get_html(&router, "/answer").await;
-    assert_eq!(status, StatusCode::OK, "{body}");
-    assert!(body.contains(r#"id="answer-form""#), "{body}");
-    assert!(
-        !body.contains(r#"id="answer-stream""#),
-        "no stream shell without a query: {body}"
-    );
-}
-
-/// The `/search` meta line links `/answer?q=` only when an answer loop
-/// exists — enabled and disabled builds both covered.
-#[cfg(feature = "ui")]
-#[tokio::test]
-async fn search_page_ask_link_follows_ai() {
-    let (router, _state, _tmp, _server) = ai_app().await;
-    let (status, body) = get_html(&router, "/search?q=tokyo+weather").await;
-    assert_eq!(status, StatusCode::OK, "{body}");
-    assert!(
-        body.contains(r#"href="/answer?q=tokyo%20weather""#),
-        "the ask link carries the encoded query: {body}"
-    );
-
-    let (router, _state, _tmp) = app();
-    let (status, body) = get_html(&router, "/search?q=tokyo+weather").await;
-    assert_eq!(status, StatusCode::OK, "{body}");
-    // "/answer?q=" strings also appear inside the bundled app.js, so
-    // this asserts on the ask link's id rather than its href text.
-    assert!(
-        !body.contains(r#"id="ask-link""#),
-        "no ask link while ai is disabled: {body}"
-    );
-}
-
-/// W7-01: the first-class AI entry points — the `answer` nav link and
-/// the in-form `ai-mode` pill — render only while an answer loop exists
-/// (the same `state.answer().is_none()` gate as the ask link, so the
-/// disabled build ships neither the markup nor the JS wiring).
-#[cfg(feature = "ui")]
-#[tokio::test]
-async fn ai_entry_points_follow_the_answer_loop() {
-    let (router, _state, _tmp, _server) = ai_app().await;
-    for uri in [
-        "/",
-        "/search?q=tokyo+weather",
-        "/search?q=tokyo+weather&stream=1",
-    ] {
-        let (status, body) = get_html(&router, uri).await;
-        assert_eq!(status, StatusCode::OK, "{uri}");
-        assert!(
-            body.contains(r#"<a href="/answer""#),
-            "{uri}: nav is missing the answer link"
-        );
-        assert!(
-            body.contains(r#"id="ai-mode""#),
-            "{uri}: search form is missing the AI-mode pill"
-        );
-        assert!(
-            body.contains("/answer?q="),
-            "{uri}: the submit hijack must route AI mode to /answer"
-        );
-    }
-    // The pill arms as a toggle and carries the ask copy for its swap.
-    let (_status, body) = get_html(&router, "/").await;
-    assert!(body.contains(r#"aria-pressed="false""#));
-    assert!(body.contains(r#"data-submit="ask""#));
-
-    // `answer` sits between `search` and `history` in the primary nav.
-    let nav_start = body.find(r#"<nav class="nav-primary""#).unwrap();
-    let nav = &body[nav_start..nav_start + body[nav_start..].find("</nav>").unwrap()];
-    let (search, answer, history) = (
-        nav.find(">search<").unwrap(),
-        nav.find(">answer<").unwrap(),
-        nav.find(">history<").unwrap(),
-    );
-    assert!(
-        search < answer && answer < history,
-        "nav order should be search · answer · history"
-    );
-
-    // `/answer` marks its own nav entry current.
-    let (status, body) = get_html(&router, "/answer").await;
-    assert_eq!(status, StatusCode::OK, "{body}");
-    assert!(
-        body.contains(r#"href="/answer" aria-current="page""#),
-        "answer nav link should be current on /answer: {body}"
-    );
-
-    let (router, _state, _tmp) = app();
-    for uri in ["/", "/search?q=tokyo+weather", "/answer"] {
-        let (status, body) = get_html(&router, uri).await;
-        assert_eq!(status, StatusCode::OK, "{uri}");
-        assert!(
-            !body.contains(r#"href="/answer""#),
-            "{uri}: no answer nav link while ai is disabled"
-        );
-        // "ai-mode" alone also matches the bundled app.js — pin the markup.
-        assert!(
-            !body.contains(r#"id="ai-mode""#),
-            "{uri}: no AI-mode pill while ai is disabled"
-        );
     }
 }
 
@@ -749,34 +506,4 @@ async fn answer_rejects_malformed_history() {
         let env: Value = serde_json::from_str(&text).unwrap();
         assert_eq!(env["error"]["code"], "bad_request", "{why}");
     }
-}
-
-/// W7-04 acceptance (page): the thread shell ships the per-turn
-/// template and the bottom-pinned follow-up form.
-#[cfg(feature = "ui")]
-#[tokio::test]
-async fn answer_page_ships_thread_markup() {
-    let (router, _state, _tmp, _server) = ai_app().await;
-    let (status, body) = get_html(&router, "/answer?q=what+is+rust").await;
-    assert_eq!(status, StatusCode::OK, "{body}");
-    for marker in [
-        r#"class="answer-turn""#,
-        r#"class="turn-q""#,
-        r#"id="answer-turn-tpl""#,
-        r#"id="answer-followup""#,
-        r#"id="followup-q""#,
-        "Ask a follow-up",
-    ] {
-        assert!(body.contains(marker), "thread markup missing {marker}");
-    }
-    // Turn 1's shell keeps its element ids inside `.answer-turn`; the
-    // template carries class-only markup (no duplicated ids).
-    let tpl_start = body.find(r#"<template id="answer-turn-tpl">"#).unwrap()
-        + "<template id=\"answer-turn-tpl\">".len();
-    let tpl_end = body[tpl_start..].find("</template>").unwrap() + tpl_start;
-    assert!(
-        !body[tpl_start..tpl_end].contains("id="),
-        "cloned turns must not duplicate the SSR ids: {}",
-        &body[tpl_start..tpl_end]
-    );
 }

@@ -6,9 +6,8 @@
 //!
 //! Module map (issue #154): `mod.rs` is the shared plumbing — [`QueryParams`]
 //! query decoding, the [`cache_key`] parse, audit emission ([`write_audit`]),
-//! the `config.put` diff walker [`changed_config_paths`], the SSE error
-//! envelope [`search_error_payload`] and the engines-page [`engine_error_class`]
-//! — plus the `MAX_LIMIT` page cap. The route handlers live beside it by
+//! the `config.put` diff walker [`changed_config_paths`] and the SSE error
+//! envelope [`search_error_payload`] — plus the `MAX_LIMIT` page cap. The route handlers live beside it by
 //! family: [`search`] — `/api/search` and the SSE stream; [`answer`] —
 //! `POST /api/answer`, the W4-03 grounded-answer SSE route (`ai` builds);
 //! [`suggest`] — `/api/suggest` OpenSearch completions; [`cache`] —
@@ -26,7 +25,7 @@
 use std::sync::Arc;
 
 use axum::http::HeaderMap;
-use cauce_core::{AuditRow, CacheKey, EngineError, EngineId, PipelineError, SearchRequest, Store};
+use cauce_core::{AuditRow, CacheKey, PipelineError, SearchRequest, Store};
 use chrono::{DateTime, NaiveDate, Utc};
 use serde_json::Value;
 
@@ -72,7 +71,6 @@ pub use history::{
 #[cfg(feature = "archive")]
 pub use pages::{IndexBody, PageDeleteAck, pages_delete, pages_get, pages_index};
 pub use report::report;
-pub(crate) use search::{parse_search_request, search_error, search_inner, search_inner_classed};
 pub use search::{search, search_stream};
 pub use suggest::{SuggestResponse, suggest};
 
@@ -81,27 +79,6 @@ pub(super) const MAX_LIMIT: u32 = 1_000;
 
 pub fn search_error_payload(ctx: &RequestCtx, req: &SearchRequest, error: PipelineError) -> Value {
     search::search_error(ctx, req, error).envelope()
-}
-
-/// The error class an engines-page test query renders for an all-failed
-/// fan-out: the single engine's [`EngineError`] class when exactly one
-/// failed (a pinned test), `upstream failed` otherwise.
-#[cfg_attr(not(feature = "ui"), allow(dead_code))]
-pub(super) fn engine_error_class(
-    failures: &[(EngineId, EngineError)],
-) -> std::borrow::Cow<'static, str> {
-    use rust_i18n::t;
-    if failures.len() != 1 {
-        return t!("engines.test_upstream");
-    }
-    match failures[0].1 {
-        EngineError::Blocked => t!("engines.test_blocked"),
-        EngineError::Timeout => t!("engines.test_timeout"),
-        EngineError::NoResults => t!("engines.test_no_results"),
-        EngineError::RateLimited => t!("engines.test_rate_limited"),
-        EngineError::Parse(_) => t!("engines.test_parse"),
-        EngineError::Transport(_) => t!("engines.test_transport"),
-    }
 }
 
 /// Emit + persist one audit row (observability helper: JSONL event first,

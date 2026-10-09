@@ -46,7 +46,7 @@ crates/cauce-core          domain types, pipeline, scheduler, Store + Engine tra
 crates/cauce-agent         grounded-answer agent loop; provider/tool/observer seam (MPL-2.0)
 crates/cauce-store-sqlite  rusqlite Store impl (MPL-2.0)
 crates/cauce-engines       declarative / exec / replay engine runtimes (MPL-2.0)
-crates/cauce-server        axum, HTMX templates, SSE, MCP, Exa adapter (MPL-2.0)
+crates/cauce-server        axum, embedded Svelte SPA (`/app`), SSE, MCP, Exa adapter (MPL-2.0)
 crates/cauce-cli           cauce serve / search / engine test / cache / record (MPL-2.0)
 engines/                 YAML engine specs + fixtures (Apache-2.0)
 sdk/python               exec-protocol SDK + ddgs reference engine (Apache-2.0)

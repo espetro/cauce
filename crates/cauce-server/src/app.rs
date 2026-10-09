@@ -28,17 +28,15 @@ use cauce_core::config::{Config, ConfigError};
 use cauce_core::{Engine, HealthPolicy, SearchPipeline, Store};
 use tokio::net::TcpListener;
 
-#[cfg(feature = "ui")]
-use crate::audit_page;
 use crate::error::ApiError;
 use crate::handlers;
-#[cfg(feature = "ui")]
-use crate::html;
 #[cfg(feature = "mcp")]
 use crate::mcp;
 use crate::metrics::MetricsHandle;
 use crate::middleware::{HostGuard, RequestCtx, host_origin_guard, request_context};
 use crate::routes::{ROUTES, RouteAuth, RouteKind, RouteSpec};
+#[cfg(feature = "ui")]
+use crate::{assets, pages, spa};
 
 /// The wave this build implements; the routes-table test pins
 /// `wave <= CURRENT_WAVE` declarations to mounted handlers.
@@ -493,19 +491,20 @@ pub fn build_router_opts(state: AppState, opts: RouterOptions) -> Router {
 #[cfg_attr(not(feature = "mcp"), allow(unused_variables))]
 fn handler_for(spec: &RouteSpec, state: &AppState) -> Option<MethodRouter<AppState>> {
     match (spec.method, spec.path, spec.kind) {
+        // FX-06: the legacy canonical paths permanently redirect to their
+        // `/app` twins — the SPA is the only UI layer.
         #[cfg(feature = "ui")]
-        ("GET", "/", RouteKind::Html) => Some(get(html::index)),
+        ("GET", "/", RouteKind::Html) => Some(get(spa::to_app)),
         #[cfg(feature = "ui")]
-        ("GET", "/search", RouteKind::Html) => Some(get(html::search)),
-        // FX-05: `/trace/{id}` is the last HTMX ops page — `/audit`,
-        // `/cache`, `/engines`, `/settings`, `/history`, `/dashboard`
-        // and `/archive` all live under `/app` now.
+        ("GET", "/search", RouteKind::Html) => Some(get(spa::to_app)),
+        // `/trace/{id}` stays server-rendered (see `pages::trace`): the
+        // SPA's audit tab deep-links to it and it has no client twin.
         #[cfg(feature = "ui")]
-        ("GET", "/trace/{id}", RouteKind::Html) => Some(get(audit_page::trace)),
+        ("GET", "/trace/{id}", RouteKind::Html) => Some(get(pages::trace::trace)),
         #[cfg(feature = "ui")]
-        ("GET", "/opensearch.xml", RouteKind::Html) => Some(get(html::opensearch)),
+        ("GET", "/opensearch.xml", RouteKind::Html) => Some(get(assets::opensearch)),
         #[cfg(feature = "ui")]
-        ("GET", "/favicon.ico", RouteKind::Static) => Some(get(html::favicon)),
+        ("GET", "/favicon.ico", RouteKind::Static) => Some(get(assets::favicon)),
         ("GET", "/api/search", RouteKind::Json) => Some(get(handlers::search)),
         ("GET", "/api/search/stream", RouteKind::Sse) => Some(get(handlers::search_stream)),
         #[cfg(feature = "ai")]
@@ -518,19 +517,18 @@ fn handler_for(spec: &RouteSpec, state: &AppState) -> Option<MethodRouter<AppSta
         ("DELETE", "/api/pages/{url}", RouteKind::Json) => Some(delete(handlers::pages_delete)),
         #[cfg(feature = "archive")]
         ("GET", "/api/archive", RouteKind::Json) => Some(get(handlers::archive_search)),
-        // `ui` alone: a build without `ai` still mounts `/answer` so the
-        // page can render its disabled notice instead of 404ing.
         #[cfg(feature = "ui")]
-        ("GET", "/answer", RouteKind::Html) => Some(get(html::answer)),
-        // #254: same `ui` gate — the stored render needs no answer loop.
+        ("GET", "/answer", RouteKind::Html) => Some(get(spa::to_app)),
+        // #254: `/answer/{id}` stays server-rendered — a reload must not
+        // re-run the loop; `/api/answer-log/{id}` is the JSON twin.
         #[cfg(feature = "ui")]
-        ("GET", "/answer/{id}", RouteKind::Html) => Some(get(html::answer_view)),
+        ("GET", "/answer/{id}", RouteKind::Html) => Some(get(pages::answer_view::answer_view)),
         // FX-02: the Svelte SPA — shell at `/app`, embedded assets +
         // client-route fallback under `/app/*`. `ui` gate like the pages.
         #[cfg(feature = "ui")]
-        ("GET", "/app", RouteKind::Html) => Some(get(html::spa)),
+        ("GET", "/app", RouteKind::Html) => Some(get(spa::spa)),
         #[cfg(feature = "ui")]
-        ("GET", "/app/{*rest}", RouteKind::Html) => Some(get(html::spa_nested)),
+        ("GET", "/app/{*rest}", RouteKind::Html) => Some(get(spa::spa_nested)),
         ("GET", "/api/suggest", RouteKind::Json) => Some(get(handlers::suggest)),
         ("GET", "/api/report", RouteKind::Json) => Some(get(handlers::report)),
         ("GET", "/api/history", RouteKind::Json) => Some(get(handlers::history)),

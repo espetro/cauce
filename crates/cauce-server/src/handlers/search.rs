@@ -1,5 +1,5 @@
 //! `GET /api/search` and the SSE `GET /api/search/stream`, plus the shared
-//! search execution and error mapping the HTML fragments reuse.
+//! search execution and error mapping.
 //!
 //! This Source Code Form is subject to the terms of the Mozilla Public
 //! License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -20,7 +20,7 @@ use cauce_core::{
 };
 use tokio_stream::StreamExt;
 
-use super::{QueryParams, engine_error_class, search_error_payload};
+use super::{QueryParams, search_error_payload};
 use crate::app::AppState;
 use crate::error::ApiError;
 use crate::middleware::RequestCtx;
@@ -34,25 +34,19 @@ use crate::middleware::RequestCtx;
 /// zero configured engines is 503 `no_engines`, and an all-failed fan-out
 /// is 502 `upstream_failed`.
 ///
-/// `Accept: text/html` renders the inline result-list fragment the
-/// engines page's test query swaps in (W2-05) — same handler, negotiated.
-#[cfg_attr(not(feature = "ui"), allow(unused_variables))]
+/// FX-06: the `Accept: text/html` fragment arm the engines page's inline
+/// test used is gone — the SPA's engines tab talks JSON.
 pub async fn search(
     State(state): State<AppState>,
     Extension(ctx): Extension<RequestCtx>,
     uri: Uri,
-    headers: HeaderMap,
 ) -> Result<Response, ApiError> {
-    #[cfg(feature = "ui")]
-    if crate::html::accepts_html(&headers) {
-        return crate::html::search_fragment(&state, &ctx, &uri, &headers).await;
-    }
     search_inner(&state, &ctx, &uri)
         .await
         .map(|(_req, resp)| Json(resp).into_response())
 }
 
-/// Shared search execution used by `GET /api/search` and the HTML/HTMX page.
+/// Shared search execution used by `GET /api/search` and the SSE stream.
 /// Returns the canonical [`SearchRequest`] alongside the response so callers
 /// can compute the cache key and pagination URL without re-parsing params.
 pub(crate) async fn search_inner(
@@ -242,52 +236,4 @@ pub(crate) fn search_error(
             error.to_string(),
         ),
     }
-}
-
-/// [`search_inner`] plus a display class on the error side (`blocked`,
-/// `timeout`, `no results`, `breaker open`, ...) — the engines page's
-/// inline test fragment renders it as the meta line on failure (screen
-/// spec `engines.md`: "the engine's error class"). JSON callers discard
-/// the class through [`search_inner`]. The dispatch below intentionally
-/// mirrors `search_inner` (the error arm needs the classed mapping, not
-/// `search_error` alone); only the `ui` build's fragment calls it.
-#[cfg_attr(not(feature = "ui"), allow(dead_code))]
-pub(crate) async fn search_inner_classed(
-    state: &AppState,
-    ctx: &RequestCtx,
-    uri: &Uri,
-) -> Result<(SearchRequest, SearchResponse), (ApiError, std::borrow::Cow<'static, str>)> {
-    use rust_i18n::t;
-    let req =
-        parse_search_request(ctx, uri, &[]).map_err(|e| (e, t!("engines.test_bad_request")))?;
-    match state
-        .pipeline()
-        .search_with_id(&req, ctx.request_id.as_uuid())
-        .await
-    {
-        Ok(resp) => Ok((req, resp)),
-        Err(error) => Err(search_error_classed(ctx, &req, error)),
-    }
-}
-
-/// [`search_error`] plus the display class the engines page's inline test
-/// renders: the class mirrors the error arm, `upstream failed` or the
-/// single engine's [`cauce_core::EngineError`] class for an all-failed
-/// fan-out.
-#[cfg_attr(not(feature = "ui"), allow(dead_code))]
-pub(crate) fn search_error_classed(
-    ctx: &RequestCtx,
-    req: &SearchRequest,
-    error: PipelineError,
-) -> (ApiError, std::borrow::Cow<'static, str>) {
-    use rust_i18n::t;
-    let class = match &error {
-        PipelineError::UnknownEngines { .. } => t!("engines.test_unknown_engines"),
-        PipelineError::NoEngines if req.engines.is_some() => t!("engines.test_unknown_engines"),
-        PipelineError::NoEngines => t!("engines.test_no_engines"),
-        PipelineError::AllEnginesFailed(failures) => engine_error_class(failures),
-        PipelineError::RateLimited { .. } => t!("engines.test_rate_limited"),
-        PipelineError::BreakerOpen(_) => t!("engines.test_breaker_open"),
-    };
-    (search_error(ctx, req, error), class)
 }

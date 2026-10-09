@@ -13,7 +13,7 @@ use std::time::Duration;
 use axum::http::StatusCode;
 use cauce_core::CacheKey;
 use cauce_engines::ReplayOpts;
-use support::{app, app_with, get_html, get_json};
+use support::{app, app_with, get_json};
 
 /// Seed a `cache_entries` row straight through the test store (same
 /// recipe as `cache_page`'s `seed_store_entry`): `Duration::ZERO` lands
@@ -29,18 +29,19 @@ async fn seed_expired(state: &cauce_server::AppState, q: &str) {
         .expect("seed cache entry");
 }
 
-/// An in-grace expired row is served stale and the SSR badge reads
-/// `stale · refreshing`.
+/// An in-grace expired row is served stale: `meta.source` reports the
+/// cache hit with `stale: true` — the SPA renders the `stale ·
+/// refreshing` badge off that (FX-06 moved the badge client-side).
 #[tokio::test]
-async fn stale_serve_renders_the_refreshing_badge() {
+async fn stale_serve_marks_the_source_stale() {
     let (app, state, _tmp) = app();
     seed_expired(&state, "stalebadge").await;
 
-    let (status, body) = get_html(&app, "/search?q=stalebadge").await;
-    assert_eq!(status, StatusCode::OK);
-    assert!(
-        body.contains("stale · refreshing"),
-        "stale serve must render the refreshing badge: {body}"
+    let (status, body) = get_json(&app, "/api/search?q=stalebadge").await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(
+        body["meta"]["source"]["cache"]["stale"], true,
+        "stale serve must mark meta.source.cache.stale: {body}"
     );
 }
 

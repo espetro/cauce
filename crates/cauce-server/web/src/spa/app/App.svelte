@@ -4,7 +4,8 @@
   file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
   The SPA shell (FX-03): sticky chrome + the routed page. `/app/*` clicks
-  navigate client-side; every other link hands off to the HTMX pages.
+  navigate client-side; every other link hands off to the residual
+  server-rendered pages (`/trace/{id}`, `/answer/{id}`) or redirects.
   `{#key}` remounts the outlet per navigation so each route shell owns a
   fresh feature state (the SSR pages' per-request semantics).
 -->

@@ -358,3 +358,11 @@ global store, and is never shared with or copied into another project.
 - Public mode: `search_log`/`clicks` are never written server-side (probed via sqlite in tests); the SPA writes the same row shape to localStorage (`localHistory.ts`). Archive splits shared content (`GET /api/pages/{url}` open) vs per-user index (localStorage); `archiving=false` drops `/archive*` rows + shows the disabled arm.
 - `/app/admin` merged tabs (instance · engines · cache · audit): ops telemetry lives there; `/app/dashboard` public mode shows only the instance card.
 - Threat model kept honest: config PUT can't flip `public_instance` live (restart required — test `config_put_cannot_demote_instance_mode_live`); role comes only from the bearer token, never from client state.
+
+## 2026-10-09 — FX-06 teardown (branch v3/fx-06-teardown)
+
+- The `/app` SPA is the ONLY UI layer: `askama`, `templates/`, `src/html/`, `*_page.rs`, vendored htmx + the `web/build.mjs` pipeline are gone. `Cargo.toml`'s `ui` feature = `rust-embed` + `urlencoding` only.
+- Routes: `/`, `/search`, `/answer` 308-redirect to `/app` twins (query preserved); `/app` + `/app/{*rest}` serve the embedded bundle (`src/spa.rs`). Residual server pages `/trace/{id}` and `/answer/{id}` re-implemented without askama in `src/pages/` (shared `doc()` shell + inline token CSS) — they have no SPA/JSON twin (trace) or are the durable stored render (answer).
+- `src/assets.rs` owns favicon + `opensearch.xml` (results URL now `/app/search?q=`); the SPA `index.html` carries the `<link rel="search">` + a token-styled `<noscript>` "JS required" shell (§7.5's cheap option).
+- SPA entry points for future sessions: `web/src/spa/` (app shell, `lib/api.ts` client + generated `web/src/types/*`, `lib/capabilities.svelte.ts`, `features/*` slices); i18n via generated `web/src/i18n/*.json`.
+- Form-encoded `PUT /api/config` stays — the SPA settings tab still PUTs urlencoded dotted-path config.

@@ -6,9 +6,9 @@
   The variant-E sticky chrome (§7.1): same header on every surface —
   brand + primary nav left, quiet operator group + settings + theme
   toggle right, operator links collapsing into the `more` <details>
-  below 700px, all one-for-one with `templates/header.html`. Links that
-  have no SPA twin yet stay plain `/...` hrefs (full load into the HTMX
-  page); `/app`-bound links route client-side via App's delegated click.
+  below 700px (the shape the old `templates/header.html` had). Links
+  without an SPA twin stay plain `/...` hrefs (full load); `/app`-bound
+  links route client-side via App's delegated click.
 -->
 <script lang="ts">
   import { spa } from "../lib/i18n.js";

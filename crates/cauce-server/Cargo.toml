@@ -1,6 +1,6 @@
 [package]
 name = "cauce-server"
-description = "axum router, HTMX templates, SSE, MCP, Exa adapter, static assets."
+description = "axum router, embedded Svelte SPA, SSE, MCP, Exa adapter, static assets."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -13,10 +13,11 @@ repository.workspace = true
 # `ROUTES` already name them); today they gate nothing.
 [features]
 default = ["ui", "mcp", "ai", "archive"]
-# HTMX pages and embedded static assets (html.rs, askama templates).
-# `cauce serve --headless` can drop them at runtime; building without `ui`
-# drops them (and askama/rust-embed) at compile time.
-ui = ["dep:askama", "dep:rust-embed", "dep:urlencoding", "dep:reqwest"]
+# The browser surface: the embedded SPA (rust-embed), its redirects from
+# the legacy canonical paths, the residual server-rendered pages and the
+# favicon/OpenSearch documents. `cauce serve --headless` drops them at
+# runtime; building without `ui` drops them at compile time.
+ui = ["dep:rust-embed", "dep:urlencoding"]
 # MCP surfaces: the `/mcp` streamable-HTTP endpoint and `cauce mcp`'s stdio
 # transport (mcp.rs). schemars backs the tool arg schemas.
 mcp = ["dep:rmcp", "dep:schemars"]
@@ -68,14 +69,10 @@ uuid = { version = "1", features = ["v7", "serde"] }
 # `t!` outside the `ui` feature too.
 rust-i18n = "4.2.2"
 
-# `ui` feature: HTMX templates and embedded static assets.
-askama = { version = "0.13", optional = true }
+# `ui` feature: embedded static assets (the SPA bundle, favicon) and the
+# query encoding the residual `/answer/{id}` page builds related links with.
 rust-embed = { version = "8", optional = true, features = ["mime-guess"] }
 urlencoding = { version = "2", optional = true }
-# reqwest is used only for its header types in the /settings `/models`
-# listing (the client itself is cauce-core's `HttpClient`); features unify
-# with cauce-core's entry (rustls `default-tls`).
-reqwest = { version = "0.13.5", default-features = false, optional = true }
 
 # OTLP trace export (observability/otlp.rs), all gated behind the
 # non-default `otlp` feature. `default-features` off on the exporter: its

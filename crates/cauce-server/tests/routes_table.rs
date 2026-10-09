@@ -12,11 +12,11 @@
 use std::collections::BTreeSet;
 
 use axum::body::Body;
-use axum::http::{Method, Request, StatusCode, header};
-use cauce_server::{
-    ROUTES, RouteKind, RouterOptions, build_router_opts, feature_enabled, mounted_routes,
-};
+use axum::http::{Method, Request, StatusCode};
+use cauce_server::{ROUTES, RouteKind, RouterOptions, feature_enabled, mounted_routes};
 use tower::ServiceExt;
+#[cfg(feature = "ui")]
+use {axum::http::header, cauce_server::build_router_opts};
 
 mod support;
 use support::*;
@@ -38,11 +38,12 @@ const EXPECTED_WAVE0_JSON: &[(&str, &str)] = &[
     ("PUT", "/api/config"),
 ];
 
-/// The wave-0 HTMX pages: `requires: "ui"` rows, mounted only when the
+/// The wave-0 page entries: `requires: "ui"` rows, mounted only when the
 /// `ui` cargo feature is compiled in and `--headless` is not passed.
+/// FX-06: both now permanently redirect onto their `/app` twins.
 const EXPECTED_WAVE0_UI: &[(&str, &str)] = &[("GET", "/"), ("GET", "/search")];
 
-/// Wave-2 HTMX pages: none left mounted — FX-05 moved `/settings`,
+/// Wave-2 pages: none left mounted — FX-05 moved `/settings`,
 /// `/history`, `/cache`, `/dashboard`, `/audit`, `/engines` and
 /// `/archive` into the SPA behind `/app`. The plan rows stay declared;
 /// they resolve through the `/app/{*rest}` fallback.
@@ -81,14 +82,15 @@ const EXPECTED_WAVE2_MOUNTED: &[(&str, &str)] = &[
 const EXPECTED_WAVE2_UI_MOUNTED: &[(&str, &str)] = &[
     ("GET", "/opensearch.xml"),
     ("GET", "/favicon.ico"),
-    // `/trace/{id}` is the last HTMX ops page — the audit tab links out
-    // to it until the trace SPA port lands.
+    // `/trace/{id}` stays server-rendered — the audit tab deep-links to
+    // it and it has no SPA route (FX-06 residual page).
     ("GET", "/trace/{id}"),
 ];
 
 /// Wave-4 rows mounted so far (W4-03): the grounded-answer SSE route
-/// rides the `ai` gate; its page rides `ui` alone (it renders the
-/// disabled notice in `ai`-less builds rather than 404ing).
+/// rides the `ai` gate; `/answer` redirects to the SPA (which renders
+/// the disabled notice in `ai`-less builds), `/answer/{id}` is the
+/// residual server-rendered stored-answer page.
 const EXPECTED_WAVE4_AI_MOUNTED: &[(&str, &str)] = &[("POST", "/api/answer")];
 const EXPECTED_WAVE4_UI_MOUNTED: &[(&str, &str)] = &[("GET", "/answer"), ("GET", "/answer/{id}")];
 
@@ -107,7 +109,7 @@ const EXPECTED_WAVE5_ARCHIVE_MOUNTED: &[(&str, &str)] = &[
 const EXPECTED_WAVE5_UI_MOUNTED: &[(&str, &str)] = &[];
 
 /// FX rows mounted so far (FX-02): the SPA shell and its asset /
-/// client-route fallback, riding the `ui` gate like the HTMX pages.
+/// client-route fallback, riding the `ui` gate like the page rows.
 const EXPECTED_WAVE8_UI_MOUNTED: &[(&str, &str)] = &[("GET", "/app"), ("GET", "/app/{*rest}")];
 
 /// Wave-8 JSON rows mounted so far (FX-07): the instance-mode bootstrap
