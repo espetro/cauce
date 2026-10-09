@@ -59,6 +59,10 @@
     --muted: #a3a3a3;
     --border: #3f3f46;
     --accent: #60a5fa;
+    /* --warn lightens for the same reason --accent does: the light
+       theme's #b91c1c fails WCAG AA in dark both as warn-text on --bg
+       and as the danger-button fill under --bg text. */
+    --warn: #f87171;
     --greyed-bg: #17171a;
     /* The scrim and the floating shadow both deepen on the dark theme:
        a pale-page scrim reads bright, and a weak shadow vanishes
@@ -77,6 +81,7 @@
   --muted: #a3a3a3;
   --border: #3f3f46;
   --accent: #60a5fa;
+  --warn: #f87171;
   --greyed-bg: #17171a;
   --overlay: rgb(0 0 0 / 0.6);
   --shadow: 0 4px 16px rgb(0 0 0 / 0.6);
