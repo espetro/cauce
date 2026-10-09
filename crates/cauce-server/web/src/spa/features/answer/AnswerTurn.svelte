@@ -5,14 +5,16 @@
 
   One thread turn (§7.1): query bubble, meta row (status / retrieval
   path / confidence / ungrounded / cached / model / request-id), the
-  step lines collapsed into a quiet `<details>` by default (§7.2), the
-  answer body (pre-wrap deltas while streaming, server-sanitized `.md`
-  once `done.html` lands), then — only at `done` — the numbered source
-  cards and related questions. `edit` shows on the last settled turn
-  and rewinds it into the composer.
+  step lines collapsed into a quiet `UiCollapsible` by default (§7.2),
+  the answer body (pre-wrap deltas while streaming, server-sanitized
+  `.md` once `done.html` lands), then — only at `done` — the numbered
+  source cards and related questions. `edit` shows on the last settled
+  turn and rewinds it into the composer.
 -->
 <script lang="ts">
   import SourceCard from "./SourceCard.svelte";
+  import UiButton from "../../ui/button.svelte";
+  import UiCollapsible from "../../ui/collapsible.svelte";
   import { SA, fmt } from "../../lib/i18n.js";
   import type { AnswerTurnState } from "./thread.svelte.js";
 
@@ -29,9 +31,12 @@
 
   let textEl = $state<HTMLElement>();
 
-  // #226: `done.html` is server-rendered + sanitized — inject it, then
-  // retarget the `<a class="cite" data-cite="n">` placeholders to this
-  // turn's numbered cards (`#src-<turn>-<n>`).
+  // #226: `done.html` is server-rendered + sanitized — inject it via
+  // `{@html}`, then retarget the `a.cite[data-cite]` placeholders to
+  // this turn's numbered cards (`#src-<turn>-<n>`). Kept hand-rolled on
+  // purpose: the effect rewrites anchors inside server-injected markup,
+  // a DOM concern no ui/ primitive can own — there is no Bits UI part
+  // for post-injection anchor surgery.
   $effect(() => {
     if (!turn.html || !textEl) return;
     for (const a of textEl.querySelectorAll<HTMLAnchorElement>("a.cite[data-cite]")) {
@@ -45,7 +50,7 @@
   <p class="turn-q">
     {turn.q}
     {#if editable}
-      <button type="button" class="turn-edit" onclick={onedit}>{SA.edit}</button>
+      <UiButton variant="ghost" size="sm" onclick={onedit}>{SA.edit}</UiButton>
     {/if}
   </p>
   <p class="meta">
@@ -72,14 +77,21 @@
     {/if}
   </p>
   {#if turn.steps.length}
-    <details class="answer-steps">
-      <summary>{fmt(SA.steps, { n: turn.steps.length })}</summary>
-      <ol>
-        {#each turn.steps as step}
-          <li>{step}</li>
-        {/each}
-      </ol>
-    </details>
+    <div class="answer-steps">
+      <UiCollapsible>
+        {#snippet trigger(open)}
+          <span class="answer-steps-summary">
+            <span class="answer-steps-chevron" class:open aria-hidden="true">▸</span
+            >{fmt(SA.steps, { n: turn.steps.length })}
+          </span>
+        {/snippet}
+        <ol>
+          {#each turn.steps as step}
+            <li>{step}</li>
+          {/each}
+        </ol>
+      </UiCollapsible>
+    </div>
   {/if}
   {#if turn.ungrounded}
     <p class="ungrounded">{SA.ungrounded}</p>
