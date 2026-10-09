@@ -38,7 +38,7 @@ use crate::html;
 use crate::mcp;
 use crate::metrics::MetricsHandle;
 use crate::middleware::{HostGuard, RequestCtx, host_origin_guard, request_context};
-use crate::routes::{ROUTES, RouteKind, RouteSpec};
+use crate::routes::{ROUTES, RouteAuth, RouteKind, RouteSpec};
 
 /// The wave this build implements; the routes-table test pins
 /// `wave <= CURRENT_WAVE` declarations to mounted handlers.
@@ -177,9 +177,16 @@ impl AppState {
     pub(crate) fn commit_locked(
         &self,
         cfg: &mut Config,
-        new_cfg: Config,
+        mut new_cfg: Config,
     ) -> Result<CommitOutcome, ConfigError> {
         new_cfg.save()?;
+        // `server.public_instance` is restart-required (FX-07): the file
+        // records the requested value, but the live config keeps the
+        // boot-time mode. Without this a `PUT /api/config` carrying a
+        // default-shaped body would flip `public_instance` off in memory
+        // and silently open the admin gate (and re-enable `search_log`
+        // writes) without a restart.
+        new_cfg.server.public_instance = cfg.server.public_instance;
         let (runtime, engines_rebuilt) = self.build_runtime(&new_cfg);
         rust_i18n::set_locale(&new_cfg.ui.locale);
         *cfg = new_cfg;
@@ -243,9 +250,22 @@ impl AppState {
         self.archive().is_some() && self.with_config(|c| c.archive.index_on_click)
     }
 
+    /// FX-07 `archiving` flag: the fetch-and-index pipeline is live
+    /// (`archive.enabled` AND a built archiver).
+    #[cfg(feature = "archive")]
+    pub fn archiving(&self) -> bool {
+        self.archive().is_some()
+    }
+
     /// Without the `archive` cargo feature there is no beacon.
     #[cfg(not(feature = "archive"))]
     pub fn archive_index_on_click(&self) -> bool {
+        false
+    }
+
+    /// Without the `archive` cargo feature nothing archives.
+    #[cfg(not(feature = "archive"))]
+    pub fn archiving(&self) -> bool {
         false
     }
 }
@@ -272,7 +292,11 @@ fn build_answer_loop(
                 // is reserved for #232 and not yet consulted.
                 .with_max_turns(config.ai.max_turns as usize)
                 .with_max_search_executions(config.ai.max_searches as usize)
-                .with_provider_budget(Duration::from_secs(config.ai.provider_budget_s)),
+                .with_provider_budget(Duration::from_secs(config.ai.provider_budget_s))
+                // FX-07: public instances write no `answer_log` rows —
+                // `done.log_id` reports `None` and history stays
+                // browser-local.
+                .with_history_logging(!config.server.public_instance),
         ),
         Err(e) => {
             tracing::warn!(
@@ -295,12 +319,18 @@ fn build_answer_loop(
     None
 }
 
-/// Build the W5-01 fetch-and-index pipeline from `[archive]`. There is no
-/// `archive.enabled` switch — the pipeline exists whenever the feature is
-/// compiled; `None` only when the fetcher itself fails to build (a zero
-/// politeness knob), logged rather than fatal like `build_answer_loop`.
+/// Build the W5-01 fetch-and-index pipeline from `[archive]`.
+/// `archive.enabled` (FX-07) is the operator switch — `false` keeps the
+/// pipeline out entirely, which reports `archiving: false` on
+/// `/api/capabilities` and makes the write/read surfaces answer
+/// `archive_disabled` 503. `None` also when the fetcher itself fails to
+/// build (a zero politeness knob), logged rather than fatal like
+/// `build_answer_loop`.
 #[cfg(feature = "archive")]
 fn build_archive(store: &Arc<dyn Store>, config: &Config) -> Option<Archiver> {
+    if !config.archive.enabled {
+        return None;
+    }
     match cauce_core::Archiver::new(store.clone(), &config.archive) {
         Ok(archiver) => Some(archiver),
         Err(e) => {
@@ -412,9 +442,22 @@ pub fn build_router_opts(state: AppState, opts: RouterOptions) -> Router {
 
     let mut by_path: BTreeMap<&'static str, MethodRouter<AppState>> = BTreeMap::new();
     for spec in ROUTES.iter().filter(|s| opts.mounts(s)) {
-        let Some(mr) = handler_for(spec, &state) else {
+        let Some(mut mr) = handler_for(spec, &state) else {
             continue;
         };
+        // FX-07: `RouteAuth::Admin` rows get the admin gate as a route
+        // layer — applied per-MethodRouter before the path merge, so a
+        // shared path can mix classes (`GET /api/pages/{url}` open,
+        // `DELETE` admin). The gate itself no-ops in local mode. `/mcp`
+        // is exempt: `any_service` mounts a fallback, not method routes,
+        // so `route_layer` would no-op-panic — its arm wraps the service
+        // directly instead.
+        if spec.auth == RouteAuth::Admin && spec.kind != RouteKind::Mcp {
+            mr = mr.route_layer(middleware::from_fn_with_state(
+                state.clone(),
+                crate::middleware::require_admin,
+            ));
+        }
         // `MethodRouter::merge` takes `self` by value; `mem::take` leaves a
         // default in place while the merged router is rebuilt.
         let slot = by_path.entry(spec.path).or_default();
@@ -515,10 +558,23 @@ fn handler_for(spec: &RouteSpec, state: &AppState) -> Option<MethodRouter<AppSta
         ("GET", "/metrics", RouteKind::Json) => Some(get(handlers::metrics)),
         ("GET", "/api/config", RouteKind::Json) => Some(get(handlers::config_get)),
         ("PUT", "/api/config", RouteKind::Json) => Some(put(handlers::config_put)),
+        // FX-07: the instance-mode bootstrap pair.
+        ("GET", "/api/capabilities", RouteKind::Json) => Some(get(handlers::capabilities)),
+        ("GET", "/api/instance", RouteKind::Json) => Some(get(handlers::instance)),
         // The MCP streamable-HTTP transport is a `tower::Service` serving
-        // every method on `/mcp` (W1-08): `any_service` mounts it directly.
+        // every method on `/mcp` (W1-08): `any_service` mounts it
+        // directly. The row is `RouteAuth::Admin` but `any_service` has
+        // no method routes for `route_layer` to wrap (it would panic),
+        // so the admin middleware wraps the service itself here.
         #[cfg(feature = "mcp")]
-        ("*", "/mcp", RouteKind::Mcp) => Some(any_service(mcp::streamable_service(state.clone()))),
+        ("*", "/mcp", RouteKind::Mcp) => Some(any_service(
+            tower::ServiceBuilder::new()
+                .layer(middleware::from_fn_with_state(
+                    state.clone(),
+                    crate::middleware::require_admin,
+                ))
+                .service(mcp::streamable_service(state.clone())),
+        )),
         _ => None,
     }
 }

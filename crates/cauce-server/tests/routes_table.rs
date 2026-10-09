@@ -110,6 +110,12 @@ const EXPECTED_WAVE5_UI_MOUNTED: &[(&str, &str)] = &[];
 /// client-route fallback, riding the `ui` gate like the HTMX pages.
 const EXPECTED_WAVE8_UI_MOUNTED: &[(&str, &str)] = &[("GET", "/app"), ("GET", "/app/{*rest}")];
 
+/// Wave-8 JSON rows mounted so far (FX-07): the instance-mode bootstrap
+/// pair. Both are open reads in every build — the payload, not the
+/// route, carries the mode/role.
+const EXPECTED_WAVE8_MOUNTED: &[(&str, &str)] =
+    &[("GET", "/api/capabilities"), ("GET", "/api/instance")];
+
 // ---------------------------------------------------------------------------
 // Plan-table parsing (parent plan section 6)
 // ---------------------------------------------------------------------------
@@ -284,6 +290,7 @@ fn mounted_routes_match_declaration() {
         .iter()
         .chain(EXPECTED_WAVE1_MOUNTED)
         .chain(EXPECTED_WAVE2_MOUNTED)
+        .chain(EXPECTED_WAVE8_MOUNTED)
         .map(|(m, p)| (m.to_string(), p.to_string()))
         .collect();
     if cfg!(feature = "ui") {

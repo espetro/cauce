@@ -39,6 +39,7 @@ mod answer;
 #[cfg(feature = "archive")]
 mod archive;
 mod cache;
+mod capabilities;
 mod config;
 mod engines;
 mod history;
@@ -57,6 +58,7 @@ pub use cache::{
     CacheBulkDeleteAck, CacheDeleteAck, CacheListing, cache_bulk_delete, cache_delete, cache_get,
     cache_list,
 };
+pub use capabilities::{capabilities, instance};
 pub use config::{ConfigPutResponse, config_get, config_put};
 pub(crate) use engines::engine_views;
 pub use engines::{

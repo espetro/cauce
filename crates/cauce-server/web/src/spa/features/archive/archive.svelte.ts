@@ -14,6 +14,11 @@
 
 import type { ArchiveRow } from "../../../types/ArchiveRow.js";
 import { deletePage, fetchArchive, fetchPage } from "../../lib/api.js";
+import { capabilities, loadCapabilities } from "../../lib/capabilities.svelte.js";
+import {
+  archiveIndexLoad,
+  type ArchiveIndexRow,
+} from "../../lib/localHistory.js";
 import { fmtTs, hostOf } from "../../lib/format.js";
 import { spa } from "../../lib/i18n.js";
 
@@ -72,6 +77,46 @@ export function createArchivePage() {
     };
   }
 
+  /**
+   * FX-07: the per-user archive index on a public instance — the
+   * `index_on_click` arm writes browser-local rows, content still
+   * resolves from the shared server store (`GET /api/pages/{url}`
+   * stays open). No snippets server-side, so a `q` filters url/title.
+   */
+  function indexRowView(r: ArchiveIndexRow): ArchiveRowView {
+    return {
+      url: r.url,
+      title: r.title === "" ? r.url : r.title,
+      host: hostOf(r.url),
+      fetched: fmtTs(r.fetched_at),
+      snippet: "",
+      markdown: "",
+      markdownError: "",
+      markdownLoading: false,
+      gone: false,
+    };
+  }
+
+  function runLocalIndex(): void {
+    const q = state.q.trim().toLowerCase();
+    const rows = archiveIndexLoad().filter(
+      (r) =>
+        q === "" ||
+        r.url.toLowerCase().includes(q) ||
+        r.title.toLowerCase().includes(q),
+    );
+    state.searching = q !== "";
+    state.hasMore = false;
+    state.rows = rows.map(indexRowView);
+    state.countLine = countLine(state.rows.length, state.searching);
+    state.emptyLine =
+      state.rows.length === 0
+        ? state.searching
+          ? A().empty_filtered.replace("{q}", state.q)
+          : A().empty
+        : "";
+  }
+
   async function run(params: URLSearchParams): Promise<void> {
     state.loading = true;
     state.error = "";
@@ -83,6 +128,21 @@ export function createArchivePage() {
     p.set("limit", String(LIMIT));
     p.set("offset", String(state.offset));
     try {
+      // FX-07: read real flags, not the local-mode defaults (the
+      // bootstrapping `apply()` may still be in flight).
+      await loadCapabilities();
+      if (!capabilities.flags.archiving) {
+        // `archive.enabled = false` — the whole surface is down; same
+        // disabled arm the fetch failure produces.
+        state.disabled = true;
+        return;
+      }
+      if (!capabilities.flags.adminSurface) {
+        // FX-07: per-user index — content stays shared, the listing
+        // never leaves this browser.
+        runLocalIndex();
+        return;
+      }
       const data = await fetchArchive(p);
       state.searching = data.query != null && data.query !== "";
       state.hasMore = data.has_more;
@@ -139,5 +199,10 @@ export function createArchivePage() {
     return "/app/archive?offset=" + Math.max(0, offset);
   }
 
-  return { state, run, loadMarkdown, remove, submit, pagerUrl, LIMIT };
+  /** `DELETE /api/pages` is an admin surface — the view hides it. */
+  function canDelete(): boolean {
+    return capabilities.loaded && capabilities.flags.adminSurface;
+  }
+
+  return { state, run, loadMarkdown, remove, canDelete, submit, pagerUrl, LIMIT };
 }

@@ -349,3 +349,12 @@ global store, and is never shared with or copied into another project.
 - `cauce eval ai evals/ai/loop.jsonl --tag loop --gate` is the new-case
   e2e; run the harness from the repo root or the default
   fixtures/transcripts dirs won't resolve.
+
+## 2026-10-09 — FX-07 instance modes (branch v3/fx-07-instance-modes)
+
+- `Capabilities`/`InstanceInfo` wire types (ts-rs): `{mode, role, flags:{admin_surface, server_history, archiving, shared_stats}}` + `index_on_click`, `admin`, `engine_ids`. `GET /api/capabilities` resolves role from `Authorization: Bearer` against `[auth].admin_tokens`; anonymous = `user`.
+- Server is authoritative: `[auth].admin_tokens` (list), `[server].public_instance`, `[archive].enabled`; `require_admin` middleware 401s (no/unknown token → `unauthorized`) on every `RouteAuth::Admin` row — UI gating is only UX.
+- SPA `caps` store (`lib/capabilities.svelte.ts`): defaults are LOCAL-mode (all flags on) until the bootstrap fetch settles — features MUST `await loadCapabilities()` before branching on flags, and chrome gating keys on `capabilities.loaded &&` so nothing renders open pre-resolution.
+- Public mode: `search_log`/`clicks` are never written server-side (probed via sqlite in tests); the SPA writes the same row shape to localStorage (`localHistory.ts`). Archive splits shared content (`GET /api/pages/{url}` open) vs per-user index (localStorage); `archiving=false` drops `/archive*` rows + shows the disabled arm.
+- `/app/admin` merged tabs (instance · engines · cache · audit): ops telemetry lives there; `/app/dashboard` public mode shows only the instance card.
+- Threat model kept honest: config PUT can't flip `public_instance` live (restart required — test `config_put_cannot_demote_instance_mode_live`); role comes only from the bearer token, never from client state.

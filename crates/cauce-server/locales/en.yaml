@@ -630,6 +630,27 @@ app:
   # Aria-live hint while a streaming search is in flight (the
   # `searching` status word lives in the search bundle already).
   stream_hint: streaming results as engines report
+  # FX-07: heading on a `requires: admin` route a public-mode visitor
+  # hits — the central route filter renders this instead of the page.
+  admin_gate_title: Operator surface
+  # Line under the title; the token form sits below it.
+  admin_gate_note: This surface is for the instance operator. Paste an admin token to continue.
+  # Token form labels — the token unlocks the admin surface for this browser only.
+  admin_token_label: admin token
+  admin_token_hint: stored in this browser only, sent as a bearer credential
+  admin_token_save: save token
+  admin_token_clear: clear token
+  # `/app/dashboard` on a public instance replaces ops telemetry with a
+  # single instance card (§7.4): name, version, engine count, privacy note.
+  instance_card: instance
+  instance_version: version
+  instance_engines: engines
+  instance_privacy: searches are answered without server-side logging — your history and archive index live in this browser
+  # `/app/archive` when `archive.enabled = false` — the `archiving` flag
+  # took the whole surface down.
+  archiving_off: the archive is disabled on this instance
+  # `details` summary hiding TTL/cache jargon in public mode.
+  cache_details: cache details
 
 admin:
   # FX-05 merged ops surface `/app/admin` — tab labels reuse nav casing.

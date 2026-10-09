@@ -342,6 +342,7 @@ async fn empty_extraction_is_an_error() {
 fn zero_bucket_knobs_fail_to_build() {
     let store = Arc::new(StubStore::default());
     let cfg = ArchiveConfig {
+        enabled: true,
         index_on_click: true,
         requests_per_second: 0,
         burst: 2,

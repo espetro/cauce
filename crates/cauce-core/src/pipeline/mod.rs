@@ -425,6 +425,10 @@ pub struct SearchPipeline {
     /// W1-09 metrics handle. A unit struct: every `record_*` writes into
     /// the process-global registry, so pipelines share one set of series.
     metrics: Metrics,
+    /// FX-07 instance mode: `false` drops every `search_log` write (the
+    /// `write_log` no-op) — a public instance keeps no per-user query
+    /// history server-side. The shared result cache is unaffected.
+    record_history: bool,
 }
 
 pub(super) fn millis(d: Duration) -> u32 {
@@ -453,6 +457,7 @@ impl SearchPipeline {
 
             cache: CachePolicy::default(),
             metrics: Metrics,
+            record_history: true,
         }
     }
 
@@ -514,6 +519,14 @@ impl SearchPipeline {
         self
     }
 
+    /// FX-07 `server.public_instance` switch: `false` stops the
+    /// `search_log` append on every search path — history on a public
+    /// instance is per-user browser-local, never server state.
+    pub fn with_history_logging(mut self, enabled: bool) -> Self {
+        self.record_history = enabled;
+        self
+    }
+
     /// Override the breaker policy (breaker windows, timeout threshold).
     /// Tests shrink the windows instead of sleeping minutes; production
     /// uses [`HealthPolicy::default`].
@@ -570,6 +583,7 @@ impl SearchPipeline {
                 degraded_ttl: Duration::from_secs(cfg.cache.degraded_ttl_s),
             })
             .with_health_policy(HealthPolicy::from_config(&cfg.health))
+            .with_history_logging(!cfg.server.public_instance)
     }
 
     /// The live per-engine health tracker (EWMA, breaker state) — also

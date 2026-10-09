@@ -10,6 +10,15 @@
  */
 export type ArchiveConfig = { 
 /**
+ * Master switch for the archive surfaces (FX-07, the `archiving`
+ * capability flag): `false` disables `POST /api/pages`, the page
+ * fetch/read routes and `GET /api/archive` with the same
+ * `archive_disabled` 503 an `archive`-less build reports. Default
+ * true — the only way an operator could disable archiving before was
+ * a build without the cargo feature.
+ */
+enabled: boolean, 
+/**
  * Whether clicking a result link in the UI fires the indexing beacon
  * (default true, settled input). The beacon is failure-silent and
  * never blocks the navigation either way.

@@ -90,9 +90,11 @@
               {/if}
             </div>
           </details>
-          <button class="archive-delete" onclick={() => page.remove(row)}>
-            {a.delete_row}
-          </button>
+          {#if page.canDelete()}
+            <button class="archive-delete" onclick={() => page.remove(row)}>
+              {a.delete_row}
+            </button>
+          {/if}
         </div>
       </article>
     {/if}
