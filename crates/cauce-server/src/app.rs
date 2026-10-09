@@ -24,7 +24,7 @@ use axum::{Router, middleware};
 use cauce_agent::AnswerLoop;
 #[cfg(feature = "archive")]
 use cauce_core::Archiver;
-use cauce_core::config::{Config, ConfigError};
+use cauce_core::config::{AiConfig, Config, ConfigError};
 use cauce_core::{Engine, HealthPolicy, SearchPipeline, Store};
 use tokio::net::TcpListener;
 
@@ -242,6 +242,34 @@ impl AppState {
             .clone()
     }
 
+    /// PUB-03: a request-scoped answer loop built off a merged `[ai]`
+    /// (a BYOK override already applied — `merged.enabled` decides).
+    /// `None` when the provider client fails to build; the handler maps
+    /// it onto `ai_disabled` like the shared path.
+    #[cfg(feature = "ai")]
+    pub fn answer_for(&self, ai: &AiConfig) -> Option<AnswerLoop> {
+        let public = self.with_config(|c| c.server.public_instance);
+        answer_loop(&self.pipeline(), &self.store, ai, public)
+    }
+
+    /// Without the `ai` cargo feature no loop can be built.
+    #[cfg(not(feature = "ai"))]
+    pub fn answer_for(&self, ai: &AiConfig) -> Option<AnswerLoop> {
+        let _ = ai;
+        None
+    }
+
+    /// PUB-03: consume one unit of `[ai].free_daily_answers` for this
+    /// caller — `Err(wait)` (seconds to UTC midnight, for `Retry-After`)
+    /// when the (ip, UTC-day) budget is spent.
+    pub fn check_free_answer(
+        &self,
+        headers: &axum::http::HeaderMap,
+        peer: Option<std::net::IpAddr>,
+    ) -> Result<(), u64> {
+        self.with_config(|cfg| self.limits.check_free_answer(cfg, headers, peer))
+    }
+
     /// The fetch-and-index pipeline; `None` when the feature is off or the
     /// fetcher could not be built.
     #[cfg(feature = "archive")]
@@ -296,23 +324,41 @@ fn build_answer_loop(
     if !config.ai.enabled {
         return None;
     }
-    match cauce_core::ai::provider_client(&config.ai, Some(store.clone())) {
+    answer_loop(pipeline, store, &config.ai, config.server.public_instance)
+}
+
+/// The provider-client-to-loop wiring shared by the boot/config path
+/// and PUB-03's request-scoped builds: `[ai]` knobs ride the merged
+/// config either way; `public_instance` keeps `answer_log` writes off.
+/// `ai.enabled` is checked here too — a merged config that ends up
+/// effectively off lands on the same `ai_disabled` path.
+#[cfg(feature = "ai")]
+fn answer_loop(
+    pipeline: &Arc<SearchPipeline>,
+    store: &Arc<dyn Store>,
+    ai: &AiConfig,
+    public_instance: bool,
+) -> Option<AnswerLoop> {
+    if !ai.enabled {
+        return None;
+    }
+    match cauce_core::ai::provider_client(ai, Some(store.clone())) {
         Ok(client) => Some(
             AnswerLoop::new(pipeline.as_ref().clone(), client, store.clone())
                 // #233: the loop's budget knobs live in `[ai]`; `verify`
                 // is reserved for #232 and not yet consulted.
-                .with_max_turns(config.ai.max_turns as usize)
-                .with_max_search_executions(config.ai.max_searches as usize)
-                .with_provider_budget(Duration::from_secs(config.ai.provider_budget_s))
+                .with_max_turns(ai.max_turns as usize)
+                .with_max_search_executions(ai.max_searches as usize)
+                .with_provider_budget(Duration::from_secs(ai.provider_budget_s))
                 // FX-07: public instances write no `answer_log` rows —
                 // `done.log_id` reports `None` and history stays
                 // browser-local.
-                .with_history_logging(!config.server.public_instance),
+                .with_history_logging(!public_instance),
         ),
         Err(e) => {
             tracing::warn!(
                 error = %e,
-                "ai.enabled but the provider client failed to build; AI answers disabled"
+                "ai provider client failed to build; AI answers disabled"
             );
             None
         }

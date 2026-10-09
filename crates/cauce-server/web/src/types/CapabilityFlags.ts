@@ -28,4 +28,15 @@ archiving: boolean,
  * Whether aggregate stats dashboards read server-wide telemetry.
  * Local mode only — a public dashboard shows the instance card.
  */
-sharedStats: boolean, };
+sharedStats: boolean, 
+/**
+ * PUB-03: whether `POST /api/answer` honours per-request BYOK
+ * credential overrides (`[ai].allow_user_keys` — api_key/model/
+ * protocol).
+ */
+allowUserKeys: boolean, 
+/**
+ * PUB-03: whether `POST /api/answer` also honours `ai.base_url`
+ * overrides (`[ai].allow_user_base_url`).
+ */
+allowUserBaseUrl: boolean, };

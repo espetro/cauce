@@ -953,6 +953,22 @@ pub struct AiConfig {
     /// hot-reloaded like the rest of `[ai]` but not yet consulted.
     #[serde(default)]
     pub verify: bool,
+    /// PUB-03: honour per-request `ai.api_key`/`model`/`protocol`
+    /// overrides on `POST /api/answer` — bring-your-own-key callers pay
+    /// their own provider account instead of the instance's.
+    #[serde(default)]
+    pub allow_user_keys: bool,
+    /// PUB-03: also honour a per-request `ai.base_url` override. Kept a
+    /// separate gate because an open base_url turns the instance into
+    /// an egress relay.
+    #[serde(default)]
+    pub allow_user_base_url: bool,
+    /// PUB-03: per-client-IP daily budget for answers the admin's `[ai]`
+    /// config pays for; `0` is unlimited — on a public instance with
+    /// `[ai]` set, leaving it unset is the operator's explicit
+    /// free-for-everyone choice. BYOK requests never consume it.
+    #[serde(default)]
+    pub free_daily_answers: u32,
 }
 
 impl Default for AiConfig {
@@ -967,7 +983,88 @@ impl Default for AiConfig {
             max_searches: default_ai_max_searches(),
             provider_budget_s: default_ai_provider_budget_s(),
             verify: false,
+            allow_user_keys: false,
+            allow_user_base_url: false,
+            free_daily_answers: 0,
         }
+    }
+}
+
+/// The per-request `ai` override object on `POST /api/answer` (PUB-03):
+/// every field optional and gated before the merge — the credential
+/// triple (`api_key`/`model`/`protocol`) needs `allow_user_keys`,
+/// `base_url` needs `allow_user_base_url`. Merged fields apply over the
+/// loaded `[ai]` config for that request only.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, TS)]
+#[serde(deny_unknown_fields)]
+pub struct AiOverride {
+    /// The caller's own provider key — its presence makes the request
+    /// BYOK: it bills the caller's provider account and skips the
+    /// `free_daily_answers` budget entirely.
+    #[serde(default)]
+    pub api_key: Option<String>,
+    /// Model name override.
+    #[serde(default)]
+    pub model: Option<String>,
+    /// Provider protocol override (`openai`/`anthropic`).
+    #[serde(default)]
+    pub protocol: Option<AiProtocol>,
+    /// Endpoint override — an open base_url is an egress relay, so it
+    /// needs `allow_user_base_url` on top of `allow_user_keys`.
+    #[serde(default)]
+    pub base_url: Option<String>,
+}
+
+impl AiOverride {
+    /// Whether the request carries its own provider credentials — the
+    /// `api_key` that makes it a BYOK run (bills the caller's provider
+    /// account, never the instance's).
+    pub fn has_own_key(&self) -> bool {
+        self.api_key.as_ref().is_some_and(|k| !k.trim().is_empty())
+    }
+}
+
+impl AiConfig {
+    /// PUB-03 merge: apply `over`'s present fields over `self`. `Err`
+    /// carries the gate's config key when a field arrives whose gate is
+    /// off — `allow_user_base_url` for `base_url`, `allow_user_keys`
+    /// for the rest — so the handler can name it in the rejection.
+    /// BYOK creds switch the merged config on by themselves: a request
+    /// carrying its own provider account answers even with
+    /// `[ai].enabled = false`.
+    pub fn merged(&self, over: &AiOverride) -> Result<Self, &'static str> {
+        if over.base_url.is_some() && !self.allow_user_base_url {
+            return Err("allow_user_base_url");
+        }
+        let credential_fields =
+            over.api_key.is_some() || over.model.is_some() || over.protocol.is_some();
+        if credential_fields && !self.allow_user_keys {
+            return Err("allow_user_keys");
+        }
+        let mut merged = self.clone();
+        if let Some(v) = &over.api_key {
+            merged.api_key = v.clone();
+        }
+        if let Some(v) = &over.model {
+            merged.model = v.clone();
+        }
+        if let Some(v) = over.protocol {
+            merged.protocol = v;
+        }
+        if let Some(v) = &over.base_url {
+            merged.base_url = v.clone();
+            // A caller-chosen endpoint must never receive the admin's
+            // `Authorization` header — a `base_url` override without an
+            // accompanying `api_key` blanks the configured key (the
+            // merged config then speaks to an unauthenticated endpoint).
+            if over.api_key.is_none() {
+                merged.api_key = String::new();
+            }
+        }
+        if over.has_own_key() {
+            merged.enabled = true;
+        }
+        Ok(merged)
     }
 }
 

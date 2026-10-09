@@ -49,6 +49,8 @@ const LOCAL_FLAGS: CapabilityFlags = {
   serverHistory: true,
   archiving: true,
   sharedStats: true,
+  allowUserKeys: false,
+  allowUserBaseUrl: false,
 };
 
 const CLOSED_FLAGS: CapabilityFlags = {
@@ -56,6 +58,8 @@ const CLOSED_FLAGS: CapabilityFlags = {
   serverHistory: false,
   archiving: false,
   sharedStats: false,
+  allowUserKeys: false,
+  allowUserBaseUrl: false,
 };
 
 export const capabilities = $state<Capabilities>({

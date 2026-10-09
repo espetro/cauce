@@ -31,7 +31,7 @@
 </script>
 
 <main>
-  {#if requires === "admin"}
+  {#if requires === "admin" || requires === "admin_or_byok"}
     <h1>{spa.app.admin_gate_title}</h1>
     <p>{spa.app.admin_gate_note}</p>
     <form

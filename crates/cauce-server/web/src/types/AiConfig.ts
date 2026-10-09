@@ -54,4 +54,23 @@ provider_budget_s: number,
  * Reserved for the marginal-groundedness verifier (#232): parsed and
  * hot-reloaded like the rest of `[ai]` but not yet consulted.
  */
-verify: boolean, };
+verify: boolean, 
+/**
+ * PUB-03: honour per-request `ai.api_key`/`model`/`protocol`
+ * overrides on `POST /api/answer` — bring-your-own-key callers pay
+ * their own provider account instead of the instance's.
+ */
+allow_user_keys: boolean, 
+/**
+ * PUB-03: also honour a per-request `ai.base_url` override. Kept a
+ * separate gate because an open base_url turns the instance into
+ * an egress relay.
+ */
+allow_user_base_url: boolean, 
+/**
+ * PUB-03: per-client-IP daily budget for answers the admin's `[ai]`
+ * config pays for; `0` is unlimited — on a public instance with
+ * `[ai]` set, leaving it unset is the operator's explicit
+ * free-for-everyone choice. BYOK requests never consume it.
+ */
+free_daily_answers: number, };

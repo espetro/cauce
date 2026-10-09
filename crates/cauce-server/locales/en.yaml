@@ -224,6 +224,13 @@ settings:
   error_many: errors
   could_not_save: 'error: could not save'
   noscript: Saving needs JavaScript (the form issues PUT /api/config via htmx).
+  # PUB-03: browser-local BYOK credentials (never leave the browser except
+  # as the `ai` field on POST /api/answer to this instance).
+  section_byok: Bring your own AI keys
+  byok_hint: Stored in this browser only — answers use your provider account, not this instance's.
+  byok_protocol: Protocol
+  byok_protocol_default: instance default
+  byok_base_url_locked: not allowed by this instance
 
 # `/history` page copy (W2-02).
 history:

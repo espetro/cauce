@@ -8,13 +8,16 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { spa } from "../lib/i18n.js";
+  import { capabilities } from "../lib/capabilities.svelte.js";
   import { createSettingsPage } from "../features/settings/settings.svelte.js";
   import SettingsView from "../features/settings/SettingsView.svelte";
 
   const page = createSettingsPage();
 
   onMount(() => {
-    void page.refresh();
+    // PUB-03: a BYOK-only visitor sees just the keys section — `GET
+    // /api/config` is admin-scoped, so skip the doomed fetch for them.
+    if (capabilities.role === "admin") void page.refresh();
     document.title = `${spa.settings.page_title} · ${spa.common.brand}`;
   });
 </script>

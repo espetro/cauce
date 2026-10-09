@@ -340,6 +340,11 @@ pub fn spa_bundle() -> Value {
                 "settings.error_many",
                 "settings.could_not_save",
                 "settings.noscript",
+                "settings.section_byok",
+                "settings.byok_hint",
+                "settings.byok_protocol",
+                "settings.byok_protocol_default",
+                "settings.byok_base_url_locked",
             ][..],
         ),
         (
