@@ -110,7 +110,8 @@ const EXPECTED_WAVE5_UI_MOUNTED: &[(&str, &str)] = &[];
 
 /// FX rows mounted so far (FX-02): the SPA shell and its asset /
 /// client-route fallback, riding the `ui` gate like the page rows.
-const EXPECTED_WAVE8_UI_MOUNTED: &[(&str, &str)] = &[("GET", "/app"), ("GET", "/app/{*rest}")];
+const EXPECTED_WAVE8_UI_MOUNTED: &[(&str, &str)] =
+    &[("GET", "/app"), ("GET", "/app/"), ("GET", "/app/{*rest}")];
 
 /// Wave-8 JSON rows mounted so far (FX-07): the instance-mode bootstrap
 /// pair. Both are open reads in every build — the payload, not the

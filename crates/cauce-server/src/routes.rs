@@ -264,5 +264,8 @@ pub const ROUTES: &[RouteSpec] = &[
     // client-side routes. `ui`-gated like the page rows: rust-embed is
     // a `ui` dependency and `--headless` serves no browser surface.
     html("/app", 8),
+    // `{*rest}` binds a non-empty tail only; `/app/` needs its own row
+    // (a permanent redirect to `/app`).
+    html("/app/", 8),
     html("/app/{*rest}", 8),
 ];
