@@ -1,0 +1,16 @@
+target
+.git
+.worktrees
+docs
+contrib
+deploy
+docker-compose.yml
+Dockerfile
+*.md
+!crates/**/THIRD_PARTY_NOTICES.md
+.agents
+evals
+scripts
+web/node_modules
+crates/cauce-server/node_modules
+node_modules
