@@ -46,7 +46,7 @@ use crossterm::event::{Event, EventStream, KeyCode, KeyEvent, KeyEventKind, KeyM
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph};
+use ratatui::widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph, Wrap};
 use ratatui::{DefaultTerminal, Frame};
 use tokio::sync::mpsc;
 use tokio_stream::StreamExt;
@@ -342,8 +342,15 @@ struct App {
     /// `Ctrl-A` puts the omnibox in ask mode: `Enter` runs `stream_answer`
     // / instead of a search. The badge in the hints row makes it visible.
     ai_mode: bool,
-    /// The answer/assist pane; `Some` renders in place of the result list.
+    /// The answer/assist pane state; `Some` keeps turns + history for
+    /// follow-ups even while hidden.
     answer: Option<AnswerView>,
+    /// Whether the pane currently occludes the result list. `Esc`/`x`
+    /// closes it without dropping state; `open_turn` reopens it.
+    answer_open: bool,
+    /// Whether `[ai]` produced an `AnswerLoop`; gates the ghost hint and
+    /// the disabled-path note for `Ctrl-A`/`→`/`a`.
+    ai_available: bool,
     /// Bumped per `stream_answer`/`stream_assist` call — stale frames drop
     /// like stale search flights do.
     answer_gen: u64,
@@ -509,6 +516,7 @@ async fn run_app(
 
     let mut app = App {
         page: 1,
+        ai_available: answer_loop.is_some(),
         ..App::default()
     };
     if let Some(q) = seed.filter(|q| !q.trim().is_empty()) {
@@ -602,6 +610,7 @@ fn open_turn(app: &mut App, assist: bool, q: &str) -> u64 {
         ..TurnView::default()
     });
     app.answer_scroll = 0;
+    app.answer_open = true;
     app.focus = Focus::Answer;
     flight
 }
@@ -827,7 +836,17 @@ fn input_key(
             }
         }
         KeyCode::Left => app.cursor = app.cursor.saturating_sub(1),
-        KeyCode::Right => app.cursor = (app.cursor + 1).min(app.input.len()),
+        KeyCode::Right => {
+            if app.cursor == app.input.len() && app.ai_available {
+                // At end of line `→` accepts the ghost hint and toggles
+                // ask mode — the same shortcut rendered in the omnibox.
+                app.ai_mode = !app.ai_mode;
+                app.suggestions.clear();
+                app.sugg_sel = None;
+            } else {
+                app.cursor = (app.cursor + 1).min(app.input.len());
+            }
+        }
         KeyCode::Home => app.cursor = 0,
         KeyCode::End => app.cursor = app.input.len(),
         KeyCode::Down | KeyCode::Tab if !app.suggestions.is_empty() => {
@@ -946,16 +965,21 @@ fn answer_key(key: KeyEvent, app: &mut App) -> bool {
     match key.code {
         KeyCode::Char('q') => return true,
         KeyCode::Esc | KeyCode::Char('x') => {
+            // Close the pane back to the results; `app.answer` keeps its
+            // turns + history so `/` follow-ups reopen with context.
+            app.answer_open = false;
             app.focus = Focus::Results;
         }
         KeyCode::Char('/') => app.focus = Focus::Input,
+        // `answer_scroll` counts lines UP from the tail: 0 pins the view
+        // to the stream, `j` walks toward the tail, `k` toward the top.
         KeyCode::Char('j') | KeyCode::Down => {
-            app.answer_scroll = app.answer_scroll.saturating_add(1);
-        }
-        KeyCode::Char('k') | KeyCode::Up => {
             app.answer_scroll = app.answer_scroll.saturating_sub(1);
         }
-        KeyCode::Char('g') | KeyCode::Home => app.answer_scroll = u16::MAX / 2,
+        KeyCode::Char('k') | KeyCode::Up => {
+            app.answer_scroll = app.answer_scroll.saturating_add(1);
+        }
+        KeyCode::Char('g') | KeyCode::Home => app.answer_scroll = u16::MAX,
         KeyCode::Char('G') | KeyCode::End => app.answer_scroll = 0,
         KeyCode::Char('y') => {
             if let Some(text) = app
@@ -1042,21 +1066,30 @@ fn render(f: &mut Frame, app: &App) {
     } else {
         ("› ", " cauce ")
     };
-    let input = Paragraph::new(Line::from(vec![
+    let mut input_spans = vec![
         Span::styled(prompt, Style::default().fg(Color::Cyan)),
         Span::raw(app.query()),
-    ]))
-    .block(Block::default().borders(Borders::ALL).title(Span::styled(
-        title,
-        Style::default().add_modifier(Modifier::BOLD),
-    )));
+    ];
+    if app.ai_available {
+        // Muted ghost hint naming the other mode — `→` at end of line
+        // accepts it (autosuggestion-accept idiom); `Ctrl-A` also toggles.
+        let other = if app.ai_mode { "  search" } else { "  assist" };
+        input_spans.push(Span::styled(other, Style::default().fg(Color::DarkGray)));
+        input_spans.push(Span::styled(" →", Style::default().fg(Color::Cyan)));
+    }
+    let input = Paragraph::new(Line::from(input_spans)).block(
+        Block::default().borders(Borders::ALL).title(Span::styled(
+            title,
+            Style::default().add_modifier(Modifier::BOLD),
+        )),
+    );
     f.render_widget(input, chunks[0]);
     if app.focus == Focus::Input {
         // +1 border, +2 for the prompt.
         f.set_cursor_position((chunks[0].x + 3 + app.cursor as u16, chunks[0].y + 1));
     }
 
-    if app.answer.is_some() {
+    if app.answer.is_some() && app.answer_open {
         render_answer(f, chunks[1], app);
         render_status(f, chunks[2], app);
         render_hints(f, chunks[3], app);
@@ -1178,12 +1211,24 @@ fn render_answer(f: &mut Frame, area: Rect, app: &App) {
         lines.push(Line::raw(""));
     }
     let title = if view.assist { " assist " } else { " ai " };
+    // `Paragraph::scroll` counts post-wrap rows: estimate them per logical
+    // line (÷ inner width, ≥1) so `answer_scroll` (lines up from the tail)
+    // maps onto it. 0 pins the view to the stream end.
+    let inner_w = area.width.saturating_sub(2).max(1);
+    let inner_h = area.height.saturating_sub(2);
+    let total: u16 = lines
+        .iter()
+        .map(|l| ((l.width() as u16).div_ceil(inner_w)).max(1))
+        .sum();
+    let max_scroll = total.saturating_sub(inner_h);
+    let scroll_y = max_scroll.saturating_sub(app.answer_scroll);
     let pane = Paragraph::new(lines)
         .block(Block::default().borders(Borders::ALL).title(Span::styled(
             title,
             Style::default().add_modifier(Modifier::BOLD),
         )))
-        .scroll((app.answer_scroll, 0));
+        .wrap(Wrap { trim: false })
+        .scroll((scroll_y, 0));
     f.render_widget(pane, area);
 }
 
