@@ -60,6 +60,9 @@ toml = { version = "0.9", features = ["preserve_order"] }
 # FX-07: `ServiceBuilder` wraps the `/mcp` service in the admin gate —
 # `route_layer` cannot reach a service mounted via `any_service`.
 tower = { version = "0.5", features = ["util"] }
+# PUB-01: the keyed token bucket behind `[rate_limit]` (same governor
+# version cauce-core uses for engine politeness).
+governor = "0.10"
 tracing = "0.1"
 tracing-appender = "0.2"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }

@@ -8,11 +8,13 @@ import type { AiConfig } from "./AiConfig";
 import type { ArchiveConfig } from "./ArchiveConfig";
 import type { AuthConfig } from "./AuthConfig";
 import type { CacheConfig } from "./CacheConfig";
+import type { EdgeConfig } from "./EdgeConfig";
 import type { EngineEntry } from "./EngineEntry";
 import type { HealthConfig } from "./HealthConfig";
 import type { LogsConfig } from "./LogsConfig";
 import type { MergeConfig } from "./MergeConfig";
 import type { MetaConfig } from "./MetaConfig";
+import type { RateLimitConfig } from "./RateLimitConfig";
 import type { SearchConfig } from "./SearchConfig";
 import type { ServerConfig } from "./ServerConfig";
 import type { UiConfig } from "./UiConfig";
@@ -70,6 +72,14 @@ archive: ArchiveConfig,
  * `[auth]` section.
  */
 auth: AuthConfig, 
+/**
+ * `[rate_limit]` section (PUB-01).
+ */
+rate_limit: RateLimitConfig, 
+/**
+ * `[edge]` section (PUB-01).
+ */
+edge: EdgeConfig, 
 /**
  * `[ui]` section.
  */
