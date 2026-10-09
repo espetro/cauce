@@ -366,3 +366,9 @@ global store, and is never shared with or copied into another project.
 - `src/assets.rs` owns favicon + `opensearch.xml` (results URL now `/app/search?q=`); the SPA `index.html` carries the `<link rel="search">` + a token-styled `<noscript>` "JS required" shell (§7.5's cheap option).
 - SPA entry points for future sessions: `web/src/spa/` (app shell, `lib/api.ts` client + generated `web/src/types/*`, `lib/capabilities.svelte.ts`, `features/*` slices); i18n via generated `web/src/i18n/*.json`.
 - Form-encoded `PUT /api/config` stays — the SPA settings tab still PUTs urlencoded dotted-path config.
+
+## 2026-10-09 — FX-06 hotfixes (parent session, v3/fx-06-asset-probe + v3/fx-06-root-slash)
+
+- Post-merge e2e caught two serving regressions the teardown's own tests missed — both are the same lesson: asserting a 200 is not verifying an SPA.
+- `spa_nested` must probe the `{*rest}` wildcard (`assets/<name>`), never `uri.path()` — the mount prefix `/app` never matches embed keys, so every bundle answered `text/html` and the SPA shipped blank (#276). `ui_shell::app_assets_serve_the_embedded_bundle` now follows the shell's own `src=` and asserts JS MIME + immutable cache.
+- `spa::to_app` concatenated raw path → `/` landed on unrouted `/app/` (`{*rest}` needs a non-empty tail) → 404 JSON on the front door (#277). `/app/` has its own ROUTES row 308→`/app`; routes-table/EXPECTED sets and plan §6 must name it — the conformance test parses the plan markdown.
