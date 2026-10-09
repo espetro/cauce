@@ -18,6 +18,12 @@
   - `href` renders an `<a>`: `Button.Root` keeps link semantics, and
     the two branches below exist only because the part's prop union
     forbids `type` on the anchor form.
+  - `...rest` forwards undeclared attributes — delegated trigger props
+    (`id`, `tabindex`, `data-state`, `aria-describedby`, pointer/focus
+    handlers) from `UiTooltip`/`UiDropdownMenu` `{#snippet trigger(props)}`
+    call sites reach the underlying element through it. The house props
+    (`variant`/`size`/`class`/…) are applied after the spread so callers
+    cannot override the styling contract.
 -->
 <script lang="ts">
   import { Button } from "bits-ui";
@@ -43,11 +49,13 @@
     href,
     ariaLabel,
     children,
+    ...rest
   }: Props = $props();
 </script>
 
 {#if href}
   <Button.Root
+    {...rest}
     class="ui-button"
     data-variant={variant}
     data-size={size}
@@ -61,6 +69,7 @@
   </Button.Root>
 {:else}
   <Button.Root
+    {...rest}
     class="ui-button"
     data-variant={variant}
     data-size={size}
