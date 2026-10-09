@@ -1,5 +1,6 @@
 {
   "cached": "cached",
+  "cached_badge": "cached · {age} s ago · ttl {ttl} s",
   "complete": "Search complete",
   "engine_failed": "{engine} failed ({kind})",
   "engine_skipped": "{engine} skipped (breaker)",

@@ -10,8 +10,18 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>cauce</title>
     <link rel="icon" href="/favicon.ico" />
-    <script type="module" crossorigin src="/app/assets/index-bLMFz18u.js"></script>
-    <link rel="stylesheet" crossorigin href="/app/assets/index-Dv6vOt_x.css">
+    <script>
+      // Applies the stored theme before first paint so a saved light/dark
+      // choice never flashes the opposite palette (theme_head.html's twin).
+      (function () {
+        try {
+          var t = localStorage.getItem("cauce-theme");
+          if (t === "light" || t === "dark") document.documentElement.dataset.theme = t;
+        } catch (_) {}
+      })();
+    </script>
+    <script type="module" crossorigin src="/app/assets/index-D4FgkRt-.js"></script>
+    <link rel="stylesheet" crossorigin href="/app/assets/index-DIaEXjEu.css">
   </head>
   <body>
     <div id="app"></div>
