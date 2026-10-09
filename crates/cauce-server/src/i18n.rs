@@ -187,5 +187,18 @@ pub fn answer_bundle() -> Value {
         // kept in the bundle so the JS side can reuse it).
         "answer.followup_placeholder",
         "answer.followup_submit",
+        // FX-04 SPA: stop/edit affordances + the collapsed-steps label;
+        // disabled notice + the short ungrounded badge word (the HTMX
+        // page SSRs them via tr(), the SPA reads them from `SA`).
+        "answer.stop",
+        "answer.stopped",
+        "answer.steps",
+        "answer.edit",
+        "answer.ask_prompt",
+        "answer.ungrounded_badge",
+        "answer.disabled",
+        "answer.disabled_link",
+        "answer.placeholder",
+        "answer.submit",
     ])
 }

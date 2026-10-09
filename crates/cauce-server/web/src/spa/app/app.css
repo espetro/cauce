@@ -287,3 +287,149 @@ body {
   font-weight: 600;
   vertical-align: super;
 }
+
+/* /app/answer thread (FX-04; ported from assets/style.css /answer rules). */
+
+.answer-turn {
+  margin: 0 0 1.5rem;
+}
+
+.answer-turn + .answer-turn {
+  border-top: 1px solid var(--border);
+  padding-top: 1rem;
+}
+
+.turn-q {
+  font-weight: 600;
+  margin: 0 0 0.25rem;
+}
+
+/* §7.2 edit affordance — quiet until hovered, sits inside .turn-q. */
+.turn-edit {
+  border: none;
+  background: none;
+  color: var(--muted);
+  font-size: 0.75rem;
+  cursor: pointer;
+  padding: 0 0.25rem;
+}
+
+.turn-edit:hover {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+/* §7.2: steps collapse quiet by default — a muted disclosure, never
+   a live progress banner. The list inside keeps the legacy dot-join. */
+details.answer-steps {
+  margin: 0 0 0.5rem;
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
+details.answer-steps > summary {
+  cursor: pointer;
+}
+
+details.answer-steps > ol {
+  list-style: none;
+  margin: 0.25rem 0 0;
+  padding: 0;
+}
+
+details.answer-steps li {
+  display: inline;
+}
+
+details.answer-steps li + li::before {
+  content: " · ";
+}
+
+/* [n] badge on a source card — the a.cite anchors retarget to it. */
+.cite-badge {
+  color: var(--accent);
+  font-size: 0.75em;
+  font-weight: 600;
+  margin-right: 0.5rem;
+  vertical-align: super;
+}
+
+.source-card {
+  margin: 0.75rem 0;
+  padding: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.source-card .source-title {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.source-card .source-title:hover {
+  text-decoration: underline;
+}
+
+.source-card .source-title img {
+  border-radius: 50%;
+  vertical-align: -0.2em;
+  margin-right: 0.3rem;
+}
+
+.source-card .host {
+  color: var(--muted);
+  font-size: 0.875rem;
+  margin: 0.125rem 0;
+}
+
+.source-card .snippet {
+  color: var(--muted);
+  margin: 0.25rem 0 0;
+}
+
+/* The zero-source flag: visible without shouting. */
+.ungrounded {
+  border-left: 3px solid #b91c1c;
+  color: var(--muted);
+  padding: 0.25rem 0.75rem;
+  margin: 0.5rem 0;
+}
+
+.section-label {
+  color: var(--muted);
+  font-size: 0.75rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  margin: 1rem 0 0.25rem;
+}
+
+.answer-related .section-label {
+  display: block;
+}
+
+.related-question {
+  display: block;
+  margin: 0.15rem 0;
+}
+
+.answer-disabled,
+.answer-ask {
+  color: var(--muted);
+}
+
+/* W7-04/§7.2: the follow-up composer pins to the viewport bottom so
+   the next question is always in reach. */
+#answer-followup {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.5rem 0;
+  background: var(--bg);
+  border-top: 1px solid var(--border);
+}
+
+#answer-followup input {
+  flex: 1;
+  min-width: 0;
+}

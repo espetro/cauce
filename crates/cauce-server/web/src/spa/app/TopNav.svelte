@@ -28,7 +28,7 @@
       >{c.nav_search}</a
     >
     {#if capabilities.aiEnabled}
-      <a href="/answer" aria-current={active === "answer" ? "page" : undefined}
+      <a href={appHref("/answer")} aria-current={active === "answer" ? "page" : undefined}
         >{c.nav_answer}</a
       >
     {/if}

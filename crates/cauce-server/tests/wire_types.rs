@@ -27,6 +27,21 @@ const OUT_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/web/src/types");
 /// other's export has truncated and commit banner-only corruption.
 static EXPORT_LOCK: Mutex<()> = Mutex::new(());
 
+/// The directory `export()` writes to. `web/src/types` under plain
+/// `cargo test` (the [web] gate's regen path, where EXPORT_LOCK
+/// serializes both tests inside one binary process). Under nextest each
+/// test is its own process, the mutex cannot serialize them, and
+/// `mise run validate` runs [test] concurrently with [web]'s
+/// regen + `git diff` freshness check — so NEXTEST runs export to a
+/// per-test scratch dir and never touch the committed tree.
+fn out_dir() -> PathBuf {
+    if std::env::var_os("NEXTEST").is_some() {
+        std::env::temp_dir().join(format!("cauce-wire-types-{}", std::process::id()))
+    } else {
+        PathBuf::from(OUT_DIR)
+    }
+}
+
 /// MPL-2.0 banner matching `web/build.mjs`'s `postBanner` convention.
 const BANNER: &str = "// This Source Code Form is subject to the terms of the Mozilla Public\n\
                       // License, v. 2.0. If a copy of the MPL was not distributed with this\n\
@@ -87,8 +102,8 @@ fn route_enabled(requires: Option<&'static str>) -> bool {
     false
 }
 
-fn export() {
-    let cfg = ts_rs::Config::new().with_out_dir(OUT_DIR);
+fn export(out_dir: &Path) {
+    let cfg = ts_rs::Config::new().with_out_dir(out_dir);
     // Top-level wire shapes; `export_all` emits every transitive
     // dependency (SearchResult, EngineId, EngineStatus, ...) as its own
     // file.
@@ -157,19 +172,21 @@ fn banner_pass(dir: &Path) {
 #[test]
 fn export_bindings() {
     let _guard = EXPORT_LOCK.lock().unwrap();
-    export();
-    banner_pass(Path::new(OUT_DIR));
+    let out = out_dir();
+    export(&out);
+    banner_pass(&out);
     assert!(
-        Path::new(OUT_DIR).join("SearchResult.ts").exists(),
-        "expected web/src/types/SearchResult.ts to be written"
+        out.join("SearchResult.ts").exists(),
+        "expected SearchResult.ts to be written"
     );
 }
 
 #[test]
 fn route_table_is_covered() {
     let _guard = EXPORT_LOCK.lock().unwrap();
-    export();
-    banner_pass(Path::new(OUT_DIR));
+    let out = out_dir();
+    export(&out);
+    banner_pass(&out);
 
     // Every enabled /api/* Json/Sse row has a WIRE_TABLE entry.
     let mut uncovered = Vec::new();

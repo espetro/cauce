@@ -227,12 +227,12 @@ export class SearchPageState {
     }
   }
 
-  /** Omnibox submit: `/answer?q=` in AI mode, `/app/search?…&stream=1` else. */
+  /** Omnibox submit: `/app/answer?q=` in AI mode, `/app/search?…&stream=1` else. */
   submit(navigate: (to: string) => void): void {
     const value = this.q.trim();
     if (!value) return;
     if (this.aiMode) {
-      location.assign("/answer?q=" + encodeURIComponent(value));
+      navigate("/app/answer?q=" + encodeURIComponent(value));
       return;
     }
     navigate("/app/search?q=" + encodeURIComponent(value) + "&stream=1");
