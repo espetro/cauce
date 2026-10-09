@@ -10,5 +10,7 @@ import type { CachedSearch } from "./CachedSearch";
  * requests one additional unfiltered row to determine whether a next page
  * exists; parsing, filter semantics, limits, and store selection remain
  * authoritative here for both surfaces.
+ * `limit`/`offset`/`query` ride the HTMX pager shape (kept for the
+ * `CacheListing` wire export); the JSON arm serializes `entries` only.
  */
 export type CacheListing = { entries: Array<CachedSearch>, limit: number, offset: number, query: string | null, };

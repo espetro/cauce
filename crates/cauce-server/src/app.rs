@@ -30,10 +30,6 @@ use tokio::net::TcpListener;
 
 #[cfg(feature = "ui")]
 use crate::audit_page;
-#[cfg(feature = "ui")]
-use crate::cache_page;
-#[cfg(feature = "ui")]
-use crate::dashboard;
 use crate::error::ApiError;
 use crate::handlers;
 #[cfg(feature = "ui")]
@@ -458,22 +454,15 @@ fn handler_for(spec: &RouteSpec, state: &AppState) -> Option<MethodRouter<AppSta
         ("GET", "/", RouteKind::Html) => Some(get(html::index)),
         #[cfg(feature = "ui")]
         ("GET", "/search", RouteKind::Html) => Some(get(html::search)),
-        #[cfg(feature = "ui")]
-        ("GET", "/audit", RouteKind::Html) => Some(get(audit_page::audit)),
+        // FX-05: `/trace/{id}` is the last HTMX ops page — `/audit`,
+        // `/cache`, `/engines`, `/settings`, `/history`, `/dashboard`
+        // and `/archive` all live under `/app` now.
         #[cfg(feature = "ui")]
         ("GET", "/trace/{id}", RouteKind::Html) => Some(get(audit_page::trace)),
-        #[cfg(feature = "ui")]
-        ("GET", "/settings", RouteKind::Html) => Some(get(html::settings)),
-        #[cfg(feature = "ui")]
-        ("GET", "/cache", RouteKind::Html) => Some(get(cache_page::cache)),
         #[cfg(feature = "ui")]
         ("GET", "/opensearch.xml", RouteKind::Html) => Some(get(html::opensearch)),
         #[cfg(feature = "ui")]
         ("GET", "/favicon.ico", RouteKind::Static) => Some(get(html::favicon)),
-        #[cfg(feature = "ui")]
-        ("GET", "/history", RouteKind::Html) => Some(get(html::history)),
-        #[cfg(feature = "ui")]
-        ("GET", "/dashboard", RouteKind::Html) => Some(get(dashboard::dashboard)),
         ("GET", "/api/search", RouteKind::Json) => Some(get(handlers::search)),
         ("GET", "/api/search/stream", RouteKind::Sse) => Some(get(handlers::search_stream)),
         #[cfg(feature = "ai")]
@@ -486,10 +475,6 @@ fn handler_for(spec: &RouteSpec, state: &AppState) -> Option<MethodRouter<AppSta
         ("DELETE", "/api/pages/{url}", RouteKind::Json) => Some(delete(handlers::pages_delete)),
         #[cfg(feature = "archive")]
         ("GET", "/api/archive", RouteKind::Json) => Some(get(handlers::archive_search)),
-        // `ui` alone: a build without `archive` still mounts `/archive` so
-        // the page can render its disabled notice instead of 404ing.
-        #[cfg(feature = "ui")]
-        ("GET", "/archive", RouteKind::Html) => Some(get(html::archive)),
         // `ui` alone: a build without `ai` still mounts `/answer` so the
         // page can render its disabled notice instead of 404ing.
         #[cfg(feature = "ui")]
@@ -526,10 +511,6 @@ fn handler_for(spec: &RouteSpec, state: &AppState) -> Option<MethodRouter<AppSta
         ("POST", "/api/engines/{id}/disable", RouteKind::Json) => {
             Some(post(handlers::engine_disable))
         }
-        // `/engines` and `GET /api/engines` share one handler (screen spec
-        // `engines.md`): `Accept: text/html` renders the page, anything
-        // else the JSON rows.
-        ("GET", "/engines", RouteKind::Html) => Some(get(handlers::engines_list)),
         ("GET", "/health", RouteKind::Json) => Some(get(handlers::health)),
         ("GET", "/metrics", RouteKind::Json) => Some(get(handlers::metrics)),
         ("GET", "/api/config", RouteKind::Json) => Some(get(handlers::config_get)),

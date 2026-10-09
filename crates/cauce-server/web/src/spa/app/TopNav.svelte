@@ -32,17 +32,17 @@
         >{c.nav_answer}</a
       >
     {/if}
-    <a href="/history">{c.nav_history}</a>
-    <a href="/dashboard">{c.nav_dashboard}</a>
-    <a href="/archive">{c.nav_archive}</a>
+    <a href={appHref("/history")} aria-current={active === "history" ? "page" : undefined}>{c.nav_history}</a>
+    <a href={appHref("/dashboard")} aria-current={active === "dashboard" ? "page" : undefined}>{c.nav_dashboard}</a>
+    <a href={appHref("/archive")} aria-current={active === "archive" ? "page" : undefined}>{c.nav_archive}</a>
   </nav>
   <div class="nav-right">
     <nav class="nav-operator" aria-label={c.nav_operator_label}>
-      <a href="/engines">{c.nav_engines}</a>
-      <a href="/cache">{c.nav_cache}</a>
-      <a href="/audit">{c.nav_audit}</a>
+      <a href={appHref("/admin?tab=engines")} aria-current={active === "engines" ? "page" : undefined}>{c.nav_engines}</a>
+      <a href={appHref("/admin?tab=cache")} aria-current={active === "cache" ? "page" : undefined}>{c.nav_cache}</a>
+      <a href={appHref("/admin?tab=audit")} aria-current={active === "audit" ? "page" : undefined}>{c.nav_audit}</a>
     </nav>
-    <a href="/settings">{c.nav_settings}</a>
+    <a href={appHref("/settings")} aria-current={active === "settings" ? "page" : undefined}>{c.nav_settings}</a>
     <button
       type="button"
       id="theme-toggle"
@@ -53,9 +53,9 @@
     <details class="nav-more">
       <summary>{c.nav_more}</summary>
       <nav class="nav-more-links" aria-label={c.nav_operator_label}>
-        <a href="/engines">{c.nav_engines}</a>
-        <a href="/cache">{c.nav_cache}</a>
-        <a href="/audit">{c.nav_audit}</a>
+        <a href={appHref("/admin?tab=engines")} aria-current={active === "engines" ? "page" : undefined}>{c.nav_engines}</a>
+        <a href={appHref("/admin?tab=cache")} aria-current={active === "cache" ? "page" : undefined}>{c.nav_cache}</a>
+        <a href={appHref("/admin?tab=audit")} aria-current={active === "audit" ? "page" : undefined}>{c.nav_audit}</a>
       </nav>
     </details>
   </div>

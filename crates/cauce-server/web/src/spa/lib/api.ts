@@ -12,8 +12,17 @@
 
 import type { AnswerBody } from "../../types/AnswerBody.js";
 import type { ApiError } from "../../types/ApiError.js";
+import type { ArchiveResponse } from "../../types/ArchiveResponse.js";
+import type { AuditRow } from "../../types/AuditRow.js";
+import type { CachedSearch } from "../../types/CachedSearch.js";
 import type { Config } from "../../types/Config.js";
+import type { ConfigPutResponse } from "../../types/ConfigPutResponse.js";
+import type { EngineToggleAck } from "../../types/EngineToggleAck.js";
+import type { EngineView } from "../../types/EngineView.js";
+import type { HistoryItem } from "../../types/HistoryItem.js";
+import type { PageRow } from "../../types/PageRow.js";
 import type { SearchResponse } from "../../types/SearchResponse.js";
+import type { StatsSnapshot } from "../../types/StatsSnapshot.js";
 
 const UI_HEADERS = { "X-Cauce-Client": "ui" } as const;
 
@@ -134,4 +143,130 @@ export function postAnswer(
     body: JSON.stringify(body),
     signal,
   });
+}
+
+/* ------------------------------------------------------------------ */
+/* FX-05 read/admin surfaces — all JSON arms of the shared handlers.   */
+/* ------------------------------------------------------------------ */
+
+async function getJson<T>(path: string): Promise<T> {
+  const res = await fetch(path, {
+    headers: { Accept: "application/json", ...UI_HEADERS },
+  });
+  if (!res.ok) throw await errorFrom(res);
+  return (await res.json()) as T;
+}
+
+async function delJson(path: string): Promise<void> {
+  const res = await fetch(path, { method: "DELETE", headers: UI_HEADERS });
+  if (!res.ok) throw await errorFrom(res);
+}
+
+/** `GET /api/stats?days=N` — the dashboard's whole data plane. */
+export function fetchStats(days: number): Promise<StatsSnapshot> {
+  return getJson("/api/stats?days=" + days);
+}
+
+/** `GET /api/history` — `HistoryItem[]` (search | click | answer rows). */
+export function fetchHistory(params: URLSearchParams): Promise<HistoryItem[]> {
+  return getJson("/api/history?" + params.toString());
+}
+
+/** `DELETE /api/history/{id}` — one search_log row. */
+export function deleteHistoryRow(id: number): Promise<void> {
+  return delJson("/api/history/" + id);
+}
+
+/** `DELETE /api/answer-log/{id}` — one answer_log row. */
+export function deleteAnswerRow(id: number): Promise<void> {
+  return delJson("/api/answer-log/" + id);
+}
+
+/** `GET /api/engines` — live health + card fields per engine. */
+export function fetchEngines(): Promise<EngineView[]> {
+  return getJson("/api/engines");
+}
+
+/**
+ * `POST /api/engines/{id}/{reset|enable|disable}` — audited ops.
+ * Returns the `EngineToggleAck` (`requires_restart` drives the hint).
+ */
+export async function postEngine(
+  id: string,
+  op: "reset" | "enable" | "disable",
+): Promise<EngineToggleAck> {
+  const res = await fetch(
+    "/api/engines/" + encodeURIComponent(id) + "/" + op,
+    { method: "POST", headers: UI_HEADERS },
+  );
+  if (!res.ok) throw await errorFrom(res);
+  return (await res.json()) as EngineToggleAck;
+}
+
+/**
+ * `GET /api/cache` — `limit`/`offset`/`q` filtered listing. The endpoint
+ * answers the bare `entries` array (`Json(listing.entries)`), so the
+ * filter state stays with the caller — same data the HTMX page read.
+ */
+export function fetchCacheList(
+  params: URLSearchParams,
+): Promise<CachedSearch[]> {
+  return getJson("/api/cache?" + params.toString());
+}
+
+/** `GET /api/cache/{key}` — one entry incl. the stored `response` payload. */
+export function fetchCacheEntry(key: string): Promise<CachedSearch> {
+  return getJson("/api/cache/" + encodeURIComponent(key));
+}
+
+/** `DELETE /api/cache/{key}` — one entry. */
+export function deleteCacheEntry(key: string): Promise<void> {
+  return delJson("/api/cache/" + encodeURIComponent(key));
+}
+
+/** `DELETE /api/cache?expired=true` / `?all=true` — bulk sweeps. */
+export function deleteCacheBulk(scope: "expired" | "all"): Promise<void> {
+  return delJson("/api/cache?" + scope + "=true");
+}
+
+/** `GET /api/audit` — `actor`/`action`/`since`/`limit` filtered rows. */
+export function fetchAudit(params: URLSearchParams): Promise<AuditRow[]> {
+  return getJson("/api/audit?" + params.toString());
+}
+
+/** `GET /api/archive` — `q`/`limit`/`offset` search + browse listing. */
+export function fetchArchive(
+  params: URLSearchParams,
+): Promise<ArchiveResponse> {
+  return getJson("/api/archive?" + params.toString());
+}
+
+/** `GET /api/pages/{url}` — the stored page's markdown. */
+export function fetchPage(url: string): Promise<PageRow> {
+  return getJson("/api/pages/" + encodeURIComponent(url));
+}
+
+/** `DELETE /api/pages/{url}` — drop a page from the archive. */
+export function deletePage(url: string): Promise<void> {
+  return delJson("/api/pages/" + encodeURIComponent(url));
+}
+
+/**
+ * `PUT /api/config` — urlencoded dotted-path body (same settled input
+ * the HTMX form posts; the TOML arm stays for curl users).
+ */
+export async function putConfig(
+  body: URLSearchParams,
+): Promise<ConfigPutResponse> {
+  const res = await fetch("/api/config", {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+      Accept: "application/json",
+      ...UI_HEADERS,
+    },
+    body: body.toString(),
+  });
+  if (!res.ok) throw await errorFrom(res);
+  return (await res.json()) as ConfigPutResponse;
 }

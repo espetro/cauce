@@ -11,10 +11,10 @@
  *
  * htmx and the json-enc extension are bundled deps now (previously
  * vendored `htmx.min.js`/`json-enc.js` inline scripts). The htmx ESM
- * build never assigns `window.htmx`, so app.ts does — the inline `hx-on`
- * handlers (`settings_cache.html` calls `htmx.ajax`) and the sse
- * extension resolve it. Import order matters: json-enc must run after
- * htmx.org (it self-registers via `htmx.defineExtension`).
+ * build never assigns `window.htmx`, so app.ts does — any inline `hx-on`
+ * handler that reaches for `htmx.ajax` resolves it. Import order
+ * matters: json-enc must run after htmx.org (it self-registers via
+ * `htmx.defineExtension`).
  */
 import htmx from "htmx.org";
 import "htmx-ext-json-enc";
@@ -28,13 +28,7 @@ import {
 } from "./search.js";
 import { initAnswerPage } from "./answer.js";
 import { initAssist } from "./assist.js";
-import {
-  initHashDetails,
-  initHistoryCopy,
-  initRequestIdCopy,
-  initTracedCopy,
-} from "./clipboard.js";
-import { initEngineErrors } from "./engines.js";
+import { initRequestIdCopy, initTracedCopy } from "./clipboard.js";
 
 window.htmx = htmx;
 
@@ -56,6 +50,3 @@ initAnswerPage();
 
 initRequestIdCopy();
 initTracedCopy();
-initHistoryCopy();
-initHashDetails();
-initEngineErrors();
