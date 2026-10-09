@@ -23,7 +23,11 @@
     type DropdownItem,
   } from "../ui/dropdown-menu.svelte";
 
-  let { active = "" }: { active?: string } = $props();
+  interface TopNavProps {
+    active?: string;
+  }
+
+  let { active = "" }: TopNavProps = $props();
 
   const c = spa.common;
 
