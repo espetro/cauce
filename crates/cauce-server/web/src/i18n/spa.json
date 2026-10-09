@@ -315,6 +315,7 @@
     "error_one": "error",
     "hedge_ceiling": "Hedge ceiling (ms)",
     "hedge_floor": "Hedge floor (ms)",
+    "invalid_number": "must be a whole number",
     "is_not_set": "is not set",
     "is_set": "is set",
     "max_concurrent": "Max concurrent per engine",
