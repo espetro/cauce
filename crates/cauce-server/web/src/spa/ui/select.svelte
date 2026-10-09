@@ -26,6 +26,7 @@
     disabled?: boolean;
     name?: string;
     id?: string;
+    ariaLabel?: string;
     ariaInvalid?: boolean;
   }
 
@@ -37,6 +38,7 @@
     disabled = false,
     name,
     id,
+    ariaLabel,
     ariaInvalid,
   }: Props = $props();
 
@@ -71,6 +73,7 @@
     class="ui-select-trigger"
     {id}
     {disabled}
+    aria-label={ariaLabel}
     aria-invalid={ariaInvalid || undefined}
   >
     <span class="ui-select-label" class:placeholder={selectedLabel === ""}>
