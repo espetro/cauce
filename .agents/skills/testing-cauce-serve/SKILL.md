@@ -282,6 +282,34 @@ not leaked.
 - HTTP surface: `POST /api/pages {"url"}` → 201 `PageRow`; `GET /api/pages/{pct-enc-url}` →
   200 or not_found envelope; bad scheme → 403 `url_blocked`.
 
+## /app/settings admin form e2e (formisch + Bits UI)
+
+- **Sign-in:** `/app/settings` is `admin_or_byok` — non-admins see only the BYOK
+  fieldset when BYOK flags are on. For the admin form, sign in via the GateBlock
+  on `/app/admin` ("Operator surface" → paste the `[auth].admin_tokens` value →
+  "save token"), then navigate to `/app/settings`. Token lives in localStorage
+  `cauce:admin-token`.
+- **Env > file precedence:** every `CAUCE_*` env on the serve command overrides
+  config.toml; Devin boxes inject `CAUCE_AI_*` into shells — set all five
+  explicitly or `[ai]` file edits silently lose. Unchecking `aiEnabled` + Save
+  writes `enabled = false` to the file but `GET /api/config` still reports
+  `true`. Verify writes via `cat config.toml`, not effective config.
+- **Persistence proof:** `PUT /api/config` rewrites the whole file — `sha256sum`
+  before/after proves a blocked submit wrote nothing; a real save is a diff of
+  urlencoded dotted names → real TOML keys.
+- **Wire paths:** formisch emits names like `deadlineMs`, `engines.0.tier`.
+  UiSelect maps `""` ↔ `__none__` in DOM only — `field.input` keeps the real
+  `""`, so the file gets `tier = 3` never a `"__none__"` literal.
+- **Bits wrappers:** UiCheckbox = `<button>` + hidden input inside an implicit
+  `<label>` (clicking label text toggles). UiSelect portals its listbox — items
+  render at the bottom of the DOM dump, outside `<main>`; the trigger's
+  `aria-expanded` flips when open.
+- **Devtools docked right shrinks the page ~340px** — recompute click
+  coordinates after opening devtools, or clicks land in the panel.
+- **Known degradations (pre-existing):** builtin engine rows not declared in
+  config.toml render editable but don't persist; "applies after restart" lists
+  keys that were submitted, even unchanged ones.
+
 ## Browser-testing gotchas (Chrome for Testing on this box)
 
 - **Omnibox inline autocomplete hijacks typed URLs** to history suggestions — after typing

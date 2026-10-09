@@ -219,6 +219,8 @@ settings:
   is_not_set: is not set
   save: Save
   saved: saved
+  # Per-field formisch/valibot error under numeric `PUT /api/config` inputs.
+  invalid_number: must be a whole number
   not_saved: 'not saved:'
   error_one: error
   error_many: errors

@@ -335,6 +335,7 @@ pub fn spa_bundle() -> Value {
                 "settings.is_not_set",
                 "settings.save",
                 "settings.saved",
+                "settings.invalid_number",
                 "settings.not_saved",
                 "settings.error_one",
                 "settings.error_many",
