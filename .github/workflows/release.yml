@@ -56,6 +56,7 @@ jobs:
           - { os: ubuntu-latest,    target: x86_64-unknown-linux-gnu }
           - { os: ubuntu-latest,    target: x86_64-unknown-linux-musl }
           - { os: ubuntu-24.04-arm, target: aarch64-unknown-linux-gnu }
+          - { os: ubuntu-24.04-arm, target: aarch64-unknown-linux-musl }
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -66,7 +67,7 @@ jobs:
         if: contains(matrix.target, 'musl')
         run: |
           sudo apt-get update && sudo apt-get install -y musl-tools
-          echo "CC_x86_64_unknown_linux_musl=musl-gcc" >> "$GITHUB_ENV"
+          echo "CC_$(echo '${{ matrix.target }}' | tr - _)=musl-gcc" >> "$GITHUB_ENV"
       - run: cargo build --release -p cauce-cli --target ${{ matrix.target }}
       - name: package
         run: |

@@ -1,0 +1,7 @@
+# Compose variant of contrib/Caddyfile — the app is reached by its
+# compose service name, not loopback.
+
+{$DOMAIN:localhost} {
+	reverse_proxy cauce:4479
+	encode zstd gzip
+}

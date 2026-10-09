@@ -1,0 +1,48 @@
+# cauce — systemd unit (public instance).
+#
+#   install -m755 cauce /usr/local/bin/cauce
+#   useradd --system --home-dir /var/lib/cauce --shell /usr/sbin/nologin cauce
+#   install -d -o cauce -g cauce /var/lib/cauce /etc/cauce
+#   install -m644 contrib/cauce.service /etc/systemd/system/cauce.service
+#   systemctl daemon-reload && systemctl enable --now cauce
+#
+# /etc/cauce/config.toml on a public box (see docs/deploy/vps.md):
+#
+#   [server]
+#   public_instance = true
+#   [auth]
+#   admin_tokens = ["<long-random-token>"]
+#
+# The bind stays loopback: the VPS recipe fronts the app with Caddy
+# (TLS) or cloudflared — both connect from 127.0.0.1. Direct exposure is
+# legal too (`--bind 0.0.0.0`), public_instance is the gate, not the
+# bind address.
+
+[Unit]
+Description=cauce metasearch (UI + API + MCP)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=cauce
+Group=cauce
+Environment=CAUCE_CONFIG_DIR=/etc/cauce
+Environment=CAUCE_DATA_DIR=/var/lib/cauce
+Environment=CAUCE_LOG=info
+ExecStart=/usr/local/bin/cauce serve --bind 127.0.0.1
+Restart=on-failure
+RestartSec=5
+
+# Hardening — the binary needs nothing but its data dir and the network.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ReadWritePaths=/var/lib/cauce
+# The bundled ddgs engine shells out to `python3 sdk/python/...` relative
+# to the cwd — under supervision give it an absolute [[engines]] path or
+# disable it (docs/install.md); declarative engines are unaffected.
+
+[Install]
+WantedBy=multi-user.target
