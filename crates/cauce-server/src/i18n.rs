@@ -155,7 +155,26 @@ pub fn spa_bundle() -> Value {
         ),
         (
             "app",
-            &["app.not_found", "app.open_html", "app.stream_hint"][..],
+            &[
+                "app.not_found",
+                "app.open_html",
+                "app.stream_hint",
+                // FX-07 instance modes: gate notice + token form,
+                // public dashboard card, archive-off line, cache
+                // details expander.
+                "app.admin_gate_title",
+                "app.admin_gate_note",
+                "app.admin_token_label",
+                "app.admin_token_hint",
+                "app.admin_token_save",
+                "app.admin_token_clear",
+                "app.instance_card",
+                "app.instance_version",
+                "app.instance_engines",
+                "app.instance_privacy",
+                "app.archiving_off",
+                "app.cache_details",
+            ][..],
         ),
         // FX-05 admin/read pages — the whole `history`/`dashboard`/
         // `settings`/`engines`/`cache`/`audit`/`archive` catalogs so the

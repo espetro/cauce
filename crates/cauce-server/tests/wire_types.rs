@@ -74,6 +74,9 @@ const WIRE_TABLE: &[(&str, &str, &[&str])] = &[
     ("GET", "/api/answer-log/{id}", &["AnswerLogRow"]),
     ("GET", "/api/suggest", &["SuggestResponse"]),
     ("GET", "/api/report", &["ReportBundle"]),
+    // FX-07: the instance-mode bootstrap pair.
+    ("GET", "/api/capabilities", &["Capabilities"]),
+    ("GET", "/api/instance", &["InstanceInfo"]),
     #[cfg(feature = "ai")]
     ("POST", "/api/answer", &["AnswerBody", "AnswerFrame"]),
     #[cfg(feature = "archive")]
@@ -136,6 +139,10 @@ fn export(out_dir: &Path) {
         cauce_server::HistoryDeleteAck::export_all(&cfg),
         cauce_server::AnswerLogDeleteAck::export_all(&cfg),
         cauce_server::SuggestResponse::export_all(&cfg),
+        // FX-07: instance modes — `export_all` on `Capabilities` emits
+        // `CapabilityFlags`/`InstanceMode`/`Role` transitively.
+        cauce_server::Capabilities::export_all(&cfg),
+        cauce_server::InstanceInfo::export_all(&cfg),
     ] {
         result.expect("binding export");
     }

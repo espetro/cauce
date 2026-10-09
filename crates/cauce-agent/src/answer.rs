@@ -215,6 +215,14 @@ impl AnswerLoop {
         self
     }
 
+    /// FX-07 instance-mode switch: `false` keeps the loop off the
+    /// `answer_log` table entirely (public instances hold no per-user
+    /// history server-side; `done.log_id` reports `None`).
+    pub fn with_history_logging(mut self, enabled: bool) -> Self {
+        self.config.record_history = enabled;
+        self
+    }
+
     /// Final-turn tail-parse override: `(answer, confidence,
     /// related_questions)` from the streamed content. Tests/evals only —
     /// W4-04's gate proof swaps in a parser that leaves the metadata tail
@@ -680,8 +688,12 @@ impl AnswerLoop {
     /// Append the run's `answer_log` row (#254); fail-open like the
     /// answers cache — a logging outage must not break the answer.
     /// Returns the row id so the terminal frame can carry it as
-    /// `log_id` (`None` when the write failed).
+    /// `log_id` (`None` when the write failed or history recording is
+    /// off — FX-07 public instances never keep server-side history).
     async fn log_answer(&self, run: &RunContext, row: AnswerLogRow) -> Option<i64> {
+        if !self.config.record_history {
+            return None;
+        }
         match self.store.log_answer(row).await {
             Ok(id) => Some(id),
             Err(e) => {

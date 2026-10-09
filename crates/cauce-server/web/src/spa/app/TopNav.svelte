@@ -34,15 +34,19 @@
     {/if}
     <a href={appHref("/history")} aria-current={active === "history" ? "page" : undefined}>{c.nav_history}</a>
     <a href={appHref("/dashboard")} aria-current={active === "dashboard" ? "page" : undefined}>{c.nav_dashboard}</a>
-    <a href={appHref("/archive")} aria-current={active === "archive" ? "page" : undefined}>{c.nav_archive}</a>
+    {#if capabilities.loaded && capabilities.flags.archiving}
+      <a href={appHref("/archive")} aria-current={active === "archive" ? "page" : undefined}>{c.nav_archive}</a>
+    {/if}
   </nav>
   <div class="nav-right">
-    <nav class="nav-operator" aria-label={c.nav_operator_label}>
-      <a href={appHref("/admin?tab=engines")} aria-current={active === "engines" ? "page" : undefined}>{c.nav_engines}</a>
-      <a href={appHref("/admin?tab=cache")} aria-current={active === "cache" ? "page" : undefined}>{c.nav_cache}</a>
-      <a href={appHref("/admin?tab=audit")} aria-current={active === "audit" ? "page" : undefined}>{c.nav_audit}</a>
-    </nav>
-    <a href={appHref("/settings")} aria-current={active === "settings" ? "page" : undefined}>{c.nav_settings}</a>
+    {#if capabilities.loaded && capabilities.flags.adminSurface}
+      <nav class="nav-operator" aria-label={c.nav_operator_label}>
+        <a href={appHref("/admin?tab=engines")} aria-current={active === "engines" ? "page" : undefined}>{c.nav_engines}</a>
+        <a href={appHref("/admin?tab=cache")} aria-current={active === "cache" ? "page" : undefined}>{c.nav_cache}</a>
+        <a href={appHref("/admin?tab=audit")} aria-current={active === "audit" ? "page" : undefined}>{c.nav_audit}</a>
+      </nav>
+      <a href={appHref("/settings")} aria-current={active === "settings" ? "page" : undefined}>{c.nav_settings}</a>
+    {/if}
     <button
       type="button"
       id="theme-toggle"
@@ -50,14 +54,16 @@
       title={c.theme_switch}
       onclick={cycleTheme}>{themeWord()}</button
     >
-    <details class="nav-more">
-      <summary>{c.nav_more}</summary>
-      <nav class="nav-more-links" aria-label={c.nav_operator_label}>
-        <a href={appHref("/admin?tab=engines")} aria-current={active === "engines" ? "page" : undefined}>{c.nav_engines}</a>
-        <a href={appHref("/admin?tab=cache")} aria-current={active === "cache" ? "page" : undefined}>{c.nav_cache}</a>
-        <a href={appHref("/admin?tab=audit")} aria-current={active === "audit" ? "page" : undefined}>{c.nav_audit}</a>
-      </nav>
-    </details>
+    {#if capabilities.loaded && capabilities.flags.adminSurface}
+      <details class="nav-more">
+        <summary>{c.nav_more}</summary>
+        <nav class="nav-more-links" aria-label={c.nav_operator_label}>
+          <a href={appHref("/admin?tab=engines")} aria-current={active === "engines" ? "page" : undefined}>{c.nav_engines}</a>
+          <a href={appHref("/admin?tab=cache")} aria-current={active === "cache" ? "page" : undefined}>{c.nav_cache}</a>
+          <a href={appHref("/admin?tab=audit")} aria-current={active === "audit" ? "page" : undefined}>{c.nav_audit}</a>
+        </nav>
+      </details>
+    {/if}
   </div>
 </header>
 

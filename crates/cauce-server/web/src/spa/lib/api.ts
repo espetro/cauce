@@ -12,6 +12,9 @@
 
 import type { AnswerBody } from "../../types/AnswerBody.js";
 import type { ApiError } from "../../types/ApiError.js";
+import type { Capabilities } from "../../types/Capabilities.js";
+import type { InstanceInfo } from "../../types/InstanceInfo.js";
+import { authHeader } from "./admin.svelte.js";
 import type { ArchiveResponse } from "../../types/ArchiveResponse.js";
 import type { AuditRow } from "../../types/AuditRow.js";
 import type { CachedSearch } from "../../types/CachedSearch.js";
@@ -25,6 +28,15 @@ import type { SearchResponse } from "../../types/SearchResponse.js";
 import type { StatsSnapshot } from "../../types/StatsSnapshot.js";
 
 const UI_HEADERS = { "X-Cauce-Client": "ui" } as const;
+
+/**
+ * `UI_HEADERS` + the bearer credential when the operator saved one —
+ * the only header that can unlock the admin surface on a public
+ * instance (FX-07).
+ */
+function headers(): Record<string, string> {
+  return { ...UI_HEADERS, ...authHeader() };
+}
 
 /** Query-string keys `parse_search_request` accepts. */
 const SEARCH_KEYS = ["q", "page", "lang", "time_range", "safesearch", "engines"];
@@ -60,7 +72,7 @@ export function unknownRouteKeys(params: URLSearchParams): string[] {
 export async function fetchConfig(): Promise<Config | null> {
   try {
     const res = await fetch("/api/config", {
-      headers: { Accept: "application/json", ...UI_HEADERS },
+      headers: { Accept: "application/json", ...headers() },
     });
     return res.ok ? ((await res.json()) as Config) : null;
   } catch {
@@ -73,7 +85,7 @@ export async function fetchSearch(
   params: URLSearchParams,
 ): Promise<SearchResponse> {
   const res = await fetch("/api/search?" + params.toString(), {
-    headers: { Accept: "application/json", ...UI_HEADERS },
+    headers: { Accept: "application/json", ...headers() },
   });
   if (!res.ok) throw await errorFrom(res);
   return (await res.json()) as SearchResponse;
@@ -108,7 +120,7 @@ export interface ClickBeaconBody {
 export function clickBeacon(body: ClickBeaconBody): void {
   fetch("/api/click", {
     method: "POST",
-    headers: { "Content-Type": "application/json", ...UI_HEADERS },
+    headers: { "Content-Type": "application/json", ...headers() },
     body: JSON.stringify(body),
     keepalive: true,
   }).catch(() => {});
@@ -119,7 +131,7 @@ export function indexBeacon(url: string, queryHash: string | null): void {
   const body = queryHash ? { url, query_hash: queryHash } : { url };
   fetch("/api/pages", {
     method: "POST",
-    headers: { "Content-Type": "application/json", ...UI_HEADERS },
+    headers: { "Content-Type": "application/json", ...headers() },
     body: JSON.stringify(body),
     keepalive: true,
   }).catch(() => {});
@@ -138,7 +150,7 @@ export function postAnswer(
     headers: {
       "Content-Type": "application/json",
       Accept: "text/event-stream",
-      ...UI_HEADERS,
+      ...headers(),
     },
     body: JSON.stringify(body),
     signal,
@@ -151,14 +163,14 @@ export function postAnswer(
 
 async function getJson<T>(path: string): Promise<T> {
   const res = await fetch(path, {
-    headers: { Accept: "application/json", ...UI_HEADERS },
+    headers: { Accept: "application/json", ...headers() },
   });
   if (!res.ok) throw await errorFrom(res);
   return (await res.json()) as T;
 }
 
 async function delJson(path: string): Promise<void> {
-  const res = await fetch(path, { method: "DELETE", headers: UI_HEADERS });
+  const res = await fetch(path, { method: "DELETE", headers: headers() });
   if (!res.ok) throw await errorFrom(res);
 }
 
@@ -197,7 +209,7 @@ export async function postEngine(
 ): Promise<EngineToggleAck> {
   const res = await fetch(
     "/api/engines/" + encodeURIComponent(id) + "/" + op,
-    { method: "POST", headers: UI_HEADERS },
+    { method: "POST", headers: headers() },
   );
   if (!res.ok) throw await errorFrom(res);
   return (await res.json()) as EngineToggleAck;
@@ -263,10 +275,37 @@ export async function putConfig(
     headers: {
       "Content-Type": "application/x-www-form-urlencoded",
       Accept: "application/json",
-      ...UI_HEADERS,
+      ...headers(),
     },
     body: body.toString(),
   });
   if (!res.ok) throw await errorFrom(res);
   return (await res.json()) as ConfigPutResponse;
+}
+
+/**
+ * `GET /api/capabilities` — the FX-07 bootstrap payload: instance mode,
+ * the caller's derived role and the capability flags. Always open.
+ */
+export async function fetchCapabilities(): Promise<Capabilities | null> {
+  try {
+    const res = await fetch("/api/capabilities", {
+      headers: { Accept: "application/json", ...headers() },
+    });
+    return res.ok ? ((await res.json()) as Capabilities) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** `GET /api/instance` — the public instance card + SPA bootstrap knobs. */
+export async function fetchInstance(): Promise<InstanceInfo | null> {
+  try {
+    const res = await fetch("/api/instance", {
+      headers: { Accept: "application/json", ...headers() },
+    });
+    return res.ok ? ((await res.json()) as InstanceInfo) : null;
+  } catch {
+    return null;
+  }
 }

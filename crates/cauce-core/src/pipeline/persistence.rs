@@ -272,9 +272,11 @@ impl SearchPipeline {
         Ok(resp)
     }
 
-    /// The unconditional `search_log` write (section 5): called on every
-    /// path: cache hit, network, empty and failure. A write failure is
-    /// logged and swallowed: a logging outage must not break search.
+    /// The `search_log` write (section 5): called on every path —
+    /// cache hit, network, empty and failure — unless the pipeline's
+    /// `record_history` is off (FX-07 public instances keep no per-user
+    /// history server-side). A write failure is logged and swallowed:
+    /// a logging outage must not break search.
     pub(super) async fn write_log(
         &self,
         req: &SearchRequest,
@@ -283,6 +285,9 @@ impl SearchPipeline {
         row: LogRow,
         started: Instant,
     ) {
+        if !self.record_history {
+            return;
+        }
         let row = SearchLogRow {
             id: None,
             ts: Utc::now(),

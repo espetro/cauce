@@ -12,6 +12,18 @@
     "submit": "ask"
   },
   "app": {
+    "admin_gate_note": "This surface is for the instance operator. Paste an admin token to continue.",
+    "admin_gate_title": "Operator surface",
+    "admin_token_clear": "clear token",
+    "admin_token_hint": "stored in this browser only, sent as a bearer credential",
+    "admin_token_label": "admin token",
+    "admin_token_save": "save token",
+    "archiving_off": "the archive is disabled on this instance",
+    "cache_details": "cache details",
+    "instance_card": "instance",
+    "instance_engines": "engines",
+    "instance_privacy": "searches are answered without server-side logging — your history and archive index live in this browser",
+    "instance_version": "version",
     "not_found": "This surface is not part of the SPA yet.",
     "open_html": "Open the HTML page",
     "stream_hint": "streaming results as engines report"

@@ -12,7 +12,7 @@
 
 use axum::body::Body;
 use axum::extract::{Request, State};
-use axum::http::header::{HOST, ORIGIN};
+use axum::http::header::{HOST, ORIGIN, WWW_AUTHENTICATE};
 use axum::http::{HeaderMap, HeaderValue, StatusCode, Uri};
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
@@ -21,6 +21,8 @@ use cauce_core::config::{host_part, is_loopback_host};
 use tracing::Instrument;
 use uuid::Uuid;
 
+use crate::app::AppState;
+use crate::capabilities::{Role, role_for};
 use crate::error::ApiError;
 use crate::observability::{RequestId, request_span};
 
@@ -199,6 +201,41 @@ pub async fn host_origin_guard(
         }
     }
     next.run(request).await
+}
+
+/// FX-07 admin gate — `route_layer` on every [`crate::routes::RouteAuth::Admin`]
+/// row. A local instance passes everything (the deployment's only user
+/// owns the surface); a public instance demands the `[auth] admin_tokens`
+/// bearer credential — `401 unauthorized` + `WWW-Authenticate: Bearer`
+/// otherwise. Role derivation lives in [`role_for`] so this and
+/// `/api/capabilities` can never disagree.
+///
+/// Like the host guard it runs inside `request_context`, so the 401
+/// still carries `X-Request-Id`.
+pub async fn require_admin(
+    State(state): State<AppState>,
+    request: Request<Body>,
+    next: Next,
+) -> Response {
+    let is_admin = state.with_config(|cfg| matches!(role_for(cfg, request.headers()), Role::Admin));
+    if is_admin {
+        return next.run(request).await;
+    }
+    let request_id = request
+        .extensions()
+        .get::<RequestCtx>()
+        .map(|c| c.request_id.as_uuid());
+    let mut response = ApiError::new(
+        StatusCode::UNAUTHORIZED,
+        "unauthorized",
+        "admin surface: send `Authorization: Bearer <admin token>`",
+    )
+    .with_request_id(request_id)
+    .into_response();
+    response
+        .headers_mut()
+        .insert(WWW_AUTHENTICATE, HeaderValue::from_static("Bearer"));
+    response
 }
 
 /// Anything but `GET`/`HEAD`/`OPTIONS` can mutate; the strict reading

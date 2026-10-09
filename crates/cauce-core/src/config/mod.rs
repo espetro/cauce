@@ -70,6 +70,12 @@ const ENV_OVERRIDES: &[(&str, &[&str], bool)] = &[
     ("CAUCE_SERVER_HOST", &["server", "host"], false),
     ("CAUCE_SERVER_PORT", &["server", "port"], true),
     ("CAUCE_SERVER_PUBLIC_URL", &["server", "public_url"], false),
+    (
+        "CAUCE_SERVER_PUBLIC_INSTANCE",
+        &["server", "public_instance"],
+        true,
+    ),
+    ("CAUCE_SERVER_NAME", &["server", "name"], false),
     ("CAUCE_SEARCH_DEADLINE_MS", &["search", "deadline_ms"], true),
     ("CAUCE_SEARCH_MIN_RESULTS", &["search", "min_results"], true),
     (
@@ -153,6 +159,7 @@ const ENV_OVERRIDES: &[(&str, &[&str], bool)] = &[
         true,
     ),
     ("CAUCE_AI_VERIFY", &["ai", "verify"], true),
+    ("CAUCE_ARCHIVE_ENABLED", &["archive", "enabled"], true),
     (
         "CAUCE_ARCHIVE_INDEX_ON_CLICK",
         &["archive", "index_on_click"],
@@ -315,6 +322,18 @@ pub struct ServerConfig {
     /// When unset, the effective bind host and port are used over HTTP.
     #[serde(default)]
     pub public_url: Option<String>,
+    /// FX-07 instance mode (SearXNG `server.public_instance` prior art):
+    /// `false` (default) is the single-user local mode — today's behavior
+    /// bit-for-bit. `true` marks the instance public: history and click
+    /// telemetry stop writing server-side, `GET /api/capabilities` reports
+    /// `mode: "public"`, and the admin `/api/*` surface requires an
+    /// `[auth] admin_tokens` bearer credential.
+    #[serde(default)]
+    pub public_instance: bool,
+    /// Display name of this instance (the public-mode dashboard card and
+    /// `GET /api/instance` report it). `"cauce"` by default.
+    #[serde(default = "default_server_name")]
+    pub name: String,
 }
 
 impl Default for ServerConfig {
@@ -323,6 +342,8 @@ impl Default for ServerConfig {
             host: default_host(),
             port: default_port(),
             public_url: None,
+            public_instance: false,
+            name: default_server_name(),
         }
     }
 }
@@ -351,6 +372,10 @@ impl ServerConfig {
 
 fn default_host() -> String {
     "127.0.0.1".to_string()
+}
+
+fn default_server_name() -> String {
+    "cauce".to_string()
 }
 
 fn default_port() -> u16 {
@@ -391,10 +416,10 @@ fn validate_public_url(value: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// `[auth]`: the admin-auth switch (W1-13). The token mechanism itself is
-/// deferred to `v3/later/postgres-and-multi-instance.md`; until it lands,
+/// `[auth]`: the admin-auth switch (W1-13) plus FX-07's admin credentials.
 /// `enabled` is forced by the bind address — off on loopback, required off
-/// it, so `cauce serve` refuses a non-loopback bind.
+/// it, so `cauce serve` refuses a non-loopback bind until full token auth
+/// lands (`v3/later/postgres-and-multi-instance.md`).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(deny_unknown_fields)]
 pub struct AuthConfig {
@@ -403,6 +428,14 @@ pub struct AuthConfig {
     /// exists, so setting it only earns a startup warning.
     #[serde(default)]
     pub enabled: bool,
+    /// Static admin bearer tokens (FX-07): on a `public_instance` the
+    /// `Authorization: Bearer <token>` credential that earns `role: "admin"`
+    /// on `/api/*` requests. Tokens carry no id today — audit rows keep
+    /// recording `X-Actor`/client kind; token-id hashes arrive with the
+    /// deferred W6-03 item. Empty (the default) means the admin surface is
+    /// unreachable on a public instance — deliberate fail-closed.
+    #[serde(default)]
+    pub admin_tokens: Vec<String>,
 }
 
 impl AuthConfig {
@@ -852,6 +885,14 @@ impl std::fmt::Display for AiProtocol {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(deny_unknown_fields)]
 pub struct ArchiveConfig {
+    /// Master switch for the archive surfaces (FX-07, the `archiving`
+    /// capability flag): `false` disables `POST /api/pages`, the page
+    /// fetch/read routes and `GET /api/archive` with the same
+    /// `archive_disabled` 503 an `archive`-less build reports. Default
+    /// true — the only way an operator could disable archiving before was
+    /// a build without the cargo feature.
+    #[serde(default = "default_true")]
+    pub enabled: bool,
     /// Whether clicking a result link in the UI fires the indexing beacon
     /// (default true, settled input). The beacon is failure-silent and
     /// never blocks the navigation either way.
@@ -877,6 +918,7 @@ pub struct ArchiveConfig {
 impl Default for ArchiveConfig {
     fn default() -> Self {
         Self {
+            enabled: true,
             index_on_click: true,
             requests_per_second: default_requests_per_second(),
             burst: default_archive_burst(),
@@ -1641,21 +1683,37 @@ impl Config {
 ///
 /// | Path | Why it needs a restart |
 /// |---|---|
-/// | `server.host`, `server.port` | the TCP listener is bound once at startup |
-/// | `auth.*` | bind policy is decided when the listener is created |
+/// | `server.host`, `server.port`, `server.public_instance` | the TCP listener and the instance-mode auth boundary are bound once at startup |
+/// | `auth.*` (except `admin_tokens`) | bind policy is decided when the listener is created |
 /// | `logs.*` | the JSONL appender's `max_log_files` is created at startup |
 ///
 /// Everything else is hot: `search.*`, `admission.*`, `cache.*`,
 /// `merge.*`, `lexical`/`cache.lexical.*`, `health.*`, `ai.*`,
-/// `archive.*`, `ui.*`, `engines.*` (`enabled`/`tier`/`egress`/`params`
-/// — the fan-out is rebuilt), `server.public_url` (already read
-/// per-request) and `config.interpolation` (governs the next parse).
-/// Filesystem locations (`CAUCE_CONFIG_DIR`, `CAUCE_DATA_DIR`) are env
-/// overrides, not file keys, so they never reach this classifier.
+/// `archive.*`, `ui.*`, `engines.*`
+/// (`enabled`/`tier`/`egress`/`params` — the fan-out is rebuilt),
+/// `server.public_url` (already read per-request), `server.name` (the
+/// capabilities layer reads the live config), `auth.admin_tokens` (the
+/// admin check reads the live config per request) and
+/// `config.interpolation` (governs the next parse). Filesystem
+/// locations (`CAUCE_CONFIG_DIR`, `CAUCE_DATA_DIR`) are env overrides,
+/// not file keys, so they never reach this classifier.
+///
+/// `server.public_instance` is listed as restart-required because the
+/// instance mode is an auth boundary: the file records the requested
+/// value, but [`AppState::commit_locked`] keeps the boot-time mode in
+/// the live config — otherwise `PUT /api/config` with a default-shaped
+/// body would flip the gate off (and re-enable `search_log` writes)
+/// without a restart.
 pub fn key_requires_restart(path: &str) -> bool {
     match path.split('.').next() {
-        Some("server") => matches!(path, "server.host" | "server.port"),
-        Some("auth" | "logs") => true,
+        Some("server") => {
+            matches!(
+                path,
+                "server.host" | "server.port" | "server.public_instance"
+            )
+        }
+        Some("auth") => path != "auth.admin_tokens",
+        Some("logs") => true,
         _ => false,
     }
 }
@@ -1748,7 +1806,13 @@ mod tests {
         assert!(!off.enabled_for("localhost"));
         assert!(off.enabled_for("0.0.0.0"));
         assert!(off.enabled_for("192.168.1.10"));
-        assert!(AuthConfig { enabled: true }.enabled_for("127.0.0.1"));
+        assert!(
+            AuthConfig {
+                enabled: true,
+                ..AuthConfig::default()
+            }
+            .enabled_for("127.0.0.1")
+        );
     }
 
     /// `CAUCE_*` dirs win over `XDG_*_HOME`, which wins over the home

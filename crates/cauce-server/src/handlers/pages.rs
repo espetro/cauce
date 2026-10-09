@@ -116,6 +116,11 @@ pub async fn pages_get(
     Extension(ctx): Extension<RequestCtx>,
     Path(url): Path<String>,
 ) -> Result<Response, ApiError> {
+    // FX-07: `archive.enabled = false` 503s the read surface like the
+    // write one — the `archiving` flag is down, so every surface is.
+    if !state.with_config(|c| c.archive.enabled) {
+        return Err(archive_unavailable(&ctx));
+    }
     pages_get_entry(&state, &ctx, &url).await
 }
 
@@ -149,6 +154,10 @@ pub async fn pages_delete(
     headers: HeaderMap,
     Path(url): Path<String>,
 ) -> Result<Json<PageDeleteAck>, ApiError> {
+    // FX-07: same `archive.enabled` 503 as the rest of the surface.
+    if !state.with_config(|c| c.archive.enabled) {
+        return Err(archive_unavailable(&ctx));
+    }
     let parsed = Url::parse(&url)
         .map_err(|e| ctx.bad_request(format!("invalid url path parameter: {e}")))?;
     let key = normalize_url(&parsed);

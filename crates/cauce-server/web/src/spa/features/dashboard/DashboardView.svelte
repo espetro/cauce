@@ -10,6 +10,7 @@
 -->
 <script lang="ts">
   import { appHref } from "../../app/router.svelte.js";
+  import { capabilities } from "../../lib/capabilities.svelte.js";
   import { spa } from "../../lib/i18n.js";
   import type { createDashboardPage } from "./dashboard.svelte.js";
   import DayChart from "./DayChart.svelte";
@@ -25,6 +26,23 @@
 </script>
 
 <h1>{d.title}</h1>
+
+{#if capabilities.loaded && !capabilities.flags.sharedStats}
+  <!-- FX-07: the public dashboard is a single instance card — ops
+       telemetry lives behind the admin surface (`/app/admin`). -->
+  <section class="panel instance-card">
+    <h2>{capabilities.instanceName}</h2>
+    <dl class="kv">
+      <dt>{spa.app.instance_card}</dt>
+      <dd>{capabilities.instanceName}</dd>
+      <dt>{spa.app.instance_version}</dt>
+      <dd>{capabilities.version}</dd>
+      <dt>{spa.app.instance_engines}</dt>
+      <dd>{capabilities.engineCount}</dd>
+    </dl>
+    <p class="muted">{spa.app.instance_privacy}</p>
+  </section>
+{:else}
 <p class="meta window">
   {d.window}:
   <a
@@ -231,6 +249,7 @@
       <dd>{v.cacheNewest}</dd>
     </dl>
   </section>
+{/if}
 {/if}
 
 <style>

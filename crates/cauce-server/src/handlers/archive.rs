@@ -94,6 +94,15 @@ pub async fn archive_search(
     Extension(ctx): Extension<RequestCtx>,
     uri: Uri,
 ) -> Result<Response, ApiError> {
+    // FX-07: `archive.enabled = false` takes the listing/search surface
+    // down with the write one (the `archiving` flag is off for both).
+    if !state.with_config(|c| c.archive.enabled) {
+        return Err(ctx.err(
+            axum::http::StatusCode::SERVICE_UNAVAILABLE,
+            "archive_disabled",
+            "the archive pipeline is not available (disabled at build or config)",
+        ));
+    }
     archive_inner(&state, &ctx, &uri)
         .await
         .map(|data| Json(archive_response(&ctx, &data)).into_response())

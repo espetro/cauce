@@ -48,3 +48,39 @@ export function onPopState(): void {
 export function appHref(path: string): string {
   return path === "/" ? "/app/" : "/app" + path;
 }
+
+/* ------------------------------------------------------------------ */
+/* FX-07 route requirements (§7.4): every route declares the surface it */
+/* needs; `routeVisible` is the one central filter — nav hides and the  */
+/* outlet renders a gate notice instead of the page. No inline role    */
+/* checks in components.                                               */
+/* ------------------------------------------------------------------ */
+
+/** What a route needs from `capabilities.flags`. */
+export type RouteRequirement = "admin" | "archiving";
+
+/**
+ * `/app` path → required surface. `/admin` and `/settings` are operator
+ * surfaces (`adminSurface`); `/archive` exists only while the `archiving`
+ * flag is up. Everything else (`/`, `/search`, `/answer`, `/history`,
+ * `/dashboard`) is open — public mode swaps their data plane, not their
+ * reachability.
+ */
+export const ROUTE_REQUIRES: Record<string, RouteRequirement> = {
+  "/admin": "admin",
+  "/settings": "admin",
+  "/archive": "archiving",
+};
+
+/**
+ * The central filter: `false` means the nav link hides and the routed
+ * page shows the gate notice. Called by `TopNav` (links) and `App`
+ * (outlet) — one function so both can never disagree.
+ */
+export function routeVisible(path: string, adminSurface: boolean, archiving: boolean): boolean {
+  const need = ROUTE_REQUIRES[path];
+  if (need === "admin") return adminSurface;
+  if (need === "archiving") return archiving;
+  return true;
+}
+

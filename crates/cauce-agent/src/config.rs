@@ -44,6 +44,11 @@ pub struct LoopConfig {
     /// [`crate::answer::parse_final_answer`]-compatible shape; tests
     /// and evals swap it to prove the metadata-tail gate.
     pub tail_parser: fn(&str) -> (String, u8, Vec<String>),
+    /// FX-07 instance mode: `false` suppresses every `answer_log` write
+    /// (`log_answer` returns `None`, so `done.log_id` is empty). Public
+    /// instances keep no per-user answer history server-side — the
+    /// `answers` result cache is unaffected (shared, keyed by query).
+    pub record_history: bool,
 }
 
 impl Default for LoopConfig {
@@ -54,6 +59,7 @@ impl Default for LoopConfig {
             max_turns: DEFAULT_MAX_TURNS,
             max_search_executions: DEFAULT_MAX_SEARCH_EXECUTIONS,
             tail_parser: crate::answer::parse_final_answer,
+            record_history: true,
         }
     }
 }
