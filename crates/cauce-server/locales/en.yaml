@@ -50,6 +50,11 @@ common:
   # `aria-label` template the toggle JS fills in on every state change
   # (`theme: dark`); `{state}` is replaced with the state's word.
   theme_aria_state: 'theme: {state}'
+  # `ui/confirm` AlertDialog cancel button.
+  cancel: Cancel
+  # `ui/confirm` AlertDialog action button when the caller doesn't
+  # override `confirmLabel`.
+  confirm: Confirm
 
 # `/` and `/search` page copy: the landing form, the server-rendered
 # results page and the W2-01 streaming shell. The streaming page's
