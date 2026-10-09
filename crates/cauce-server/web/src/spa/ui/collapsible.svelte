@@ -6,7 +6,9 @@
   `ui/collapsible` — vendored Bits UI `Collapsible`
   (Collapsible.Root/Trigger/Content) restyled on the app tokens; replaces
   every `<details>`/`<summary>` disclosure. One-way data flow: pass
-  `open` + `onOpenChange` (omit both for uncontrolled use).
+  `bind:open` or `open` + `onOpenChange` (omit all for uncontrolled use —
+  `open` is `$bindable` so Root's internal state still reaches the
+  trigger snippet below).
   `onOpenChangeComplete` fires after the height animation — the hook for
   lazy payload loads (archive/cache rows). The `trigger` snippet gets
   the current `open` so callers can rotate their own chevron. Height
@@ -29,7 +31,7 @@
   }
 
   let {
-    open,
+    open = $bindable(false),
     onOpenChange,
     onOpenChangeComplete,
     disabled = false,
@@ -41,13 +43,13 @@
 
 <Collapsible.Root
   class="ui-collapsible"
-  {open}
+  bind:open
   {onOpenChange}
   {onOpenChangeComplete}
   {disabled}
 >
   <Collapsible.Trigger class="ui-collapsible-trigger" {id} {disabled}>
-    {@render trigger(open ?? false)}
+    {@render trigger(open)}
   </Collapsible.Trigger>
   <Collapsible.Content class="ui-collapsible-content">
     {@render children()}
