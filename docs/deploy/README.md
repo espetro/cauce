@@ -47,8 +47,9 @@ for write-heavy endpoints. The guides wire the free tier of each.
 
 ## Sizing
 
-aarch64-gnu release runs on RPi 4/5-class hardware; idle RSS < 80 MB.
-Load numbers land in [sizing.md](sizing.md) (PUB-04 — k6 spike shed,
-singleflight collapse, edge-absorption ratio). Horizontal scaling is a
+aarch64-musl release runs on RPi 4/5-class hardware; ~82 MB RSS under
+sustained 1-CPU load. Measured numbers and the capacity formula live in
+[sizing.md](sizing.md) (`mise run loadtest` — spike shed, in-flight
+collapse, pinned-core rps, edge absorption). Horizontal scaling is a
 roadmap item (shared cache/coordination needs the Postgres `Store`,
 issue #61); today: one instance, one volume.
