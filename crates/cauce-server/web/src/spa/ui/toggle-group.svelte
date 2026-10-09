@@ -6,10 +6,12 @@
   `ui/toggle-group` — vendored Bits UI `ToggleGroup`
   (ToggleGroup.Root/Item, `type="single"`) restyled on the app tokens;
   the pill segment that replaces hand-rolled `aria-pressed` button bars
-  (Omnibox Search/✦Ask, dashboard `?days=`). One-way data flow:
-  `value` + `onValueChange`. Roving focus and `aria-pressed` come free
-  from the primitive. No `name`/`required`/`ariaInvalid` — not a form
-  field.
+  (Omnibox Search/✦Ask, dashboard `?days=`). `value` is `$bindable` —
+  bind it (a getter/setter pair works); passing a bare `value` leaves
+  the group's presses on a component-local fallback that can drift
+  from the parent's state. `onValueChange` is an optional extra hook.
+  Roving focus and `aria-pressed` come free from the primitive.
+  No `name`/`required`/`ariaInvalid` — not a form field.
 -->
 <script lang="ts">
   import { ToggleGroup } from "bits-ui";
@@ -30,7 +32,7 @@
   }
 
   let {
-    value,
+    value = $bindable(),
     options,
     onValueChange,
     disabled = false,
@@ -42,7 +44,7 @@
 <ToggleGroup.Root
   type="single"
   class="ui-toggle-group"
-  {value}
+  bind:value
   {onValueChange}
   {disabled}
   {id}

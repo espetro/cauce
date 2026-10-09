@@ -53,8 +53,10 @@
     inputEl?.focus();
   }
 
-  // ToggleGroup single can deselect to "" on re-press; the mode segment
-  // must always resolve to one of the two modes, so ignore the empty value.
+  // ToggleGroup single writes "" when the pressed item is re-pressed; the
+  // mode segment must always resolve to one of the two modes. The setter
+  // ignores "", and because the binding is a getter/setter pair the group
+  // keeps reading the armed mode instead of drifting to a local fallback.
   function armFromGroup(mode: string) {
     if (mode === "search" || mode === "ai") arm(mode);
   }
@@ -90,9 +92,8 @@
   {#if capabilities.aiEnabled}
     <div class="tool-row">
       <UiToggleGroup
-        value={aiMode ? "ai" : "search"}
+        bind:value={() => (aiMode ? "ai" : "search"), armFromGroup}
         options={modeOptions}
-        onValueChange={armFromGroup}
       />
     </div>
   {/if}
