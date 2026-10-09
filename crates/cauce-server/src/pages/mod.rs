@@ -51,7 +51,7 @@ const DOC_CSS: &str = concat!(
     ":root{--bg:#fff;--fg:#18181b;--muted:#71717a;--line:#e4e4e7;--accent:#0b6bcb;--warn:#b42318}",
     "@media(prefers-color-scheme:dark){:root{--bg:#0f0f11;--fg:#e4e4e7;--muted:#a1a1aa;",
     "--line:#27272a;--accent:#6aa8ff;--warn:#f66}}",
-    "body{margin:0 auto;max-width:44rem;padding:1rem;font:15px/1.55 system-ui,sans-serif;",
+    "body{margin:0 auto;max-width:45rem;padding:1rem;font:15px/1.55 system-ui,sans-serif;",
     "background:var(--bg);color:var(--fg)}",
     "a{color:var(--accent)}",
     "header.site{display:flex;justify-content:space-between;align-items:baseline;gap:1rem;",
