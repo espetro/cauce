@@ -182,11 +182,13 @@
       transform 140ms var(--ease-out);
   }
 
-  :global(.ui-alert-dialog-btn:hover:not([data-disabled])) {
+  /* No `[data-disabled]` guards: Cancel/Action render native <button>
+     and the confirm host never passes a disabled state. */
+  :global(.ui-alert-dialog-btn:hover) {
     background: var(--greyed-bg);
   }
 
-  :global(.ui-alert-dialog-btn:active:not([data-disabled])) {
+  :global(.ui-alert-dialog-btn:active) {
     transform: scale(0.97);
   }
 
@@ -201,7 +203,7 @@
     color: var(--bg);
   }
 
-  :global(.ui-alert-dialog-btn[data-variant="primary"]:hover:not([data-disabled])) {
+  :global(.ui-alert-dialog-btn[data-variant="primary"]:hover) {
     background: color-mix(in srgb, var(--accent) 88%, var(--fg));
   }
 
@@ -211,7 +213,7 @@
     color: var(--bg);
   }
 
-  :global(.ui-alert-dialog-btn[data-variant="danger"]:hover:not([data-disabled])) {
+  :global(.ui-alert-dialog-btn[data-variant="danger"]:hover) {
     background: color-mix(in srgb, var(--warn) 88%, var(--fg));
   }
 </style>

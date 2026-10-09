@@ -97,10 +97,15 @@
             textValue={item.label}
           >
             {#snippet child({ props })}
+              <!-- A disabled link keeps no `href`: bits-ui's disabled
+                Item short-circuits its own handler WITHOUT calling
+                preventDefault, so an anchor that still carries href
+                would navigate anyway. Dropping the attribute is the
+                correct semantics too — a disabled link is not a link. -->
               <a
                 {...props}
                 class="ui-dropdown-item"
-                href={item.href}
+                href={item.disabled ? undefined : item.href}
                 aria-current={item.current ? "page" : undefined}
               >
                 {item.label}
