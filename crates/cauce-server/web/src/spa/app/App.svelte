@@ -10,11 +10,12 @@
 -->
 <script lang="ts">
   import { onMount } from "svelte";
-  import { route, navigate, onPopState } from "./router.svelte.js";
+  import { route, navigate, onPopState, routeVisible, ROUTE_REQUIRES } from "./router.svelte.js";
   import { applyTheme } from "./theme.svelte.js";
-  import { loadCapabilities } from "../lib/capabilities.svelte.js";
+  import { capabilities, loadCapabilities } from "../lib/capabilities.svelte.js";
   import { spa } from "../lib/i18n.js";
   import TopNav from "./TopNav.svelte";
+  import GateBlock from "./GateBlock.svelte";
   import HomePage from "../routes/HomePage.svelte";
   import SearchPage from "../routes/SearchPage.svelte";
   import AnswerPage from "../routes/AnswerPage.svelte";
@@ -80,7 +81,9 @@
 
 <TopNav {active} />
 {#key routeKey}
-  {#if route.path === "/"}
+  {#if !routeVisible(route.path, capabilities.loaded && capabilities.flags.adminSurface, capabilities.loaded && capabilities.flags.archiving)}
+    <GateBlock requires={ROUTE_REQUIRES[route.path]} />
+  {:else if route.path === "/"}
     <HomePage />
   {:else if route.path === "/search"}
     <SearchPage params={route.params} />

@@ -17,6 +17,7 @@ import type { EngineStatsRow } from "../../../types/EngineStatsRow.js";
 import type { PhaseStats } from "../../../types/PhaseStats.js";
 import type { StatsSnapshot } from "../../../types/StatsSnapshot.js";
 import { fetchStats } from "../../lib/api.js";
+import { capabilities, loadCapabilities } from "../../lib/capabilities.svelte.js";
 import { engineAnchor } from "../../lib/encodeId.js";
 import { fmtBytes, fmtTs, pctStr } from "../../lib/format.js";
 
@@ -107,6 +108,14 @@ export function createDashboardPage() {
     state.error = "";
     const d = params.get("days");
     state.days = d === "30" ? 30 : 7;
+    // FX-07: `sharedStats` off means ops telemetry is an admin surface
+    // — the public dashboard renders the instance card instead, so the
+    // `/api/stats` call (a guaranteed 401) never fires.
+    await loadCapabilities();
+    if (!capabilities.flags.sharedStats) {
+      state.loading = false;
+      return;
+    }
     try {
       state.snap = await fetchStats(state.days);
     } catch (e) {

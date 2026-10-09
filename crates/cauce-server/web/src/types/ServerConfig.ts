@@ -20,4 +20,18 @@ port: number,
  * Canonical externally visible HTTP(S) origin for absolute browser URLs.
  * When unset, the effective bind host and port are used over HTTP.
  */
-public_url: string | null, };
+public_url: string | null, 
+/**
+ * FX-07 instance mode (SearXNG `server.public_instance` prior art):
+ * `false` (default) is the single-user local mode — today's behavior
+ * bit-for-bit. `true` marks the instance public: history and click
+ * telemetry stop writing server-side, `GET /api/capabilities` reports
+ * `mode: "public"`, and the admin `/api/*` surface requires an
+ * `[auth] admin_tokens` bearer credential.
+ */
+public_instance: boolean, 
+/**
+ * Display name of this instance (the public-mode dashboard card and
+ * `GET /api/instance` report it). `"cauce"` by default.
+ */
+name: string, };

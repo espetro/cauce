@@ -23,6 +23,12 @@ import {
 } from "../../lib/api.js";
 import { queryHash } from "../../lib/cacheKey.js";
 import { capabilities, loadCapabilities } from "../../lib/capabilities.svelte.js";
+import {
+  archiveIndexRecord,
+  clickItem,
+  historyRecord,
+  localId,
+} from "../../lib/localHistory.js";
 import { hostOf } from "../../lib/format.js";
 import { S, spa, fmt } from "../../lib/i18n.js";
 import type { AnswerSource } from "../../../types/AnswerSource.js";
@@ -112,6 +118,8 @@ export class SearchPageState {
   statusText = $state("");
   countText = $state("");
   metaText = $state("");
+  /** FX-07: TTL/cache jargon behind a `details` expander (public mode). */
+  metaDetail = $state("");
   requestId = $state("");
   requestIdFull = $state("");
   newAbove = $state("");
@@ -178,6 +186,9 @@ export class SearchPageState {
       this.errorText = `unknown safesearch level: ${safesearch}`;
       return;
     }
+    // FX-07: every later branch (history write, click/index beacons,
+    // meta line) keys off the real flags — the defaults read local.
+    await loadCapabilities();
     const pinned = (params.get("engines") ?? "")
       .split(",")
       .map((s) => s.trim())
@@ -186,7 +197,6 @@ export class SearchPageState {
       // `validate_pin` parity (`search_error` maps it to 400): the SSR
       // page checks the pin before rendering the shell, so wait for the
       // engine-id set rather than letting EventSource swallow the 400.
-      await loadCapabilities();
       const unknown = [...new Set(pinned.filter((id) => !capabilities.engineIds.includes(id)))];
       if (unknown.length) {
         this.hasSearched = true;
@@ -238,15 +248,35 @@ export class SearchPageState {
     navigate("/app/search?q=" + encodeURIComponent(value) + "&stream=1");
   }
 
-  /** Result-row click: click beacon always, index beacon when armed. */
+  /**
+   * Result-row click: click beacon always, index beacon when armed.
+   * FX-07 public mode inverts the storage: `serverHistory` off means
+   * the click row goes to browser-local history (the endpoint would
+   * 401 anyway), and `index_on_click` feeds the per-user archive index
+   * — the shared content store takes admin credentials.
+   */
   clickRow(row: SearchRow): void {
-    clickBeacon({
-      url: row.url,
-      title: row.title,
-      position: row.position,
-      query_hash: this.hash,
-    });
-    if (capabilities.indexOnClick) indexBeacon(row.url, this.hash);
+    if (capabilities.flags.serverHistory) {
+      clickBeacon({
+        url: row.url,
+        title: row.title,
+        position: row.position,
+        query_hash: this.hash,
+      });
+    } else {
+      historyRecord(
+        clickItem({
+          url: row.url,
+          title: row.title,
+          position: row.position,
+          query_hash: this.hash,
+        }),
+      );
+    }
+    if (capabilities.indexOnClick) {
+      if (capabilities.role === "admin") indexBeacon(row.url, this.hash);
+      else archiveIndexRecord(row.url, row.title);
+    }
   }
 
   /** Close the EventSource on route change/unmount. */
@@ -266,6 +296,7 @@ export class SearchPageState {
     this.statusText = "";
     this.countText = "";
     this.metaText = "";
+    this.metaDetail = "";
     this.requestId = "";
     this.requestIdFull = "";
     this.newAbove = "";
@@ -368,11 +399,12 @@ export class SearchPageState {
       this.streaming = false;
       return;
     }
-    this.metaText = metaLineText(meta, false);
+    this.#metaFor(meta, false);
     this.requestIdFull = meta.request_id;
     this.requestId = meta.request_id.slice(0, 8);
     this.statusText = S.complete;
     this.streaming = false;
+    this.#recordSearch(meta, meta.order.length);
 
     // Arm Assist with the top rows in final order (cap 10).
     this.assistContext = meta.order
@@ -403,7 +435,8 @@ export class SearchPageState {
   #renderJson(resp: SearchResponse): void {
     this.rows = resp.results.map((r, i) => this.#toRow(r, i));
     this.countText = resp.results.length + " " + S.results;
-    this.metaText = metaLineText(resp.meta, true);
+    this.#metaFor(resp.meta, true);
+    this.#recordSearch(resp.meta, resp.results.length);
     this.requestIdFull = resp.meta.request_id;
     this.requestId = resp.meta.request_id.slice(0, 8);
     this.assistContext = resp.results.slice(0, 10).map((r) => ({
@@ -417,6 +450,48 @@ export class SearchPageState {
       const statuses = statusesText(resp.meta);
       this.emptyText = statuses ? S.no_results + " · " + statuses : S.no_results;
     }
+  }
+
+  /**
+   * FX-07: on a public instance the server writes no `search_log` —
+   * the same row shape goes to browser-local history instead.
+   */
+  /**
+   * Meta line + the FX-07 detail: on a public instance the
+   * `cached · age · ttl` badge reads just `cached`, with the TTL
+   * jargon parked in `metaDetail` for the `details` expander.
+   */
+  #metaFor(meta: SearchMeta, fullCacheBadge: boolean): void {
+    const publicMode =
+      capabilities.loaded && !capabilities.flags.sharedStats;
+    this.metaText = metaLineText(meta, publicMode ? false : fullCacheBadge);
+    this.metaDetail =
+      publicMode && meta.source !== "network"
+        ? fmt(S.cached_badge, {
+            age: meta.source.cache.age_s,
+            ttl: meta.source.cache.ttl_s,
+          })
+        : "";
+  }
+
+  #recordSearch(meta: SearchMeta, count: number): void {
+    if (capabilities.flags.serverHistory) return;
+    historyRecord({
+      kind: "search",
+      id: localId(),
+      ts: new Date().toISOString(),
+      query_hash: this.hash ?? "",
+      query: this.q.trim().toLowerCase().replace(/\s+/g, " "),
+      query_raw: this.q,
+      client: "ui",
+      source: meta.source === "network" ? "network" : "cache",
+      tier: null,
+      latency_ms: Math.round(meta.elapsed_ms),
+      result_count: count,
+      engines: meta.engines_used.map((r) => r.engine),
+      deadline_hit: meta.deadline_hit,
+      origin: "user",
+    });
   }
 
   #toRow(r: RowLike, position: number): SearchRow {

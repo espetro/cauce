@@ -53,6 +53,12 @@
       <div class="meta">
         {#if page.countText}<span id="result-count">{page.countText}</span>{/if}
         {#if page.metaText}<span id="search-meta">{page.metaText}</span>{/if}
+        {#if page.metaDetail}
+          <details class="meta-detail">
+            <summary>{spa.app.cache_details}</summary>
+            <span>{page.metaDetail}</span>
+          </details>
+        {/if}
         {#if page.requestId}
           <span id="request-id" class="request-id" title={page.requestIdFull}>{page.requestId}</span>
         {/if}

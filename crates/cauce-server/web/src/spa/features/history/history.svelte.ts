@@ -27,6 +27,8 @@ import {
   fetchCacheList,
   fetchHistory,
 } from "../../lib/api.js";
+import { capabilities, loadCapabilities } from "../../lib/capabilities.svelte.js";
+import { historyLoad, historyRemove } from "../../lib/localHistory.js";
 import { fmtDay, fmtHm, humanSeconds } from "../../lib/format.js";
 import { fmt, spa } from "../../lib/i18n.js";
 
@@ -308,14 +310,65 @@ export function createHistoryPage() {
     return "mcp:" + client.mcp;
   }
 
+  /**
+   * FX-07: apply the route's filters to a browser-local item set —
+   * `since` windows on `ts`, `q` substrings the query (the API's `q`
+   * does the same server-side), origin collapses to `user` rows only
+   * (everything local IS user), `cached` has no local meaning and is
+   * ignored.
+   */
+  function localItems(): HistoryItem[] {
+    const since = state.since;
+    const cutoff =
+      since === "all"
+        ? 0
+        : Date.now() -
+          (since === "24h"
+            ? 86400000
+            : since === "7d"
+              ? 604800000
+              : since === "30d"
+                ? 2592000000
+                : 0);
+    const q = state.q.trim().toLowerCase();
+    return historyLoad().filter((i) => {
+      if (cutoff > 0 && new Date(i.ts).getTime() < cutoff) return false;
+      if (state.origin === "agent" || state.origin === "cli") return false;
+      if (
+        q !== "" &&
+        !(i.kind === "click"
+          ? i.url.toLowerCase().includes(q) || i.title.toLowerCase().includes(q)
+          : (i.query_raw ?? i.query).toLowerCase().includes(q))
+      ) {
+        return false;
+      }
+      return true;
+    });
+  }
+
   async function run(params: URLSearchParams): Promise<void> {
     state.loading = true;
+    // FX-07: the serverHistory flag decides local vs server feed —
+    // wait for the real caps before reading it (defaults are local).
+    await loadCapabilities();
     state.error = "";
     state.since = params.get("since") ?? "all";
     state.origin = params.get("origin") ?? "user";
     state.q = params.get("q") ?? "";
     state.cached = params.get("cached") === "true" || params.get("cached") === "1";
     try {
+      if (!capabilities.flags.serverHistory) {
+        // FX-07: browser-local feed — same fold, no cache listing to
+        // join (the `/api/cache` surface is off anyway).
+        const items = localItems();
+        state.capped = items.length >= 200;
+        state.rows = fold(items, new Map());
+        if (state.rows.length === 0) {
+          state.originAllUrl = "";
+          emptyMessageFor(items);
+        }
+        return;
+      }
       const [items, listing] = await Promise.all([
         fetchHistory(filterParams()),
         fetchCacheList(new URLSearchParams({ limit: "200" })).catch(
@@ -341,7 +394,10 @@ export function createHistoryPage() {
     if (!window.confirm(row.deleteConfirm)) return;
     row.error = "";
     try {
-      if (row.kind === "search") await deleteHistoryRow(row.id);
+      await loadCapabilities();
+      if (!capabilities.flags.serverHistory) {
+        historyRemove(row.id);
+      } else if (row.kind === "search") await deleteHistoryRow(row.id);
       else await deleteAnswerRow(row.id);
       row.gone = true;
     } catch (e) {
