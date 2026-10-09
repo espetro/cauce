@@ -56,6 +56,9 @@ tokio-stream = "0.1"
 # Same major version as cauce-core: `Config::from_raw`/`raw_tree` hand out a
 # `toml::Value` and the types must be identical across the crates.
 toml = { version = "0.9", features = ["preserve_order"] }
+# FX-07: `ServiceBuilder` wraps the `/mcp` service in the admin gate —
+# `route_layer` cannot reach a service mounted via `any_service`.
+tower = { version = "0.5", features = ["util"] }
 tracing = "0.1"
 tracing-appender = "0.2"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }

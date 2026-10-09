@@ -32,6 +32,20 @@ pub enum RouteKind {
     Static,
 }
 
+/// FX-07 authorisation class of a route (`auth` column): which rows
+/// demand the `[auth] admin_tokens` credential once
+/// `server.public_instance` flips the instance public. Local mode mounts
+/// both classes identically — the gate is a no-op there, which is what
+/// "local is today's behaviour bit-for-bit" means on the wire.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RouteAuth {
+    /// No credential, either mode.
+    Open,
+    /// `Authorization: Bearer <admin token>` required in public mode
+    /// (401 `unauthorized` otherwise); transparent in local mode.
+    Admin,
+}
+
 /// One row of the section-6 wire table.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RouteSpec {
@@ -49,6 +63,18 @@ pub struct RouteSpec {
     /// `cauce serve --headless`; `"ui"` rows additionally obey the runtime
     /// headless switch.
     pub requires: Option<&'static str>,
+    /// FX-07 authz class (see [`RouteAuth`]).
+    pub auth: RouteAuth,
+}
+
+impl RouteSpec {
+    /// Mark the row admin-gated for public instances (FX-07).
+    const fn admin(self) -> Self {
+        Self {
+            auth: RouteAuth::Admin,
+            ..self
+        }
+    }
 }
 
 const fn json(method: &'static str, path: &'static str, wave: u8) -> RouteSpec {
@@ -58,6 +84,7 @@ const fn json(method: &'static str, path: &'static str, wave: u8) -> RouteSpec {
         kind: RouteKind::Json,
         wave,
         requires: None,
+        auth: RouteAuth::Open,
     }
 }
 
@@ -68,6 +95,7 @@ const fn sse(method: &'static str, path: &'static str, wave: u8) -> RouteSpec {
         kind: RouteKind::Sse,
         wave,
         requires: None,
+        auth: RouteAuth::Open,
     }
 }
 
@@ -78,6 +106,7 @@ const fn html(path: &'static str, wave: u8) -> RouteSpec {
         kind: RouteKind::Html,
         wave,
         requires: Some("ui"),
+        auth: RouteAuth::Open,
     }
 }
 
@@ -86,49 +115,68 @@ const fn html(path: &'static str, wave: u8) -> RouteSpec {
 pub const ROUTES: &[RouteSpec] = &[
     // ---- wave 0: the JSON surface mounted by this step --------------------
     json("GET", "/api/search", 0),
-    json("GET", "/api/history", 0),
-    json("POST", "/api/click", 0),
-    json("GET", "/api/stats", 0),
-    json("GET", "/api/cache", 0),
-    json("GET", "/api/cache/{key}", 0),
-    json("DELETE", "/api/cache/{key}", 0),
-    json("DELETE", "/api/cache", 0),
-    json("GET", "/api/audit", 0),
+    // FX-07: the history surface is server-side per-user state — admin
+    // in public mode (where nothing writes it anyway), open locally.
+    json("GET", "/api/history", 0).admin(),
+    // `/api/click` feeds the same history rows — same class.
+    json("POST", "/api/click", 0).admin(),
+    json("GET", "/api/stats", 0).admin(),
+    // The cache listing maps query hashes to stored results — on a
+    // public instance that is everyone's shared query corpus, so both
+    // the reads and the writes sit behind the admin token.
+    json("GET", "/api/cache", 0).admin(),
+    json("GET", "/api/cache/{key}", 0).admin(),
+    json("DELETE", "/api/cache/{key}", 0).admin(),
+    json("DELETE", "/api/cache", 0).admin(),
+    json("GET", "/api/audit", 0).admin(),
     json("GET", "/health", 0),
-    json("GET", "/api/config", 0),
-    json("PUT", "/api/config", 0),
+    // `/api/config` (even redacted) exposes the operator's full
+    // configuration — admin in public mode; the SPA boots off
+    // `/api/instance` instead.
+    json("GET", "/api/config", 0).admin(),
+    json("PUT", "/api/config", 0).admin(),
     // ---- wave 0 HTMX pages (W0-10 mounts them once templates exist) -------
     html("/", 0),
     html("/search", 0),
     // ---- wave 1 ------------------------------------------------------------
-    json("GET", "/api/engines", 1),
-    json("POST", "/api/engines/{id}/reset", 1),
-    json("GET", "/metrics", 1),
+    // Engine inventory/levers are operator surfaces (ids, params,
+    // health internals) — admin in public mode; the public card gets
+    // its count from `/api/instance`.
+    json("GET", "/api/engines", 1).admin(),
+    json("POST", "/api/engines/{id}/reset", 1).admin(),
+    json("GET", "/metrics", 1).admin(),
     RouteSpec {
         method: "*",
         path: "/mcp",
         kind: RouteKind::Mcp,
         wave: 1,
         requires: Some("mcp"),
+        // `/mcp` exposes mutating tools (`cache_invalidate`,
+        // `fetch_and_index`) — admin in public mode.
+        auth: RouteAuth::Admin,
     },
     // ---- wave 2 ------------------------------------------------------------
     sse("GET", "/api/search/stream", 2),
-    json("POST", "/api/engines/{id}/enable", 2),
-    json("POST", "/api/engines/{id}/disable", 2),
-    json("DELETE", "/api/history/{id}", 2),
+    json("POST", "/api/engines/{id}/enable", 2).admin(),
+    json("POST", "/api/engines/{id}/disable", 2).admin(),
+    json("DELETE", "/api/history/{id}", 2).admin(),
     // #254: the answer-log counterpart — one audited row delete, plus
-    // the read surface `GET /answer/{id}` renders.
-    json("DELETE", "/api/answer-log/{id}", 2),
-    json("GET", "/api/answer-log/{id}", 2),
+    // the read surface `GET /answer/{id}` renders. History state —
+    // admin in public mode like `/api/history`.
+    json("DELETE", "/api/answer-log/{id}", 2).admin(),
+    json("GET", "/api/answer-log/{id}", 2).admin(),
     // The suggestions Url the W2-11 descriptor advertises; a wave-2
     // omission like the favicon (#150).
     json("GET", "/api/suggest", 2),
     // #240: the support-report download (`Content-Disposition:
-    // attachment` + the `X-Report-Issue-Url` share header).
-    json("GET", "/api/report", 2),
+    // attachment` + the `X-Report-Issue-Url` share header). The bundle
+    // contains store paths, engine internals and uptime — admin in
+    // public mode.
+    json("GET", "/api/report", 2).admin(),
     // FX-05: `/history`..`/audit` moved under `/app`; `/trace/{id}` is
-    // the last HTMX ops page (no JSON twin yet).
-    html("/trace/{id}", 2),
+    // the last HTMX ops page (no JSON twin yet). Ops surface — admin
+    // in public mode like `/api/audit`.
+    html("/trace/{id}", 2).admin(),
     html("/opensearch.xml", 2),
     // `GET /favicon.ico` was a wave-0 omission (#87): browsers request it on
     // every page load. It rides the `ui` gate like the pages — `rust-embed`
@@ -139,6 +187,7 @@ pub const ROUTES: &[RouteSpec] = &[
         kind: RouteKind::Static,
         wave: 2,
         requires: Some("ui"),
+        auth: RouteAuth::Open,
     },
     // ---- wave 4 ------------------------------------------------------------
     // `/api/answer` rides the `ai` gate like `/mcp` rides `mcp`: a build
@@ -149,6 +198,7 @@ pub const ROUTES: &[RouteSpec] = &[
         kind: RouteKind::Sse,
         wave: 4,
         requires: Some("ai"),
+        auth: RouteAuth::Open,
     },
     // The page stays on `ui` alone: in an `ai`-less build it renders the
     // disabled notice (and links `/settings`) rather than 404ing.
@@ -167,6 +217,9 @@ pub const ROUTES: &[RouteSpec] = &[
         kind: RouteKind::Json,
         wave: 5,
         requires: Some("archive"),
+        // Indexing spends fetch budget and writes the shared store —
+        // admin in public mode (the per-user index lives client-side).
+        auth: RouteAuth::Admin,
     },
     RouteSpec {
         method: "GET",
@@ -174,6 +227,8 @@ pub const ROUTES: &[RouteSpec] = &[
         kind: RouteKind::Json,
         wave: 5,
         requires: Some("archive"),
+        // Archived content is the shared store keyed by URL — open.
+        auth: RouteAuth::Open,
     },
     // The GET must probe first: the live router check seeds one `pages`
     // row, and DELETE's probe removes it.
@@ -183,6 +238,7 @@ pub const ROUTES: &[RouteSpec] = &[
         kind: RouteKind::Json,
         wave: 5,
         requires: Some("archive"),
+        auth: RouteAuth::Admin,
     },
     RouteSpec {
         method: "GET",
@@ -190,9 +246,16 @@ pub const ROUTES: &[RouteSpec] = &[
         kind: RouteKind::Json,
         wave: 5,
         requires: Some("archive"),
+        // The archive search surface reads shared content — open.
+        auth: RouteAuth::Open,
     },
     // ---- FX: frontend replacement (W8 epic; plan
     // `2026-09-28-frontend-replacement.md` §5.1) -------------------------
+    // FX-07: the instance-mode bootstrap pair — open reads in both
+    // modes (they carry no secrets; the gates live on what they
+    // describe). `/api/capabilities` reports the per-request role.
+    json("GET", "/api/capabilities", 8),
+    json("GET", "/api/instance", 8),
     // FX-02: `GET /app` serves the Svelte SPA shell; `/app/{*rest}`
     // serves the embedded hashed assets and falls back to the shell for
     // client-side routes. `ui`-gated like the HTMX pages: rust-embed is

@@ -12,6 +12,7 @@ mod app;
 #[cfg(feature = "ui")]
 mod audit_page;
 
+mod capabilities;
 mod error;
 mod handlers;
 #[cfg(feature = "ui")]
@@ -30,6 +31,7 @@ pub use app::{
     AppState, CURRENT_WAVE, RouterOptions, build_router, build_router_opts, feature_enabled,
     mounted_routes, serve,
 };
+pub use capabilities::{Capabilities, CapabilityFlags, InstanceInfo, InstanceMode, Role};
 pub use error::ApiError;
 #[cfg(feature = "ai")]
 pub use handlers::AnswerBody;
@@ -40,5 +42,5 @@ pub use handlers::{
 #[cfg(feature = "archive")]
 pub use handlers::{ArchiveResponse, ArchiveRow, IndexBody, PageDeleteAck};
 pub use metrics::{METRICS_CONTENT_TYPE, MetricsHandle};
-pub use middleware::{HostGuard, RequestCtx, host_origin_guard, request_context};
-pub use routes::{ROUTES, RouteKind, RouteSpec};
+pub use middleware::{HostGuard, RequestCtx, host_origin_guard, request_context, require_admin};
+pub use routes::{ROUTES, RouteAuth, RouteKind, RouteSpec};
