@@ -7,13 +7,6 @@ settings:
 importers:
 
   .:
-    dependencies:
-      htmx-ext-json-enc:
-        specifier: 2.0.2
-        version: 2.0.2
-      htmx.org:
-        specifier: 2.0.4
-        version: 2.0.4
     devDependencies:
       '@sveltejs/vite-plugin-svelte':
         specifier: ^7.3.1
@@ -27,9 +20,6 @@ importers:
       happy-dom:
         specifier: 20.14.5
         version: 20.14.5
-      rolldown:
-        specifier: 1.2.11
-        version: 1.2.11
       svelte:
         specifier: ^5.57.2
         version: 5.57.2
@@ -685,12 +675,6 @@ packages:
   happy-dom@20.14.5:
     resolution: {integrity: sha512-x/RzkpWO40bTjIoT30iQtt64FLLmH/iRcUCN2X//bLx7H3ifkdfPXyqsro/OYtqzIAhiLMMA7mmiOR9C3NOKjQ==}
     engines: {node: '>=20.0.0'}
-
-  htmx-ext-json-enc@2.0.2:
-    resolution: {integrity: sha512-RhWacD1u5ViBY1S+YDipuOtJ4ZuruYgxuK7dwAINs1/xo00VIP5AW708MBshwIA8obGvGMSq0LjtWynopTE5Og==}
-
-  htmx.org@2.0.4:
-    resolution: {integrity: sha512-HLxMCdfXDOJirs3vBZl/ZLoY+c7PfM4Ahr2Ad4YXh6d22T5ltbTXFFkpx9Tgb2vvmWFMbIc3LqN2ToNkZJvyYQ==}
 
   is-reference@3.0.3:
     resolution: {integrity: sha512-ixkJoqQvAP88E6wLydLGGqCJsrFUnqoH6HnaczB8XmDH1oaWU+xxdptvikTgaEhtZ53Ky6YXiBuUI2WXLMCwjw==}
@@ -1485,12 +1469,6 @@ snapshots:
     transitivePeerDependencies:
       - bufferutil
       - utf-8-validate
-
-  htmx-ext-json-enc@2.0.2:
-    dependencies:
-      htmx.org: 2.0.4
-
-  htmx.org@2.0.4: {}
 
   is-reference@3.0.3:
     dependencies:

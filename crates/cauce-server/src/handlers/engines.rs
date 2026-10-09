@@ -220,9 +220,8 @@ pub(crate) async fn engine_views(state: &AppState) -> Result<Vec<EngineView>, Ap
 /// breaker in `details`); the fresh row is persisted immediately rather
 /// than through the 1/s debounce.
 ///
-/// HTMX callers (`HX-Request` header, the engines page's reset button) get
-/// the re-rendered card partial for `hx-swap="outerHTML"` instead of the
-/// JSON row — same data plane, negotiated like `html::search` does.
+/// Always the JSON row — the SPA's engines tab re-renders from it (FX-06:
+/// the HTMX card-partial arm is gone).
 pub async fn engine_reset(
     State(state): State<AppState>,
     Extension(ctx): Extension<RequestCtx>,

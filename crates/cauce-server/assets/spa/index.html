@@ -9,10 +9,11 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>cauce</title>
+    <link rel="search" type="application/opensearchdescription+xml" title="cauce" href="/opensearch.xml" />
     <link rel="icon" href="/favicon.ico" />
     <script>
       // Applies the stored theme before first paint so a saved light/dark
-      // choice never flashes the opposite palette (theme_head.html's twin).
+      // choice never flashes the opposite palette.
       (function () {
         try {
           var t = localStorage.getItem("cauce-theme");
@@ -20,11 +21,33 @@
         } catch (_) {}
       })();
     </script>
+    <!-- FX-06: the SPA is the only UI layer, so a no-JS browser gets this
+         minimal shell instead of the old server-rendered degradation
+         path (plan §7.5). Same tokens as the app theme; the JSON API
+         and the residual pages keep working without it. -->
+    <style>
+      :root { --bg: #fff; --fg: #18181b; --muted: #71717a; --line: #e4e4e7; }
+      @media (prefers-color-scheme: dark) {
+        :root { --bg: #0f0f11; --fg: #e4e4e7; --muted: #a1a1aa; --line: #27272a; }
+      }
+      :root[data-theme="light"] { --bg: #fff; --fg: #18181b; --muted: #71717a; --line: #e4e4e7; }
+      :root[data-theme="dark"] { --bg: #0f0f11; --fg: #e4e4e7; --muted: #a1a1aa; --line: #27272a; }
+    </style>
     <script type="module" crossorigin src="/app/assets/index-DQeoLeS8.js"></script>
     <link rel="stylesheet" crossorigin href="/app/assets/index-CC0Njn45.css">
   </head>
   <body>
     <div id="app"></div>
-    <noscript>cauce needs JavaScript for the app UI; the JSON API keeps working without it.</noscript>
+    <noscript>
+      <main style="margin: 0 auto; max-width: 34rem; padding: 2rem 1rem; font: 15px/1.6 system-ui, sans-serif; background: var(--bg); color: var(--fg)">
+        <h1 style="font-size: 1.3rem; margin: 0 0 .8rem">cauce</h1>
+        <p>cauce's web UI needs JavaScript — there is no server-rendered page to fall back to.</p>
+        <p style="color: var(--muted)">
+          Without JavaScript you can still use the HTTP API:
+          <code>GET /api/search?q=…</code> and <code>GET /api/suggest?q=…</code> return JSON, and
+          <code>GET /health</code> reports instance status.
+        </p>
+      </main>
+    </noscript>
   </body>
 </html>

@@ -5,8 +5,8 @@
 
 /* FX-02 styling decision (plan §7.3): Tailwind v4 is the SPA's only
  * styling system. The design tokens are a one-way port of
- * `assets/style.css`'s `:root` layer — the legacy sheet is never imported
- * here and dies with the HTMX pages in FX-06. Utilities (`bg-bg`,
+ * `assets/style.css`'s `:root` layer — the legacy sheet went away with
+ * the HTMX stack in FX-06. Utilities (`bg-bg`,
  * `text-fg`, `text-muted`, `border-border`, `bg-greyed-bg`,
  * `font-mono`) resolve through these CSS vars so the three-state theme
  * mechanism (light default / prefers-color-scheme / [data-theme]) keeps

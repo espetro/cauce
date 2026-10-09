@@ -2,7 +2,8 @@
 //!
 //! Runs the `cauce` binary, starts `cauce serve` with the replay engine, and
 //! walks through the full user flow: network search, cache hit, history,
-//! stats, click beacon, HTML result page, cache delete, audit, and `cauce trace`.
+//! stats, click beacon, SPA shell + legacy redirect, cache delete, audit,
+//! and `cauce trace`.
 //!
 //! This Source Code Form is subject to the terms of the Mozilla Public
 //! License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -136,16 +137,17 @@ async fn replay_golden_path() {
         "click not in history"
     );
 
-    // 7. HTML search page is served from cache and contains a replay title.
-    // `ui` builds only: `--no-default-features` binaries have no pages.
+    // 7. The browser surface is the SPA: legacy `/search` permanently
+    // redirects to `/app/search` (query preserved), and `/app` serves the
+    // embedded shell. `ui` builds only: `--no-default-features` binaries
+    // have no pages.
     if cfg!(feature = "ui") {
-        let (status, html) = common::http(addr, "GET", "/search?q=golden+path", None).await;
-        assert_eq!(status, 200, "html search failed");
-        assert!(
-            html.contains("golden path:"),
-            "HTML should contain a replay title"
-        );
-        assert!(html.contains("cached"), "HTML should show cached badge");
+        let (status, _) = common::http(addr, "GET", "/search?q=golden+path", None).await;
+        assert_eq!(status, 308, "legacy search must redirect to /app");
+
+        let (status, html) = common::http(addr, "GET", "/app/search?q=golden+path", None).await;
+        assert_eq!(status, 200, "spa shell failed");
+        assert!(html.contains(r#"<div id="app">"#), "missing SPA mount");
     }
 
     // 8. Delete the exact cache entry; the next search is network again.

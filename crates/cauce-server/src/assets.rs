@@ -1,6 +1,8 @@
-//! Static assets vendored under `crates/cauce-server/assets` (embedded at
-//! compile time via `rust-embed`) and the small document endpoints that
-//! serve them — `GET /favicon.ico` and `GET /opensearch.xml`.
+//! Embedded static assets: the favicon and the OpenSearch descriptor.
+//!
+//! `GET /favicon.ico` serves the embedded SVG every browser probes; the
+//! OpenSearch descriptor (`GET /opensearch.xml`) is the public document
+//! `<link rel="search">` in the SPA shell points browsers at.
 //!
 //! This Source Code Form is subject to the terms of the Mozilla Public
 //! License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -22,34 +24,11 @@ use crate::app::{AppState, RouterOptions};
 #[folder = "assets/"]
 struct Assets;
 
-fn asset_string(name: &str) -> String {
-    Assets::get(name)
-        .map(|f| String::from_utf8_lossy(&f.data).into_owned())
-        .unwrap_or_default()
-}
-
-/// Shared page stylesheet; the other `ui` pages (W2) inject it too.
-pub(crate) static STYLE_CSS: LazyLock<String> = LazyLock::new(|| asset_string("style.css"));
-
-/// The version label the shared header renders (`v0.0.0`), hidden below
-/// 640 px by the stylesheet. Referenced from `templates/header.html`.
-pub(crate) const VERSION_LABEL: &str = concat!("v", env!("CARGO_PKG_VERSION"));
-
 static FAVICON_SVG: LazyLock<Cow<'static, [u8]>> = LazyLock::new(|| {
     Assets::get("favicon.svg")
         .map(|f| f.data)
         .unwrap_or_default()
 });
-/// The bundled page script (`web/src/` → `assets/app.js`; built by
-/// `npm run build`, kept in sync by the `web` mise task). It replaces
-/// the per-template inline `<script>` blocks; templates inline it via
-/// `crate::html::app_js()`.
-static APP_JS: LazyLock<String> = LazyLock::new(|| asset_string("app.js"));
-
-/// `app.js` for template injection (`{{ crate::html::app_js()|safe }}`).
-pub(crate) fn app_js() -> &'static str {
-    APP_JS.as_str()
-}
 
 /// `GET /favicon.ico`: the embedded SVG site icon. Browsers request this
 /// path on every page load; wave-0 verification saw it 404 each time (#87).
@@ -65,7 +44,7 @@ pub async fn favicon() -> Response {
 }
 
 /// `GET /opensearch.xml` (W2-11): the OpenSearch 1.1 description document
-/// browsers fetch after seeing the page head's `<link rel="search">`.
+/// browsers fetch after seeing the SPA shell's `<link rel="search">`.
 ///
 /// The absolute URL templates use the configured canonical public origin,
 /// or the effective bind host and port when no public origin is configured.
@@ -89,7 +68,7 @@ pub async fn opensearch(
 }
 
 fn opensearch_xml(origin: &str) -> String {
-    let results_url = xml_attribute_escape(&format!("{origin}/search?q={{searchTerms}}"));
+    let results_url = xml_attribute_escape(&format!("{origin}/app/search?q={{searchTerms}}"));
     let suggestions_url = xml_attribute_escape(&format!("{origin}/api/suggest?q={{searchTerms}}"));
     format!(
         concat!(

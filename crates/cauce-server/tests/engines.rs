@@ -1,7 +1,7 @@
 //! `GET /api/engines` + `POST /api/engines/{id}/reset` (W1-06) and the
-//! W2-05 additions: the engine enable/disable pair and the
-//! `Accept: text/html` test fragment (the `/engines` page moved to
-//! `/app/admin?tab=engines` in FX-05).
+//! W2-05 additions: the engine enable/disable pair and the test-query
+//! JSON path the `/app/admin?tab=engines` tab drives (the page moved
+//! to the SPA in FX-05).
 //!
 //! This Source Code Form is subject to the terms of the Mozilla Public
 //! License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -165,11 +165,12 @@ async fn blocked_engine_reports_open_and_reset_readmits() {
 // W2-05 enable/disable pair, inline test fragment
 // ---------------------------------------------------------------------
 
-/// The card's test form submits `GET /api/search?engines=<id>` under
-/// `Accept: text/html`; the handler's fragment arm answers the meta line
-/// plus the shared `results.html` list (checkpoint #29).
+/// The engines admin tab runs its test query as
+/// `GET /api/search?engines=<id>` — JSON under any Accept header now
+/// (FX-06 dropped the fragment arm; an `Accept: text/html` caller gets
+/// the same envelope).
 #[tokio::test]
-async fn api_search_html_returns_test_fragment() {
+async fn api_search_answers_json_under_any_accept() {
     let (router, _state, _tmp) = app_with(ReplayOpts::default());
 
     let (status, body, ct) = fetch(
@@ -180,50 +181,30 @@ async fn api_search_html_returns_test_fragment() {
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{body}");
-    assert!(ct.starts_with("text/html"), "{ct}");
-    assert!(body.contains("results ·"), "meta line: {body}");
-    assert!(body.contains(" ms"), "elapsed in meta line: {body}");
-    // Same result anatomy as the search page's `results.html`.
-    assert!(body.contains("<article"), "{body}");
-    assert!(body.contains("hx-post=\"/api/click\""), "{body}");
-
-    // The JSON arm is unchanged by the negotiation.
-    let (status, body) = call(&router, "GET", "/api/search?q=test&engines=replay").await;
-    assert_eq!(status, StatusCode::OK, "{body}");
+    assert!(ct.starts_with("application/json"), "{ct}");
+    let body: Value = serde_json::from_str(&body).unwrap();
     assert!(!body["results"].as_array().unwrap().is_empty());
 }
 
-/// A failed test query renders the engine's error class: `blocked` for a
-/// blocked engine, `breaker open` once the failure has opened the
-/// breaker. HTMX callers get the swap-friendly 200; a direct HTML caller
-/// gets the real status.
+/// A failed test query maps the engine's error class onto the JSON
+/// envelope: `upstream_failed` 502 for a blocked engine, `breaker_open`
+/// 503 once the failure has opened the breaker (the swap-friendly 200
+/// the HTMX card used to get is gone with the fragment arm — FX-06).
 #[tokio::test]
-async fn api_search_html_fragment_names_error_class() {
+async fn api_search_envelope_names_error_class() {
     let (router, _state, _tmp) = app_with(ReplayOpts {
         blocked: true,
         ..ReplayOpts::default()
     });
 
-    let (status, body, _) = fetch(
-        &router,
-        "GET",
-        "/api/search?q=x&engines=replay",
-        &[("accept", "text/html")],
-    )
-    .await;
+    let (status, body) = call(&router, "GET", "/api/search?q=x&engines=replay").await;
     assert_eq!(status, StatusCode::BAD_GATEWAY, "{body}");
-    assert!(body.contains("blocked"), "class line: {body}");
+    assert_eq!(body["error"]["code"], "upstream_failed", "{body}");
 
     // The failure opened the breaker: the pinned call is skipped now.
-    let (status, body, _) = fetch(
-        &router,
-        "GET",
-        "/api/search?q=x&engines=replay",
-        &[("accept", "text/html"), ("hx-request", "true")],
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK, "{body}");
-    assert!(body.contains("breaker open"), "class line: {body}");
+    let (status, body) = call(&router, "GET", "/api/search?q=x&engines=replay").await;
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE, "{body}");
+    assert_eq!(body["error"]["code"], "breaker_open", "{body}");
 }
 
 /// `POST /api/engines/{id}/enable|disable` writes `enabled` into

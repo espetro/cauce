@@ -22,7 +22,9 @@
 pub enum RouteKind {
     /// JSON request/response (`/api/*`, `/health`, `/metrics`).
     Json,
-    /// Server-rendered HTMX page.
+    /// Browser-facing document or page entry: the SPA shell, a permanent
+    /// redirect onto it, a residual server-rendered page (`/trace/{id}`,
+    /// `/answer/{id}`), or the OpenSearch descriptor.
     Html,
     /// `text/event-stream` endpoint.
     Sse,
@@ -135,7 +137,8 @@ pub const ROUTES: &[RouteSpec] = &[
     // `/api/instance` instead.
     json("GET", "/api/config", 0).admin(),
     json("PUT", "/api/config", 0).admin(),
-    // ---- wave 0 HTMX pages (W0-10 mounts them once templates exist) -------
+    // ---- wave 0 pages: legacy canonical paths, now permanent redirects
+    // onto their `/app` twins (FX-06).
     html("/", 0),
     html("/search", 0),
     // ---- wave 1 ------------------------------------------------------------
@@ -173,9 +176,9 @@ pub const ROUTES: &[RouteSpec] = &[
     // contains store paths, engine internals and uptime — admin in
     // public mode.
     json("GET", "/api/report", 2).admin(),
-    // FX-05: `/history`..`/audit` moved under `/app`; `/trace/{id}` is
-    // the last HTMX ops page (no JSON twin yet). Ops surface — admin
-    // in public mode like `/api/audit`.
+    // FX-05/06: `/history`..`/audit` moved under `/app`; `/trace/{id}`
+    // stays server-rendered (the audit tab deep-links to it; no JSON
+    // twin). Ops surface — admin in public mode like `/api/audit`.
     html("/trace/{id}", 2).admin(),
     html("/opensearch.xml", 2),
     // `GET /favicon.ico` was a wave-0 omission (#87): browsers request it on
@@ -200,8 +203,8 @@ pub const ROUTES: &[RouteSpec] = &[
         requires: Some("ai"),
         auth: RouteAuth::Open,
     },
-    // The page stays on `ui` alone: in an `ai`-less build it renders the
-    // disabled notice (and links `/settings`) rather than 404ing.
+    // `ui` alone like `/`: redirects to `/app/answer` — the SPA renders
+    // the disabled notice in an `ai`-less build.
     html("/answer", 4),
     // #254: durable answer URLs — `/answer/{id}` renders the stored
     // `answer_log` row server-side (no stream), so back/forward and
@@ -258,7 +261,7 @@ pub const ROUTES: &[RouteSpec] = &[
     json("GET", "/api/instance", 8),
     // FX-02: `GET /app` serves the Svelte SPA shell; `/app/{*rest}`
     // serves the embedded hashed assets and falls back to the shell for
-    // client-side routes. `ui`-gated like the HTMX pages: rust-embed is
+    // client-side routes. `ui`-gated like the page rows: rust-embed is
     // a `ui` dependency and `--headless` serves no browser surface.
     html("/app", 8),
     html("/app/{*rest}", 8),
