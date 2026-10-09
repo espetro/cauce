@@ -16,9 +16,10 @@
 //! License, v. 2.0. If a copy of the MPL was not distributed with this
 //! file, You can obtain one at <https://mozilla.org/MPL/2.0/>.
 
+use std::collections::HashMap;
 use std::net::{IpAddr, SocketAddr};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 
 use axum::body::Body;
 use axum::extract::connect_info::ConnectInfo;
@@ -28,6 +29,7 @@ use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use cauce_core::config::Config;
+use chrono::Datelike;
 use governor::clock::{Clock, DefaultClock};
 use governor::{DefaultKeyedRateLimiter, Quota};
 use tokio::sync::Semaphore;
@@ -50,6 +52,10 @@ pub struct Limits {
     /// already exports counters; these land in logs via the span).
     rejected_rate: Arc<AtomicU64>,
     rejected_inflight: Arc<AtomicU64>,
+    /// PUB-03: the per-(ip, UTC-day) counter behind
+    /// `[ai].free_daily_answers` — in-memory like the bucket: a
+    /// budget, not billing.
+    free_answers: Arc<DailyCount>,
 }
 
 impl Limits {
@@ -67,7 +73,73 @@ impl Limits {
                 .then(|| Arc::new(Semaphore::new(cfg.server.max_inflight as usize))),
             rejected_rate: Arc::new(AtomicU64::new(0)),
             rejected_inflight: Arc::new(AtomicU64::new(0)),
+            free_answers: Arc::new(DailyCount::new()),
         }
+    }
+
+    /// PUB-03: spend one unit of `[ai].free_daily_answers` for this
+    /// caller — `Ok` when the budget is unset (`0` = unlimited, the
+    /// operator's explicit choice on a public instance), the caller is
+    /// exempt (loopback peer, `Role::Admin` like the token bucket), or
+    /// nothing attributes the request; `Err(Retry-After secs)` — the
+    /// wait to UTC midnight — when today's budget is spent.
+    pub fn check_free_answer(
+        &self,
+        cfg: &Config,
+        headers: &HeaderMap,
+        peer: Option<IpAddr>,
+    ) -> Result<(), u64> {
+        let limit = cfg.ai.free_daily_answers;
+        if limit == 0
+            || peer.is_some_and(|ip| ip.is_loopback())
+            || matches!(role_for(cfg, headers), Role::Admin)
+        {
+            return Ok(());
+        }
+        let Some(ip) = client_key(headers, peer, cfg.rate_limit.trust_proxy_headers) else {
+            return Ok(());
+        };
+        self.free_answers.charge(ip, limit)
+    }
+}
+
+/// The (ip, UTC-day) counts behind `check_free_answer`: the current
+/// day and the per-IP tally in one lock so the midnight rollover is
+/// atomic — a budget, not billing.
+struct DailyCount {
+    /// `num_days_from_ce` of the UTC day `counts` belongs to, and the
+    /// day-scoped tallies.
+    inner: Mutex<(i64, HashMap<IpAddr, u32>)>,
+}
+
+impl DailyCount {
+    fn new() -> Self {
+        Self {
+            inner: Mutex::new((0, HashMap::new())),
+        }
+    }
+
+    /// Spend one unit for `ip` today. `Err` carries the seconds to UTC
+    /// midnight when the day's `limit` is already spent — a rejected
+    /// request does not consume.
+    fn charge(&self, ip: IpAddr, limit: u32) -> Result<(), u64> {
+        let now = chrono::Utc::now();
+        let today = i64::from(now.date_naive().num_days_from_ce());
+        let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        if inner.0 != today {
+            inner.0 = today;
+            inner.1.clear();
+        }
+        let used = inner.1.entry(ip).or_insert(0);
+        if *used >= limit {
+            let tomorrow = (now.date_naive() + chrono::Days::new(1))
+                .and_hms_opt(0, 0, 0)
+                .expect("midnight exists")
+                .and_utc();
+            return Err((tomorrow - now).num_seconds().max(1) as u64);
+        }
+        *used += 1;
+        Ok(())
     }
 }
 

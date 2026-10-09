@@ -5,15 +5,18 @@
 //! file, You can obtain one at <https://mozilla.org/MPL/2.0/>.
 
 use std::convert::Infallible;
+use std::net::SocketAddr;
 
 use axum::Extension;
 use axum::body::Bytes;
 use axum::extract::State;
+use axum::extract::connect_info::ConnectInfo;
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{
     IntoResponse, Response, Sse,
     sse::{Event, KeepAlive},
 };
+use cauce_core::config::AiOverride;
 use cauce_core::{AnswerFrame, AnswerRequest, AnswerRole, AnswerSource, AnswerTurn};
 use serde::Deserialize;
 use tokio_stream::StreamExt;
@@ -49,6 +52,11 @@ pub struct AnswerBody {
     /// Mutually exclusive with `context_results`: assist stays
     /// single-turn.
     history: Option<Vec<AnswerTurn>>,
+    /// PUB-03 BYOK override: merged over the loaded `[ai]` config under
+    /// its gates (`ai.allow_user_keys`, `ai.allow_user_base_url`) — a
+    /// request carrying its own `api_key` bills the caller's provider
+    /// account and never touches the `free_daily_answers` budget.
+    ai: Option<AiOverride>,
 }
 
 /// The `history` contract (W7-04): a bounded list of completed
@@ -109,15 +117,11 @@ pub async fn answer(
     State(state): State<AppState>,
     Extension(ctx): Extension<RequestCtx>,
     headers: HeaderMap,
+    connect: Option<Extension<ConnectInfo<SocketAddr>>>,
     body: Bytes,
 ) -> Result<Response, ApiError> {
-    let Some(loop_) = state.answer() else {
-        return Err(ctx.err(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "ai_disabled",
-            "AI answers are disabled; enable [ai] in settings",
-        ));
-    };
+    // The body decodes first now (PUB-03): an `ai` override answers
+    // even with `[ai]` off, so the disabled short-circuit has to see it.
     let body: AnswerBody = serde_json::from_slice(&body)
         .map_err(|e| ctx.bad_request(format!("invalid answer body: {e}")))?;
     let q = body.q.trim();
@@ -130,6 +134,47 @@ pub async fn answer(
         return Err(ctx.bad_request(
             "context_results and history are mutually exclusive (assist is single-turn)",
         ));
+    }
+    // PUB-03: `ai` fields merge over the loaded `[ai]` under their
+    // gates — a field the gate forbids rejects 403 naming it, and a
+    // merged config that still cannot build a provider falls through
+    // to `ai_disabled`, the same shape as the shared loop's.
+    let loop_ = match &body.ai {
+        None => state.answer(),
+        Some(over) => {
+            let merged = state.with_config(|cfg| {
+                cfg.ai.merged(over).map_err(|gate| {
+                    ctx.err(
+                        StatusCode::FORBIDDEN,
+                        "forbidden",
+                        format!("per-request `ai` overrides need `ai.{gate}` on this instance"),
+                    )
+                })
+            })?;
+            state.answer_for(&merged)
+        }
+    }
+    .ok_or_else(|| {
+        ctx.err(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "ai_disabled",
+            "AI answers are disabled; enable [ai] in settings",
+        )
+    })?;
+    // The free daily budget bills only answers the admin's `[ai]` pays
+    // for — a request carrying its own key spends its own provider
+    // credit and skips the counter entirely.
+    if !body.ai.as_ref().is_some_and(AiOverride::has_own_key) {
+        let peer = connect.map(|Extension(ConnectInfo(addr))| addr.ip());
+        if let Err(wait) = state.check_free_answer(&headers, peer) {
+            return Err(ctx
+                .err(
+                    StatusCode::TOO_MANY_REQUESTS,
+                    "rate_limited",
+                    "daily free-answer budget exhausted; retry after UTC midnight",
+                )
+                .with_retry_after(wait));
+        }
     }
     let req = AnswerRequest {
         q: q.to_string(),
