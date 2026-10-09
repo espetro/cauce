@@ -50,7 +50,20 @@ pub async fn spa_nested(Path(rest): Path<String>) -> impl IntoResponse {
 /// query string (`/search?q=x` → `/app/search?q=x`).
 pub async fn to_app(uri: Uri) -> Redirect {
     let pq = uri.path_and_query().map(|pq| pq.as_str()).unwrap_or("/");
-    Redirect::permanent(&format!("/app{pq}"))
+    let (path, query) = match pq.split_once('?') {
+        Some((p, q)) => (p, format!("?{q}")),
+        None => (pq, String::new()),
+    };
+    // `/` must land on `/app`, not `/app/`: the router mounts `/app`
+    // exactly and `/app/{*rest}` needs a non-empty tail, so a literal
+    // `/app/` 404s.
+    Redirect::permanent(&format!("/app{}{}", path.trim_end_matches('/'), query))
+}
+
+/// `GET /app/` — the wildcard tail only matches when non-empty, so
+/// hand-typed trailing slashes permanently redirect to `/app`.
+pub async fn app_root() -> Redirect {
+    Redirect::permanent("/app")
 }
 
 fn serve_spa(name: &str) -> Response {

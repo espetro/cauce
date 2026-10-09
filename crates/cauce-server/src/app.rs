@@ -528,6 +528,8 @@ fn handler_for(spec: &RouteSpec, state: &AppState) -> Option<MethodRouter<AppSta
         #[cfg(feature = "ui")]
         ("GET", "/app", RouteKind::Html) => Some(get(spa::spa)),
         #[cfg(feature = "ui")]
+        ("GET", "/app/", RouteKind::Html) => Some(get(spa::app_root)),
+        #[cfg(feature = "ui")]
         ("GET", "/app/{*rest}", RouteKind::Html) => Some(get(spa::spa_nested)),
         ("GET", "/api/suggest", RouteKind::Json) => Some(get(handlers::suggest)),
         ("GET", "/api/report", RouteKind::Json) => Some(get(handlers::report)),
