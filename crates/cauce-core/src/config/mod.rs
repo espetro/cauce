@@ -76,6 +76,25 @@ const ENV_OVERRIDES: &[(&str, &[&str], bool)] = &[
         true,
     ),
     ("CAUCE_SERVER_NAME", &["server", "name"], false),
+    (
+        "CAUCE_SERVER_MAX_INFLIGHT",
+        &["server", "max_inflight"],
+        true,
+    ),
+    ("CAUCE_RATE_LIMIT_ENABLED", &["rate_limit", "enabled"], true),
+    (
+        "CAUCE_RATE_LIMIT_REQUESTS_PER_SECOND",
+        &["rate_limit", "requests_per_second"],
+        true,
+    ),
+    ("CAUCE_RATE_LIMIT_BURST", &["rate_limit", "burst"], true),
+    (
+        "CAUCE_RATE_LIMIT_TRUST_PROXY_HEADERS",
+        &["rate_limit", "trust_proxy_headers"],
+        true,
+    ),
+    ("CAUCE_EDGE_ENABLED", &["edge", "enabled"], true),
+    ("CAUCE_EDGE_TTL_S", &["edge", "ttl_s"], true),
     ("CAUCE_SEARCH_DEADLINE_MS", &["search", "deadline_ms"], true),
     ("CAUCE_SEARCH_MIN_RESULTS", &["search", "min_results"], true),
     (
@@ -334,6 +353,14 @@ pub struct ServerConfig {
     /// `GET /api/instance` report it). `"cauce"` by default.
     #[serde(default = "default_server_name")]
     pub name: String,
+    /// Global in-flight request cap (PUB-01): the `Semaphore` is built
+    /// once at router build, so this key is restart-required. `0`
+    /// (default) is unbounded — local mode keeps today's behaviour
+    /// bit-for-bit. On a public instance it is the last line of defence
+    /// on a small host: past the cap, requests get `429 overloaded` +
+    /// `Retry-After` instead of queuing into memory.
+    #[serde(default)]
+    pub max_inflight: u32,
 }
 
 impl Default for ServerConfig {
@@ -344,6 +371,7 @@ impl Default for ServerConfig {
             public_url: None,
             public_instance: false,
             name: default_server_name(),
+            max_inflight: 0,
         }
     }
 }
@@ -367,6 +395,27 @@ impl ServerConfig {
         url::Url::parse(&fallback)
             .map(|url| url.origin().ascii_serialization())
             .unwrap_or_else(|_| format!("http://127.0.0.1:{bind_port}"))
+    }
+
+    /// PUB-01 bind policy (replaces the W1-13 refusal): a non-loopback
+    /// bind is only safe when `public_instance` puts the admin surface
+    /// behind `[auth] admin_tokens` — in local mode `RouteAuth::Admin`
+    /// no-ops, so an off-loopback listener would expose the ops
+    /// `/api/*` routes to whoever can reach the port.
+    ///
+    /// Empty `admin_tokens` is legal: the admin surface stays
+    /// unreachable (FX-07's deliberate fail-closed). Loopback binds are
+    /// always fine — the Host/Origin guard covers them.
+    pub fn check_bind(&self, bind_host: &str) -> Result<(), String> {
+        if is_loopback_host(bind_host) || self.public_instance {
+            return Ok(());
+        }
+        Err(
+            "non-loopback listen requires server.public_instance = true \
+             (the admin-token boundary); local mode on an open socket \
+             would expose the ops surface"
+                .to_string(),
+        )
     }
 }
 
@@ -416,16 +465,16 @@ fn validate_public_url(value: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// `[auth]`: the admin-auth switch (W1-13) plus FX-07's admin credentials.
-/// `enabled` is forced by the bind address — off on loopback, required off
-/// it, so `cauce serve` refuses a non-loopback bind until full token auth
-/// lands (`v3/later/postgres-and-multi-instance.md`).
+/// `[auth]`: the admin credentials FX-07 wired to `RouteAuth::Admin`.
+/// `enabled` is the vestigial W1-13 switch: the real boundary is now
+/// `server.public_instance` (see [`ServerConfig::check_bind`]), so the
+/// flag no longer does anything — it is still parsed for file compat
+/// and earns a startup warning when set.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(deny_unknown_fields)]
 pub struct AuthConfig {
-    /// Master switch. Forced `true` when the bind is not loopback (see
-    /// [`AuthConfig::enabled_for`]); ignored on loopback until token auth
-    /// exists, so setting it only earns a startup warning.
+    /// Superseded by `server.public_instance` (PUB-01). Parsed for file
+    /// compat; a set value warns at `cauce serve` startup.
     #[serde(default)]
     pub enabled: bool,
     /// Static admin bearer tokens (FX-07): on a `public_instance` the
@@ -438,13 +487,96 @@ pub struct AuthConfig {
     pub admin_tokens: Vec<String>,
 }
 
-impl AuthConfig {
-    /// The effective value for a bind to `host`: forced on off-loopback,
-    /// mirroring the former W6-03 line (`later/postgres-and-multi-instance.md`).
-    /// W1-13 enforces the forced case by refusing the bind.
-    pub fn enabled_for(&self, bind_host: &str) -> bool {
-        self.enabled || !is_loopback_host(bind_host)
+/// `[rate_limit]` (PUB-01): a per-client-IP token bucket in front of
+/// the `/api/*` + `/mcp` surfaces. It exists for public instances — the
+/// embedded UI and redirects are cheap, so only the expensive API work
+/// counts. Loopback peers and `Authorization: Bearer <admin token>`
+/// requests are exempt.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields)]
+pub struct RateLimitConfig {
+    /// On/off. Unset means "on when `server.public_instance`" — a public
+    /// instance gets protection without the operator remembering a
+    /// second flag; `enabled = false` opts out explicitly.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enabled: Option<bool>,
+    /// Sustained quota per key, requests per second.
+    #[serde(default = "default_rate_limit_rps")]
+    pub requests_per_second: u32,
+    /// Token-bucket burst per key — absorbs a page load's worth of API
+    /// calls without tripping.
+    #[serde(default = "default_rate_limit_burst")]
+    pub burst: u32,
+    /// Trust `CF-Connecting-IP` / the leftmost `X-Forwarded-For` hop as
+    /// the client key. Only safe behind a proxy that sets/strips those
+    /// headers; off by default so a direct-exposed instance cannot be
+    /// spoofed into another client's bucket.
+    #[serde(default)]
+    pub trust_proxy_headers: bool,
+}
+
+impl Default for RateLimitConfig {
+    fn default() -> Self {
+        Self {
+            enabled: None,
+            requests_per_second: default_rate_limit_rps(),
+            burst: default_rate_limit_burst(),
+            trust_proxy_headers: false,
+        }
     }
+}
+
+impl RateLimitConfig {
+    /// Effective on/off: explicit wins, else `public_instance`.
+    pub fn enabled_for(&self, public_instance: bool) -> bool {
+        self.enabled.unwrap_or(public_instance)
+    }
+}
+
+fn default_rate_limit_rps() -> u32 {
+    2
+}
+
+fn default_rate_limit_burst() -> u32 {
+    12
+}
+
+/// `[edge]` (PUB-01): the shared-cache headers stamped on routes whose
+/// [`cauce_server`] table row is `cache: shared` — the req/month lever
+/// that lets a free CDN tier serve repeat `/api/search` hits without
+/// touching the origin. Rows marked `private` get `private, no-store`
+/// so an operator's "cache everything" edge rule cannot leak an
+/// auth-varying or admin response.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields)]
+pub struct EdgeConfig {
+    /// Stamp `Cache-Control` at all. `false` emits no header (the edge
+    /// then falls back to its own defaults). Read live per request.
+    #[serde(default = "default_edge_enabled")]
+    pub enabled: bool,
+    /// `max-age`/`s-maxage`/`stale-while-revalidate` seconds on shared
+    /// rows. 60s is enough to collapse a flash crowd — repeat queries
+    /// inside a minute never reach the origin — while staying far
+    /// fresher than the store's own search TTL.
+    #[serde(default = "default_edge_ttl_s")]
+    pub ttl_s: u32,
+}
+
+impl Default for EdgeConfig {
+    fn default() -> Self {
+        Self {
+            enabled: default_edge_enabled(),
+            ttl_s: default_edge_ttl_s(),
+        }
+    }
+}
+
+fn default_edge_enabled() -> bool {
+    true
+}
+
+fn default_edge_ttl_s() -> u32 {
+    60
 }
 
 /// The host part of an authority string (`host`, `host:port`, `[v6]`,
@@ -1152,6 +1284,12 @@ pub struct Config {
     /// `[auth]` section.
     #[serde(default)]
     pub auth: AuthConfig,
+    /// `[rate_limit]` section (PUB-01).
+    #[serde(default)]
+    pub rate_limit: RateLimitConfig,
+    /// `[edge]` section (PUB-01).
+    #[serde(default)]
+    pub edge: EdgeConfig,
     /// `[ui]` section.
     #[serde(default)]
     pub ui: UiConfig,
@@ -1188,6 +1326,8 @@ struct ConfigSections<'a> {
     ai: &'a AiConfig,
     archive: &'a ArchiveConfig,
     auth: &'a AuthConfig,
+    rate_limit: &'a RateLimitConfig,
+    edge: &'a EdgeConfig,
     ui: &'a UiConfig,
     engines: &'a [EngineEntry],
     config: &'a MetaConfig,
@@ -1227,6 +1367,8 @@ impl Default for Config {
             ai: AiConfig::default(),
             archive: ArchiveConfig::default(),
             auth: AuthConfig::default(),
+            rate_limit: RateLimitConfig::default(),
+            edge: EdgeConfig::default(),
             ui: UiConfig::default(),
             engines: builtin_engines(),
             config: MetaConfig::default(),
@@ -1260,6 +1402,8 @@ impl Config {
             ai: &self.ai,
             archive: &self.archive,
             auth: &self.auth,
+            rate_limit: &self.rate_limit,
+            edge: &self.edge,
             ui: &self.ui,
             engines: &self.engines,
             config: &self.config,
@@ -1683,8 +1827,9 @@ impl Config {
 ///
 /// | Path | Why it needs a restart |
 /// |---|---|
-/// | `server.host`, `server.port`, `server.public_instance` | the TCP listener and the instance-mode auth boundary are bound once at startup |
+/// | `server.host`, `server.port`, `server.public_instance`, `server.max_inflight` | the TCP listener, the instance-mode auth boundary and the in-flight `Semaphore` are bound once at startup |
 /// | `auth.*` (except `admin_tokens`) | bind policy is decided when the listener is created |
+/// | `rate_limit.requests_per_second`, `rate_limit.burst` | the per-key token bucket's `Quota` is built once at router build |
 /// | `logs.*` | the JSONL appender's `max_log_files` is created at startup |
 ///
 /// Everything else is hot: `search.*`, `admission.*`, `cache.*`,
@@ -1693,7 +1838,10 @@ impl Config {
 /// (`enabled`/`tier`/`egress`/`params` — the fan-out is rebuilt),
 /// `server.public_url` (already read per-request), `server.name` (the
 /// capabilities layer reads the live config), `auth.admin_tokens` (the
-/// admin check reads the live config per request) and
+/// admin check reads the live config per request),
+/// `rate_limit.enabled`/`rate_limit.trust_proxy_headers` and `edge.*`
+/// (the gates read the live config per request — only the limiter
+/// `Quota` is frozen) and
 /// `config.interpolation` (governs the next parse). Filesystem
 /// locations (`CAUCE_CONFIG_DIR`, `CAUCE_DATA_DIR`) are env overrides,
 /// not file keys, so they never reach this classifier.
@@ -1709,10 +1857,11 @@ pub fn key_requires_restart(path: &str) -> bool {
         Some("server") => {
             matches!(
                 path,
-                "server.host" | "server.port" | "server.public_instance"
+                "server.host" | "server.port" | "server.public_instance" | "server.max_inflight"
             )
         }
         Some("auth") => path != "auth.admin_tokens",
+        Some("rate_limit") => matches!(path, "rate_limit.requests_per_second" | "rate_limit.burst"),
         Some("logs") => true,
         _ => false,
     }
@@ -1789,10 +1938,11 @@ mod tests {
         }
     }
 
-    /// `auth.enabled` parses from `[auth]`; `enabled_for` forces it when
-    /// the bind is not loopback (the former W6-03 line).
+    /// `auth.enabled` still parses (file compat); the bind gate is
+    /// `ServerConfig::check_bind` — loopback always allowed,
+    /// non-loopback requires `public_instance` (PUB-01).
     #[test]
-    fn auth_enabled_forces_on_non_loopback() {
+    fn check_bind_matrix() {
         let (_tmp, env) = sandbox(&[]);
         write_config(
             Path::new(env.get("CAUCE_CONFIG_DIR").unwrap()),
@@ -1801,18 +1951,50 @@ mod tests {
         let cfg = Config::load_with(&env).unwrap();
         assert!(cfg.auth.enabled);
 
-        let off = AuthConfig::default();
-        assert!(!off.enabled_for("127.0.0.1"));
-        assert!(!off.enabled_for("localhost"));
-        assert!(off.enabled_for("0.0.0.0"));
-        assert!(off.enabled_for("192.168.1.10"));
-        assert!(
-            AuthConfig {
-                enabled: true,
-                ..AuthConfig::default()
-            }
-            .enabled_for("127.0.0.1")
+        let local = ServerConfig::default();
+        assert!(local.check_bind("127.0.0.1").is_ok());
+        assert!(local.check_bind("localhost").is_ok());
+        assert!(local.check_bind("::1").is_ok());
+        assert!(local.check_bind("0.0.0.0").is_err());
+        assert!(local.check_bind("192.168.1.10").is_err());
+        assert!(local.check_bind("::").is_err());
+
+        let public = ServerConfig {
+            public_instance: true,
+            ..ServerConfig::default()
+        };
+        // Fail-closed admin surface (empty tokens) is still a legal
+        // public bind — `RouteAuth::Admin` denies everyone.
+        assert!(public.check_bind("0.0.0.0").is_ok());
+        assert!(public.check_bind("192.168.1.10").is_ok());
+    }
+
+    /// `[rate_limit]`/`[edge]` parse with defaults; `enabled_for`
+    /// follows `public_instance` when unset.
+    #[test]
+    fn public_edge_defaults() {
+        let (_tmp, env) = sandbox(&[]);
+        write_config(
+            Path::new(env.get("CAUCE_CONFIG_DIR").unwrap()),
+            "[rate_limit]\nrequests_per_second = 5\nburst = 30\ntrust_proxy_headers = true\n\n[edge]\nttl_s = 120\n",
         );
+        let cfg = Config::load_with(&env).unwrap();
+        assert_eq!(cfg.rate_limit.requests_per_second, 5);
+        assert_eq!(cfg.rate_limit.burst, 30);
+        assert!(cfg.rate_limit.trust_proxy_headers);
+        // Unset `enabled` follows the instance mode.
+        assert!(cfg.rate_limit.enabled_for(true));
+        assert!(!cfg.rate_limit.enabled_for(false));
+        assert_eq!(cfg.edge.ttl_s, 120);
+        assert!(cfg.edge.enabled);
+
+        // Explicit `enabled = false` opts a public instance out.
+        write_config(
+            Path::new(env.get("CAUCE_CONFIG_DIR").unwrap()),
+            "[rate_limit]\nenabled = false\n",
+        );
+        let cfg = Config::load_with(&env).unwrap();
+        assert!(!cfg.rate_limit.enabled_for(true));
     }
 
     /// `CAUCE_*` dirs win over `XDG_*_HOME`, which wins over the home

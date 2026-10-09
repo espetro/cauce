@@ -34,4 +34,13 @@ public_instance: boolean,
  * Display name of this instance (the public-mode dashboard card and
  * `GET /api/instance` report it). `"cauce"` by default.
  */
-name: string, };
+name: string, 
+/**
+ * Global in-flight request cap (PUB-01): the `Semaphore` is built
+ * once at router build, so this key is restart-required. `0`
+ * (default) is unbounded — local mode keeps today's behaviour
+ * bit-for-bit. On a public instance it is the last line of defence
+ * on a small host: past the cap, requests get `429 overloaded` +
+ * `Retry-After` instead of queuing into memory.
+ */
+max_inflight: number, };
