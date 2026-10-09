@@ -1,6 +1,7 @@
-//! `cauce` binary: `serve`, `search`, `mcp`, `record`, `engine`, `eval`,
-//! `trace`, `tail`, `config`, `report` are implemented (`mcp` only with
-//! the `mcp` cargo feature); `cache` lands in a later wave.
+//! `cauce` binary: `serve`, `search`, `tui`, `mcp`, `record`, `engine`,
+//! `eval`, `trace`, `tail`, `config`, `report` are implemented (`mcp` only
+//! with the `mcp` cargo feature, `tui` only with the `tui` feature);
+//! `cache` lands in a later wave.
 //!
 //! This Source Code Form is subject to the terms of the Mozilla Public
 //! License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -26,6 +27,15 @@ fn main() {
         "search" => std::process::exit(cmds::search::run(
             &std::env::args().skip(2).collect::<Vec<_>>(),
         )),
+        #[cfg(feature = "tui")]
+        "tui" => std::process::exit(cmds::tui::run(
+            &std::env::args().skip(2).collect::<Vec<_>>(),
+        )),
+        #[cfg(not(feature = "tui"))]
+        "tui" => {
+            eprintln!("cauce tui: this binary was built without the `tui` feature");
+            std::process::exit(2);
+        }
         "record" => std::process::exit(cmds::record::run(
             &std::env::args().skip(2).collect::<Vec<_>>(),
         )),
@@ -56,7 +66,7 @@ fn main() {
         }
         _ => {
             eprintln!(
-                "usage: cauce <serve|search|mcp|record|engine|eval|trace|tail|config|report|version> [args]\n       cauce --version"
+                "usage: cauce <serve|search|tui|mcp|record|engine|eval|trace|tail|config|report|version> [args]\n       cauce --version"
             );
             std::process::exit(2);
         }
