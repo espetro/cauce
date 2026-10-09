@@ -5,8 +5,8 @@
 
   // Set VITE_CAUCE_ORIGIN at build time to point the demo search box at the
   // public instance (e.g. https://search.example.com). When unset the form
-  // submits to /search on whatever origin serves this page — which is a real
-  // cauce search when the binary serves the site itself.
+  // submits to /app/search on whatever origin serves this page — which is a
+  // real cauce search when the binary serves the site itself.
   const origin = (import.meta.env.VITE_CAUCE_ORIGIN ?? '').replace(/\/$/, '');
 
   let q = $state('');
@@ -20,7 +20,7 @@
       shared cache and grounded AI answers.
     </p>
 
-    <form class="search" action="{origin}/search" method="get" target="_blank" rel="noopener">
+    <form class="search" action="{origin}/app/search" method="get" target="_blank" rel="noopener">
       <input
         type="search"
         name="q"

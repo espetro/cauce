@@ -8,7 +8,7 @@ curl -LO https://github.com/espetro/cauce/releases/download/v0.8.1/\\
 tar -xzf cauce-v0.8.1-x86_64-unknown-linux-musl.tar.gz
 ./cauce serve          # UI + API + MCP on http://127.0.0.1:4479`;
 
-  const cargo = `# or build from source
+  const cargo = `# or build from source (main ships the Svelte SPA shown above)
 cargo install --locked --git https://github.com/espetro/cauce cauce-cli`;
 
   const rows = [

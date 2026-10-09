@@ -19,13 +19,15 @@ Traps:
 - Script-less `.svelte` components error in svelte-check
   ("Could not find a declaration file") — keep an empty
   `<script lang="ts"></script>` in every component.
-- Screenshots in `src/assets/` are REAL captures of v0.8.1 served locally
-  (musl binary, `XDG_DATA_HOME` scratch dir, `localStorage cauce-theme` for
-  dark). Retake on each visual release; the answer shot is a real
-  `/answer/{id}` render (RRF answer log row).
-- Design tokens mirror `crates/cauce-server/assets/style.css`
-  (--bg/--fg/--accent, light default + prefers-color-scheme dark). If the app
-  theme changes, update `site/src/app.css`.
+- Screenshots in `src/assets/` are REAL captures of the post-FX-06 SPA era
+  (debug build of main, `CAUCE_DATA_DIR`/`CAUCE_CONFIG_DIR` scratch dirs,
+  playwright-core over CDP for dark emulation): `/app/search` results
+  dark+light and a real grounded `/answer/{id}` render. Retake on each visual
+  release.
+- Design tokens mirror `crates/cauce-server/web/src/spa/app/app.css`
+  (--bg/--fg/--accent, light default + prefers-color-scheme dark — same
+  values the HTMX style.css used). If the app theme changes, update
+  `site/src/app.css`.
 - `site/` is a new top-level dir not in the v3 plan's §4.1 layout — flag to
   owner; if the plan is updated, add it there.
 - No live demo exists yet: the search box and the "durable /answer/{id} link"

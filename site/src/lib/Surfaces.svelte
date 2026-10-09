@@ -3,7 +3,8 @@
   import CodeBlock from './CodeBlock.svelte';
 
   const apiSnippet = `# the same search the UI runs, as JSON
-curl 'http://127.0.0.1:4479/api/search?q=reciprocal+rank+fusion'`;
+curl 'http://127.0.0.1:4479/api/search?q=reciprocal+rank+fusion'
+# POST /api/answer → SSE stream of the grounded answer loop`;
 
   const apiResponse = `{
   "results": [ { "url": "…", "title": "…", "engine": "brave" } ],
@@ -33,10 +34,11 @@ curl 'http://127.0.0.1:4479/api/search?q=reciprocal+rank+fusion'`;
       <div class="card">
         <h3>Web UI</h3>
         <p class="muted">
-          A server-rendered search page with progressive results over SSE, an
-          answer mode, history, and dark/light themes — on your own loopback.
+          A Svelte SPA served from the same binary — progressive results over
+          SSE, an AI answer mode, history, admin, dark/light themes — on your
+          own loopback.
         </p>
-        <p class="mono small muted">GET / · /search · /answer · /history</p>
+        <p class="mono small muted">GET /app/* · /answer/{id}</p>
       </div>
 
       <div class="card">

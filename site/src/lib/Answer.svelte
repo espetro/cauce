@@ -19,7 +19,7 @@
         cache expires. Yours, in your history, on your disk.
       </p>
       <p class="mono small muted">
-        POST /api/answer · SSE stream · works with any OpenAI-compatible provider
+        POST /api/answer · SSE stream · OpenAI- or Anthropic-compatible providers
       </p>
     </div>
     <figure>

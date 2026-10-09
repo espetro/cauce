@@ -23,6 +23,6 @@ pnpm build      # → dist/
 - Node/pnpm: Pages picks up `packageManager` from `package.json`.
 
 `VITE_CAUCE_ORIGIN` (build-time env): when set, the hero search box submits to
-`<origin>/search` — point it at the public demo instance once one exists. When
-unset, the form submits to `/search` on the same origin, which is a real cauce
-search if the binary itself serves this page.
+`<origin>/app/search` — point it at the public demo instance once one exists.
+When unset, the form submits to `/app/search` on the same origin, which is a
+real cauce search if the binary itself serves this page.
