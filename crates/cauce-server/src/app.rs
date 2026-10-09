@@ -30,10 +30,13 @@ use tokio::net::TcpListener;
 
 use crate::error::ApiError;
 use crate::handlers;
+use crate::limits::{Limits, inflight_gate, rate_limit_gate};
 #[cfg(feature = "mcp")]
 use crate::mcp;
 use crate::metrics::MetricsHandle;
-use crate::middleware::{HostGuard, RequestCtx, host_origin_guard, request_context};
+use crate::middleware::{
+    CacheGate, HostGuard, RequestCtx, edge_cache, host_origin_guard, request_context,
+};
 use crate::routes::{ROUTES, RouteAuth, RouteKind, RouteSpec};
 #[cfg(feature = "ui")]
 use crate::{assets, pages, spa};
@@ -92,6 +95,10 @@ pub struct AppState {
     /// restart-required.
     engine_factory: Option<Arc<EngineFactory>>,
     metrics: MetricsHandle,
+    /// PUB-01 admission guards (per-IP bucket + in-flight cap), built
+    /// once from the boot config — the limiter `Quota` and the
+    /// `Semaphore` are restart-required like `server.host`.
+    limits: Limits,
     /// Process start instant, for the report bundle's `cauce.uptime_s`.
     /// Lives on `AppState` (not the swappable `Runtime`) so a config
     /// hot-apply does not reset the clock.
@@ -109,6 +116,7 @@ impl AppState {
                 pipeline,
             })),
             metrics: MetricsHandle::new(store.clone()),
+            limits: Limits::from_config(&config),
             store,
             config: Arc::new(Mutex::new(config)),
             engine_factory: None,
@@ -145,6 +153,11 @@ impl AppState {
     /// The process metrics handle (`/metrics` render + cache gauge refresh).
     pub fn metrics(&self) -> &MetricsHandle {
         &self.metrics
+    }
+
+    /// The PUB-01 admission guards (`rate_limit_gate` / `inflight_gate`).
+    pub fn limits(&self) -> &Limits {
+        &self.limits
     }
 
     /// Wall-clock uptime since `AppState` was built (`cauce.uptime_s` in
@@ -456,6 +469,19 @@ pub fn build_router_opts(state: AppState, opts: RouterOptions) -> Router {
                 crate::middleware::require_admin,
             ));
         }
+        // PUB-01: every non-MCP row gets the edge-cache stamp for its
+        // `cache` class. `/mcp` is exempt like the admin gate — it is
+        // an `any_service` fallback, not method routes, and it stays
+        // private anyway (POST-shaped, admin in public mode).
+        if spec.kind != RouteKind::Mcp {
+            mr = mr.route_layer(middleware::from_fn_with_state(
+                CacheGate {
+                    state: state.clone(),
+                    class: spec.cache,
+                },
+                edge_cache,
+            ));
+        }
         // `MethodRouter::merge` takes `self` by value; `mem::take` leaves a
         // default in place while the merged router is rebuilt.
         let slot = by_path.entry(spec.path).or_default();
@@ -475,6 +501,14 @@ pub fn build_router_opts(state: AppState, opts: RouterOptions) -> Router {
             HostGuard::new(&opts.bind_host),
             host_origin_guard,
         ))
+        // PUB-01 guards run inside `request_context` (their 429s carry
+        // the id) but outside the host guard: the in-flight cap sheds
+        // first (cheapest), then the per-IP bucket.
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            rate_limit_gate,
+        ))
+        .layer(middleware::from_fn_with_state(state.clone(), inflight_gate))
         .layer(middleware::from_fn(request_context))
         .layer(Extension(opts))
         .with_state(state)
@@ -602,11 +636,16 @@ async fn method_not_allowed(request: Request) -> ApiError {
 /// Serve `listener` until SIGINT/SIGTERM, then finish in-flight requests.
 ///
 /// Callers build the router themselves (`build_router_opts`), so
-/// `--headless` and test wiring stay outside this function.
+/// `--headless` and test wiring stay outside this function. The
+/// `ConnectInfo` make-service installs the peer address the PUB-01
+/// rate/inflight gates key and exempt on.
 pub async fn serve(listener: TcpListener, app: Router) -> std::io::Result<()> {
-    axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown_signal())
-        .await
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+    )
+    .with_graceful_shutdown(shutdown_signal())
+    .await
 }
 
 async fn shutdown_signal() {

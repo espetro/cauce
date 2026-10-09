@@ -48,6 +48,25 @@ pub enum RouteAuth {
     Admin,
 }
 
+/// PUB-01 cache class of a route (`cache` column): what the
+/// [`crate::middleware::edge_cache`] layer may stamp on `< 400`
+/// responses that carry no `Cache-Control` of their own (handler-set
+/// headers always win — the SPA's immutable/no-cache split stands).
+/// The class makes per-route edge-cacheability reviewable on the same
+/// table as the auth class.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RouteCache {
+    /// `private, no-store` (default): auth-varying, admin, streaming and
+    /// POST responses — an operator's "cache everything" edge rule must
+    /// never replay one of these to another client.
+    Private,
+    /// `public, max-age=N, s-maxage=N, stale-while-revalidate=N`
+    /// (`edge.ttl_s`): idempotent GETs and redirects whose response is
+    /// identical for every client — the req/month lever on a public
+    /// instance.
+    Shared,
+}
+
 /// One row of the section-6 wire table.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RouteSpec {
@@ -67,6 +86,8 @@ pub struct RouteSpec {
     pub requires: Option<&'static str>,
     /// FX-07 authz class (see [`RouteAuth`]).
     pub auth: RouteAuth,
+    /// PUB-01 edge-cache class (see [`RouteCache`]).
+    pub cache: RouteCache,
 }
 
 impl RouteSpec {
@@ -74,6 +95,16 @@ impl RouteSpec {
     const fn admin(self) -> Self {
         Self {
             auth: RouteAuth::Admin,
+            ..self
+        }
+    }
+
+    /// Mark the row edge-cacheable for every client (PUB-01). Only
+    /// valid on GET/HEAD rows — the layer also stamps nothing on
+    /// error responses.
+    const fn shared(self) -> Self {
+        Self {
+            cache: RouteCache::Shared,
             ..self
         }
     }
@@ -87,6 +118,7 @@ const fn json(method: &'static str, path: &'static str, wave: u8) -> RouteSpec {
         wave,
         requires: None,
         auth: RouteAuth::Open,
+        cache: RouteCache::Private,
     }
 }
 
@@ -98,6 +130,7 @@ const fn sse(method: &'static str, path: &'static str, wave: u8) -> RouteSpec {
         wave,
         requires: None,
         auth: RouteAuth::Open,
+        cache: RouteCache::Private,
     }
 }
 
@@ -109,6 +142,7 @@ const fn html(path: &'static str, wave: u8) -> RouteSpec {
         wave,
         requires: Some("ui"),
         auth: RouteAuth::Open,
+        cache: RouteCache::Private,
     }
 }
 
@@ -116,7 +150,9 @@ const fn html(path: &'static str, wave: u8) -> RouteSpec {
 /// `app::handler_for`; rows without one are the declared future surface.
 pub const ROUTES: &[RouteSpec] = &[
     // ---- wave 0: the JSON surface mounted by this step --------------------
-    json("GET", "/api/search", 0),
+    // The search endpoint is the public instance's money route: same
+    // query, same response — an edge cache absorbs repeat hits whole.
+    json("GET", "/api/search", 0).shared(),
     // FX-07: the history surface is server-side per-user state — admin
     // in public mode (where nothing writes it anyway), open locally.
     json("GET", "/api/history", 0).admin(),
@@ -138,9 +174,9 @@ pub const ROUTES: &[RouteSpec] = &[
     json("GET", "/api/config", 0).admin(),
     json("PUT", "/api/config", 0).admin(),
     // ---- wave 0 pages: legacy canonical paths, now permanent redirects
-    // onto their `/app` twins (FX-06).
-    html("/", 0),
-    html("/search", 0),
+    // onto their `/app` twins (FX-06). Deterministic 301s — cacheable.
+    html("/", 0).shared(),
+    html("/search", 0).shared(),
     // ---- wave 1 ------------------------------------------------------------
     // Engine inventory/levers are operator surfaces (ids, params,
     // health internals) — admin in public mode; the public card gets
@@ -157,6 +193,7 @@ pub const ROUTES: &[RouteSpec] = &[
         // `/mcp` exposes mutating tools (`cache_invalidate`,
         // `fetch_and_index`) — admin in public mode.
         auth: RouteAuth::Admin,
+        cache: RouteCache::Private,
     },
     // ---- wave 2 ------------------------------------------------------------
     sse("GET", "/api/search/stream", 2),
@@ -169,8 +206,9 @@ pub const ROUTES: &[RouteSpec] = &[
     json("DELETE", "/api/answer-log/{id}", 2).admin(),
     json("GET", "/api/answer-log/{id}", 2).admin(),
     // The suggestions Url the W2-11 descriptor advertises; a wave-2
-    // omission like the favicon (#150).
-    json("GET", "/api/suggest", 2),
+    // omission like the favicon (#150). Same-prefix suggestions repeat
+    // across users — edge-cacheable.
+    json("GET", "/api/suggest", 2).shared(),
     // #240: the support-report download (`Content-Disposition:
     // attachment` + the `X-Report-Issue-Url` share header). The bundle
     // contains store paths, engine internals and uptime — admin in
@@ -180,7 +218,7 @@ pub const ROUTES: &[RouteSpec] = &[
     // stays server-rendered (the audit tab deep-links to it; no JSON
     // twin). Ops surface — admin in public mode like `/api/audit`.
     html("/trace/{id}", 2).admin(),
-    html("/opensearch.xml", 2),
+    html("/opensearch.xml", 2).shared(),
     // `GET /favicon.ico` was a wave-0 omission (#87): browsers request it on
     // every page load. It rides the `ui` gate like the pages — `rust-embed`
     // is a `ui` dependency and `--headless` serves no browser surface.
@@ -191,6 +229,7 @@ pub const ROUTES: &[RouteSpec] = &[
         wave: 2,
         requires: Some("ui"),
         auth: RouteAuth::Open,
+        cache: RouteCache::Shared,
     },
     // ---- wave 4 ------------------------------------------------------------
     // `/api/answer` rides the `ai` gate like `/mcp` rides `mcp`: a build
@@ -202,14 +241,16 @@ pub const ROUTES: &[RouteSpec] = &[
         wave: 4,
         requires: Some("ai"),
         auth: RouteAuth::Open,
+        cache: RouteCache::Private,
     },
     // `ui` alone like `/`: redirects to `/app/answer` — the SPA renders
-    // the disabled notice in an `ai`-less build.
-    html("/answer", 4),
+    // the disabled notice in an `ai`-less build. Deterministic 301.
+    html("/answer", 4).shared(),
     // #254: durable answer URLs — `/answer/{id}` renders the stored
     // `answer_log` row server-side (no stream), so back/forward and
     // history links never re-run the loop. `ui`-gated like `/answer`.
-    html("/answer/{id}", 4),
+    // The stored row is identical for every reader — edge-cacheable.
+    html("/answer/{id}", 4).shared(),
     // ---- wave 5 ------------------------------------------------------------
     // W5-01 mounts the fetch-and-index pair; `/api/archive` and `/archive`
     // are the W5-02 listing surface. `requires` names the `archive` cargo
@@ -223,6 +264,7 @@ pub const ROUTES: &[RouteSpec] = &[
         // Indexing spends fetch budget and writes the shared store —
         // admin in public mode (the per-user index lives client-side).
         auth: RouteAuth::Admin,
+        cache: RouteCache::Private,
     },
     RouteSpec {
         method: "GET",
@@ -230,8 +272,10 @@ pub const ROUTES: &[RouteSpec] = &[
         kind: RouteKind::Json,
         wave: 5,
         requires: Some("archive"),
-        // Archived content is the shared store keyed by URL — open.
+        // Archived content is the shared store keyed by URL — open and
+        // identical for every reader, so edge-cacheable too.
         auth: RouteAuth::Open,
+        cache: RouteCache::Shared,
     },
     // The GET must probe first: the live router check seeds one `pages`
     // row, and DELETE's probe removes it.
@@ -242,6 +286,7 @@ pub const ROUTES: &[RouteSpec] = &[
         wave: 5,
         requires: Some("archive"),
         auth: RouteAuth::Admin,
+        cache: RouteCache::Private,
     },
     RouteSpec {
         method: "GET",
@@ -249,23 +294,31 @@ pub const ROUTES: &[RouteSpec] = &[
         kind: RouteKind::Json,
         wave: 5,
         requires: Some("archive"),
-        // The archive search surface reads shared content — open.
+        // The archive search surface reads shared content — open and
+        // identical for every reader.
         auth: RouteAuth::Open,
+        cache: RouteCache::Shared,
     },
     // ---- FX: frontend replacement (W8 epic; plan
     // `2026-09-28-frontend-replacement.md` §5.1) -------------------------
     // FX-07: the instance-mode bootstrap pair — open reads in both
     // modes (they carry no secrets; the gates live on what they
     // describe). `/api/capabilities` reports the per-request role.
+    // `/api/capabilities` stays private: the payload varies on the
+    // caller's `Authorization` header (per-request role).
     json("GET", "/api/capabilities", 8),
-    json("GET", "/api/instance", 8),
+    // `/api/instance` is one payload for every caller — edge-cacheable.
+    json("GET", "/api/instance", 8).shared(),
     // FX-02: `GET /app` serves the Svelte SPA shell; `/app/{*rest}`
     // serves the embedded hashed assets and falls back to the shell for
     // client-side routes. `ui`-gated like the page rows: rust-embed is
     // a `ui` dependency and `--headless` serves no browser surface.
-    html("/app", 8),
+    html("/app", 8).shared(),
     // `{*rest}` binds a non-empty tail only; `/app/` needs its own row
     // (a permanent redirect to `/app`).
-    html("/app/", 8),
-    html("/app/{*rest}", 8),
+    html("/app/", 8).shared(),
+    // `shared` is only the fallback here: `spa::serve_spa` already
+    // stamps `immutable` on hashed assets and `no-cache` on the shell,
+    // and handler-set headers always win.
+    html("/app/{*rest}", 8).shared(),
 ];
