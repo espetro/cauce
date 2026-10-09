@@ -174,7 +174,9 @@ async fn assert_redirect(router: &Router, uri: &str, expected: &str) {
 async fn legacy_paths_redirect_to_app() {
     let (router, _state, _tmp) = app();
     for (uri, target) in [
-        ("/", "/app/"),
+        ("/", "/app"),
+        ("/?q=x", "/app?q=x"),
+        ("/app/", "/app"),
         ("/search", "/app/search"),
         ("/search?q=shell&page=2", "/app/search?q=shell&page=2"),
         ("/answer", "/app/answer"),
