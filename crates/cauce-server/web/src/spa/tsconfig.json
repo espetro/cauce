@@ -1,13 +1,7 @@
 {
-  // The SPA's typecheck boundary: `svelte-check` is the only checker for
-  // this tree (the strict-tsc pass in web/tsconfig.json excludes src/spa —
-  // plain tsc cannot resolve `.svelte` imports). Same strict/bundler
-  // settings as the HTMX modules.
-  "extends": "../../tsconfig.json",
-  "compilerOptions": {
-    // svelte-check emits no build-info; the base sets incremental for tsc.
-    "incremental": false,
-    "types": ["vite/client"]
-  },
-  "include": ["**/*.ts", "**/*.svelte"]
+  // Alias for the crate-root `tsconfig.spa.json` so editors and tooling
+  // that resolve the nearest tsconfig land on the same program.
+  // `svelte-check --tsgo` must use the root file — see its comments for
+  // why the gate config cannot live inside this directory.
+  "extends": "../../../tsconfig.spa.json"
 }

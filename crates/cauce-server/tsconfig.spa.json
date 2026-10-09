@@ -1,0 +1,24 @@
+{
+  // The SPA's typecheck boundary: `svelte-check --tsgo` is the only
+  // checker for web/src/spa (plain tsc cannot resolve `.svelte` imports).
+  //
+  // This file lives at the crate root (svelte-check's workspace) rather
+  // than inside web/src/spa because svelte-check's tsgo codepath emits
+  // virtual `++*.svelte.ts` files under `.svelte-check/svelte/` mirroring
+  // each source's *workspace-relative* path, then pairs the tsconfig
+  // directory with the mirror root via `rootDirs`. With the config
+  // nested in web/src/spa the mirror gains a `web/src/spa/` prefix the
+  // pairing does not account for, so every relative import inside a
+  // .svelte file fails to resolve — and the inherited `src/spa` exclude
+  // then suppresses all real .ts inputs, turning the gate into a no-op.
+  "extends": "./web/tsconfig.json",
+  "compilerOptions": {
+    // svelte-check emits no build-info; the base sets incremental for tsc.
+    "incremental": false,
+    "types": ["vite/client"]
+  },
+  "include": ["web/src/spa/**/*.ts", "web/src/spa/**/*.svelte"],
+  // The base's `exclude: ["src/spa"]` is scoped to web/tsconfig.json —
+  // cleared here; svelte-check adds the transpiled .svelte files itself.
+  "exclude": []
+}

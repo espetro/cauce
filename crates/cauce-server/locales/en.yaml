@@ -608,3 +608,14 @@ assist:
   retry_after: retry after {n}s
   # `<noscript>` line inside the assist section.
   noscript: Assist needs JavaScript; the answer stream cannot run without it.
+
+# `/app` SPA copy (FX-03): strings with no HTMX twin, emitted into
+# `web/src/i18n/spa.json` by `gen_i18n` under the `app` module.
+app:
+  # Route fallback for `/app/*` paths the SPA does not serve yet.
+  not_found: This surface is not part of the SPA yet.
+  # Link off the fallback that reloads the canonical HTMX page.
+  open_html: Open the HTML page
+  # Aria-live hint while a streaming search is in flight (the
+  # `searching` status word lives in the search bundle already).
+  stream_hint: streaming results as engines report

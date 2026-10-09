@@ -10,7 +10,11 @@
  * `text-fg`, `text-muted`, `border-border`, `bg-greyed-bg`,
  * `font-mono`) resolve through these CSS vars so the three-state theme
  * mechanism (light default / prefers-color-scheme / [data-theme]) keeps
- * working unchanged. */
+ * working unchanged.
+ *
+ * FX-03 adds the shared rules Tailwind can't express as utilities
+ * (`span + span` meta separators, the server-injected `.md` content
+ * tree, hairline result rows) plus `--radius`/`--warn`. */
 
 @import "tailwindcss";
 
@@ -21,6 +25,7 @@
   --color-border: var(--border);
   --color-accent: var(--accent);
   --color-greyed-bg: var(--greyed-bg);
+  --color-warn: var(--warn);
   --font-mono: var(--mono);
 }
 
@@ -31,6 +36,8 @@
   --border: #d1d5db;
   --accent: #2563eb;
   --greyed-bg: #f4f4f5;
+  --warn: #b91c1c;
+  --radius: 0.5rem;
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   color-scheme: light;
 }
@@ -65,4 +72,218 @@ body {
   font-family:
     system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
     sans-serif;
+  margin: 0;
+  padding: 1rem;
+  background: var(--bg);
+  color: var(--fg);
+  /* The 45rem column is §7.1's "content ≤ 46rem" on the canonical
+     surfaces (the SSR pages use body max-width 720px). */
+  max-width: 45rem;
+  line-height: 1.5;
+  /* Theme transitions scope to color properties only — never a blanket
+     `*` transition interpolating layout. */
+  transition:
+    background-color 160ms ease,
+    color 160ms ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body {
+    transition: none;
+  }
+}
+
+/* Visually hidden but still exposed to assistive tech. */
+.vh {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* The meta line under the omnibox and inside the assist card:
+   `N results · live · 42 ms · req abc123`. */
+.meta {
+  color: var(--muted);
+  font-size: 0.875rem;
+  margin-bottom: 1rem;
+}
+
+.meta span + span::before {
+  content: " · ";
+}
+
+.meta .meta-chip::before {
+  content: none;
+}
+
+.meta .meta-chip + .meta-chip {
+  margin-left: 0.25rem;
+}
+
+/* Confidence/grounded badges inside a .meta row (W7-03 port). */
+.meta-chip {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.0625rem 0.5rem;
+  font-size: 0.75rem;
+}
+
+.meta-chip.warn {
+  border-color: var(--warn);
+  color: var(--warn);
+}
+
+.request-id {
+  font-family: var(--mono);
+  cursor: pointer;
+}
+
+.field-error {
+  color: var(--warn);
+  font-size: 0.875rem;
+}
+
+.new-results-above {
+  display: inline-block;
+  margin: 0.5rem 0;
+  padding: 0.25rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 9999px;
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
+/* Variant-E hairline result rows (§7.1) — a bottom rule per row instead
+   of the SSR card border. */
+.rows article {
+  margin: 0;
+  padding: 0.75rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.rows article img {
+  vertical-align: middle;
+  margin-right: 0.5rem;
+}
+
+.rows article a {
+  color: var(--accent);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.rows article a:hover {
+  text-decoration: underline;
+}
+
+.rows .host {
+  color: var(--muted);
+  font-size: 0.875rem;
+  margin-left: 0.5rem;
+}
+
+.rows .snippet {
+  margin: 0.25rem 0 0;
+  color: var(--muted);
+}
+
+/* Assist card: server-injected `done.html` markdown (#226). Streaming
+   `delta` text pre-wraps; `.md` (post-injection) drops it. */
+.answer-text {
+  margin: 0.5rem 0 1rem;
+  white-space: pre-wrap;
+}
+
+.answer-text.md {
+  white-space: normal;
+}
+
+.answer-text.md > :first-child {
+  margin-top: 0;
+}
+
+.answer-text.md > :last-child {
+  margin-bottom: 0;
+}
+
+.answer-text.md p,
+.answer-text.md ul,
+.answer-text.md ol,
+.answer-text.md pre,
+.answer-text.md blockquote,
+.answer-text.md table {
+  margin: 0.5rem 0;
+}
+
+.answer-text.md h1,
+.answer-text.md h2,
+.answer-text.md h3,
+.answer-text.md h4,
+.answer-text.md h5,
+.answer-text.md h6 {
+  font-size: 1rem;
+  margin: 0.75rem 0 0.25rem;
+}
+
+.answer-text.md ul,
+.answer-text.md ol {
+  padding-left: 1.25rem;
+}
+
+.answer-text.md code {
+  background: var(--greyed-bg);
+  border-radius: 0.25rem;
+  font-family: var(--mono);
+  font-size: 0.875em;
+  padding: 0.1rem 0.3rem;
+}
+
+.answer-text.md pre {
+  background: var(--greyed-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow-x: auto;
+  padding: 0.5rem 0.75rem;
+}
+
+.answer-text.md pre code {
+  background: none;
+  padding: 0;
+}
+
+.answer-text.md blockquote {
+  border-left: 3px solid var(--border);
+  color: var(--muted);
+  padding-left: 0.75rem;
+}
+
+.answer-text.md table {
+  border-collapse: collapse;
+}
+
+.answer-text.md th,
+.answer-text.md td {
+  border: 1px solid var(--border);
+  padding: 0.25rem 0.5rem;
+}
+
+.answer-text.md hr {
+  border: 0;
+  border-top: 1px solid var(--border);
+  margin: 0.75rem 0;
+}
+
+/* [n] citation marker linking to the matching source chip. */
+.cite {
+  color: var(--accent);
+  text-decoration: none;
+  font-size: 0.75em;
+  font-weight: 600;
+  vertical-align: super;
 }
