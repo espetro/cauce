@@ -28,7 +28,7 @@ use axum::http::header::RETRY_AFTER;
 use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
-use cauce_core::config::Config;
+use cauce_core::config::{Config, RateLimitConfig};
 use chrono::Datelike;
 use governor::clock::{Clock, DefaultClock};
 use governor::{DefaultKeyedRateLimiter, Quota};
@@ -96,7 +96,7 @@ impl Limits {
         {
             return Ok(());
         }
-        let Some(ip) = client_key(headers, peer, cfg.rate_limit.trust_proxy_headers) else {
+        let Some(ip) = client_key(headers, peer, &cfg.rate_limit) else {
             return Ok(());
         };
         self.free_answers.charge(ip, limit)
@@ -143,13 +143,18 @@ impl DailyCount {
     }
 }
 
-/// The client key for the bucket: `CF-Connecting-IP`, else the leftmost
+/// The client key for the bucket: `rate_limit.client_ip_header` when
+/// configured, else `CF-Connecting-IP`, else the leftmost
 /// `X-Forwarded-For` hop — but only when `rate_limit.trust_proxy_headers`
 /// is set (headers are spoofable on a direct-exposed socket). Otherwise
 /// the `ConnectInfo` peer. `None` when nothing attributes the request
 /// (in-process `oneshot` calls); an unattributable request is exempt —
 /// a public deployment always arrives over a socket.
-fn client_key(headers: &HeaderMap, connect: Option<IpAddr>, trust: bool) -> Option<IpAddr> {
+fn client_key(
+    headers: &HeaderMap,
+    connect: Option<IpAddr>,
+    cfg: &RateLimitConfig,
+) -> Option<IpAddr> {
     let forwarded = |name: &str| {
         headers
             .get(name)
@@ -158,12 +163,14 @@ fn client_key(headers: &HeaderMap, connect: Option<IpAddr>, trust: bool) -> Opti
             .map(str::trim)
             .and_then(|v| v.parse::<IpAddr>().ok())
     };
-    if trust {
-        forwarded("cf-connecting-ip")
+    if !cfg.trust_proxy_headers {
+        return connect;
+    }
+    match cfg.client_ip_header.as_deref() {
+        Some(name) => forwarded(name).or(connect),
+        None => forwarded("cf-connecting-ip")
             .or_else(|| forwarded("x-forwarded-for"))
-            .or(connect)
-    } else {
-        connect
+            .or(connect),
     }
 }
 
@@ -196,10 +203,10 @@ pub async fn rate_limit_gate(
     next: Next,
 ) -> Response {
     let headers = request.headers();
-    let (enabled, trust) = state.with_config(|cfg| {
+    let (enabled, cfg) = state.with_config(|cfg| {
         (
             cfg.rate_limit.enabled_for(cfg.server.public_instance),
-            cfg.rate_limit.trust_proxy_headers,
+            cfg.rate_limit.clone(),
         )
     });
     if !enabled || !api_scoped(request.uri().path()) {
@@ -212,7 +219,7 @@ pub async fn rate_limit_gate(
     if exempt(&state, headers, connect) {
         return next.run(request).await;
     }
-    let Some(ip) = client_key(headers, connect, trust) else {
+    let Some(ip) = client_key(headers, connect, &cfg) else {
         return next.run(request).await;
     };
     match state.limits().ip.check_key(&ip) {

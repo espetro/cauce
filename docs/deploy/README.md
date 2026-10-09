@@ -9,6 +9,7 @@ the app never dictates your proxy, platform, or datastore.
 | VPS / RPi + Caddy or cloudflared | [vps.md](vps.md) | systemd unit, TLS at the edge |
 | Docker / compose | [docker.md](docker.md) | multi-arch image, any proxy |
 | Any origin + Cloudflare zone | [cf-zone.md](cf-zone.md) | free-tier edge cache + WAF |
+| SPA on CF Pages + API on a VPS | [cf-pages.md](cf-pages.md) | static UI, proxied `/api/*` |
 | AWS Lambda | [lambda.md](lambda.md) | LWA image, SSE streaming |
 
 ## The public-instance contract

@@ -258,6 +258,58 @@ async fn rate_limit_scope_and_exemptions() {
     assert_eq!(resp.status(), StatusCode::OK);
 }
 
+/// `client_ip_header` overrides the default key order: needed by
+/// chained-CDN deployments (Pages function → second CF edge) where
+/// `cf-connecting-ip` arrives as the proxy's egress and only
+/// `x-forwarded-for` carries the caller.
+#[tokio::test]
+async fn rate_limit_client_ip_header_override() {
+    let mut cfg = limited_config();
+    cfg.rate_limit.client_ip_header = Some("x-forwarded-for".to_string());
+    let (router, _state, _tmp) = app_with_factory(cfg);
+    let req = |cf: &str, xff: &str| {
+        Request::builder()
+            .method("GET")
+            .uri("/api/search?q=x")
+            .header("cf-connecting-ip", cf)
+            .header(&XFF, xff)
+            .body(Body::empty())
+            .unwrap()
+    };
+
+    assert_eq!(
+        router
+            .clone()
+            .oneshot(req("10.0.0.1", "203.0.113.7"))
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::OK
+    );
+    // Same `x-forwarded-for`, different `cf-connecting-ip`: still the
+    // same bucket — the override header wins.
+    assert_eq!(
+        router
+            .clone()
+            .oneshot(req("10.0.0.2", "203.0.113.7"))
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::TOO_MANY_REQUESTS
+    );
+    // A different `x-forwarded-for` is a different bucket even with the
+    // same `cf-connecting-ip`.
+    assert_eq!(
+        router
+            .clone()
+            .oneshot(req("10.0.0.1", "203.0.113.8"))
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::OK
+    );
+}
+
 /// `trust_proxy_headers = false` ignores spoofable headers entirely —
 /// with no `ConnectInfo` (oneshot) the request is unattributable and
 /// passes; over a real socket the peer IP would be the key.
