@@ -3,13 +3,15 @@
   License, v. 2.0. If a copy of the MPL was not distributed with this
   file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-  Search Assist (W7-02 port of `web/src/assist.ts`): an on-demand card
-  that answers from the already-returned result set — the POST carries
-  `context_results`, so no engine re-fetch happens. Frame behavior is
-  identical: `sources` renders domain chips up front, `delta` appends raw
-  text, `done` injects the server-sanitized `html` and retargets
-  `a.cite[data-cite]` to the numbered chips, `error` surfaces the
-  message (+ `retry after Ns`). Fire-once per search.
+  Search Assist (W7-02 port of `web/src/assist.ts`; FX-04 moved it here
+  so `features/answer/` owns the AI surfaces — `routes/SearchPage.svelte`
+  wires it in): an on-demand card that answers from the already-returned
+  result set — the POST carries `context_results`, so no engine re-fetch
+  happens. Frame behavior is identical to the HTMX card: `sources`
+  renders domain chips up front, `delta` appends raw text, `done`
+  injects the server-sanitized `html` and retargets `a.cite[data-cite]`
+  to the numbered chips, `error` surfaces the message (+ `retry after
+  Ns`). Fire-once per search.
 -->
 <script lang="ts">
   import { tick } from "svelte";
@@ -25,7 +27,7 @@
     q: string;
     /** Top rows armed for the POST (final order on streamed pages). */
     context: AnswerSource[];
-    /** `/answer?q=…` link — empty when no answer loop exists. */
+    /** `/app/answer?q=…` link — empty when no answer loop exists. */
     askUrl: string;
     /** Streaming pages render the trigger inert until `meta` arms context. */
     disabled: boolean;

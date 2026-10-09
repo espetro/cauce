@@ -579,6 +579,17 @@ answer:
   followup_placeholder: Ask a follow-up...
   # W7-04: the follow-up form's submit label.
   followup_submit: ask
+  # FX-04 SPA: the composer's in-flight button — aborts the stream.
+  stop: stop
+  # FX-04 SPA: status word for a turn the user stopped mid-stream.
+  stopped: stopped
+  # FX-04 SPA: the collapsed `<details>` summary label over a turn's
+  # step list; `{n}` is the step count.
+  steps: steps · {n}
+  # FX-04 SPA: rewinds the last settled turn back into the composer.
+  edit: edit
+  # FX-04 SPA: lead on the no-query ask form (the omnibox lands here).
+  ask_prompt: Ask a question to start a thread.
 
 # W7-02 Search Assist card on the SERP (the DDG/Kagi shape).
 assist:
