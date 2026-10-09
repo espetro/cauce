@@ -124,6 +124,9 @@ pub fn spa_bundle() -> Value {
                 "common.theme_aria",
                 "common.theme_aria_state",
                 "common.request_label",
+                // ui/confirm AlertDialog labels (DS-02).
+                "common.cancel",
+                "common.confirm",
             ][..],
         ),
         (
