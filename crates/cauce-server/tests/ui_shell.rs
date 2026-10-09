@@ -184,8 +184,40 @@ async fn legacy_paths_redirect_to_app() {
     }
 }
 
-/// Every mounted `/app` route serves the same shell (embedded asset hits
-/// stay out of scope — `spa_nested` answers them before the fallback).
+/// The hashed bundles referenced by the shell resolve as real assets, not
+/// the index fallback — a `/app/assets/<name>` request must probe the
+/// wildcard tail (`assets/<name>`), never the mount-prefixed path, and
+/// answer the embedded file with its real content type + immutable cache.
+/// (The FX-06 regression this guards: `uri.path()` probing served every
+/// asset as `text/html`, bricking the whole SPA.)
+#[tokio::test]
+async fn app_assets_serve_the_embedded_bundle() {
+    let (router, _state, _tmp) = app();
+    let (status, shell) = get_html(&router, "/app").await;
+    assert_eq!(status, StatusCode::OK);
+    let src = shell
+        .split("src=\"/app/")
+        .nth(1)
+        .and_then(|s| s.split('"').next())
+        .expect("shell must reference a hashed bundle");
+    let (status, headers, body) = get_headers(&router, &format!("/app/{src}")).await;
+    assert_eq!(status, StatusCode::OK, "/app/{src}");
+    let ct = headers["content-type"].to_str().unwrap_or("");
+    assert!(
+        ct.starts_with("text/javascript") || ct.starts_with("application/javascript"),
+        "/app/{src}: expected a JS bundle, got {ct}"
+    );
+    assert_eq!(
+        headers["cache-control"].to_str().unwrap_or(""),
+        "public, max-age=31536000, immutable"
+    );
+    assert!(
+        body.len() > 1_000,
+        "/app/{src}: bundle too small to be real"
+    );
+}
+
+/// Every mounted `/app` route serves the same shell.
 #[tokio::test]
 async fn app_routes_serve_the_spa_shell() {
     let (router, _state, _tmp) = app();
