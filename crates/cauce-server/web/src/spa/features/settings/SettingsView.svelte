@@ -6,15 +6,21 @@
   `/app/settings` — one-for-one with `templates/settings.html` +
   `settings_cache.html`: search / engines / admission / logging /
   cache / AI fieldsets posting the same dotted field names to
-  `PUT /api/config`. Wire degradations (documented on #266): no env
-  provenance so nothing is `disabled`, no `engines_pinned` greying, no
-  models datalist, no `config_path` in the hint.
+  `PUT /api/config`. The admin form is a formisch `Form` (per-field
+  number validation) on vendored `ui/` Bits UI controls (Checkbox,
+  Select). Wire degradations (documented on #266): no env provenance so
+  nothing is `disabled`, no `engines_pinned` greying, no models
+  datalist, no `config_path` in the hint.
 -->
 <script lang="ts">
+  import { Field, Form } from "@formisch/svelte";
+
   import { spa } from "../../lib/i18n.js";
   import { capabilities } from "../../lib/capabilities.svelte.js";
   import { byok, setByok } from "../../lib/byok.svelte.js";
   import type { ByokCreds } from "../../lib/byok.svelte.js";
+  import UiCheckbox from "../../ui/checkbox.svelte";
+  import UiSelect from "../../ui/select.svelte";
   import type { createSettingsPage } from "./settings.svelte.js";
 
   interface SettingsViewProps {
@@ -24,6 +30,7 @@
   let { page }: SettingsViewProps = $props();
   const s = spa.settings;
   const st = $derived(page.state);
+  const form = $derived(page.form);
 
   // PUB-03: the browser-local BYOK section shows whenever the instance
   // honours overrides; the config form below stays admin-only.
@@ -33,6 +40,18 @@
   const isAdmin = $derived(capabilities.role === "admin");
   let draft = $state<ByokCreds>({ ...byok });
   let byokSaved = $state(false);
+
+  const tierOptions = [
+    { value: "", label: s.tier_default },
+    { value: "1", label: "1" },
+    { value: "2", label: "2" },
+    { value: "3", label: "3" },
+  ];
+  const protocolOptions = [
+    { value: "", label: s.byok_protocol_default },
+    { value: "openai", label: "openai" },
+    { value: "anthropic", label: "anthropic" },
+  ];
 
   function saveByok(): void {
     setByok(draft);
@@ -90,14 +109,12 @@
       <div class="frow">
         <label>
           {s.byok_protocol}
-          <select
+          <UiSelect
+            value={draft.protocol}
+            onValueChange={(v) => (draft.protocol = v)}
+            options={protocolOptions}
             disabled={!capabilities.flags.allowUserKeys}
-            bind:value={draft.protocol}
-          >
-            <option value="">{s.byok_protocol_default}</option>
-            <option value="openai">openai</option>
-            <option value="anthropic">anthropic</option>
-          </select>
+          />
         </label>
       </div>
       <button type="submit">{s.save}</button>
@@ -115,74 +132,145 @@
   <p class="field-error" role="alert">{st.error}</p>
 {:else if st.form != null}
   {@const f = st.form}
-  <form
-    class="settings-form"
-    onsubmit={(e) => {
-      e.preventDefault();
-      page.save();
-    }}
-  >
+  <Form of={form} class="settings-form" onsubmit={(o) => page.save(o)}>
     <fieldset>
       <legend>{s.section_search}</legend>
-      <div class="frow">
-        <label>
-          {s.deadline}
-          <input type="text" bind:value={f.deadlineMs} />
-        </label>
-      </div>
-      <div class="frow">
-        <label>
-          {s.ttl}
-          <input type="text" bind:value={f.ttlS} />
-        </label>
-      </div>
-      <div class="frow">
-        <label>
-          {s.min_results}
-          <input type="text" bind:value={f.minResults} />
-        </label>
-      </div>
-      <div class="frow">
-        <label>
-          {s.hedge_floor}
-          <input type="text" bind:value={f.hedgeFloorMs} />
-        </label>
-      </div>
-      <div class="frow">
-        <label>
-          {s.hedge_ceiling}
-          <input type="text" bind:value={f.hedgeCeilingMs} />
-        </label>
-      </div>
+      <Field of={form} path={["deadlineMs"]}>
+        {#snippet children(field)}
+          <div class="frow">
+            <label>
+              {s.deadline}
+              <input
+                type="text"
+                {...field.props}
+                value={field.input ?? ""}
+                aria-invalid={field.errors != null}
+              />
+            </label>
+            {#if field.errors}
+              <span class="field-error">{field.errors[0]}</span>
+            {/if}
+          </div>
+        {/snippet}
+      </Field>
+      <Field of={form} path={["ttlS"]}>
+        {#snippet children(field)}
+          <div class="frow">
+            <label>
+              {s.ttl}
+              <input
+                type="text"
+                {...field.props}
+                value={field.input ?? ""}
+                aria-invalid={field.errors != null}
+              />
+            </label>
+            {#if field.errors}
+              <span class="field-error">{field.errors[0]}</span>
+            {/if}
+          </div>
+        {/snippet}
+      </Field>
+      <Field of={form} path={["minResults"]}>
+        {#snippet children(field)}
+          <div class="frow">
+            <label>
+              {s.min_results}
+              <input
+                type="text"
+                {...field.props}
+                value={field.input ?? ""}
+                aria-invalid={field.errors != null}
+              />
+            </label>
+            {#if field.errors}
+              <span class="field-error">{field.errors[0]}</span>
+            {/if}
+          </div>
+        {/snippet}
+      </Field>
+      <Field of={form} path={["hedgeFloorMs"]}>
+        {#snippet children(field)}
+          <div class="frow">
+            <label>
+              {s.hedge_floor}
+              <input
+                type="text"
+                {...field.props}
+                value={field.input ?? ""}
+                aria-invalid={field.errors != null}
+              />
+            </label>
+            {#if field.errors}
+              <span class="field-error">{field.errors[0]}</span>
+            {/if}
+          </div>
+        {/snippet}
+      </Field>
+      <Field of={form} path={["hedgeCeilingMs"]}>
+        {#snippet children(field)}
+          <div class="frow">
+            <label>
+              {s.hedge_ceiling}
+              <input
+                type="text"
+                {...field.props}
+                value={field.input ?? ""}
+                aria-invalid={field.errors != null}
+              />
+            </label>
+            {#if field.errors}
+              <span class="field-error">{field.errors[0]}</span>
+            {/if}
+          </div>
+        {/snippet}
+      </Field>
     </fieldset>
 
     <fieldset>
       <legend>{s.section_engines}</legend>
-      {#each f.engines as e}
+      {#each f.engines as e, i (e.id)}
         <div class="engine-row">
           <strong class="engine-id">{e.id}</strong>
           <span class="hint mono">{e.kind}</span>
-          <label>
-            <input type="checkbox" bind:checked={e.enabled} />
-            {s.enabled}
-          </label>
-          <label>
-            {s.tier}
-            <select bind:value={e.tier}>
-              <option value="">{s.tier_default}</option>
-              <option value="1">1</option>
-              <option value="2">2</option>
-              <option value="3">3</option>
-            </select>
-          </label>
-          <label class="proxy">
-            {s.proxy}
-            <input
-              type="text"
-              bind:value={e.proxy}
-              placeholder={s.proxy_placeholder}
-            />
-          </label>
+          <Field of={form} path={["engines", i, "enabled"]}>
+            {#snippet children(field)}
+              <label>
+                <UiCheckbox
+                  checked={field.input === true}
+                  onCheckedChange={field.onInput}
+                  name={field.props.name}
+                />
+                {s.enabled}
+              </label>
+            {/snippet}
+          </Field>
+          <Field of={form} path={["engines", i, "tier"]}>
+            {#snippet children(field)}
+              <label>
+                {s.tier}
+                <UiSelect
+                  value={field.input ?? ""}
+                  onValueChange={field.onInput}
+                  options={tierOptions}
+                  name={field.props.name}
+                />
+              </label>
+            {/snippet}
+          </Field>
+          <Field of={form} path={["engines", i, "proxy"]}>
+            {#snippet children(field)}
+              <label class="proxy">
+                {s.proxy}
+                <input
+                  type="text"
+                  {...field.props}
+                  value={field.input ?? ""}
+                  placeholder={s.proxy_placeholder}
+                />
+              </label>
+            {/snippet}
+          </Field>
         </div>
       {/each}
       <a href="/app/admin?tab=engines">{s.browse_engines}</a>
@@ -190,29 +278,65 @@
 
     <fieldset>
       <legend>{s.section_admission}</legend>
-      <div class="frow">
-        <label>
-          {s.max_wait}
-          <input type="text" bind:value={f.maxWaitMs} />
-        </label>
-      </div>
-      <div class="frow">
-        <label>
-          {s.max_concurrent}
-          <input type="text" bind:value={f.maxConcurrent} />
-        </label>
-      </div>
+      <Field of={form} path={["maxWaitMs"]}>
+        {#snippet children(field)}
+          <div class="frow">
+            <label>
+              {s.max_wait}
+              <input
+                type="text"
+                {...field.props}
+                value={field.input ?? ""}
+                aria-invalid={field.errors != null}
+              />
+            </label>
+            {#if field.errors}
+              <span class="field-error">{field.errors[0]}</span>
+            {/if}
+          </div>
+        {/snippet}
+      </Field>
+      <Field of={form} path={["maxConcurrent"]}>
+        {#snippet children(field)}
+          <div class="frow">
+            <label>
+              {s.max_concurrent}
+              <input
+                type="text"
+                {...field.props}
+                value={field.input ?? ""}
+                aria-invalid={field.errors != null}
+              />
+            </label>
+            {#if field.errors}
+              <span class="field-error">{field.errors[0]}</span>
+            {/if}
+          </div>
+        {/snippet}
+      </Field>
     </fieldset>
 
     <fieldset>
       <legend>{s.section_logging}</legend>
-      <div class="frow">
-        <label>
-          {s.retention}
-          <span class="hint">{s.applies_after_restart}</span>
-          <input type="text" bind:value={f.retentionDays} />
-        </label>
-      </div>
+      <Field of={form} path={["retentionDays"]}>
+        {#snippet children(field)}
+          <div class="frow">
+            <label>
+              {s.retention}
+              <span class="hint">{s.applies_after_restart}</span>
+              <input
+                type="text"
+                {...field.props}
+                value={field.input ?? ""}
+                aria-invalid={field.errors != null}
+              />
+            </label>
+            {#if field.errors}
+              <span class="field-error">{field.errors[0]}</span>
+            {/if}
+          </div>
+        {/snippet}
+      </Field>
       <p class="hint">
         <a href="/api/report">{s.report_link}</a> — {s.report_hint}
       </p>
@@ -237,57 +361,119 @@
 
     <fieldset class="greyed">
       <legend>{s.section_ai}</legend>
-      <div class="frow">
-        <label>
-          {s.ai_base_url}
-          <input type="text" bind:value={f.aiBaseUrl} />
-        </label>
-      </div>
-      <div class="frow">
-        <label>
-          {s.ai_api_key}
-          <input
-            type="text"
-            bind:value={f.aiApiKey}
-            placeholder={s.ai_api_key_placeholder}
-          />
-        </label>
-      </div>
-      <div class="frow">
-        <label>
-          {s.ai_model}
-          <input
-            type="text"
-            bind:value={f.aiModel}
-            placeholder={s.ai_model_placeholder}
-          />
-        </label>
-      </div>
-      <div class="frow">
-        <label>
-          {s.ai_max_turns}
-          <input type="text" bind:value={f.aiMaxTurns} />
-        </label>
-      </div>
-      <div class="frow">
-        <label>
-          {s.ai_max_searches}
-          <input type="text" bind:value={f.aiMaxSearches} />
-        </label>
-      </div>
-      <div class="frow">
-        <label>
-          {s.ai_provider_budget}
-          <input type="text" bind:value={f.aiProviderBudgetS} />
-        </label>
-      </div>
-      <label>
-        <input type="checkbox" bind:checked={f.aiEnabled} />
-        {s.enabled}
-      </label>
+      <Field of={form} path={["aiBaseUrl"]}>
+        {#snippet children(field)}
+          <div class="frow">
+            <label>
+              {s.ai_base_url}
+              <input
+                type="text"
+                {...field.props}
+                value={field.input ?? ""}
+              />
+            </label>
+          </div>
+        {/snippet}
+      </Field>
+      <Field of={form} path={["aiApiKey"]}>
+        {#snippet children(field)}
+          <div class="frow">
+            <label>
+              {s.ai_api_key}
+              <input
+                type="text"
+                {...field.props}
+                value={field.input ?? ""}
+                placeholder={s.ai_api_key_placeholder}
+              />
+            </label>
+          </div>
+        {/snippet}
+      </Field>
+      <Field of={form} path={["aiModel"]}>
+        {#snippet children(field)}
+          <div class="frow">
+            <label>
+              {s.ai_model}
+              <input
+                type="text"
+                {...field.props}
+                value={field.input ?? ""}
+                placeholder={s.ai_model_placeholder}
+              />
+            </label>
+          </div>
+        {/snippet}
+      </Field>
+      <Field of={form} path={["aiMaxTurns"]}>
+        {#snippet children(field)}
+          <div class="frow">
+            <label>
+              {s.ai_max_turns}
+              <input
+                type="text"
+                {...field.props}
+                value={field.input ?? ""}
+                aria-invalid={field.errors != null}
+              />
+            </label>
+            {#if field.errors}
+              <span class="field-error">{field.errors[0]}</span>
+            {/if}
+          </div>
+        {/snippet}
+      </Field>
+      <Field of={form} path={["aiMaxSearches"]}>
+        {#snippet children(field)}
+          <div class="frow">
+            <label>
+              {s.ai_max_searches}
+              <input
+                type="text"
+                {...field.props}
+                value={field.input ?? ""}
+                aria-invalid={field.errors != null}
+              />
+            </label>
+            {#if field.errors}
+              <span class="field-error">{field.errors[0]}</span>
+            {/if}
+          </div>
+        {/snippet}
+      </Field>
+      <Field of={form} path={["aiProviderBudgetS"]}>
+        {#snippet children(field)}
+          <div class="frow">
+            <label>
+              {s.ai_provider_budget}
+              <input
+                type="text"
+                {...field.props}
+                value={field.input ?? ""}
+                aria-invalid={field.errors != null}
+              />
+            </label>
+            {#if field.errors}
+              <span class="field-error">{field.errors[0]}</span>
+            {/if}
+          </div>
+        {/snippet}
+      </Field>
+      <Field of={form} path={["aiEnabled"]}>
+        {#snippet children(field)}
+          <label>
+            <UiCheckbox
+              checked={field.input === true}
+              onCheckedChange={field.onInput}
+              name={field.props.name}
+            />
+            {s.enabled}
+          </label>
+        {/snippet}
+      </Field>
     </fieldset>
 
-    <button type="submit" disabled={st.saving}>{s.save}</button>
+    <button type="submit" disabled={form.isSubmitting}>{s.save}</button>
     <span
       id="settings-status"
       role="status"
@@ -295,7 +481,7 @@
       class="form-status"
       class:error={st.statusError}>{st.status}</span
     >
-  </form>
+  </Form>
 {/if}
 {/if}
 

@@ -13,6 +13,9 @@
  * which `restore_redacted` accepts on save.
  */
 
+import { createForm, reset } from "@formisch/svelte";
+import * as v from "valibot";
+
 import type { Config } from "../../../types/Config.js";
 import type { ConfigPutResponse } from "../../../types/ConfigPutResponse.js";
 import type { EngineEntry } from "../../../types/EngineEntry.js";
@@ -27,32 +30,43 @@ import { spa } from "../../lib/i18n.js";
 
 const S = () => spa.settings;
 
-export interface EngineFormRow {
-  id: string;
-  kind: string;
-  enabled: boolean;
-  tier: string;
-  proxy: string;
-}
+const engineSchema = v.object({
+  id: v.string(),
+  kind: v.string(),
+  enabled: v.boolean(),
+  tier: v.string(),
+  proxy: v.string(),
+});
 
-export interface SettingsForm {
-  deadlineMs: string;
-  ttlS: string;
-  minResults: string;
-  hedgeFloorMs: string;
-  hedgeCeilingMs: string;
-  maxWaitMs: string;
-  maxConcurrent: string;
-  retentionDays: string;
-  aiBaseUrl: string;
-  aiApiKey: string;
-  aiModel: string;
-  aiMaxTurns: string;
-  aiMaxSearches: string;
-  aiProviderBudgetS: string;
-  aiEnabled: boolean;
-  engines: EngineFormRow[];
-}
+export interface EngineFormRow extends v.InferInput<typeof engineSchema> {}
+
+// Formisch (v0.4.0 plan: "formisch once per-field errors prove needed"):
+// the dotted-name wire fields are all strings, so the schema only earns
+// its keep on the numeric keys — a non-digit value now fails per field
+// instead of round-tripping into a `PUT /api/config` 4xx.
+const numField = () =>
+  v.pipe(v.string(), v.regex(/^\d+$/, S().invalid_number));
+
+const settingsSchema = v.object({
+  deadlineMs: numField(),
+  ttlS: numField(),
+  minResults: numField(),
+  hedgeFloorMs: numField(),
+  hedgeCeilingMs: numField(),
+  maxWaitMs: numField(),
+  maxConcurrent: numField(),
+  retentionDays: numField(),
+  aiBaseUrl: v.string(),
+  aiApiKey: v.string(),
+  aiModel: v.string(),
+  aiMaxTurns: numField(),
+  aiMaxSearches: numField(),
+  aiProviderBudgetS: numField(),
+  aiEnabled: v.boolean(),
+  engines: v.array(engineSchema),
+});
+
+export interface SettingsForm extends v.InferInput<typeof settingsSchema> {}
 
 function formFrom(c: Config): SettingsForm {
   return {
@@ -112,11 +126,11 @@ export function formBody(f: SettingsForm): URLSearchParams {
 }
 
 export function createSettingsPage() {
+  const form = createForm({ schema: settingsSchema });
   const state = $state({
     loading: true,
     error: "",
     form: null as SettingsForm | null,
-    saving: false,
     status: "",
     statusError: false,
     cacheLine: "",
@@ -148,6 +162,9 @@ export function createSettingsPage() {
         return;
       }
       state.form = formFrom(c);
+      // `reset` sets the fresh config as both the visible input and the
+      // dirty-tracking baseline.
+      reset(form, { initialInput: state.form });
       void cacheLine();
     } catch (e) {
       state.error = e instanceof Error ? e.message : String(e);
@@ -156,23 +173,20 @@ export function createSettingsPage() {
     }
   }
 
-  async function save(): Promise<void> {
-    if (state.form == null || state.saving) return;
-    state.saving = true;
+  async function save(output: SettingsForm): Promise<void> {
     state.status = "";
     state.statusError = false;
     try {
-      const res: ConfigPutResponse = await putConfig(formBody(state.form));
+      const res: ConfigPutResponse = await putConfig(formBody(output));
       state.status = res.effective_after_restart
         ? `${S().saved} · ${S().applies_after_restart} ${res.requires_restart.join(", ")}`
         : S().saved;
       state.form = formFrom(res);
+      reset(form, { initialInput: state.form });
       void cacheLine();
     } catch (e) {
       state.status = `${S().could_not_save} (${e instanceof Error ? e.message : String(e)})`;
       state.statusError = true;
-    } finally {
-      state.saving = false;
     }
   }
 
@@ -189,5 +203,5 @@ export function createSettingsPage() {
     }
   }
 
-  return { state, refresh, save, bulkDelete };
+  return { state, form, refresh, save, bulkDelete };
 }
