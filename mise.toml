@@ -7,6 +7,7 @@ node = "24.19.0"
 "npm:pnpm" = "11.21.0"
 "cargo:cargo-deny" = "0.20.2"
 "cargo:cargo-nextest" = "0.9.146"
+"ubi:hatoo/oha" = "1.16.0"
 
 [tasks.fmt]
 description = "Check formatting with rustfmt"
@@ -99,6 +100,18 @@ run = "bash scripts/loc-report.sh"
 [tasks.dev]
 description = "Run the cauce binary (cauce serve)"
 run = "cargo run -p cauce-cli -- serve"
+
+# PUB-04: public-instance load harness. Builds the release binary, then runs
+# spike-shed / collapse / constrained / edge-basis scenarios against the
+# replay engine and prints KEY=VALUE metrics for docs/deploy/sizing.md.
+# Non-gating — manual capacity check, not part of `validate`.
+[tasks.loadtest]
+description = "Public-instance load harness (oha + replay engine)"
+env = { CARGO_INCREMENTAL = "0" }
+run = """
+cargo build --release -p cauce-cli
+contrib/loadtest.sh
+"""
 
 [tasks."hooks:install"]
 description = "Point git at .githooks/ (pre-push runs mise run validate)"
