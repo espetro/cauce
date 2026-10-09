@@ -79,7 +79,7 @@ async fn opensearch_descriptor_uses_canonical_origin_not_request_host() {
     assert_eq!(status, StatusCode::OK, "{body}");
 
     assert!(
-        body.contains("https://search.localhost/search?q={searchTerms}"),
+        body.contains("https://search.localhost/app/search?q={searchTerms}"),
         "results URL must use the configured HTTPS origin: {body}"
     );
     assert!(
@@ -97,11 +97,11 @@ async fn opensearch_descriptor_uses_canonical_origin_not_request_host() {
 }
 
 /// Browsers discover the descriptor through `<link rel="search">` in the
-/// page head of both mounted pages.
+/// SPA shell's head (FX-06: the legacy page paths redirect to `/app`).
 #[tokio::test]
 async fn pages_link_to_opensearch_descriptor() {
     let (router, _state, _tmp) = app();
-    for uri in ["/", "/search?q=link-check"] {
+    for uri in ["/app", "/app/search?q=link-check"] {
         let (status, _, body) = get_headers(&router, uri).await;
         assert_eq!(status, StatusCode::OK, "{uri}");
         assert!(

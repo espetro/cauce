@@ -25,12 +25,9 @@ use std::borrow::Cow;
 
 use serde_json::{Map, Value};
 
-/// Look up one catalog entry (`"cache.empty"`). Askama parses
-/// `{{ crate::i18n::tr("key") }}` as a function call but cannot expand
-/// `t!(...)` in the same position, so every template reference goes
-/// through this fn.
-/// `key` is `&'static` because `_rust_i18n_translate` ties the returned
-/// `Cow`'s lifetime to the key, and every call site passes a literal.
+/// Look up one catalog entry (`"cache.empty"`). `key` is `&'static`
+/// because `_rust_i18n_translate` ties the returned `Cow`'s lifetime to
+/// the key, and every call site passes a literal.
 pub fn tr(key: &'static str) -> Cow<'static, str> {
     rust_i18n::t!(key)
 }

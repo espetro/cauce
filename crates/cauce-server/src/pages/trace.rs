@@ -1,9 +1,13 @@
-//! `/trace/{id}` — the last HTMX ops page (FX-05 moved `/audit` to
-//! `/app/admin?tab=audit`; `/api/audit` rows still carry `request_id`s
-//! that resolve here). Renders the `cauce trace` timeline — the same
+//! `/trace/{id}` — the request-trace replay view the SPA's audit tab
+//! links to. Renders the `cauce trace` timeline — the same
 //! [`trace::Trace`] / [`trace::render_trace`] pair the CLI runs — plus a
 //! per-span HTML list built from that structured trace, so the HTML and
 //! terminal views can never drift.
+//!
+//! FX-06 kept this page server-rendered: it has no SPA route and no JSON
+//! twin, and the audit tab deep-links to it (`/api/traces/{id}` covers the
+//! data plane). It renders without a template engine — small string
+//! interpolation through the shared [`crate::pages::doc`] shell.
 //!
 //! This Source Code Form is subject to the terms of the Mozilla Public
 //! License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -11,22 +15,19 @@
 
 use std::io;
 
-use askama::Template;
 use axum::Extension;
 use axum::extract::{Path, State};
 use axum::http::{HeaderMap, StatusCode};
-use axum::response::{Html, IntoResponse, Response};
+use axum::response::{IntoResponse, Response};
 
 use crate::app::AppState;
 use crate::error::ApiError;
-use crate::html::{STYLE_CSS, prefers_json, render_err, short_id};
 use crate::middleware::RequestCtx;
 use crate::observability::trace::{self, TraceError};
+use crate::pages::{doc, esc, short_id};
 use rust_i18n::t;
-/// One span in the `/trace/{id}` HTML list, summary split into segments so
-/// the template can give the status word a color role (`span-status-ok` /
-/// `span-status-error`).
-#[derive(Debug)]
+
+/// One span in the `/trace/{id}` HTML list.
 struct SpanView {
     /// Engine id, or the span name when no `engine` field was recorded.
     name: String,
@@ -36,40 +37,11 @@ struct SpanView {
     status: String,
     /// `span-status-ok`/`span-status-error`; empty for other statuses
     /// (they render with the neutral body color).
-    status_class: String,
+    status_class: &'static str,
     /// `N results`; empty when the span recorded no `results` field.
     results: String,
     /// The span's merged raw fields, pretty-printed.
     fields_json: String,
-}
-
-/// `/trace/{id}` page.
-#[derive(Template)]
-#[template(path = "trace.html")]
-struct TracePage {
-    /// The shared header's active nav item; `/trace/{id}` has no nav
-    /// entry of its own, so nothing renders `aria-current`.
-    nav_active: &'static str,
-    /// W7-01: an answer loop exists — the header shows `/answer`.
-    answer_available: bool,
-    /// The traced request id (page subject), full form.
-    traced_id: String,
-    traced_short: String,
-    /// Request summary parts (kind, query, timestamp, elapsed, outcome).
-    kind: String,
-    query: String,
-    has_query: bool,
-    summary_ts: String,
-    summary_ms: String,
-    outcome: String,
-    /// The rendered `cauce trace` timeline (template-escaped `<pre>` body).
-    timeline: String,
-    spans: Vec<SpanView>,
-    /// Error-frame line for the 404/400 states; empty on the normal page.
-    notice: String,
-    /// This page request's own id (footer, copyable).
-    request_id: String,
-    style_css: String,
 }
 
 /// `GET /trace/{id}`: the `cauce trace` timeline as HTML.
@@ -87,19 +59,18 @@ pub async fn trace(
         .get("accept")
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
-    let wants_json = prefers_json(accept);
+    let wants_json = accept.contains("application/json") && !accept.contains("text/html");
 
     let Ok(uuid) = id.parse::<uuid::Uuid>() else {
         if wants_json {
             return Err(ctx.bad_request(format!("trace id {id:?} is not a UUID")));
         }
-        return trace_frame(
-            &state,
+        return Ok(trace_frame(
             &ctx,
             &id,
             &t!("trace.bad_id"),
             StatusCode::BAD_REQUEST,
-        );
+        ));
     };
     let traced = uuid.to_string();
     let logs_dir = state.with_config(|c| c.logs_dir());
@@ -120,73 +91,126 @@ pub async fn trace(
         }
         let days = state.with_config(|c| c.logs.retention_days);
         let notice = t!("trace.no_trace").replace("{days}", &days.to_string());
-        return trace_frame(&state, &ctx, &traced, &notice, StatusCode::NOT_FOUND);
+        return Ok(trace_frame(&ctx, &traced, &notice, StatusCode::NOT_FOUND));
     }
 
     let t = trace::Trace::build(&traced, &records);
     let summary = t.summary();
     let timeline = t.render();
-    let spans = t.spans().iter().map(span_view).collect();
+    let spans: Vec<SpanView> = t.spans().iter().map(span_view).collect();
 
-    let rid = ctx.request_id.as_uuid().to_string();
-    let page = TracePage {
-        nav_active: "",
-        answer_available: state.answer().is_some(),
-        traced_short: short_id(&traced),
-        traced_id: traced,
-        kind: summary.kind,
-        has_query: summary.query.is_some(),
-        query: summary.query.unwrap_or_default(),
-        summary_ts: local_minute(summary.ts),
-        summary_ms: summary
-            .total_ms
-            .map(|ms| format!("{ms:.0} {}", t!("trace.ms")))
-            .unwrap_or_else(|| t!("common.dash").to_string()),
-        outcome: summary.outcome,
-        timeline,
-        spans,
-        notice: String::new(),
-        request_id: rid,
-        style_css: STYLE_CSS.clone(),
-    };
-    page.render()
-        .map_err(|e| render_err(e, ctx.request_id.as_uuid()))
-        .map(|html| (StatusCode::OK, Html(html)).into_response())
+    Ok(page(
+        &ctx,
+        &traced,
+        &summary_line(&summary),
+        &timeline,
+        &spans,
+        "",
+        StatusCode::OK,
+    ))
 }
 
-/// `engine · elapsed · status · N results` for one span, kept as separate
-/// fields so the template composes the separators and can hang a color
-/// class on the status word. Fields the span does not carry come back
-/// empty and the template skips their segment.
-/// Error/notice frame: renders the trace page shell with `notice` under
-/// `status` (the same shape [`trace`] answers for real traces).
-fn trace_frame(
-    state: &AppState,
+/// `{kind} "{query}" · ts · ms · outcome` — the same reading the `cauce
+/// trace` summary line renders. Fields are escaped individually; the
+/// separators and the quote marks stay literal.
+fn summary_line(summary: &trace::TraceSummary) -> String {
+    if summary.kind.is_empty() {
+        return String::new();
+    }
+    let mut line = esc(&summary.kind);
+    if let Some(q) = &summary.query {
+        line.push_str(&format!(" \"{}\"", esc(q)));
+    }
+    let ts = local_minute(summary.ts);
+    if !ts.is_empty() {
+        line.push_str(&format!(" · {}", esc(&ts)));
+    }
+    line.push_str(&format!(
+        " · {} · {}",
+        esc(&summary
+            .total_ms
+            .map(|ms| format!("{ms:.0} {}", t!("trace.ms")))
+            .unwrap_or_else(|| t!("common.dash").to_string())),
+        esc(&summary.outcome)
+    ));
+    line
+}
+
+fn page(
     ctx: &RequestCtx,
-    traced_id: &str,
+    traced: &str,
+    summary: &str,
+    timeline: &str,
+    spans: &[SpanView],
     notice: &str,
     status: StatusCode,
-) -> Result<Response, ApiError> {
-    let page = TracePage {
-        nav_active: "",
-        answer_available: state.answer().is_some(),
-        traced_short: short_id(traced_id),
-        traced_id: traced_id.to_string(),
-        kind: String::new(),
-        has_query: false,
-        query: String::new(),
-        summary_ts: String::new(),
-        summary_ms: String::new(),
-        outcome: String::new(),
-        timeline: String::new(),
-        spans: Vec::new(),
-        notice: notice.to_string(),
-        request_id: ctx.request_id.as_uuid().to_string(),
-        style_css: STYLE_CSS.clone(),
-    };
-    page.render()
-        .map_err(|e| render_err(e, ctx.request_id.as_uuid()))
-        .map(|html| (status, Html(html)).into_response())
+) -> Response {
+    let mut body = String::with_capacity(4096);
+    body.push_str(&format!(
+        "<div class=\"meta\"><code class=\"request-id\" id=\"traced-id\">{}</code></div>",
+        esc(traced)
+    ));
+    if !notice.is_empty() {
+        body.push_str(&format!("<p class=\"empty\">{}</p>", esc(notice)));
+    } else {
+        if !summary.is_empty() {
+            body.push_str(&format!("<p class=\"meta\">{summary}</p>"));
+        }
+        body.push_str(&format!(
+            "<pre class=\"trace\" tabindex=\"0\" role=\"region\" aria-label=\"{}\">{}</pre>",
+            esc(&t!("trace.timeline_region")),
+            esc(timeline)
+        ));
+        if !spans.is_empty() {
+            body.push_str(&format!("<h2>{}</h2>", esc(&t!("trace.spans_heading"))));
+            for span in spans {
+                body.push_str("<details class=\"span\"><summary>");
+                body.push_str(&format!("{} · {}", esc(&span.name), esc(&span.elapsed)));
+                if !span.status.is_empty() {
+                    body.push_str(" · <span");
+                    if !span.status_class.is_empty() {
+                        body.push_str(&format!(" class=\"{}\"", span.status_class));
+                    }
+                    body.push_str(&format!(">{}</span>", esc(&span.status)));
+                }
+                if !span.results.is_empty() {
+                    body.push_str(&format!(" · {}", esc(&span.results)));
+                }
+                body.push_str(&format!(
+                    "</summary><pre tabindex=\"0\" role=\"group\" aria-label=\"{}\">{}</pre></details>",
+                    esc(&t!("trace.span_region")),
+                    esc(&span.fields_json)
+                ));
+            }
+        }
+    }
+    body.push_str(&format!(
+        "<div class=\"meta\">{} <code class=\"request-id\">{}</code></div>",
+        esc(&t!("common.request_label")),
+        esc(&ctx.request_id.as_uuid().to_string())
+    ));
+
+    (
+        status,
+        doc(
+            &format!(
+                "{} {}",
+                t!("trace.page_title").to_lowercase(),
+                short_id(traced)
+            ),
+            &t!("trace.page_title"),
+            "/app/admin?tab=audit",
+            &t!("trace.back_to_audit"),
+            &body,
+        ),
+    )
+        .into_response()
+}
+
+/// Error/notice frame: renders the trace page shell with `notice` under
+/// `status` (the same shape [`trace`] answers for real traces).
+fn trace_frame(ctx: &RequestCtx, traced_id: &str, notice: &str, status: StatusCode) -> Response {
+    page(ctx, traced_id, "", "", &[], notice, status)
 }
 
 fn span_view(span: &trace::TraceSpan) -> SpanView {
@@ -213,8 +237,7 @@ fn span_view(span: &trace::TraceSpan) -> SpanView {
             "ok" => "span-status-ok",
             "error" | "timeout" => "span-status-error",
             _ => "",
-        }
-        .to_string(),
+        },
         results: span
             .fields
             .get("results")

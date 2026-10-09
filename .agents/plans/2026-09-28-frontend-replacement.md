@@ -241,6 +241,10 @@ retrofits were.
 | FX-06 | Teardown | S/M | drop `askama`, `templates/`, `html/*`, `*_page.rs`, htmx deps; `RouteKind::Html` rows → SPA fallback; `ui_shell`/`routes_table` tests updated; header/nav absorbed into shell | `cargo check --no-default-features --features mcp` still green; binary no larger; plan + AGENTS.md updated |
 | FX-07 | Instance modes | L | `Capabilities` wire type + bootstrap payload (`mode`, `role`, `flags`); `public_instance` config; API authz on admin endpoints; capability-filtered nav/routes; per-user history (browser-local in public mode); archive index-vs-content split; merged `/admin` tabs (instance · engines · cache · audit); public dashboard card | public-mode e2e: no admin nav/401-403 on admin APIs for non-admin, history never hits server DB, archive disabled state honored; local mode = today's behavior bit-for-bit |
 
+Row status: FX-01–FX-05 landed; FX-07 landed (merged before FX-06);
+**FX-06 landed 2026-10-09** — the HTMX stack is removed; the `/app` SPA
+is the only UI layer.
+
 FX-03/FX-04 land the variant-E surfaces (§7.1) — parity layout (A) is the
 engineering landing zone behind `/app`, E is the visual target before the page is
 considered ported.
@@ -431,5 +435,8 @@ following checks join the gates:
   returns 401/403 for non-admin (matrix test); history writes stay
   browser-local; disabled-archiving state honored; local mode unchanged
   bit-for-bit.
-- **noscript** (carried from §6): the pure SPA loses today's degradation path —
-  ship a static `<noscript>` shell or document the accepted loss in FX-06.
+- **noscript** (carried from §6): resolved in FX-06 — `web/src/spa/index.html`
+  ships a token-styled `<noscript>` shell (the ~30-line option): it states the
+  UI needs JavaScript and points non-JS consumers at `GET /api/search?q=` and
+  `cauce mcp`. The old HTMX page's server-rendered degradation path is
+  deliberately not replicated.

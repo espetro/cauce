@@ -1,4 +1,4 @@
-//! cauce-server: axum router, HTMX templates, SSE, MCP, Exa adapter, assets.
+//! cauce-server: axum router, embedded Svelte SPA, SSE, MCP, Exa adapter, assets.
 //!
 //! This Source Code Form is subject to the terms of the Mozilla Public
 //! License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -10,22 +10,24 @@ rust_i18n::i18n!("locales", fallback = "en");
 
 mod app;
 #[cfg(feature = "ui")]
-mod audit_page;
+mod assets;
 
 mod capabilities;
 mod error;
 mod handlers;
-#[cfg(feature = "ui")]
-mod html;
 pub mod i18n;
 #[cfg(feature = "mcp")]
 pub mod mcp;
 mod metrics;
 mod middleware;
 pub mod observability;
+#[cfg(feature = "ui")]
+mod pages;
 pub mod report;
 mod routes;
 mod settings;
+#[cfg(feature = "ui")]
+mod spa;
 
 pub use app::{
     AppState, CURRENT_WAVE, RouterOptions, build_router, build_router_opts, feature_enabled,

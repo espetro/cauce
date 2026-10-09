@@ -1,21 +1,14 @@
 # Third-party notices
 
 This directory holds the assets embedded into the `cauce` binary at
-compile time (`rust-embed`). `app.js` is a bundle built from
-`crates/cauce-server/web/` (rolldown, `pnpm run build`); it includes two
-third-party packages resolved through `package.json`/`pnpm-lock.yaml`:
+compile time (`rust-embed`).
 
-- **htmx** (`htmx.org`), pinned to **2.0.4** — the version previously
-  vendored here as `htmx.min.js`. License: BSD-2-Clause.
-  Source: https://github.com/bigskysoftware/htmx
-- **htmx `json-enc` extension** (`htmx-ext-json-enc`), pinned to
-  **2.0.2** — the version previously vendored here as `json-enc.js`.
-  License: 0BSD (BSD Zero Clause).
-  Source: https://github.com/bigskysoftware/htmx-extensions
-  (`src/json-enc/json-enc.js`)
-
-The pins are deliberate: both must move together, and json-enc ≥2.0.0 is
-the htmx-2-compatible line (the htmx-1 build warned on every page load).
+`spa/` is the Vite build of `crates/cauce-server/web/src/spa/` (Svelte 5 +
+Tailwind v4, `pnpm run build:spa`); its third-party packages resolve
+through `package.json`/`pnpm-lock.yaml` like every other build dep.
 
 `favicon.svg` is a first-party icon (MPL-2.0, like the rest of the crate),
 not vendored.
+
+FX-06 removed the `app.js` bundle and with it the vendored htmx notices
+(`htmx.org`, `htmx-ext-json-enc`).

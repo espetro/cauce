@@ -60,9 +60,9 @@ pub struct ConfigPutResponse {
 /// the old one). The response partitions the changed paths into `applied`
 /// and `requires_restart` (see [`key_requires_restart`]).
 ///
-/// A form submit marked `HX-Request` gets an HTML fragment back (200 on both
-/// success and validation failure, so htmx swaps it inline); everything else
-/// gets the JSON body / envelope.
+/// The response is always the JSON `ConfigPutResponse` — both the SPA's
+/// settings editor and API clients read `applied`/`requires_restart` off
+/// it (FX-06 dropped the old HTMX fragment arm).
 pub async fn config_put(
     State(state): State<AppState>,
     Extension(ctx): Extension<RequestCtx>,

@@ -180,26 +180,28 @@ async fn upstream_error_maps_to_502() {
 }
 
 /// `GET /` arms the click beacon only when the archive pipeline is up
-/// and `[archive] index_on_click` is on (the default). Arming is the
-/// `data-index-on-click` attribute on `<body>` — the name also appears
-/// inside the bundled `app.js`, so pin the `<body` tag itself.
-#[cfg(feature = "ui")]
+/// and `[archive] index_on_click` is on (the default). FX-06: arming
+/// moved client-side — the SPA reads the flag from `/api/instance`,
+/// which must carry `index_on_click && archiving` through.
 #[tokio::test]
-async fn beacon_renders_only_when_enabled() {
-    let (router, _state, _tmp) = app();
-    let (_status, html) = get_html(&router, "/").await;
-    assert!(
-        html.contains("<body data-index-on-click"),
-        "beacon must render by default"
+async fn beacon_flag_reaches_the_spa() {
+    let (router, state, _tmp) = app();
+    let (status, body) = get_json(&router, "/api/instance").await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(
+        body["indexOnClick"].as_bool(),
+        Some(state.archiving()),
+        "beacon = config(true) && archiving: {body}"
     );
 
     let mut config = cauce_core::config::Config::default();
     config.archive.index_on_click = false;
     let (state, _tmp2) = test_state_with_config(config);
     let router = build_router(state);
-    let (_status, html) = get_html(&router, "/").await;
-    assert!(
-        !html.contains("<body data-index-on-click"),
-        "index_on_click = false must drop the beacon",
+    let (status, body) = get_json(&router, "/api/instance").await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(
+        body["indexOnClick"], false,
+        "index_on_click = false must reach the SPA: {body}"
     );
 }
