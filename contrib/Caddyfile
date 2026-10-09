@@ -1,0 +1,19 @@
+# cauce behind Caddy — TLS termination + reverse proxy.
+#
+#   caddy run --config contrib/Caddyfile
+#
+# DOMAIN is read from the environment (`DOMAIN=search.example.com`),
+# falling back to localhost for a quick check. Set
+# `rate_limit.trust_proxy_headers = true` in /etc/cauce/config.toml —
+# Caddy forwards X-Forwarded-For and without it every client lands in
+# the same per-IP bucket. No extra cache policy is needed here: cauce
+# stamps `Cache-Control` itself (`[edge]`); Caddy honours it.
+#
+# For a *private* instance drop this file entirely — cloudflared
+# (`cloudflared tunnel --url http://127.0.0.1:4479`) or Tailscale keeps
+# the box unexposed, which is the reference setup in docs/deploy/.
+
+{$DOMAIN:localhost} {
+	reverse_proxy 127.0.0.1:4479
+	encode zstd gzip
+}

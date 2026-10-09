@@ -1,0 +1,39 @@
+# Reference compose stack: cauce behind Caddy. Everything optional —
+# `docker compose up cauce` alone is a valid deployment, and any proxy
+# (nginx, traefik, cloudflared, a CF tunnel) can replace the caddy
+# service. cauce does not require a particular stack.
+services:
+  cauce:
+    build: .
+    image: cauce:local
+    restart: unless-stopped
+    ports:
+      # Loopback publish while developing; drop the port mapping
+      # entirely when the caddy profile fronts the app.
+      - "127.0.0.1:4479:4479"
+    environment:
+      # Compose stacks proxy on the same network — trust XFF so the
+      # per-IP bucket keys on the real client, not the proxy.
+      CAUCE_RATE_LIMIT_TRUST_PROXY_HEADERS: "true"
+      # CAUCE_SERVER_PUBLIC_INSTANCE is already true in the image.
+    volumes:
+      - cauce-data:/var/lib/cauce
+      # - ./config.toml:/etc/cauce/config.toml:ro
+
+  caddy:
+    image: caddy:2
+    profiles: ["caddy"]
+    restart: unless-stopped
+    environment:
+      DOMAIN: ${DOMAIN:-localhost}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./contrib/Caddyfile.docker:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+    depends_on: [cauce]
+
+volumes:
+  cauce-data:
+  caddy-data:
