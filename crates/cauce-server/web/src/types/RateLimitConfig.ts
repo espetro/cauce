@@ -33,4 +33,14 @@ burst: number,
  * headers; off by default so a direct-exposed instance cannot be
  * spoofed into another client's bucket.
  */
-trust_proxy_headers: boolean, };
+trust_proxy_headers: boolean, 
+/**
+ * Optional single header to read the client key from, overriding
+ * the default `CF-Connecting-IP` → `X-Forwarded-For` order. Needed
+ * by chained-CDN deployments (e.g. a Pages Function re-fetching
+ * through a second CF edge, where `CF-Connecting-IP` arrives as
+ * the function's egress IP and the caller's real IP is only in
+ * `X-Forwarded-For`). The leftmost hop is used; only consulted
+ * when `trust_proxy_headers` is on.
+ */
+client_ip_header?: string | null, };

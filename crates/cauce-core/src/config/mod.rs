@@ -93,6 +93,11 @@ const ENV_OVERRIDES: &[(&str, &[&str], bool)] = &[
         &["rate_limit", "trust_proxy_headers"],
         true,
     ),
+    (
+        "CAUCE_RATE_LIMIT_CLIENT_IP_HEADER",
+        &["rate_limit", "client_ip_header"],
+        false,
+    ),
     ("CAUCE_EDGE_ENABLED", &["edge", "enabled"], true),
     ("CAUCE_EDGE_TTL_S", &["edge", "ttl_s"], true),
     ("CAUCE_SEARCH_DEADLINE_MS", &["search", "deadline_ms"], true),
@@ -513,6 +518,15 @@ pub struct RateLimitConfig {
     /// spoofed into another client's bucket.
     #[serde(default)]
     pub trust_proxy_headers: bool,
+    /// Optional single header to read the client key from, overriding
+    /// the default `CF-Connecting-IP` → `X-Forwarded-For` order. Needed
+    /// by chained-CDN deployments (e.g. a Pages Function re-fetching
+    /// through a second CF edge, where `CF-Connecting-IP` arrives as
+    /// the function's egress IP and the caller's real IP is only in
+    /// `X-Forwarded-For`). The leftmost hop is used; only consulted
+    /// when `trust_proxy_headers` is on.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub client_ip_header: Option<String>,
 }
 
 impl Default for RateLimitConfig {
@@ -522,6 +536,7 @@ impl Default for RateLimitConfig {
             requests_per_second: default_rate_limit_rps(),
             burst: default_rate_limit_burst(),
             trust_proxy_headers: false,
+            client_ip_header: None,
         }
     }
 }
@@ -2073,11 +2088,15 @@ mod tests {
         let (_tmp, env) = sandbox(&[]);
         write_config(
             Path::new(env.get("CAUCE_CONFIG_DIR").unwrap()),
-            "[rate_limit]\nrequests_per_second = 5\nburst = 30\ntrust_proxy_headers = true\n\n[edge]\nttl_s = 120\n",
+            "[rate_limit]\nrequests_per_second = 5\nburst = 30\ntrust_proxy_headers = true\nclient_ip_header = \"x-forwarded-for\"\n\n[edge]\nttl_s = 120\n",
         );
         let cfg = Config::load_with(&env).unwrap();
         assert_eq!(cfg.rate_limit.requests_per_second, 5);
         assert_eq!(cfg.rate_limit.burst, 30);
+        assert_eq!(
+            cfg.rate_limit.client_ip_header.as_deref(),
+            Some("x-forwarded-for")
+        );
         assert!(cfg.rate_limit.trust_proxy_headers);
         // Unset `enabled` follows the instance mode.
         assert!(cfg.rate_limit.enabled_for(true));
