@@ -37,6 +37,10 @@ pub async fn capabilities(State(state): State<AppState>, headers: HeaderMap) -> 
                 server_history: local,
                 archiving: state.archiving(),
                 shared_stats: local,
+                // PUB-03: instance-wide BYOK gates — the same for every
+                // caller, so the settings UI can show/hide its fields.
+                allow_user_keys: cfg.ai.allow_user_keys,
+                allow_user_base_url: cfg.ai.allow_user_base_url,
             },
         })
     })

@@ -13,7 +13,7 @@
 <script lang="ts">
   import { spa } from "../lib/i18n.js";
   import { capabilities } from "../lib/capabilities.svelte.js";
-  import { appHref } from "./router.svelte.js";
+  import { appHref, routeVisible } from "./router.svelte.js";
   import { cycleTheme, themeAria, themeWord } from "./theme.svelte.js";
 
   let { active = "" }: { active?: string } = $props();
@@ -45,6 +45,8 @@
         <a href={appHref("/admin?tab=cache")} aria-current={active === "cache" ? "page" : undefined}>{c.nav_cache}</a>
         <a href={appHref("/admin?tab=audit")} aria-current={active === "audit" ? "page" : undefined}>{c.nav_audit}</a>
       </nav>
+    {/if}
+    {#if capabilities.loaded && routeVisible("/settings", capabilities.flags.adminSurface, capabilities.flags.archiving, capabilities.flags.allowUserKeys || capabilities.flags.allowUserBaseUrl)}
       <a href={appHref("/settings")} aria-current={active === "settings" ? "page" : undefined}>{c.nav_settings}</a>
     {/if}
     <button
