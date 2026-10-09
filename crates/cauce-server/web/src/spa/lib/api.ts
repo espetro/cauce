@@ -116,8 +116,14 @@ export function indexBeacon(url: string, queryHash: string | null): void {
   }).catch(() => {});
 }
 
-/** `POST /api/answer` — the assist/answer SSE stream (read via `pumpSse`). */
-export function postAnswer(body: AnswerBody): Promise<Response> {
+/**
+ * `POST /api/answer` — the assist/answer SSE stream (read via `pumpSse`).
+ * `signal` aborts the stream — the `/app/answer` stop button's wire.
+ */
+export function postAnswer(
+  body: AnswerBody,
+  signal?: AbortSignal,
+): Promise<Response> {
   return fetch("/api/answer", {
     method: "POST",
     headers: {
@@ -126,5 +132,6 @@ export function postAnswer(body: AnswerBody): Promise<Response> {
       ...UI_HEADERS,
     },
     body: JSON.stringify(body),
+    signal,
   });
 }

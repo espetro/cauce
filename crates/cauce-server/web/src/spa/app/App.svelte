@@ -17,6 +17,7 @@
   import TopNav from "./TopNav.svelte";
   import HomePage from "../routes/HomePage.svelte";
   import SearchPage from "../routes/SearchPage.svelte";
+  import AnswerPage from "../routes/AnswerPage.svelte";
 
   onMount(() => {
     applyTheme();
@@ -49,7 +50,9 @@
     };
   });
 
-  const active = $derived(route.path === "/search" ? "search" : "");
+  const active = $derived(
+    route.path === "/search" ? "search" : route.path === "/answer" ? "answer" : "",
+  );
   const routeKey = $derived(route.path + "?" + route.params.toString());
 </script>
 
@@ -59,6 +62,8 @@
     <HomePage />
   {:else if route.path === "/search"}
     <SearchPage params={route.params} />
+  {:else if route.path === "/answer"}
+    <AnswerPage params={route.params} />
   {:else}
     <main>
       <p>{spa.app.not_found}</p>

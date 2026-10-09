@@ -10,13 +10,13 @@
 -->
 <script lang="ts">
   import { onDestroy, onMount } from "svelte";
-  import { navigate } from "../app/router.svelte.js";
+  import { appHref, navigate } from "../app/router.svelte.js";
   import { capabilities } from "../lib/capabilities.svelte.js";
   import { spa } from "../lib/i18n.js";
   import { createSearchPage } from "../features/search/search.svelte.js";
   import Omnibox from "../features/search/Omnibox.svelte";
   import ResultRows from "../features/search/ResultRows.svelte";
-  import Assist from "../features/search/Assist.svelte";
+  import AssistCard from "../features/answer/AssistCard.svelte";
 
   interface SearchPageProps {
     params: URLSearchParams;
@@ -27,7 +27,7 @@
   const page = createSearchPage();
 
   const askUrl = $derived(
-    capabilities.aiEnabled ? "/answer?q=" + encodeURIComponent(page.q) : "",
+    capabilities.aiEnabled ? appHref("/answer?q=" + encodeURIComponent(page.q)) : "",
   );
 
   onMount(() => {
@@ -67,7 +67,7 @@
         <p id="new-results-above" class="new-results-above" role="status">{page.newAbove}</p>
       {/if}
       {#if capabilities.aiEnabled}
-        <Assist
+        <AssistCard
           q={page.q}
           context={page.assistContext}
           {askUrl}
