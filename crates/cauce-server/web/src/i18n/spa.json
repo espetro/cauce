@@ -1,0 +1,48 @@
+{
+  "answer": {
+    "ask_link": "ask",
+    "placeholder": "Ask a question...",
+    "submit": "ask"
+  },
+  "app": {
+    "not_found": "This surface is not part of the SPA yet.",
+    "open_html": "Open the HTML page",
+    "stream_hint": "streaming results as engines report"
+  },
+  "assist": {
+    "ask_ai": "Ask in AI mode",
+    "disclaimer": "auto-generated — may contain inaccuracies",
+    "label": "Assist",
+    "noscript": "Assist needs JavaScript; the answer stream cannot run without it.",
+    "trigger": "Assist"
+  },
+  "common": {
+    "brand": "cauce",
+    "nav_answer": "answer",
+    "nav_archive": "archive",
+    "nav_audit": "audit",
+    "nav_cache": "cache",
+    "nav_dashboard": "dashboard",
+    "nav_engines": "engines",
+    "nav_history": "history",
+    "nav_more": "more",
+    "nav_operator_label": "operator",
+    "nav_primary_label": "primary",
+    "nav_search": "search",
+    "nav_settings": "settings",
+    "request_label": "request",
+    "theme_aria": "theme: cycles system, light, dark",
+    "theme_aria_state": "theme: {state}",
+    "theme_dark": "dark",
+    "theme_light": "light",
+    "theme_switch": "theme",
+    "theme_system": "system"
+  },
+  "search": {
+    "ai_mode": "AI mode",
+    "more": "More",
+    "placeholder": "Search...",
+    "searching": "searching...",
+    "submit": "Search"
+  }
+}

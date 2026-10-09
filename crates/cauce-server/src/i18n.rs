@@ -62,6 +62,10 @@ pub fn search_bundle() -> Value {
         "search.new_above",
         "search.live_badge",
         "search.cached",
+        // Full cache badge (`cached · {age} s ago · ttl {ttl} s`): SSR-only
+        // on the HTMX page, but the SPA's JSON (non-stream) path renders
+        // the same meta line client-side (FX-03).
+        "search.cached_badge",
         "search.stale_badge",
         "search.engine_failed",
         "search.engine_skipped",
@@ -88,6 +92,74 @@ pub fn assist_bundle() -> Value {
         "assist.confidence",
         "assist.cached",
     ])
+}
+
+/// The `/app` SPA's chrome + form copy (FX-03), nested by module so the
+/// TypeScript side reads `spa.common.nav_search`, `spa.assist.trigger`,
+/// ... (mirrored to `web/src/i18n/spa.json` by `gen_i18n`). Stream-time
+/// copy stays in the flat `search`/`assist`/`answer` bundles — the SPA
+/// imports those for the same keys the inline `var S`/`var AS`/`var SA`
+/// literals carried.
+pub fn spa_bundle() -> Value {
+    let mut root = Map::new();
+    for (module, keys) in [
+        (
+            "common",
+            &[
+                "common.brand",
+                "common.nav_search",
+                "common.nav_answer",
+                "common.nav_history",
+                "common.nav_dashboard",
+                "common.nav_archive",
+                "common.nav_engines",
+                "common.nav_cache",
+                "common.nav_audit",
+                "common.nav_settings",
+                "common.nav_more",
+                "common.nav_primary_label",
+                "common.nav_operator_label",
+                "common.theme_switch",
+                "common.theme_system",
+                "common.theme_light",
+                "common.theme_dark",
+                "common.theme_aria",
+                "common.theme_aria_state",
+                "common.request_label",
+            ][..],
+        ),
+        (
+            "search",
+            &[
+                "search.placeholder",
+                "search.submit",
+                "search.ai_mode",
+                "search.more",
+                "search.searching",
+            ][..],
+        ),
+        (
+            "assist",
+            &[
+                "assist.trigger",
+                "assist.label",
+                "assist.ask_ai",
+                "assist.disclaimer",
+                "assist.noscript",
+            ][..],
+        ),
+        (
+            "answer",
+            &["answer.placeholder", "answer.submit", "answer.ask_link"][..],
+        ),
+        (
+            "app",
+            &["app.not_found", "app.open_html", "app.stream_hint"][..],
+        ),
+    ] {
+        root.insert(module.to_string(), bundle(keys));
+    }
+    Value::Object(root)
 }
 
 /// The `var SA = {...}` copy the `/answer` shell's inline JS interpolates

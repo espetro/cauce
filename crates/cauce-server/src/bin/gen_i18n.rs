@@ -20,6 +20,7 @@ fn main() {
         ("search", cauce_server::i18n::search_bundle()),
         ("assist", cauce_server::i18n::assist_bundle()),
         ("answer", cauce_server::i18n::answer_bundle()),
+        ("spa", cauce_server::i18n::spa_bundle()),
     ] {
         let mut json = serde_json::to_string_pretty(&bundle).unwrap();
         json.push('\n');

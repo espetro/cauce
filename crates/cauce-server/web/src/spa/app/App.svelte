@@ -3,16 +3,68 @@
   License, v. 2.0. If a copy of the MPL was not distributed with this
   file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-  Minimal shell proving the FX-02 pipeline (svelte-check + vite + Tailwind
-  tokens). Real routes/components land in FX-03+ — do not grow pages here.
+  The SPA shell (FX-03): sticky chrome + the routed page. `/app/*` clicks
+  navigate client-side; every other link hands off to the HTMX pages.
+  `{#key}` remounts the outlet per navigation so each route shell owns a
+  fresh feature state (the SSR pages' per-request semantics).
 -->
 <script lang="ts">
-  const version: string = "v3";
+  import { onMount } from "svelte";
+  import { route, navigate, onPopState } from "./router.svelte.js";
+  import { applyTheme } from "./theme.svelte.js";
+  import { loadCapabilities } from "../lib/capabilities.svelte.js";
+  import { spa } from "../lib/i18n.js";
+  import TopNav from "./TopNav.svelte";
+  import HomePage from "../routes/HomePage.svelte";
+  import SearchPage from "../routes/SearchPage.svelte";
+
+  onMount(() => {
+    applyTheme();
+    void loadCapabilities();
+    const onClick = (event: MouseEvent) => {
+      if (
+        event.defaultPrevented ||
+        event.button !== 0 ||
+        event.metaKey ||
+        event.ctrlKey ||
+        event.shiftKey ||
+        event.altKey
+      ) {
+        return;
+      }
+      const a =
+        event.target instanceof Element ? event.target.closest("a[href]") : null;
+      if (!(a instanceof HTMLAnchorElement)) return;
+      if (a.target || a.hasAttribute("download") || a.rel === "external") return;
+      const url = new URL(a.href, location.origin);
+      if (url.origin !== location.origin || !url.pathname.startsWith("/app")) return;
+      event.preventDefault();
+      navigate(url.pathname + url.search + url.hash);
+    };
+    document.addEventListener("click", onClick);
+    window.addEventListener("popstate", onPopState);
+    return () => {
+      document.removeEventListener("click", onClick);
+      window.removeEventListener("popstate", onPopState);
+    };
+  });
+
+  const active = $derived(route.path === "/search" ? "search" : "");
+  const routeKey = $derived(route.path + "?" + route.params.toString());
 </script>
 
-<main class="flex min-h-dvh flex-col items-center justify-center gap-3 bg-bg px-4 text-fg">
-  <h1 class="text-2xl font-semibold tracking-tight">cauce <span class="text-muted font-normal">{version}</span></h1>
-  <p class="max-w-md text-center text-sm text-muted">
-    SPA toolchain online. Routes land in FX-03.
-  </p>
-</main>
+<TopNav {active} />
+{#key routeKey}
+  {#if route.path === "/"}
+    <HomePage />
+  {:else if route.path === "/search"}
+    <SearchPage params={route.params} />
+  {:else}
+    <main>
+      <p>{spa.app.not_found}</p>
+      <p>
+        <a href={location.pathname.replace(/^\/app/, "") || "/"}>{spa.app.open_html}</a>
+      </p>
+    </main>
+  {/if}
+{/key}
