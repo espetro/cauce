@@ -176,6 +176,57 @@ process — you cannot give tier-1 and tier-2 different latencies from env. Mult
 - Log filename varies per instance: glob both `cauce-*.jsonl` and `cauce.*.jsonl` under
   `$CAUCE_DATA_DIR/logs/`.
 
+## BYOK / free_daily_answers e2e (PUB-03)
+
+### Attributing a non-loopback client IP on a single box
+
+`free_daily_answers` (and the rate limiter) exempt **loopback peers** and consult
+`client_key` (CF-Connecting-IP → leftmost XFF → ConnectInfo peer) only for non-loopback
+peers. Browser traffic from the test box therefore never counts. The working recipe:
+
+- `rate_limit.trust_proxy_headers = true` — consulted by the budget check
+  **independently** of whether the governor bucket is enabled; set
+  `rate_limit.enabled = false` so page loads don't throttle.
+- A ~60-line Python proxy (`http.server` + `http.client`, streaming `resp.read1` so SSE
+  passes) that listens on 127.0.0.1:PORT, injects `x-forwarded-for: <TEST-NET-3 ip>`, and
+  dials cauce via the box's **non-loopback** interface IP (`hostname -I`, e.g.
+  172.16.x.x). The socket peer is what `is_loopback()` sees — a proxy that dials
+  127.0.0.1 defeats the test.
+- Cauce must bind 0.0.0.0 (legal once `server.public_instance = true`), and the proxy
+  must send **`Host: 127.0.0.1:<port>`** — HostGuard 403s any non-loopback host name
+  even on a public instance.
+- A second proxy port with a different XFF gives the "different IP has its own bucket"
+  adversarial check.
+
+### Config knobs are FILE-ONLY
+
+`allow_user_keys`, `allow_user_base_url`, `free_daily_answers` have no `CAUCE_*` env
+override — they must come from `$CAUCE_CONFIG_DIR/config.toml`. `ai.*` is hot-appliable
+through `PUT /api/config` (admin bearer), which is handy for flipping
+`allow_user_base_url` mid-test to show the disabled input state. Injected session
+`CAUCE_AI_*` secrets still override the file for base_url/api_key/model/enabled/protocol
+— set all five explicitly.
+
+### Provider stub evidence
+
+The answer loop POSTs `{merged.base_url}/chat/completions`. A stub that logs
+`authorization` + `model` per POST and serves `/log` makes the BYOK proof
+browser-viewable: `Bearer sk-user…` + caller model proves override propagation, and
+`authorization: null` on a `base_url`-only override proves the admin key was blanked,
+not leaked.
+
+### States worth asserting
+
+- `/app/settings` for a non-admin public user shows ONLY the BYOK fieldset (config form
+  is `isAdmin`-gated; `page.refresh()` skipped).
+- `allow_user_base_url=false` → base_url input `disabled` + placeholder "not allowed by
+  this instance"; other inputs stay enabled.
+- Both flags off → settings nav link hidden AND `/app/settings` renders the "Operator
+  surface" admin-token gate.
+- A stale saved `base_url` is dropped client-side when the gate is off
+  (`byokWire(flags)` sends only what the instance advertises) — answers keep working,
+  not 403s.
+
 ## Archive / click-beacon e2e (`/api/pages`)
 
 - `archive.index_on_click` defaults true; `CAUCE_ARCHIVE_INDEX_ON_CLICK=false` disables the
