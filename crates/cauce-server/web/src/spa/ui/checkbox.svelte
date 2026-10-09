@@ -19,6 +19,7 @@
     id?: string;
     required?: boolean;
     ariaInvalid?: boolean;
+    ariaLabel?: string;
   }
 
   let {
@@ -29,6 +30,7 @@
     id,
     required,
     ariaInvalid,
+    ariaLabel,
   }: Props = $props();
 </script>
 
@@ -41,6 +43,7 @@
   {id}
   {required}
   aria-invalid={ariaInvalid || undefined}
+  aria-label={ariaLabel}
 >
   {#snippet children({ checked: on })}
     {#if on}
