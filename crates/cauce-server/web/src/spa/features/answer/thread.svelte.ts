@@ -335,6 +335,8 @@ export class AnswerThread {
       q: turn.q,
       context_results: null,
       history: this.history.length ? [...this.history] : null,
+      // PUB-03: `null` lets `postAnswer` attach the browser's BYOK creds.
+      ai: null,
     };
     try {
       const res = await this.#fetch(body, this.#abort.signal);

@@ -82,7 +82,7 @@
 
 <TopNav {active} />
 {#key routeKey}
-  {#if !routeVisible(route.path, capabilities.loaded && capabilities.flags.adminSurface, capabilities.loaded && capabilities.flags.archiving)}
+  {#if !routeVisible(route.path, capabilities.loaded && capabilities.flags.adminSurface, capabilities.loaded && capabilities.flags.archiving, capabilities.flags.allowUserKeys || capabilities.flags.allowUserBaseUrl)}
     <GateBlock requires={ROUTE_REQUIRES[route.path]} />
   {:else if route.path === "/"}
     <HomePage />

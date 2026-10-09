@@ -15,6 +15,7 @@ import type { ApiError } from "../../types/ApiError.js";
 import type { Capabilities } from "../../types/Capabilities.js";
 import type { InstanceInfo } from "../../types/InstanceInfo.js";
 import { authHeader } from "./admin.svelte.js";
+import { byokWire } from "./byok.svelte.js";
 import type { ArchiveResponse } from "../../types/ArchiveResponse.js";
 import type { AuditRow } from "../../types/AuditRow.js";
 import type { CachedSearch } from "../../types/CachedSearch.js";
@@ -140,11 +141,14 @@ export function indexBeacon(url: string, queryHash: string | null): void {
 /**
  * `POST /api/answer` — the assist/answer SSE stream (read via `pumpSse`).
  * `signal` aborts the stream — the `/app/answer` stop button's wire.
+ * PUB-03: the browser's BYOK creds attach as `ai` when the caller left
+ * it unset — one funnel covers the answer thread and the assist card.
  */
 export function postAnswer(
   body: AnswerBody,
   signal?: AbortSignal,
 ): Promise<Response> {
+  body.ai ??= byokWire();
   return fetch("/api/answer", {
     method: "POST",
     headers: {

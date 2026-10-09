@@ -106,6 +106,7 @@
         q,
         context_results: contextCapped,
         history: null,
+        ai: null,
       });
       if (!res.ok) {
         const e = await errorFrom(res);

@@ -57,18 +57,20 @@ export function appHref(path: string): string {
 /* ------------------------------------------------------------------ */
 
 /** What a route needs from `capabilities.flags`. */
-export type RouteRequirement = "admin" | "archiving";
+export type RouteRequirement = "admin" | "admin_or_byok" | "archiving";
 
 /**
- * `/app` path → required surface. `/admin` and `/settings` are operator
- * surfaces (`adminSurface`); `/archive` exists only while the `archiving`
- * flag is up. Everything else (`/`, `/search`, `/answer`, `/history`,
- * `/dashboard`) is open — public mode swaps their data plane, not their
- * reachability.
+ * `/app` path → required surface. `/admin` is an operator surface
+ * (`adminSurface`); `/settings` opens for admins or whenever the
+ * instance honours BYOK overrides (PUB-03 — the browser-local keys
+ * section is the only content a non-admin sees); `/archive` exists only
+ * while the `archiving` flag is up. Everything else (`/`, `/search`,
+ * `/answer`, `/history`, `/dashboard`) is open — public mode swaps their
+ * data plane, not their reachability.
  */
 export const ROUTE_REQUIRES: Record<string, RouteRequirement> = {
   "/admin": "admin",
-  "/settings": "admin",
+  "/settings": "admin_or_byok",
   "/archive": "archiving",
 };
 
@@ -77,9 +79,15 @@ export const ROUTE_REQUIRES: Record<string, RouteRequirement> = {
  * page shows the gate notice. Called by `TopNav` (links) and `App`
  * (outlet) — one function so both can never disagree.
  */
-export function routeVisible(path: string, adminSurface: boolean, archiving: boolean): boolean {
+export function routeVisible(
+  path: string,
+  adminSurface: boolean,
+  archiving: boolean,
+  byok: boolean,
+): boolean {
   const need = ROUTE_REQUIRES[path];
   if (need === "admin") return adminSurface;
+  if (need === "admin_or_byok") return adminSurface || byok;
   if (need === "archiving") return archiving;
   return true;
 }

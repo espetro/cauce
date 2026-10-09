@@ -12,6 +12,9 @@
 -->
 <script lang="ts">
   import { spa } from "../../lib/i18n.js";
+  import { capabilities } from "../../lib/capabilities.svelte.js";
+  import { byok, setByok } from "../../lib/byok.svelte.js";
+  import type { ByokCreds } from "../../lib/byok.svelte.js";
   import type { createSettingsPage } from "./settings.svelte.js";
 
   interface SettingsViewProps {
@@ -21,9 +24,89 @@
   let { page }: SettingsViewProps = $props();
   const s = spa.settings;
   const st = $derived(page.state);
+
+  // PUB-03: the browser-local BYOK section shows whenever the instance
+  // honours overrides; the config form below stays admin-only.
+  const byokOn = $derived(
+    capabilities.flags.allowUserKeys || capabilities.flags.allowUserBaseUrl,
+  );
+  const isAdmin = $derived(capabilities.role === "admin");
+  let draft = $state<ByokCreds>({ ...byok });
+  let byokSaved = $state(false);
+
+  function saveByok(): void {
+    setByok(draft);
+    byokSaved = true;
+  }
 </script>
 
 <h1>{s.page_title}</h1>
+
+{#if byokOn}
+  <form
+    onsubmit={(e) => {
+      e.preventDefault();
+      saveByok();
+    }}
+  >
+    <fieldset>
+      <legend>{s.section_byok}</legend>
+      <p class="hint">{s.byok_hint}</p>
+      <div class="frow">
+        <label>
+          {s.ai_api_key}
+          <input
+            type="password"
+            autocomplete="off"
+            disabled={!capabilities.flags.allowUserKeys}
+            bind:value={draft.api_key}
+          />
+        </label>
+      </div>
+      <div class="frow">
+        <label>
+          {s.ai_base_url}
+          <input
+            type="text"
+            disabled={!capabilities.flags.allowUserBaseUrl}
+            placeholder={capabilities.flags.allowUserBaseUrl
+              ? s.ai_base_url
+              : s.byok_base_url_locked}
+            bind:value={draft.base_url}
+          />
+        </label>
+      </div>
+      <div class="frow">
+        <label>
+          {s.ai_model}
+          <input
+            type="text"
+            disabled={!capabilities.flags.allowUserKeys}
+            placeholder={s.ai_model_placeholder}
+            bind:value={draft.model}
+          />
+        </label>
+      </div>
+      <div class="frow">
+        <label>
+          {s.byok_protocol}
+          <select
+            disabled={!capabilities.flags.allowUserKeys}
+            bind:value={draft.protocol}
+          >
+            <option value="">{s.byok_protocol_default}</option>
+            <option value="openai">openai</option>
+            <option value="anthropic">anthropic</option>
+          </select>
+        </label>
+      </div>
+      <button type="submit">{s.save}</button>
+      {#if byokSaved}<span class="form-status">{s.saved}</span>{/if}
+    </fieldset>
+  </form>
+{/if}
+
+{#if isAdmin}
 <p class="hint">{s.restart_note}</p>
 
 {#if st.loading}
@@ -213,6 +296,7 @@
       class:error={st.statusError}>{st.status}</span
     >
   </form>
+{/if}
 {/if}
 
 <style>
