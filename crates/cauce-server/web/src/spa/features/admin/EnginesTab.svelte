@@ -6,11 +6,18 @@
   `/app/admin?tab=engines` — one-for-one with `templates/engines.html` +
   `engine_card.html`: summary line, then one `.engine-card` per
   `EngineView` (breaker chip + note, stat dl, reset / enable-disable /
-  inline-test actions, notice line, test results).
+  inline-test actions, notice line, test results). Actions are
+  `ui/button` at `sm` (the old dense recipe): `reset` wipes breaker +
+  stats, so it carries `danger`; the enable/disable toggle is
+  reversible and `run` is read-only, so both stay `default`. The test
+  field is a plain text input (form plumbing, not a behavioral
+  widget — plan §1.2 allows it raw) and submits on Enter via the
+  wrapping form.
 -->
 <script lang="ts">
   import { spa } from "../../lib/i18n.js";
   import { hostOf } from "../../lib/format.js";
+  import UiButton from "../../ui/button.svelte";
   import type { createEnginesTab } from "./engines.svelte.js";
 
   interface EnginesTabProps {
@@ -60,18 +67,19 @@
         <dd>{card.requestsToday}</dd>
       </dl>
       <div class="engine-actions">
-        <button
-          type="button"
+        <UiButton
+          variant="danger"
+          size="sm"
           disabled={card.busy}
-          onclick={() => tab.act(card, "reset")}>{e.action_reset}</button
+          onclick={() => tab.act(card, "reset")}>{e.action_reset}</UiButton
         >
         {#if card.configured || card.live}
-          <button
-            type="button"
+          <UiButton
+            size="sm"
             disabled={card.busy}
             onclick={() =>
               tab.act(card, card.enabled ? "disable" : "enable")}
-            >{card.toggleLabel}</button
+            >{card.toggleLabel}</UiButton
           >
         {/if}
         <form
@@ -86,8 +94,8 @@
             placeholder={e.test_default}
             aria-label={e.test_aria}
           />
-          <button type="submit" disabled={card.test.running}
-            >{e.action_run}</button
+          <UiButton type="submit" size="sm" disabled={card.test.running}
+            >{e.action_run}</UiButton
           >
         </form>
       </div>
@@ -174,15 +182,6 @@
     flex-wrap: wrap;
     align-items: center;
     gap: 0.5rem;
-  }
-  .engine-actions button {
-    padding: 0.2rem 0.6rem;
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    background: var(--bg);
-    color: var(--fg);
-    font-size: 0.8125rem;
-    cursor: pointer;
   }
   .engine-actions form {
     display: flex;
