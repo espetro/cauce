@@ -21,8 +21,11 @@ path = "tests/e2e/main.rs"
 # `cauce serve`, no templates/assets, no archive, no OTLP); `mise run
 # validate` keeps it compiling.
 [features]
-default = ["ui", "mcp", "ai", "archive"]
+default = ["ui", "mcp", "ai", "archive", "tui"]
 ui = ["cauce-server/ui"]
+# `tui` adds the `cauce tui` interactive terminal search (ratatui). Excluded
+# from the minimal `--no-default-features --features mcp` agent build.
+tui = ["dep:ratatui", "dep:crossterm", "dep:tokio-stream", "dep:webbrowser", "dep:base64", "dep:url", "tokio/sync", "tokio/time"]
 mcp = ["cauce-server/mcp"]
 ai = ["cauce-server/ai"]
 archive = ["cauce-server/archive"]
@@ -45,6 +48,14 @@ tracing = "0.1"
 # stderr even when the pipeline returns an error.
 uuid = { version = "1", features = ["v7"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+# `tui` feature: terminal UI stack. crossterm 0.29 matches the version
+# ratatui-crossterm 0.30 selects by default.
+ratatui = { version = "0.30", optional = true }
+crossterm = { version = "0.29", features = ["event-stream"], optional = true }
+tokio-stream = { version = "0.1", optional = true }
+webbrowser = { version = "1", optional = true }
+base64 = { version = "0.22", optional = true }
+url = { version = "2", optional = true }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["io-util", "macros", "process", "time"] }

@@ -16,3 +16,5 @@ pub mod search;
 pub mod serve;
 pub mod tail;
 pub mod trace;
+#[cfg(feature = "tui")]
+pub mod tui;
