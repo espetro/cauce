@@ -15,7 +15,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use cauce_core::SearchPipeline;
-use cauce_core::config::{Config, Resources, is_loopback_host};
+use cauce_core::config::{Config, Resources};
 use cauce_engines::factory::build_engines;
 use cauce_server::{AppState, RouterOptions, observability};
 use cauce_store_sqlite::{SqliteStore, spawn_eviction_task};
@@ -52,24 +52,20 @@ pub fn run(args: &[String]) -> i32 {
             return 2;
         }
     };
-    // W1-13: `auth.enabled` is forced when the bind is not loopback, but
-    // admin auth itself is deferred (v3/later/postgres-and-multi-instance.md),
-    // so a non-loopback bind refuses to start rather than listen
-    // unauthenticated. Loopback requests are still guarded by the
-    // Host/Origin check in cauce-server.
+    // PUB-01: the W1-13 refusal is replaced by the real auth boundary —
+    // a non-loopback bind is legal once `server.public_instance` puts the
+    // ops surface behind `[auth] admin_tokens` (empty = unreachable).
+    // `auth.enabled` is the superseded switch; keep warning on it.
     let host = opts.bind.clone().unwrap_or_else(|| cfg.server.host.clone());
-    if cfg.auth.enabled_for(&host) {
-        if is_loopback_host(&host) {
-            eprintln!(
-                "cauce serve: warning: auth.enabled = true but admin auth is not implemented yet; ignoring"
-            );
-        } else {
-            eprintln!(
-                "cauce serve: refusing to bind {host}: non-loopback listen requires auth.enabled, \
-                 but admin auth is not implemented yet"
-            );
-            return 1;
-        }
+    if let Err(msg) = cfg.server.check_bind(&host) {
+        eprintln!("cauce serve: refusing to bind {host}: {msg}");
+        return 1;
+    }
+    if cfg.auth.enabled {
+        eprintln!(
+            "cauce serve: warning: auth.enabled is superseded by \
+             server.public_instance + auth.admin_tokens; ignoring"
+        );
     }
     if let Err(e) = cfg.ensure_dirs() {
         eprintln!("cauce serve: cannot create data dirs: {e}");

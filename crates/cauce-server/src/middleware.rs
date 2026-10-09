@@ -12,7 +12,7 @@
 
 use axum::body::Body;
 use axum::extract::{Request, State};
-use axum::http::header::{HOST, ORIGIN, WWW_AUTHENTICATE};
+use axum::http::header::{CACHE_CONTROL, HOST, ORIGIN, WWW_AUTHENTICATE};
 use axum::http::{HeaderMap, HeaderValue, StatusCode, Uri};
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
@@ -25,6 +25,7 @@ use crate::app::AppState;
 use crate::capabilities::{Role, role_for};
 use crate::error::ApiError;
 use crate::observability::{RequestId, request_span};
+use crate::routes::RouteCache;
 
 /// Per-request context the middleware installs into request extensions and
 /// handlers extract with `Extension<RequestCtx>`.
@@ -246,6 +247,55 @@ fn is_mutating(method: &axum::http::Method) -> bool {
         *method,
         axum::http::Method::GET | axum::http::Method::HEAD | axum::http::Method::OPTIONS
     )
+}
+
+/// Per-route state for [`edge_cache`]: the mounted row's
+/// [`RouteCache`] class plus `AppState` for the live `[edge]` config.
+/// Built per `MethodRouter` in `build_router_opts`, like the admin
+/// gate — a path can mix classes (`GET /api/pages/{url}` shared,
+/// `DELETE` private).
+#[derive(Clone)]
+pub struct CacheGate {
+    pub state: AppState,
+    pub class: RouteCache,
+}
+
+/// PUB-01 route layer: stamp `Cache-Control` on `< 400` responses that
+/// do not already carry one — handler-set headers always win (the SPA
+/// marks hashed assets `immutable` and its shell `no-cache` itself,
+/// and SSE responses are left exactly as the handler built them).
+/// `private` rows get `private, no-store` so a "cache everything" edge
+/// rule cannot replay an auth-varying or admin response to another
+/// client; `shared` rows get the `edge.ttl_s` public TTL — the
+/// req/month lever on a public instance. `edge.enabled = false` emits
+/// nothing, keeping today's header shape bit-for-bit.
+pub async fn edge_cache(
+    State(gate): State<CacheGate>,
+    request: Request<Body>,
+    next: Next,
+) -> Response {
+    let mut response = next.run(request).await;
+    if response.status().is_client_error() || response.status().is_server_error() {
+        return response;
+    }
+    if response.headers().contains_key(CACHE_CONTROL) {
+        return response;
+    }
+    let (enabled, ttl_s) = gate
+        .state
+        .with_config(|cfg| (cfg.edge.enabled, cfg.edge.ttl_s));
+    if !enabled {
+        return response;
+    }
+    let value = match gate.class {
+        RouteCache::Private => HeaderValue::from_static("private, no-store"),
+        RouteCache::Shared => HeaderValue::from_str(&format!(
+            "public, max-age={ttl_s}, s-maxage={ttl_s}, stale-while-revalidate={ttl_s}"
+        ))
+        .expect("a small integer is valid header text"),
+    };
+    response.headers_mut().insert(CACHE_CONTROL, value);
+    response
 }
 
 /// 403 envelope carrying the request id minted by `request_context`.

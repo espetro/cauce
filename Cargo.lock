@@ -400,6 +400,7 @@ dependencies = [
  "cauce-engines",
  "cauce-store-sqlite",
  "chrono",
+ "governor",
  "jsonschema",
  "opentelemetry",
  "opentelemetry-otlp",

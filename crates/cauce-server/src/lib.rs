@@ -16,6 +16,7 @@ mod capabilities;
 mod error;
 mod handlers;
 pub mod i18n;
+mod limits;
 #[cfg(feature = "mcp")]
 pub mod mcp;
 mod metrics;
@@ -45,4 +46,4 @@ pub use handlers::{
 pub use handlers::{ArchiveResponse, ArchiveRow, IndexBody, PageDeleteAck};
 pub use metrics::{METRICS_CONTENT_TYPE, MetricsHandle};
 pub use middleware::{HostGuard, RequestCtx, host_origin_guard, request_context, require_admin};
-pub use routes::{ROUTES, RouteAuth, RouteKind, RouteSpec};
+pub use routes::{ROUTES, RouteAuth, RouteCache, RouteKind, RouteSpec};
