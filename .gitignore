@@ -21,6 +21,9 @@ dist-ssr/
 node_modules/
 *.tsbuildinfo
 
+# CF Pages build output (deploy/cf-pages/build.sh)
+pages-dist/
+
 # caches / local state
 .svelte-check/
 
