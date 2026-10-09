@@ -1,9 +1,6 @@
-//! `/audit` and `/trace/{id}` pages (W2-06).
-//!
-//! `/audit` reads the same plane as `GET /api/audit` (`Store::list_audit`),
-//! newest first, with `actor`/`action` filters as URL params; each row's
-//! `details_json` expands via `<details>` and its `request_id` links to the
-//! trace page. `/trace/{id}` renders the `cauce trace` timeline — the same
+//! `/trace/{id}` — the last HTMX ops page (FX-05 moved `/audit` to
+//! `/app/admin?tab=audit`; `/api/audit` rows still carry `request_id`s
+//! that resolve here). Renders the `cauce trace` timeline — the same
 //! [`trace::Trace`] / [`trace::render_trace`] pair the CLI runs — plus a
 //! per-span HTML list built from that structured trace, so the HTML and
 //! terminal views can never drift.
@@ -17,66 +14,15 @@ use std::io;
 use askama::Template;
 use axum::Extension;
 use axum::extract::{Path, State};
-use axum::http::{HeaderMap, StatusCode, Uri};
+use axum::http::{HeaderMap, StatusCode};
 use axum::response::{Html, IntoResponse, Response};
-use cauce_core::AuditRow;
-use serde_json::Value;
 
 use crate::app::AppState;
 use crate::error::ApiError;
-use crate::handlers::{audit_list, audit_list_data};
 use crate::html::{STYLE_CSS, prefers_json, render_err, short_id};
 use crate::middleware::RequestCtx;
 use crate::observability::trace::{self, TraceError};
 use rust_i18n::t;
-/// One audit row pre-rendered to plain strings for the template.
-#[derive(Debug)]
-struct AuditRowView {
-    ts: String,
-    actor: String,
-    action: String,
-    target: String,
-    /// Full request id; empty when the row carries none (drives the
-    /// `if`-guard rather than `Option` matching in the template).
-    request_id: String,
-    short_request_id: String,
-    /// `details_json` pretty-printed for the expandable `<pre>`; empty when
-    /// the stored details are `null` (the row then omits the toggle).
-    details: String,
-}
-
-/// One `<option>` in a filter `<select>` (Askama cannot compare `&String`
-/// loop items to a `String` field, so selection is resolved here).
-#[derive(Debug)]
-struct Opt {
-    value: String,
-    selected: bool,
-}
-
-/// `/audit` page.
-#[derive(Template)]
-#[template(path = "audit.html")]
-struct AuditPage {
-    /// The shared header's active nav item.
-    nav_active: &'static str,
-    /// W7-01: an answer loop exists — the header shows `/answer`.
-    answer_available: bool,
-    /// Distinct actors/actions from `Store::audit_facets`, for the selects.
-    actor_options: Vec<Opt>,
-    action_options: Vec<Opt>,
-    filtered: bool,
-    /// `no audit rows match actor "x" and action "y".` for the filtered
-    /// empty state; unused when the listing is unfiltered.
-    filtered_empty: String,
-    rows: Vec<AuditRowView>,
-    /// The effective `limit` param, echoed into the cap note.
-    limit: u32,
-    /// `rows.len() == limit`: the listing may hide older rows.
-    capped: bool,
-    request_id: String,
-    style_css: String,
-}
-
 /// One span in the `/trace/{id}` HTML list, summary split into segments so
 /// the template can give the status word a color role (`span-status-ok` /
 /// `span-status-error`).
@@ -124,69 +70,6 @@ struct TracePage {
     /// This page request's own id (footer, copyable).
     request_id: String,
     style_css: String,
-}
-
-/// `GET /audit?actor&action&since&limit`: the audit table, newest first.
-/// Both representations use the same parsing, defaults, filters, and store query.
-pub async fn audit(
-    State(state): State<AppState>,
-    Extension(ctx): Extension<RequestCtx>,
-    uri: Uri,
-    headers: HeaderMap,
-) -> Result<Response, ApiError> {
-    let accept = headers
-        .get("accept")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("");
-    if prefers_json(accept) {
-        return audit_list(State(state), Extension(ctx), uri)
-            .await
-            .map(|j| j.into_response());
-    }
-
-    let store = state.store().clone();
-    let (filter, rows) = audit_list_data(store.as_ref(), uri, &ctx).await?;
-    let facets = store
-        .audit_facets()
-        .await
-        .map_err(|error| ctx.store(&error))?;
-
-    let filtered = filter.actor.is_some() || filter.action.is_some() || filter.since.is_some();
-    let filtered_empty = filtered_empty_message(&filter);
-    let capped = rows.len() as u32 == filter.limit;
-
-    let page = AuditPage {
-        nav_active: "audit",
-        answer_available: state.answer().is_some(),
-        actor_options: facets
-            .actors
-            .iter()
-            .map(|a| Opt {
-                value: a.clone(),
-                selected: filter.actor.as_deref() == Some(a.as_str()),
-            })
-            .collect(),
-        action_options: facets
-            .actions
-            .iter()
-            .map(|a| Opt {
-                value: a.clone(),
-                selected: filter.action.as_deref() == Some(a.as_str()),
-            })
-            .collect(),
-        filtered,
-        filtered_empty,
-        rows: rows.iter().map(row_view).collect(),
-        limit: filter.limit,
-        capped,
-        request_id: ctx.request_id.as_uuid().to_string(),
-        style_css: STYLE_CSS.clone(),
-    };
-    Ok(Html(
-        page.render()
-            .map_err(|e| render_err(e, ctx.request_id.as_uuid()))?,
-    )
-    .into_response())
 }
 
 /// `GET /trace/{id}`: the `cauce trace` timeline as HTML.
@@ -271,7 +154,12 @@ pub async fn trace(
         .map(|html| (StatusCode::OK, Html(html)).into_response())
 }
 
-/// Render the trace page frame with a `notice` line (404/400 states).
+/// `engine · elapsed · status · N results` for one span, kept as separate
+/// fields so the template composes the separators and can hang a color
+/// class on the status word. Fields the span does not carry come back
+/// empty and the template skips their segment.
+/// Error/notice frame: renders the trace page shell with `notice` under
+/// `status` (the same shape [`trace`] answers for real traces).
 fn trace_frame(
     state: &AppState,
     ctx: &RequestCtx,
@@ -301,42 +189,6 @@ fn trace_frame(
         .map(|html| (status, Html(html)).into_response())
 }
 
-fn row_view(row: &AuditRow) -> AuditRowView {
-    let request_id = row.request_id.map(|u| u.to_string()).unwrap_or_default();
-    AuditRowView {
-        ts: row
-            .ts
-            .with_timezone(&chrono::Local)
-            .format("%Y-%m-%d %H:%M")
-            .to_string(),
-        actor: row.actor.clone(),
-        action: row.action.clone(),
-        target: row.target.clone(),
-        short_request_id: short_id(&request_id),
-        request_id,
-        details: if details_empty(&row.details) {
-            String::new()
-        } else {
-            serde_json::to_string_pretty(&row.details).unwrap_or_default()
-        },
-    }
-}
-
-/// `null`, `{}` and `[]` carry no expandable payload: the row omits the
-/// details toggle for all three.
-fn details_empty(v: &Value) -> bool {
-    match v {
-        Value::Null => true,
-        Value::Object(m) => m.is_empty(),
-        Value::Array(a) => a.is_empty(),
-        _ => false,
-    }
-}
-
-/// `engine · elapsed · status · N results` for one span, kept as separate
-/// fields so the template composes the separators and can hang a color
-/// class on the status word. Fields the span does not carry come back
-/// empty and the template skips their segment.
 fn span_view(span: &trace::TraceSpan) -> SpanView {
     let status = span
         .fields
@@ -382,24 +234,4 @@ fn local_minute(ts: Option<chrono::DateTime<chrono::Utc>>) -> String {
             .to_string()
     })
     .unwrap_or_default()
-}
-
-/// `no audit rows match actor "x" and action "y".` with either clause
-/// dropped when that filter is unset.
-fn filtered_empty_message(filter: &cauce_core::AuditFilter) -> String {
-    let mut clauses = Vec::new();
-    if let Some(actor) = &filter.actor {
-        clauses.push(format!("{} \"{actor}\"", t!("audit.actor_label")));
-    }
-    if let Some(action) = &filter.action {
-        clauses.push(format!("{} \"{action}\"", t!("audit.action_label")));
-    }
-    if let Some(since) = &filter.since {
-        clauses.push(format!("since {}", since.to_rfc3339()));
-    }
-    format!(
-        "{} {}.",
-        t!("audit.filtered_empty_prefix"),
-        clauses.join(&format!(" {} ", t!("audit.filtered_empty_and")))
-    )
 }

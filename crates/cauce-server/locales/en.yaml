@@ -630,3 +630,11 @@ app:
   # Aria-live hint while a streaming search is in flight (the
   # `searching` status word lives in the search bundle already).
   stream_hint: streaming results as engines report
+
+admin:
+  # FX-05 merged ops surface `/app/admin` — tab labels reuse nav casing.
+  title: Admin
+  tabs_label: admin sections
+  tab_engines: engines
+  tab_cache: cache
+  tab_audit: audit

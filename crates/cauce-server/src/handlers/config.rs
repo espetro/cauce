@@ -74,35 +74,6 @@ pub async fn config_put(
         .and_then(|v| v.to_str().ok())
         .is_some_and(|v| v.starts_with("application/x-www-form-urlencoded"));
     let result = config_put_inner(&state, &ctx, &headers, &body, form).await;
-    #[cfg(feature = "ui")]
-    if form && headers.get("hx-request").is_some() {
-        // On a failed save, re-run the fields one by one so the fragment can
-        // place an error line under each offending input.
-        let pairs: Vec<(String, String)> =
-            url::form_urlencoded::parse(std::str::from_utf8(&body).unwrap_or("").as_bytes())
-                .map(|(k, v)| (k.into_owned(), v.into_owned()))
-                .collect();
-        let submitted: Vec<String> = pairs.iter().map(|(k, _)| k.clone()).collect();
-        let (engine_ids, field_errors) = state.with_config(|cfg| {
-            let ids = cfg
-                .engines
-                .iter()
-                .map(|e| e.id.to_string())
-                .collect::<Vec<_>>();
-            let errs = if result.is_err() {
-                crate::settings::field_errors(cfg, &pairs)
-            } else {
-                Vec::new()
-            };
-            (ids, errs)
-        });
-        return Ok(crate::html::settings_status(
-            result,
-            field_errors,
-            submitted,
-            &engine_ids,
-        ));
-    }
     result.map(Json::into_response)
 }
 

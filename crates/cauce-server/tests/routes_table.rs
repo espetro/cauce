@@ -42,8 +42,11 @@ const EXPECTED_WAVE0_JSON: &[(&str, &str)] = &[
 /// `ui` cargo feature is compiled in and `--headless` is not passed.
 const EXPECTED_WAVE0_UI: &[(&str, &str)] = &[("GET", "/"), ("GET", "/search")];
 
-/// Wave-2 HTMX pages mounted so far.
-const EXPECTED_WAVE2_UI: &[(&str, &str)] = &[("GET", "/settings"), ("GET", "/history")];
+/// Wave-2 HTMX pages: none left mounted — FX-05 moved `/settings`,
+/// `/history`, `/cache`, `/dashboard`, `/audit`, `/engines` and
+/// `/archive` into the SPA behind `/app`. The plan rows stay declared;
+/// they resolve through the `/app/{*rest}` fallback.
+const EXPECTED_WAVE2_UI: &[(&str, &str)] = &[];
 
 /// Wave-1 rows mounted so far (W1-06 engine health, W1-09 metrics).
 /// `/mcp` (W1-08) is added under `cfg!(feature = "mcp")` because its
@@ -76,13 +79,11 @@ const EXPECTED_WAVE2_MOUNTED: &[(&str, &str)] = &[
 /// mounted set only in `ui` builds and drop under `--headless` like the
 /// pages.
 const EXPECTED_WAVE2_UI_MOUNTED: &[(&str, &str)] = &[
-    ("GET", "/cache"),
     ("GET", "/opensearch.xml"),
     ("GET", "/favicon.ico"),
-    ("GET", "/dashboard"),
-    ("GET", "/audit"),
+    // `/trace/{id}` is the last HTMX ops page — the audit tab links out
+    // to it until the trace SPA port lands.
     ("GET", "/trace/{id}"),
-    ("GET", "/engines"),
 ];
 
 /// Wave-4 rows mounted so far (W4-03): the grounded-answer SSE route
@@ -101,7 +102,9 @@ const EXPECTED_WAVE5_ARCHIVE_MOUNTED: &[(&str, &str)] = &[
     ("DELETE", "/api/pages/{url}"),
     ("GET", "/api/archive"),
 ];
-const EXPECTED_WAVE5_UI_MOUNTED: &[(&str, &str)] = &[("GET", "/archive")];
+// `/archive` moved to `/app/archive` (FX-05); the plan row is declared
+// and resolved by the SPA fallback, so nothing mounts it anymore.
+const EXPECTED_WAVE5_UI_MOUNTED: &[(&str, &str)] = &[];
 
 /// FX rows mounted so far (FX-02): the SPA shell and its asset /
 /// client-route fallback, riding the `ui` gate like the HTMX pages.

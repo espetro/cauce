@@ -433,3 +433,299 @@ details.answer-steps li + li::before {
   flex: 1;
   min-width: 0;
 }
+======
+
+/* ------------------------------------------------------------------ */
+/* FX-05 admin/read pages — shared table, filter and pager styles,     */
+/* one-for-one with the legacy sheet's `.filters`/`table.*`/`.pager`.  */
+/* ------------------------------------------------------------------ */
+
+/* Stats/notice line above a page's table ("42 searches in last 24h"). */
+.stats {
+  color: var(--muted);
+  font-size: 0.875rem;
+  margin: 0.25rem 0 0.75rem;
+}
+
+.empty {
+  color: var(--muted);
+}
+
+/* The GET filter bars the pages carry (`since`, `origin`, `q`, ...). */
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0.5rem 0 1rem;
+  font-size: 0.9375rem;
+}
+
+.filters select,
+.filters input[type="search"],
+.filters input[type="text"],
+.filters input[type="number"],
+.filters input[type="password"] {
+  padding: 0.25rem 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+}
+
+.filters input[type="search"] {
+  min-width: 10rem;
+  flex: 1 1 auto;
+}
+
+.filters .cached-only {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  color: var(--muted);
+}
+
+.filters button {
+  padding: 0.25rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--fg);
+  cursor: pointer;
+}
+
+.filters a.clear {
+  color: var(--muted);
+}
+
+/* Read/admin tables (history, cache, audit, dashboard, engines). */
+table.data {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9375rem;
+}
+
+table.data th {
+  text-align: left;
+  color: var(--muted);
+  font-weight: 500;
+  font-size: 0.8125rem;
+  padding: 0.25rem 0.5rem 0.25rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+table.data td {
+  padding: 0.4rem 0.5rem 0.4rem 0;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+
+table.data tbody.day-group td {
+  border-bottom: 0;
+}
+
+table.data tr.day td {
+  color: var(--muted);
+  font-size: 0.8125rem;
+  padding-top: 0.75rem;
+  border-bottom: 0;
+}
+
+table.data tr.detail td {
+  border-bottom: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 0.875rem;
+  padding-top: 0;
+}
+
+/* Hide-a-medium columns (engines, latency) below 700px. */
+@media (width < 700px) {
+  .h-md {
+    display: none;
+  }
+}
+
+/* Row secondary actions — buttons styled as links like the HTMX page. */
+.row-actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-left: 1rem;
+  font-size: 0.875rem;
+}
+
+.row-actions a,
+.row-actions button {
+  color: var(--accent);
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.row-actions a:hover,
+.row-actions button:hover {
+  text-decoration: underline;
+}
+
+.row-error {
+  color: var(--warn);
+}
+
+/* Nested click lines inside a history row's detail cell. */
+.click-line {
+  display: flex;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+  padding: 0.125rem 0;
+  min-width: 0;
+}
+
+.click-line .cdom {
+  color: var(--muted);
+  flex-shrink: 0;
+  max-width: 12rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.click-line a {
+  color: var(--accent);
+  text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.click-line a:hover {
+  text-decoration: underline;
+}
+
+.click-line .cpos {
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+.meta2 {
+  color: var(--muted);
+  font-size: 0.8125rem;
+  margin-right: 1rem;
+}
+
+/* Lazy payload/markdown expander bodies. */
+.code-view {
+  background: var(--greyed-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.5rem 0.75rem;
+  margin: 0.5rem 0;
+  overflow-x: auto;
+  font-family: var(--mono);
+  font-size: 0.8125rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* Prev/next pager the listing pages carry. */
+.pager {
+  display: flex;
+  gap: 1rem;
+  margin: 0.75rem 0;
+  font-size: 0.9375rem;
+}
+
+.pager a {
+  color: var(--accent);
+}
+
+/* Warning/disabled notices (archive disabled, engines pinned). */
+.notice {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.5rem 0.75rem;
+  color: var(--muted);
+  margin: 0.5rem 0 1rem;
+}
+
+/* Settings fieldset + row layout. */
+.settings-form fieldset {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin: 0 0 1rem;
+  padding: 0.75rem 1rem;
+}
+
+.settings-form legend {
+  color: var(--muted);
+  font-size: 0.8125rem;
+  padding: 0 0.25rem;
+}
+
+.settings-form .frow {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  margin: 0.4rem 0;
+}
+
+.settings-form .frow label {
+  min-width: 10rem;
+  color: var(--muted);
+  font-size: 0.9375rem;
+}
+
+.settings-form .frow input[type="text"],
+.settings-form .frow input[type="number"],
+.settings-form .frow input[type="password"],
+.settings-form .frow select {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0.25rem 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+}
+
+.settings-form .hint {
+  color: var(--muted);
+  font-size: 0.8125rem;
+  margin: 0.25rem 0;
+}
+
+.settings-form button[type="submit"] {
+  padding: 0.35rem 1.25rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+  cursor: pointer;
+}
+
+/* Admin tab bar. */
+.tabs {
+  display: flex;
+  gap: 0.25rem;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 1rem;
+}
+
+.tabs a {
+  padding: 0.35rem 0.9rem;
+  color: var(--muted);
+  text-decoration: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+
+.tabs a[aria-current="page"] {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}

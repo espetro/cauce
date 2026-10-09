@@ -11,23 +11,18 @@
 //! [`search`] — `/` + `/search` (badge, engine statuses, stream URL and
 //! strings, result rows) plus the `Accept: text/html` arm of
 //! `GET /api/search`; [`answer`] — the `/answer` AI-answer page (W4-03);
-//! [`history`] — the `/history` feed page;
-//! [`archive`] — the `/archive` search+listing page and the
-//! `/api/pages/{url}` markdown fragments (W5-02);
-//! [`settings`] — the `/settings` form page; [`assets`] — the embedded
-//! static assets and the `favicon`/`opensearch` endpoints;
-//! [`spa`] — the Svelte SPA shell + assets at `/app` (FX-02).
+//! [`assets`] — the embedded static assets and the
+//! `favicon`/`opensearch` endpoints; [`spa`] — the Svelte SPA shell +
+//! assets at `/app` (FX-02; FX-05 moved `/history`, `/dashboard`,
+//! `/settings`, `/archive` and the ops pages into it).
 //!
 //! This Source Code Form is subject to the terms of the Mozilla Public
 //! License, v. 2.0. If a copy of the MPL was not distributed with this
 //! file, You can obtain one at <https://mozilla.org/MPL/2.0/>.
 
 mod answer;
-mod archive;
 mod assets;
-mod history;
 mod search;
-mod settings;
 mod spa;
 
 use askama::Template;
@@ -37,17 +32,10 @@ use axum::response::Html;
 use crate::error::ApiError;
 
 pub use answer::{answer, answer_view};
-pub use archive::archive;
-#[cfg(feature = "archive")]
-pub(crate) use archive::{archive_page, page_markdown, page_markdown_error};
 pub(crate) use assets::{STYLE_CSS, VERSION_LABEL, app_js};
 pub use assets::{favicon, opensearch};
-pub use history::history;
-pub(crate) use history::{history_page, prefers_html};
 pub(crate) use search::search_fragment;
 pub use search::{index, search};
-pub use settings::settings;
-pub(crate) use settings::settings_status;
 pub use spa::{spa, spa_nested};
 
 /// One rendered result row (plain strings so Askama only needs `Display`).

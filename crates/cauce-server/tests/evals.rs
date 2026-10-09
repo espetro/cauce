@@ -1,6 +1,7 @@
 //! W3-05: `/api/stats` exposes the newest `evals/results/*-engines.json`
-//! when one exists, and the dashboard's "engine relevance (nightly)"
-//! panel renders per-engine domain-hit@5 — or the empty state otherwise.
+//! when one exists — the SPA dashboard's "engine relevance (nightly)"
+//! panel reads `engine_eval` off this wire (FX-05: the HTMX dashboard is
+//! gone, the wire field is the contract).
 //!
 //! This Source Code Form is subject to the terms of the Mozilla Public
 //! License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -29,7 +30,7 @@ const REPORT: &str = r#"{
 }"#;
 
 #[tokio::test]
-async fn stats_and_dashboard_expose_latest_eval_run() {
+async fn stats_expose_latest_eval_run() {
     let _lock = env_lock().await;
     let (app, _store, _tmp) = app_with(ReplayOpts::default());
     let results = tempfile::tempdir().unwrap();
@@ -44,13 +45,6 @@ async fn stats_and_dashboard_expose_latest_eval_run() {
         stats.get("engine_eval").is_none() || stats["engine_eval"].is_null(),
         "no report file -> no engine_eval: {stats}"
     );
-    let (status, body) = get_html(&app, "/dashboard").await;
-    assert_eq!(status, StatusCode::OK);
-    assert!(body.contains("engine relevance (nightly)"));
-    assert!(
-        body.contains("no eval run yet"),
-        "empty eval state:\n{body}"
-    );
 
     // A report on disk is read per request — stats and dashboard reflect it.
     std::fs::write(results.path().join("2026-09-24-engines.json"), REPORT).unwrap();
@@ -64,19 +58,9 @@ async fn stats_and_dashboard_expose_latest_eval_run() {
         serde_json::json!(["brave"])
     );
 
-    let (status, body) = get_html(&app, "/dashboard").await;
-    assert_eq!(status, StatusCode::OK);
-    for needle in [
-        "engine relevance (nightly)",
-        "2026-09-24",
-        "live",
-        "bing",
-        "4/5 · 80%",
-        "brave",
-        "2/5 · 40%",
-    ] {
-        assert!(body.contains(needle), "missing {needle:?}:\n{body}");
-    }
+    assert_eq!(stats["engine_eval"]["live"], true);
+    assert_eq!(stats["engine_eval"]["engines"][0]["hits"], 4);
+    assert_eq!(stats["engine_eval"]["engines"][0]["cases"], 5);
 
     clear_env();
 }

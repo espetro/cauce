@@ -33,18 +33,11 @@ use crate::middleware::RequestCtx;
 /// straight from the pipeline's tracker, fresher than the debounced
 /// `engine_health` table) with the card fields `kind`, `tier`, `enabled`,
 /// `configured`, `live`, `p95_ms`, `reliability_pct`, `requests_today`.
-#[cfg_attr(not(feature = "ui"), allow(unused_variables))]
 pub async fn engines_list(
     State(state): State<AppState>,
-    Extension(ctx): Extension<RequestCtx>,
-    headers: HeaderMap,
+    Extension(_ctx): Extension<RequestCtx>,
+    _headers: HeaderMap,
 ) -> Result<Response, ApiError> {
-    #[cfg(feature = "ui")]
-    if crate::html::accepts_html(&headers) {
-        return crate::engines_page::page(&state, &ctx)
-            .await
-            .map(IntoResponse::into_response);
-    }
     Ok(Json(engine_views(&state).await?).into_response())
 }
 
@@ -260,10 +253,6 @@ pub async fn engine_reset(
         json!({ "from": previous, "to": row.breaker }),
     )
     .await?;
-    #[cfg(feature = "ui")]
-    if crate::html::is_htmx(&headers) {
-        return crate::engines_page::card(&state, &id, ctx.request_id.as_uuid(), None).await;
-    }
     Ok(Json(row).into_response())
 }
 
@@ -366,16 +355,6 @@ async fn engine_set_enabled(
     )
     .await?;
 
-    #[cfg(feature = "ui")]
-    if crate::html::is_htmx(headers) {
-        use rust_i18n::t;
-        let hint = if outcome.engines_rebuilt {
-            t!("engines.toggle_saved")
-        } else {
-            t!("engines.toggle_saved_restart")
-        };
-        return crate::engines_page::card(state, &id, ctx.request_id.as_uuid(), Some(hint)).await;
-    }
     Ok(Json(EngineToggleAck {
         id: id.to_string(),
         enabled,

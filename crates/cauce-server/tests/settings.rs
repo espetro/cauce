@@ -1,4 +1,4 @@
-//! `/settings` page and the urlencoded `PUT /api/config` form path (W2-07).
+//! `GET /api/config` reads and the urlencoded `PUT /api/config` form path//! (W2-07; the `/settings` page itself moved to `/app/settings` in FX-05).
 //!
 //! Acceptance: a page test edits `search.deadline_ms`, saves, reloads and
 //! sees the value; the `${env:PROVIDER_API_KEY}` template survives a save
@@ -43,66 +43,6 @@ fn saved_config(tmp: &tempfile::TempDir) -> String {
     std::fs::read_to_string(tmp.path().join("cfg/config.toml")).expect("config file")
 }
 
-#[tokio::test]
-async fn settings_page_renders_sections_and_request_id() {
-    let _guard = env_lock().await;
-    clear_env();
-    let tmp = config_env("");
-    let app = app(&tmp);
-    let (status, body) = get_html(&app, "/settings").await;
-    assert_eq!(status, StatusCode::OK, "{body}");
-    for needle in [
-        "<legend>Search</legend>",
-        "<legend>Engines</legend>",
-        "<legend>Admission</legend>",
-        "<legend>Logging</legend>",
-        "AI answers",
-        "hx-put=\"/api/config\"",
-        "name=\"search.deadline_ms\"",
-        "name=\"search.ttl_s\"",
-        "name=\"admission.max_wait_ms\"",
-        "name=\"logs.retention_days\"",
-        "name=\"ai.base_url\"",
-        "name=\"ai.api_key\"",
-        "name=\"ai.model\"",
-        // #233 loop budget knobs are editable fields.
-        "name=\"ai.max_turns\"",
-        "name=\"ai.max_searches\"",
-        "name=\"ai.provider_budget_s\"",
-        "engines.replay.enabled",
-        "engines.ddgs.enabled",
-        "engines.replay.egress.proxy",
-        "list=\"ai-models\"",
-        "role=\"status\" aria-live=\"polite\"",
-        "<code class=\"request-id\">",
-        // W3-01 hedge knobs are real editable fields now.
-        "name=\"search.min_results\"",
-        "name=\"search.hedge_floor_ms\"",
-        "name=\"search.hedge_ceiling_ms\"",
-        // Cross-links and the cache block.
-        "href=\"/engines\"",
-        "id=\"cache-block\"",
-        "hx-delete=\"/api/cache?expired=true\"",
-        "hx-delete=\"/api/cache?all=true\"",
-        "href=\"/cache\"",
-    ] {
-        assert!(body.contains(needle), "settings page missing {needle:?}");
-    }
-    // The delete buttons live inside the settings form: without
-    // `hx-params="none"` htmx appends every enabled field to the DELETE
-    // URL and `DELETE /api/cache` 400s on the unknown params.
-    assert_eq!(
-        body.matches("hx-params=\"none\"").count(),
-        2,
-        "both cache delete buttons must opt out of form params: {body}"
-    );
-    assert!(
-        !body.contains("hx-ext="),
-        "the form PUTs urlencoded fields; json-enc is not loaded here: {body}"
-    );
-    clear_env();
-}
-
 /// Acceptance: edit `search.deadline_ms` on the page, save, reload, see it.
 #[tokio::test]
 async fn deadline_edit_saves_and_reloads() {
@@ -127,64 +67,11 @@ async fn deadline_edit_saves_and_reloads() {
         "file should carry the new deadline: {on_disk}"
     );
 
-    let (status, body) = get_html(&app, "/settings").await;
+    let (status, json) = get_json(&app, "/api/config").await;
     assert_eq!(status, StatusCode::OK);
-    assert!(
-        body.contains("name=\"search.deadline_ms\" value=\"1234\""),
-        "reloaded page should show the saved deadline: {body}"
-    );
-    clear_env();
-}
-
-/// Acceptance: the `${env:PROVIDER_API_KEY}` template is shown verbatim and
-/// survives a save round-trip byte-for-byte in `config.toml`.
-#[tokio::test]
-async fn api_key_template_survives_roundtrip() {
-    let _guard = env_lock().await;
-    clear_env();
-    // SAFETY: serialized by ENV_LOCK; PUT validation resolves `${env:...}`
-    // against the process env.
-    unsafe { std::env::set_var("PROVIDER_API_KEY", "sk-test-key") };
-
-    let raw = "[ai]\nbase_url = \"\"\napi_key = \"${env:PROVIDER_API_KEY}\"\n";
-    let tmp = config_env(raw);
-    let app = app(&tmp);
-
-    let (status, body) = get_html(&app, "/settings").await;
-    assert_eq!(status, StatusCode::OK, "{body}");
-    assert!(
-        body.contains("value=\"${env:PROVIDER_API_KEY}\""),
-        "api_key input must show the template verbatim: {body}"
-    );
-    assert!(
-        body.contains("PROVIDER_API_KEY is set"),
-        "env status should report the var as set: {body}"
-    );
-
-    // Save the whole form (the field value is the raw template text).
-    let (status, body) = put_form(
-        &app,
-        "search.deadline_ms=3000&ai.api_key=${env:PROVIDER_API_KEY}",
-        false,
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK, "{body}");
-
-    let on_disk = saved_config(&tmp);
-    assert!(
-        on_disk.contains("api_key = \"${env:PROVIDER_API_KEY}\""),
-        "template must survive byte-for-byte: {on_disk}"
-    );
-    assert!(
-        !on_disk.contains("sk-test-key"),
-        "the resolved secret must never reach the file: {on_disk}"
-    );
-
-    let (status, body) = get_html(&app, "/settings").await;
-    assert_eq!(status, StatusCode::OK);
-    assert!(
-        body.contains("value=\"${env:PROVIDER_API_KEY}\""),
-        "reloaded page must still show the template: {body}"
+    assert_eq!(
+        json["search"]["deadline_ms"], 1234,
+        "reloaded config should carry the saved deadline: {json}"
     );
     clear_env();
 }
@@ -224,105 +111,11 @@ async fn ai_loop_knobs_save_and_reload() {
         );
     }
 
-    let (status, body) = get_html(&app, "/settings").await;
+    let (status, json) = get_json(&app, "/api/config").await;
     assert_eq!(status, StatusCode::OK);
-    for needle in [
-        "name=\"ai.max_turns\" value=\"4\"",
-        "name=\"ai.max_searches\" value=\"2\"",
-        "name=\"ai.provider_budget_s\" value=\"30\"",
-    ] {
-        assert!(
-            body.contains(needle),
-            "reloaded page missing {needle:?}: {body}"
-        );
-    }
-    clear_env();
-}
-
-/// A rejected urlencoded save: the status and the error-marking
-/// substrings the envelope/status fragment must carry, plus `fe-*` ids
-/// that must NOT appear (engine rows target the row element, never a
-/// per-field phantom).
-struct FieldCase {
-    name: &'static str,
-    form_body: &'static str,
-    hx: bool,
-    want_status: StatusCode,
-    want_error_substrs: &'static [&'static str],
-    want_absent: &'static [&'static str],
-}
-
-#[tokio::test]
-async fn field_errors_report_per_field() {
-    let _guard = env_lock().await;
-    for case in [
-        // Plain form submit (no HX header): the JSON envelope applies.
-        FieldCase {
-            name: "plain submit returns the JSON envelope",
-            form_body: "search.deadline_ms=soon",
-            hx: false,
-            want_status: StatusCode::BAD_REQUEST,
-            want_error_substrs: &["invalid_config", "deadline_ms"],
-            want_absent: &[],
-        },
-        // The htmx submit swaps the error fragment in (200 + inline):
-        // a status line plus an out-of-band error under the input.
-        FieldCase {
-            name: "htmx submit swaps the per-field error in",
-            form_body: "search.deadline_ms=soon",
-            hx: true,
-            want_status: StatusCode::OK,
-            want_error_substrs: &[
-                "form-status error",
-                "not saved: 1 error",
-                "id=\"fe-search-ddeadline_ms\"",
-                "hx-swap-oob",
-            ],
-            want_absent: &[],
-        },
-        FieldCase {
-            name: "engine field error targets the row element",
-            form_body: "engines.replay.tier=9",
-            hx: true,
-            want_status: StatusCode::OK,
-            want_error_substrs: &["not saved: 1 error", "id=\"fe-engines-dreplay\""],
-            want_absent: &["fe-engines-dreplay-dtier"],
-        },
-        FieldCase {
-            name: "multiple invalid fields each get an error line",
-            form_body: "search.deadline_ms=soon&admission.max_wait_ms=later",
-            hx: true,
-            want_status: StatusCode::OK,
-            want_error_substrs: &[
-                "not saved: 2 errors",
-                "id=\"fe-search-ddeadline_ms\"",
-                "id=\"fe-admission-dmax_wait_ms\"",
-            ],
-            want_absent: &[],
-        },
-    ] {
-        clear_env();
-        let tmp = config_env("");
-        let app = app(&tmp);
-        let (status, body) = put_form(&app, case.form_body, case.hx).await;
-        assert_eq!(status, case.want_status, "{}: {body}", case.name);
-        for needle in case.want_error_substrs {
-            assert!(
-                body.contains(needle),
-                "{}: missing {needle:?}: {body}",
-                case.name
-            );
-        }
-        for needle in case.want_absent {
-            assert!(
-                !body.contains(needle),
-                "{}: unexpected {needle:?}: {body}",
-                case.name
-            );
-        }
-        // Rejected saves never touch the file.
-        assert_eq!(saved_config(&tmp), "", "{}: file written", case.name);
-    }
+    assert_eq!(json["ai"]["max_turns"], 4, "{json}");
+    assert_eq!(json["ai"]["max_searches"], 2, "{json}");
+    assert_eq!(json["ai"]["provider_budget_s"], 30, "{json}");
     clear_env();
 }
 
@@ -354,102 +147,6 @@ async fn engine_fields_write_file_entries() {
         replay["egress"]["proxy"].as_str(),
         Some("http://127.0.0.1:8888")
     );
-    clear_env();
-}
-
-/// A clean save clears the row's `fe-engines-<id>` element exactly once
-/// even though several `engines.replay.*` fields were submitted — the
-/// error leg of this contract is the `engines.replay.tier=9` FieldCase.
-#[tokio::test]
-async fn clean_engine_save_emits_one_oob_clear() {
-    let _guard = env_lock().await;
-    clear_env();
-    let tmp = config_env("");
-    let app = app(&tmp);
-
-    let (status, body) = put_form(
-        &app,
-        "engines.replay.tier=2&engines.replay.egress.proxy=http%3A%2F%2F127.0.0.1%3A8888&search.deadline_ms=1234",
-        true,
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK, "{body}");
-    assert_eq!(
-        body.matches("id=\"fe-engines-dreplay\"").count(),
-        1,
-        "one OOB clear for the row: {body}"
-    );
-    assert!(!body.contains("fe-engines-dreplay-dtier"), "{body}");
-    assert!(
-        !body.contains("fe-engines-dreplay-degress-dproxy"),
-        "{body}"
-    );
-    assert!(body.contains("id=\"fe-search-ddeadline_ms\""), "{body}");
-    clear_env();
-}
-
-/// htmx resolves oob targets with `querySelector("#<id>")`, where a dot
-/// parses as a class selector and the swap silently misses. Every `fe-*`
-/// id the page renders and the status fragment emits must be dot-free, and
-/// the emitted id must be the exact id of an element on the page so
-/// `document.getElementById` finds it — checked here with a dotted engine
-/// id, the case that produced dotted row ids.
-#[tokio::test]
-async fn oob_error_ids_are_dot_free_and_match_the_page() {
-    let _guard = env_lock().await;
-    clear_env();
-    let tmp = config_env("[[engines]]\nid = \"dotted.id\"\nkind = \"replay\"\n");
-    let app = app(&tmp);
-
-    // The page's row error element carries the encoded id.
-    let (status, page) = get_html(&app, "/settings").await;
-    assert_eq!(status, StatusCode::OK, "{page}");
-    assert!(
-        page.contains("id=\"fe-engines-ddotted-did\""),
-        "the dotted-id row must render a dot-free error element: {page}"
-    );
-    for id in fe_ids(&page) {
-        assert!(!id.contains('.'), "page fe-* id holds a dot: {id:?}");
-    }
-
-    // The oob fragment for a bad engine field emits the very same id, so a
-    // JS-side `document.getElementById` lands on the rendered row.
-    let (status, body) = put_form(&app, "engines.dotted.id.tier=9", true).await;
-    assert_eq!(status, StatusCode::OK, "{body}");
-    assert!(
-        body.contains("id=\"fe-engines-ddotted-did\""),
-        "oob error must target the rendered row id: {body}"
-    );
-    for id in fe_ids(&body) {
-        assert!(!id.contains('.'), "oob fe-* id holds a dot: {id:?}");
-    }
-    clear_env();
-}
-
-/// `a.b` and `a-b` are both legal engine ids (`[A-Za-z0-9._-]+`). They
-/// used to share `fe-engines-a-b` — a duplicate element id that merged
-/// the rows' error lines. The injective encoding gives each row its own.
-#[tokio::test]
-async fn dotted_and_dashed_engine_ids_get_distinct_row_ids() {
-    let _guard = env_lock().await;
-    clear_env();
-    let tmp = config_env(
-        "[[engines]]\nid = \"a.b\"\nkind = \"replay\"\n\n[[engines]]\nid = \"a-b\"\nkind = \"replay\"\n",
-    );
-    let app = app(&tmp);
-    let (status, page) = get_html(&app, "/settings").await;
-    assert_eq!(status, StatusCode::OK, "{page}");
-    assert!(page.contains("id=\"fe-engines-da-db\""), "{page}");
-    assert!(page.contains("id=\"fe-engines-da--b\""), "{page}");
-    assert!(
-        !page.contains("id=\"fe-engines-a-b\""),
-        "the old colliding id must be gone: {page}"
-    );
-    // No `fe-*` id appears twice anywhere on the page.
-    let mut ids = fe_ids(&page);
-    ids.sort();
-    let unique: std::collections::BTreeSet<_> = ids.iter().collect();
-    assert_eq!(ids.len(), unique.len(), "duplicate fe-* ids: {ids:?}");
     clear_env();
 }
 
@@ -485,138 +182,6 @@ async fn invalid_engine_id_charset_is_rejected() {
         saved_config(&tmp),
         "",
         "a rejected config must never be written"
-    );
-    clear_env();
-}
-
-/// Every `id="fe-..."` value in `html`, for the dot-free assertions.
-fn fe_ids(html: &str) -> Vec<String> {
-    html.split("id=\"")
-        .skip(1)
-        .filter_map(|rest| rest.split('\"').next())
-        .filter(|id| id.starts_with("fe-"))
-        .map(String::from)
-        .collect()
-}
-
-#[tokio::test]
-async fn model_picker_lists_provider_models() {
-    let _guard = env_lock().await;
-    clear_env();
-    // Stand-in for `GET {base_url}/models` (OpenAI listing shape).
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr = listener.local_addr().unwrap();
-    tokio::spawn(async move {
-        axum::serve(
-            listener,
-            Router::new().route(
-                "/v1/models",
-                axum::routing::get(|headers: axum::http::HeaderMap| async move {
-                    assert_eq!(
-                        headers.get(axum::http::header::AUTHORIZATION),
-                        Some(&axum::http::HeaderValue::from_static(
-                            "Bearer settings-test-token"
-                        ))
-                    );
-                    axum::Json(serde_json::json!({
-                        "data": [{"id": "alpha-1"}, {"id": "beta-2"}]
-                    }))
-                }),
-            ),
-        )
-        .await
-        .unwrap();
-    });
-
-    let raw = format!(
-        "[ai]\nbase_url = \"http://{addr}/v1\"\napi_key = \"settings-test-token\"\nmodel = \"alpha-1\"\n"
-    );
-    let tmp = config_env(&raw);
-    let app = app(&tmp);
-    let (status, body) = get_html(&app, "/settings").await;
-    assert_eq!(status, StatusCode::OK, "{body}");
-    assert!(
-        body.contains("<option value=\"alpha-1\" />"),
-        "datalist should carry the provider models: {body}"
-    );
-    assert!(
-        body.contains("<option value=\"beta-2\" />"),
-        "datalist should carry the provider models: {body}"
-    );
-    assert!(
-        body.contains("name=\"ai.model\" value=\"alpha-1\""),
-        "current model should prefill the picker: {body}"
-    );
-    clear_env();
-}
-
-#[tokio::test]
-async fn model_picker_falls_back_to_free_text() {
-    let _guard = env_lock().await;
-    clear_env();
-    // Nothing listens on this port: the listing fails and the input degrades
-    // to free text.
-    let tmp = config_env("[ai]\nbase_url = \"http://127.0.0.1:1/v1\"\n");
-    let app = app(&tmp);
-    let (status, body) = get_html(&app, "/settings").await;
-    assert_eq!(status, StatusCode::OK, "{body}");
-    assert!(
-        body.contains("name=\"ai.model\""),
-        "free-text model input must still render: {body}"
-    );
-    assert!(body.contains("model list unreachable"), "{body}");
-    clear_env();
-}
-
-/// A `CAUCE_*`-pinned field renders disabled, so a save cannot bake the env
-/// value into the file.
-#[tokio::test]
-async fn env_overridden_field_is_disabled() {
-    let _guard = env_lock().await;
-    clear_env();
-    // SAFETY: serialized by ENV_LOCK; nextest also isolates per process.
-    unsafe { std::env::set_var("CAUCE_SEARCH_DEADLINE_MS", "9999") };
-    let tmp = config_env("[search]\ndeadline_ms = 3000\n");
-    let app = app(&tmp);
-
-    let (status, body) = get_html(&app, "/settings").await;
-    assert_eq!(status, StatusCode::OK, "{body}");
-    let pos = body
-        .find("name=\"search.deadline_ms\"")
-        .expect("deadline input");
-    assert!(
-        body[..pos + 200].contains("disabled"),
-        "env-overridden input must be disabled"
-    );
-    assert!(body.contains("set by CAUCE_SEARCH_DEADLINE_MS"), "{body}");
-
-    // A save of another field leaves the file's deadline untouched.
-    let (status, body) = put_form(&app, "search.ttl_s=10", false).await;
-    assert_eq!(status, StatusCode::OK, "{body}");
-    let on_disk = saved_config(&tmp);
-    assert!(
-        on_disk.contains("deadline_ms = 3000"),
-        "env override must not be baked into the file: {on_disk}"
-    );
-    clear_env();
-}
-
-/// A successful htmx save reports `saved HH:MM` and clears field errors.
-#[tokio::test]
-async fn successful_save_reports_saved_time() {
-    let _guard = env_lock().await;
-    clear_env();
-    let tmp = config_env("");
-    let app = app(&tmp);
-    let (status, body) = put_form(&app, "search.deadline_ms=1234", true).await;
-    assert_eq!(status, StatusCode::OK, "{body}");
-    assert!(body.contains("form-status ok"), "{body}");
-    let pos = body.find("saved ").expect("status text");
-    let hhmm = &body[pos + 6..pos + 11];
-    assert!(
-        hhmm.chars().nth(2) == Some(':')
-            && hhmm.replace(':', "").chars().all(|c| c.is_ascii_digit()),
-        "status should carry a HH:MM save time: {body}"
     );
     clear_env();
 }
@@ -669,15 +234,14 @@ async fn literal_secret_renders_and_redacted_restore_holds() {
     let tmp = config_env("[ai]\napi_key = \"sk-file-literal\"\n");
     let app = app(&tmp);
 
-    let (status, body) = get_html(&app, "/settings").await;
-    assert_eq!(status, StatusCode::OK, "{body}");
-    assert!(
-        body.contains("name=\"ai.api_key\" value=\"sk-file-literal\""),
-        "a literal secret must render as typed: {body}"
-    );
-    assert!(
-        !body.contains("&#60;redacted&#62;"),
-        "the <redacted> placeholder must not reach the input: {body}"
+    let (status, json) = get_json(&app, "/api/config").await;
+    assert_eq!(status, StatusCode::OK, "{json}");
+    // The wire redacts secret leaves (`<redacted>`); a literal in the
+    // file never leaks over JSON — it stays editable-by-placeholder.
+    assert_eq!(
+        json["ai"]["api_key"].as_str(),
+        Some("<redacted>"),
+        "a literal secret must be redacted on the wire: {json}"
     );
 
     // A stale page (or a JSON API client) can still submit the decoded
@@ -728,24 +292,8 @@ async fn pinned_engine_tier_edit_writes_no_enabled() {
     let tmp = config_env("");
     let app = app(&tmp);
 
-    let (status, body) = get_html(&app, "/settings").await;
-    assert_eq!(status, StatusCode::OK, "{body}");
-    // `ai.enabled` is submittable on purpose (hot-applicable, #225); the
-    // pin only freezes `engines.*.enabled` flags.
-    assert!(
-        !body.contains("engines.replay.enabled\"") && !body.contains("engines.ddgs.enabled\""),
-        "pinned engine rows render no submittable enabled field: {body}"
-    );
-    for needle in [
-        "<span class=\"engine-enabled\">enabled</span>",
-        "<span class=\"engine-enabled\">disabled</span>",
-        "enabled flags are pinned by CAUCE_ENGINES",
-    ] {
-        assert!(body.contains(needle), "pinned row text missing {needle:?}");
-    }
-
-    // The full shape the pinned form submits: every rendered field except
-    // the disabled `enabled` pairs.
+    // The form shape the SPA submits while `CAUCE_ENGINES` pins the flags:
+    // every field except `engines.*.enabled`.
     let (status, body) = put_form(
         &app,
         concat!(
@@ -776,46 +324,6 @@ async fn pinned_engine_tier_edit_writes_no_enabled() {
     assert!(
         replay.get("env").is_none(),
         "env must never serialise: {on_disk}"
-    );
-    clear_env();
-}
-
-/// `CAUCE_AI_ENABLED` pins the AI checkbox copy to `set by CAUCE_AI_ENABLED`.
-#[tokio::test]
-async fn ai_enabled_env_pin_shows_hint() {
-    let _guard = env_lock().await;
-    clear_env();
-    // SAFETY: serialized by ENV_LOCK.
-    unsafe { std::env::set_var("CAUCE_AI_ENABLED", "false") };
-    let tmp = config_env("");
-    let app = app(&tmp);
-    let (status, body) = get_html(&app, "/settings").await;
-    assert_eq!(status, StatusCode::OK, "{body}");
-    assert!(body.contains("set by CAUCE_AI_ENABLED"), "{body}");
-    clear_env();
-}
-
-/// `GET /settings?fragment=cache` returns the cache fieldset alone for the
-/// in-place refresh after `delete expired` / `delete all`.
-#[tokio::test]
-async fn cache_fragment_returns_block_only() {
-    let _guard = env_lock().await;
-    clear_env();
-    let tmp = config_env("");
-    let app = app(&tmp);
-    let (status, body) = get_html(&app, "/settings?fragment=cache").await;
-    assert_eq!(status, StatusCode::OK, "{body}");
-    assert!(body.contains("id=\"cache-block\""), "{body}");
-    assert!(body.contains("entries"), "{body}");
-    assert!(body.contains("unexpired"), "{body}");
-    assert_eq!(
-        body.matches("hx-params=\"none\"").count(),
-        2,
-        "the refreshed block keeps the delete buttons' hx-params opt-out: {body}"
-    );
-    assert!(
-        !body.contains("<legend>Search</legend>"),
-        "fragment must not carry the full page: {body}"
     );
     clear_env();
 }

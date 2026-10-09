@@ -18,6 +18,11 @@
   import HomePage from "../routes/HomePage.svelte";
   import SearchPage from "../routes/SearchPage.svelte";
   import AnswerPage from "../routes/AnswerPage.svelte";
+  import HistoryPage from "../routes/HistoryPage.svelte";
+  import DashboardPage from "../routes/DashboardPage.svelte";
+  import SettingsPage from "../routes/SettingsPage.svelte";
+  import ArchivePage from "../routes/ArchivePage.svelte";
+  import AdminPage from "../routes/AdminPage.svelte";
 
   onMount(() => {
     applyTheme();
@@ -50,9 +55,26 @@
     };
   });
 
-  const active = $derived(
-    route.path === "/search" ? "search" : route.path === "/answer" ? "answer" : "",
-  );
+  const active = $derived.by(() => {
+    switch (route.path) {
+      case "/search":
+        return "search";
+      case "/answer":
+        return "answer";
+      case "/history":
+        return "history";
+      case "/dashboard":
+        return "dashboard";
+      case "/archive":
+        return "archive";
+      case "/settings":
+        return "settings";
+      case "/admin":
+        return route.params.get("tab") ?? "engines";
+      default:
+        return "";
+    }
+  });
   const routeKey = $derived(route.path + "?" + route.params.toString());
 </script>
 
@@ -64,6 +86,16 @@
     <SearchPage params={route.params} />
   {:else if route.path === "/answer"}
     <AnswerPage params={route.params} />
+  {:else if route.path === "/history"}
+    <HistoryPage params={route.params} />
+  {:else if route.path === "/dashboard"}
+    <DashboardPage params={route.params} />
+  {:else if route.path === "/settings"}
+    <SettingsPage />
+  {:else if route.path === "/archive"}
+    <ArchivePage params={route.params} />
+  {:else if route.path === "/admin"}
+    <AdminPage params={route.params} />
   {:else}
     <main>
       <p>{spa.app.not_found}</p>

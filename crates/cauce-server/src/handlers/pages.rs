@@ -1,8 +1,8 @@
 //! `pages` (W5-01): `POST /api/pages` runs the fetch-and-index pipeline for
 //! one URL (also the UI click beacon's target); `GET /api/pages/{url}`
-//! reads the stored row by its percent-encoded URL — under `Accept:
-//! text/html` it answers the `/archive` row expander's markdown fragment
-//! (W5-02) — and `DELETE /api/pages/{url}` removes the row, audited.
+//! reads the stored row by its percent-encoded URL (the SPA `/archive`
+//! row expander reads `markdown` off the row), and `DELETE
+//! /api/pages/{url}` removes the row, audited.
 //!
 //! This Source Code Form is subject to the terms of the Mozilla Public
 //! License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -111,39 +111,17 @@ pub async fn pages_index(
 /// (`/api/pages/https%3A%2F%2Fexample.com%2Fa`); axum percent-decodes the
 /// segment and the lookup key is the same normalized form
 /// `fetch_and_index` stores.
-///
-/// `Accept: text/html` (ui builds) renders the stored `markdown` as the
-/// `/archive` row expander's `<pre>` fragment — the
-/// `handlers::cache_get` lazy-fragment pattern; failed lookups then
-/// answer a one-line fragment instead of the JSON envelope so the
-/// expander can swap the failure in place.
-#[cfg_attr(not(feature = "ui"), allow(unused_variables))]
 pub async fn pages_get(
     State(state): State<AppState>,
     Extension(ctx): Extension<RequestCtx>,
-    headers: HeaderMap,
     Path(url): Path<String>,
 ) -> Result<Response, ApiError> {
-    match pages_get_entry(&state, &ctx, &headers, &url).await {
-        Ok(resp) => Ok(resp),
-        Err(e) => {
-            #[cfg(feature = "ui")]
-            if crate::html::accepts_html(&headers) {
-                return Ok(crate::html::page_markdown_error(
-                    e.status(),
-                    crate::html::is_htmx(&headers),
-                ));
-            }
-            Err(e)
-        }
-    }
+    pages_get_entry(&state, &ctx, &url).await
 }
 
-#[cfg_attr(not(feature = "ui"), allow(unused_variables))]
 async fn pages_get_entry(
     state: &AppState,
     ctx: &RequestCtx,
-    headers: &HeaderMap,
     url: &str,
 ) -> Result<Response, ApiError> {
     let parsed =
@@ -155,14 +133,7 @@ async fn pages_get_entry(
         .await
         .map_err(|e| ctx.store(&e))?
     {
-        Some(row) => {
-            #[cfg(feature = "ui")]
-            if crate::html::accepts_html(headers) {
-                return crate::html::page_markdown(&row, ctx.request_id.as_uuid())
-                    .map(IntoResponse::into_response);
-            }
-            Ok(Json(row).into_response())
-        }
+        Some(row) => Ok(Json(row).into_response()),
         None => Err(ctx.not_found(format!("no archived page for {url}"))),
     }
 }

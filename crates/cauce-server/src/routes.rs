@@ -126,13 +126,9 @@ pub const ROUTES: &[RouteSpec] = &[
     // #240: the support-report download (`Content-Disposition:
     // attachment` + the `X-Report-Issue-Url` share header).
     json("GET", "/api/report", 2),
-    html("/history", 2),
-    html("/dashboard", 2),
-    html("/cache", 2),
-    html("/engines", 2),
-    html("/audit", 2),
+    // FX-05: `/history`..`/audit` moved under `/app`; `/trace/{id}` is
+    // the last HTMX ops page (no JSON twin yet).
     html("/trace/{id}", 2),
-    html("/settings", 2),
     html("/opensearch.xml", 2),
     // `GET /favicon.ico` was a wave-0 omission (#87): browsers request it on
     // every page load. It rides the `ui` gate like the pages — `rust-embed`
@@ -195,7 +191,6 @@ pub const ROUTES: &[RouteSpec] = &[
         wave: 5,
         requires: Some("archive"),
     },
-    html("/archive", 5),
     // ---- FX: frontend replacement (W8 epic; plan
     // `2026-09-28-frontend-replacement.md` §5.1) -------------------------
     // FX-02: `GET /app` serves the Svelte SPA shell; `/app/{*rest}`

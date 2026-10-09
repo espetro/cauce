@@ -28,38 +28,30 @@ use crate::middleware::RequestCtx;
 /// 200-row budget).
 pub(crate) const HISTORY_LIMIT: u32 = 200;
 
-/// `GET /api/history?since&q&cached&limit`: searches and clicks, newest
-/// first. `Accept: text/html` renders the history page through the same
-/// handler (W2-02 settled input: one data path).
+/// `GET /api/history?since&q&cached&limit`: searches, clicks and answer
+/// runs, newest first. Pure JSON since FX-05 — the SPA `/app/history`
+/// reads this feed.
 pub async fn history(
     State(state): State<AppState>,
     Extension(ctx): Extension<RequestCtx>,
     uri: Uri,
     headers: HeaderMap,
 ) -> Result<Response, ApiError> {
-    #[cfg(feature = "ui")]
-    if crate::html::prefers_html(&headers) {
-        return crate::html::history_page(State(state), Extension(ctx), uri).await;
-    }
-    #[cfg(not(feature = "ui"))]
     let _ = &headers;
-    history_inner(&state, &ctx, &uri, HISTORY_LIMIT, None)
+    history_inner(&state, &ctx, &uri, HISTORY_LIMIT)
         .await
         .map(|(_params, _filter, items)| Json(items).into_response())
 }
 
-/// Shared `GET /api/history` / `/history` query handling (W2-02): one
-/// filter grammar and one data path (`Store::list_history`) for the JSON
-/// route and the HTMX page. Returns the parsed params and the resolved
-/// filter so the page can re-render the filter state and the cap note.
+/// The `GET /api/history` data path (W2-02): one filter grammar over
+/// `Store::list_history`. Returns the parsed params and the resolved
+/// filter alongside the items (the params carry the filter state the
+/// deleted HTMX pager once re-rendered).
 pub(crate) async fn history_inner(
     state: &AppState,
     ctx: &RequestCtx,
     uri: &Uri,
     default_limit: u32,
-    // #254: `/history` passes `Some(User)` — the page defaults to "mine";
-    // `/api/history` passes `None`, keeping the JSON unfiltered for compat.
-    default_origin: Option<SearchOrigin>,
 ) -> Result<(QueryParams, HistoryFilter, Vec<HistoryItem>), ApiError> {
     let params = QueryParams::parse(uri.query(), ctx)?;
     params.allow(ctx, &["since", "q", "cached", "limit", "origin"])?;
@@ -73,8 +65,10 @@ pub(crate) async fn history_inner(
             .map(str::to_string),
         cached: params.flag(ctx, "cached")?,
         // `origin=all` is the explicit no-filter; a bad value is a 400.
+        // #254 kept the JSON unfiltered by default (`mine` was a page
+        // default); the SPA sends `origin=user` explicitly.
         origin: match params.get("origin") {
-            None => default_origin,
+            None => None,
             Some("all") => None,
             Some(v) => Some(v.parse::<SearchOrigin>().map_err(|_| {
                 ctx.bad_request(format!("invalid origin {v:?}; expected user|agent|all"))

@@ -110,7 +110,7 @@ fn assert_shell(uri: &str, body: &str, expect_current: Option<&str>) {
         "{uri}: missing <700px header collapse rule"
     );
     assert!(
-        body.contains("href=\"/settings\""),
+        body.contains("href=\"/app/settings\""),
         "{uri}: missing settings link"
     );
     // Landmark sanity on the script-stripped DOM: balanced
@@ -167,16 +167,12 @@ async fn every_page_renders_the_shared_shell() {
         .expect("meta.request_id")
         .to_string();
 
+    // FX-05: the read/admin pages moved into the SPA; the shared HTMX
+    // shell now covers only the search/answer/trace pages.
     let pages: &[(&str, Option<&str>)] = &[
         ("/", Some("/")),
         ("/search?q=shell", Some("/")),
         ("/search?q=shell&stream=1", Some("/")),
-        ("/history", Some("/history")),
-        ("/dashboard", Some("/dashboard")),
-        ("/cache", Some("/cache")),
-        ("/engines", Some("/engines")),
-        ("/audit", Some("/audit")),
-        ("/settings", Some("/settings")),
     ];
     for (uri, current) in pages {
         let (status, body) = get_html(&router, uri).await;
@@ -201,7 +197,12 @@ async fn operator_group_matches_more_menu() {
     let (router, _state, _tmp) = app();
     let (status, body) = get_html(&router, "/").await;
     assert_eq!(status, StatusCode::OK);
-    for href in ["/engines", "/cache", "/audit"] {
+    // The operator tier now deep-links into the merged /app/admin tabs.
+    for href in [
+        "/app/admin?tab=engines",
+        "/app/admin?tab=cache",
+        "/app/admin?tab=audit",
+    ] {
         assert_eq!(
             count(&body, &format!("href=\"{href}\"")),
             2,
