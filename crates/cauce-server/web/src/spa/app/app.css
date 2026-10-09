@@ -515,7 +515,6 @@ body {
   font-size: 0.9375rem;
 }
 
-.filters select,
 .filters input[type="search"],
 .filters input[type="text"],
 .filters input[type="number"],
@@ -540,7 +539,11 @@ body {
   color: var(--muted);
 }
 
-.filters button {
+/* Load-bearing `:not([class*="ui-"])`: ui/ wrappers render buttons
+   (UiButton, UiSelect trigger, UiCheckbox, UiCollapsible trigger) whose
+   own recipes this legacy rule would out-specify — the class guard keeps
+   it scoped to raw stragglers like the archive filter submit. */
+.filters button:not([class*="ui-"]) {
   padding: 0.25rem 0.75rem;
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -610,7 +613,7 @@ table.data tr.detail td {
 }
 
 .row-actions a,
-.row-actions button {
+.row-actions button:not([class*="ui-"]) {
   color: var(--accent);
   background: none;
   border: 0;
@@ -620,8 +623,10 @@ table.data tr.detail td {
   text-decoration: none;
 }
 
+/* Same class guard as the filters rule above: a ui/ wrapper inside
+   .row-actions keeps its own variant hover, never the link underline. */
 .row-actions a:hover,
-.row-actions button:hover {
+.row-actions button:not([class*="ui-"]):hover {
   text-decoration: underline;
 }
 
