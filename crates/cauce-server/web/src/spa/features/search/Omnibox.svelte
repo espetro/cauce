@@ -13,6 +13,8 @@
   import { onMount } from "svelte";
   import { spa } from "../../lib/i18n.js";
   import { capabilities } from "../../lib/capabilities.svelte.js";
+  import UiButton from "../../ui/button.svelte";
+  import UiToggleGroup from "../../ui/toggle-group.svelte";
 
   interface OmniboxProps {
     value?: string;
@@ -20,6 +22,11 @@
     compact?: boolean;
     autofocus?: boolean;
     onsubmit: () => void;
+  }
+
+  interface ModeOption {
+    value: "search" | "ai";
+    label: string;
   }
 
   let {
@@ -32,6 +39,11 @@
 
   let inputEl = $state<HTMLInputElement>();
 
+  const modeOptions = $derived<ModeOption[]>([
+    { value: "search", label: spa.search.submit },
+    { value: "ai", label: "✦ " + spa.search.ai_mode },
+  ]);
+
   onMount(() => {
     if (autofocus) inputEl?.focus();
   });
@@ -39,6 +51,12 @@
   function arm(mode: "search" | "ai") {
     aiMode = mode === "ai";
     inputEl?.focus();
+  }
+
+  // ToggleGroup single can deselect to "" on re-press; the mode segment
+  // must always resolve to one of the two modes, so ignore the empty value.
+  function armFromGroup(mode: string) {
+    if (mode === "search" || mode === "ai") arm(mode);
   }
 </script>
 
@@ -60,24 +78,22 @@
       aria-label={aiMode ? spa.answer.placeholder : spa.search.placeholder}
       autocomplete="off"
     />
-    <button type="submit" class="send">{aiMode ? spa.answer.submit : spa.search.submit}</button>
+    <UiButton
+      type="submit"
+      variant="primary"
+      size="icon"
+      disabled={!value.trim()}
+      ariaLabel={aiMode ? spa.answer.submit : spa.search.submit}
+      ><span aria-hidden="true" class="send-icon">↑</span></UiButton
+    >
   </div>
   {#if capabilities.aiEnabled}
     <div class="tool-row">
-      <div class="segment" role="group">
-        <button
-          type="button"
-          aria-pressed={!aiMode}
-          onclick={() => arm("search")}>{spa.search.submit}</button
-        >
-        <button
-          type="button"
-          aria-pressed={aiMode}
-          data-placeholder={spa.answer.placeholder}
-          data-submit={spa.answer.submit}
-          onclick={() => arm("ai")}>✦ {spa.search.ai_mode}</button
-        >
-      </div>
+      <UiToggleGroup
+        value={aiMode ? "ai" : "search"}
+        options={modeOptions}
+        onValueChange={armFromGroup}
+      />
     </div>
   {/if}
 </form>
@@ -125,47 +141,15 @@
     outline: none;
   }
 
-  .send {
-    flex: none;
-    padding: 0.5rem 1rem;
-    border: none;
-    border-radius: var(--radius);
-    background: var(--accent);
-    color: #fff;
+  /* ui/button's icon size is a fixed square; the glyph sizes itself. */
+  .send-icon {
     font-size: 1rem;
-    cursor: pointer;
-  }
-
-  .compact .send {
-    padding: 0.375rem 0.875rem;
+    line-height: 1;
   }
 
   .tool-row {
     display: flex;
     align-items: center;
     padding: 0 0.125rem;
-  }
-
-  .segment {
-    display: inline-flex;
-    gap: 0.125rem;
-    padding: 0.125rem;
-    border: 1px solid var(--border);
-    border-radius: 999px;
-  }
-
-  .segment button {
-    padding: 0.25rem 0.75rem;
-    border: none;
-    border-radius: 999px;
-    background: transparent;
-    color: var(--muted);
-    font-size: 0.8125rem;
-    cursor: pointer;
-  }
-
-  .segment button[aria-pressed="true"] {
-    background: var(--accent);
-    color: #fff;
   }
 </style>
