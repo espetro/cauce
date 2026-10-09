@@ -14,7 +14,8 @@
   Ns`). Fire-once per search.
 -->
 <script lang="ts">
-  import { tick } from "svelte";
+  import { tick, type ComponentProps } from "svelte";
+  import UiButton from "../../ui/button.svelte";
   import { postAnswer, errorFrom } from "../../lib/api.js";
   import { byokWire } from "../../lib/byok.svelte.js";
   import { capabilities } from "../../lib/capabilities.svelte.js";
@@ -130,14 +131,20 @@
      the trigger stays inert until `meta` arms `context` (disabled). -->
 <section id="assist" class="assist" data-q={q}>
   {#if !fired}
-    <button
-      type="button"
-      id="assist-btn"
-      class="assist-trigger"
-      aria-controls="assist-card"
-      aria-expanded="false"
+    <!-- The trigger is a UiButton but the reveal stays bespoke: the
+         card fires exactly once per search and can never collapse
+         back — a disclosure primitive models open/close toggling,
+         which would imply a toggle this card deliberately lacks. -->
+    <UiButton
+      variant="primary"
       {disabled}
-      onclick={fire}>{spa.assist.trigger}</button
+      onclick={fire}
+      {...({
+        id: "assist-btn",
+        "aria-controls": "assist-card",
+        "aria-expanded": "false",
+      } as ComponentProps<typeof UiButton>)}
+      >{spa.assist.trigger}</UiButton
     >
   {:else}
     <div id="assist-card" class="assist-card" aria-live="polite" aria-busy={busy}>
@@ -204,21 +211,6 @@
 <style>
   .assist {
     margin: 0 0 1rem;
-  }
-
-  .assist-trigger {
-    padding: 0.5rem 1rem;
-    border: none;
-    border-radius: var(--radius);
-    background: var(--accent);
-    color: #fff;
-    font-size: 0.875rem;
-    cursor: pointer;
-  }
-
-  .assist-trigger:disabled {
-    opacity: 0.5;
-    cursor: default;
   }
 
   .assist-card {

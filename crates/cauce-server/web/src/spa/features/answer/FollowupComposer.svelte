@@ -7,9 +7,13 @@
   bottom of the thread. While a stream is in flight the input holds
   the submitted question disabled and the submit swaps to `stop`
   (§7.2.2 — interruption is a feature, and the text survives so the
-  user can edit + resubmit).
+  user can edit + resubmit). Both actions are UiButton; `stop` keeps
+  the default variant because the legacy control carried no danger
+  styling — it is an interruption affordance, not a destructive op.
 -->
 <script lang="ts">
+  import type { ComponentProps } from "svelte";
+  import UiButton from "../../ui/button.svelte";
   import { SA } from "../../lib/i18n.js";
 
   interface ComposerProps {
@@ -40,8 +44,10 @@
     bind:value
   />
   {#if busy}
-    <button type="button" id="answer-stop" onclick={onstop}>{SA.stop}</button>
+    <UiButton {...({ id: "answer-stop" } as ComponentProps<typeof UiButton>)} onclick={onstop}
+      >{SA.stop}</UiButton
+    >
   {:else}
-    <button type="submit" disabled={!value.trim()}>{SA.followup_submit}</button>
+    <UiButton type="submit" disabled={!value.trim()}>{SA.followup_submit}</UiButton>
   {/if}
 </form>
