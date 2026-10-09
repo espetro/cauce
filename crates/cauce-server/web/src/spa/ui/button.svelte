@@ -51,6 +51,7 @@
     class="ui-button"
     data-variant={variant}
     data-size={size}
+    data-disabled={disabled || undefined}
     {href}
     {disabled}
     {onclick}
@@ -63,6 +64,7 @@
     class="ui-button"
     data-variant={variant}
     data-size={size}
+    data-disabled={disabled || undefined}
     {type}
     {disabled}
     {onclick}
@@ -170,8 +172,11 @@
     outline-offset: 1px;
   }
 
-  /* `Button.Root` puts `disabled` on <button> and `data-disabled` on
-     the <a> form — cover both. */
+  /* `Button.Root` puts `disabled` on <button>; on the <a> form it only
+     emits `aria-disabled`/`role`/`tabindex` and leaves onclick live —
+     so we pass `data-disabled` ourselves (above) and cover both forms
+     here. `pointer-events: none` restores the click suppression the
+     anchor path is missing. */
   :global(.ui-button:disabled),
   :global(.ui-button[data-disabled]) {
     opacity: 0.5;

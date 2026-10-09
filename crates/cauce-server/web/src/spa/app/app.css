@@ -112,9 +112,11 @@ body {
 }
 
 /* DS-00: reduced motion is a global guard, not just the body theme
-   fade — the same collapse applies to every ui/ wrapper transition
-   and animation (floating content, disclosures) and to Svelte's
-   generated transition keyframes, which ride `animation-duration`. */
+   fade — the same collapse applies to every ui/ wrapper CSS
+   transition and animation (floating content, disclosures). Svelte's
+   `transition:`/`animate:` directives run via WAAPI `element.animate()`,
+   which these rules can't reach — Svelte already honors
+   prefers-reduced-motion for those internally. */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
