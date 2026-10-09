@@ -1,0 +1,143 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
+
+/**
+ * `/app/archive` feature state (FX-05): `GET /api/archive` browse +
+ * `q` search, lazy markdown per row via `GET /api/pages/{url}`, row
+ * delete, prev/next pager on the browse arm. Mirrors
+ * `src/html/archive.rs` — with two wire degradations noted on #266:
+ * `ArchiveRow.snippet` arrives mark-stripped (no `<mark>` highlights)
+ * and the `enabled` flag is inferred from the search call failing.
+ */
+
+import type { ArchiveRow } from "../../../types/ArchiveRow.js";
+import { deletePage, fetchArchive, fetchPage } from "../../lib/api.js";
+import { fmtTs, hostOf } from "../../lib/format.js";
+import { spa } from "../../lib/i18n.js";
+
+const A = () => spa.archive;
+
+export interface ArchiveRowView {
+  url: string;
+  title: string;
+  host: string;
+  fetched: string;
+  snippet: string;
+  markdown: string;
+  markdownError: string;
+  markdownLoading: boolean;
+  gone: boolean;
+}
+
+export function createArchivePage() {
+  const state = $state({
+    loading: true,
+    /** The fetch pipeline couldn't be built server-side (archive down). */
+    disabled: false,
+    error: "",
+    q: "",
+    searching: false,
+    offset: 0,
+    hasMore: false,
+    rows: [] as ArchiveRowView[],
+    countLine: "",
+    emptyLine: "",
+    requestId: "",
+  });
+
+  const LIMIT = 50;
+
+  function plural(n: number, one: string, many: string): string {
+    return n === 1 ? one : many;
+  }
+
+  function countLine(shown: number, searching: boolean): string {
+    const word = plural(shown, A().page_one, A().page_many);
+    return searching ? `${shown} ${A().matching} ${word}` : `${shown} ${word}`;
+  }
+
+  function rowView(r: ArchiveRow): ArchiveRowView {
+    return {
+      url: r.url,
+      title: r.title === "" ? r.url : r.title,
+      host: hostOf(r.url),
+      fetched: fmtTs(r.fetched_at),
+      snippet: r.snippet,
+      markdown: "",
+      markdownError: "",
+      markdownLoading: false,
+      gone: false,
+    };
+  }
+
+  async function run(params: URLSearchParams): Promise<void> {
+    state.loading = true;
+    state.error = "";
+    state.disabled = false;
+    state.q = params.get("q") ?? "";
+    state.offset = Math.max(0, Number(params.get("offset") ?? "0") || 0);
+    const p = new URLSearchParams();
+    if (state.q.trim() !== "") p.set("q", state.q.trim());
+    p.set("limit", String(LIMIT));
+    p.set("offset", String(state.offset));
+    try {
+      const data = await fetchArchive(p);
+      state.searching = data.query != null && data.query !== "";
+      state.hasMore = data.has_more;
+      state.requestId = data.request_id;
+      state.rows = data.results.map(rowView);
+      state.countLine = countLine(state.rows.length, state.searching);
+      state.emptyLine =
+        state.rows.length === 0
+          ? state.searching
+            ? A().empty_filtered.replace("{q}", state.q)
+            : A().empty
+          : "";
+    } catch (e) {
+      // No fetch pipeline / no archive feature → the disabled notice,
+      // same as the HTMX page's `enabled` arm.
+      state.disabled = true;
+    } finally {
+      state.loading = false;
+    }
+  }
+
+  async function loadMarkdown(row: ArchiveRowView): Promise<void> {
+    if (row.markdown !== "" || row.markdownLoading) return;
+    row.markdownLoading = true;
+    row.markdownError = "";
+    try {
+      const page = await fetchPage(row.url);
+      row.markdown = page.markdown;
+    } catch (e) {
+      row.markdownError =
+        e instanceof Error ? e.message : A().markdown_failed;
+    } finally {
+      row.markdownLoading = false;
+    }
+  }
+
+  async function remove(row: ArchiveRowView): Promise<void> {
+    if (!window.confirm(A().confirm_row)) return;
+    row.markdownError = "";
+    try {
+      await deletePage(row.url);
+      row.gone = true;
+    } catch (e) {
+      row.markdownError = e instanceof Error ? e.message : String(e);
+    }
+  }
+
+  function submit(navigate: (to: string) => void): void {
+    const q = state.q.trim();
+    navigate("/app/archive" + (q === "" ? "" : "?q=" + encodeURIComponent(q)));
+  }
+
+  function pagerUrl(offset: number): string {
+    return "/app/archive?offset=" + Math.max(0, offset);
+  }
+
+  return { state, run, loadMarkdown, remove, submit, pagerUrl, LIMIT };
+}

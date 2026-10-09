@@ -51,10 +51,8 @@ mod suggest;
 #[cfg(feature = "ai")]
 pub use answer::{AnswerBody, answer};
 #[cfg(feature = "archive")]
-pub(crate) use archive::{ARCHIVE_LIMIT, archive_inner};
 #[cfg(feature = "archive")]
 pub use archive::{ArchiveResponse, ArchiveRow, archive_search};
-pub(crate) use cache::cache_list_data;
 pub use cache::{
     CacheBulkDeleteAck, CacheDeleteAck, CacheListing, cache_bulk_delete, cache_delete, cache_get,
     cache_list,
@@ -68,7 +66,7 @@ pub use history::{
     AnswerLogDeleteAck, HistoryDeleteAck, answer_log_delete, answer_log_get, audit_list, click,
     health, history, history_delete, metrics, stats,
 };
-pub(crate) use history::{HISTORY_LIMIT, audit_list_data, history_inner};
+
 #[cfg(feature = "archive")]
 pub use pages::{IndexBody, PageDeleteAck, pages_delete, pages_get, pages_index};
 pub use report::report;

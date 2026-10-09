@@ -1,4 +1,9 @@
-//! `/history` page + `DELETE /api/history/{id}` integration tests (W2-02).
+//! `GET /api/history` + `DELETE /api/history/{id}` wire tests (W2-02).
+//! The HTMX `/history` page was replaced by the SPA (FX-05) — the page
+//! read the same `list_history` data path, so the contract that survives
+//! is the JSON feed: `HistoryItem[]` (search | click | answer rows,
+//! newest first), the `since`/`q`/`cached`/`origin`/`limit` filter
+//! grammar, and the audited row delete.
 //!
 //! This Source Code Form is subject to the terms of the Mozilla Public
 //! License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -22,11 +27,6 @@ use support::*;
 async fn search(router: &Router, q: &str) {
     let (status, _) = get_json(router, &format!("/api/search?q={q}")).await;
     assert_eq!(status, StatusCode::OK, "search {q:?} failed");
-}
-
-/// Count rendered search rows (one `class="search"` per `search_log` row).
-fn search_rows(body: &str) -> usize {
-    body.matches(r#"class="search""#).count()
 }
 
 /// The `CacheKey` an unpinned `/api/search?q=` request produces (the join
@@ -76,158 +76,114 @@ fn log_row(ts: chrono::DateTime<chrono::Utc>, q: &str, source: LogSource) -> Sea
     }
 }
 
-/// Acceptance: after 3 replay searches the page shows 3 rows with the
-/// right sources. The `source` column is computed at render time from
-/// `cache_entries` (amended W2-02): a fresh search wrote an unexpired
-/// entry, so every row reads `cached · <age>` linking to `/cache`.
+/// POST the click beacon (`POST /api/click`).
+async fn click(router: &Router, body: serde_json::Value) {
+    let (status, _) = call(
+        router,
+        Request::builder()
+            .method(Method::POST)
+            .uri("/api/click")
+            .header("content-type", "application/json")
+            .body(Body::from(serde_json::to_vec(&body).unwrap()))
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+}
+
+fn items(body: &Value) -> &Vec<Value> {
+    body.as_array().expect("history feed is a JSON array")
+}
+
+/// The feed lists logged searches newest-first with the row fields the
+/// SPA renders (query, engines, source, tier, id, query_hash).
 #[tokio::test]
-async fn history_page_shows_replay_searches_with_sources() {
+async fn history_api_lists_searches_newest_first() {
     let (app, _state, _tmp) = app();
 
     search(&app, "w2-history-alpha").await;
     search(&app, "w2-history-beta").await;
     search(&app, "w2-history-gamma").await;
 
-    let (status, body) = get_html(&app, "/history?origin=all").await;
-    assert_eq!(status, StatusCode::OK);
-    assert_eq!(search_rows(&body), 3, "expected 3 search rows: {body}");
-    for q in ["w2-history-alpha", "w2-history-beta", "w2-history-gamma"] {
-        assert!(body.contains(q), "row for {q} missing: {body}");
-    }
-    assert!(
-        body.contains("cached ·"),
-        "live cache entries render `cached · <age>`: {body}"
-    );
-    assert!(
-        body.contains(r#"href="/cache?q=w2-history-alpha#"#),
-        "cached source links to the entry on /cache: {body}"
-    );
-    assert!(
-        body.contains("replay"),
-        "engines column names replay: {body}"
-    );
-    // The newest row is first (gamma was searched last).
-    let gamma = body.find("w2-history-gamma").expect("gamma row");
-    let alpha = body.find("w2-history-alpha").expect("alpha row");
-    assert!(gamma < alpha, "rows must be newest-first");
-
-    // A repeat identical search refreshes the entry; both rows stay
-    // `cached ·` (the column is the query's live cache state, not the
-    // fetch that produced the row).
-    search(&app, "w2-history-alpha").await;
-    let (status, body) = get_html(&app, "/history?origin=all").await;
-    assert_eq!(status, StatusCode::OK);
-    assert_eq!(search_rows(&body), 4);
-    assert!(body.contains("cached ·"), "{body}");
-}
-
-/// The source column follows `cache_entries`, not the logged fetch: once
-/// the entry is gone the same row reads `network · t<tier>`; a fresh
-/// identical search flips it back to `cached ·`.
-#[tokio::test]
-async fn history_source_tracks_live_cache_state() {
-    let (app, _state, _tmp) = app();
-    search(&app, "w2-src-flip").await;
-
-    let (status, body) = get_html(&app, "/history?origin=all").await;
-    assert_eq!(status, StatusCode::OK);
-    assert!(body.contains("cached ·"), "entry live: {body}");
-
-    let (status, body) = call(
-        &app,
-        Request::builder()
-            .method(Method::DELETE)
-            .uri(format!("/api/cache/{}", query_hash("w2-src-flip")))
-            .body(Body::empty())
-            .unwrap(),
-    )
-    .await;
+    let (status, body) = get_json(&app, "/api/history?origin=all").await;
     assert_eq!(status, StatusCode::OK, "{body}");
-
-    let (status, body) = get_html(&app, "/history?origin=all").await;
-    assert_eq!(status, StatusCode::OK);
-    assert!(
-        body.contains("network"),
-        "entry gone → network source: {body}"
-    );
-    assert!(!body.contains("cached ·"), "{body}");
-
-    search(&app, "w2-src-flip").await;
-    let (status, body) = get_html(&app, "/history?origin=all").await;
-    assert_eq!(status, StatusCode::OK);
-    assert!(body.contains("cached ·"), "entry refilled: {body}");
+    let rows = items(&body);
+    assert_eq!(rows.len(), 3, "{body}");
+    for (i, q) in ["w2-history-gamma", "w2-history-beta", "w2-history-alpha"]
+        .iter()
+        .enumerate()
+    {
+        assert_eq!(rows[i]["kind"], "search", "{body}");
+        assert_eq!(rows[i]["query"], *q, "rows must be newest-first: {body}");
+        assert!(
+            rows[i]["engines"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|e| e == "replay"),
+            "engines names replay: {body}"
+        );
+        assert!(rows[i]["id"].is_i64(), "row id for the delete link: {body}");
+        assert_eq!(
+            rows[i]["query_hash"].as_str(),
+            Some(query_hash(q).as_str()),
+            "{body}"
+        );
+    }
 }
 
-/// `cached=1` (amended W2-02) keeps only rows whose query has a live cache
-/// entry — same param on the JSON route. After the entry is deleted the
-/// page renders the filtered-empty state.
+/// Click beacons join the feed as `kind:"click"` rows merged
+/// newest-first — the SPA renders them nested under the search row that
+/// shares `query_hash` (or as a click-only row when none matches).
 #[tokio::test]
-async fn history_cached_filter() {
+async fn history_api_merges_click_rows() {
     let (app, _state, _tmp) = app();
-    search(&app, "w2-cached-yes").await;
-    search(&app, "w2-cached-no").await;
-    // Drop the entry for the second query: its row leaves the cached set.
-    let (status, _) = call(
+    search(&app, "w2-click-join").await;
+
+    click(
         &app,
-        Request::builder()
-            .method(Method::DELETE)
-            .uri(format!("/api/cache/{}", query_hash("w2-cached-no")))
-            .body(Body::empty())
-            .unwrap(),
+        json!({
+            "url": "https://example.com/w2-click",
+            "title": "W2 clicked title",
+            "position": 0,
+            "query_hash": query_hash("w2-click-join"),
+        }),
     )
     .await;
-    assert_eq!(status, StatusCode::OK);
-
-    let (status, body) = get_html(&app, "/history?origin=all&cached=1").await;
-    assert_eq!(status, StatusCode::OK);
-    assert!(body.contains("w2-cached-yes"), "{body}");
-    assert!(
-        !body.contains("w2-cached-no"),
-        "uncached row filtered out: {body}"
-    );
-    // The checkbox re-renders checked and `clear` is offered.
-    assert!(
-        body.contains(r#"name="cached" value="1" checked"#),
-        "{body}"
-    );
-    assert!(body.contains(">clear<"), "{body}");
-
-    // Same filter on the JSON route.
-    let (status, feed) = get_json(&app, "/api/history?cached=1").await;
-    assert_eq!(status, StatusCode::OK);
-    let rows = feed.as_array().unwrap();
-    assert!(
-        rows.iter()
-            .all(|r| r["query"] != "w2-cached-no" || r["kind"] == "click"),
-        "{feed}"
-    );
-    assert!(rows.iter().any(|r| r["query"] == "w2-cached-yes"));
-
-    // Delete the surviving entry too: the filter now matches nothing and
-    // the page names the active filter in the empty state.
-    let (status, _) = call(
+    click(
         &app,
-        Request::builder()
-            .method(Method::DELETE)
-            .uri(format!("/api/cache/{}", query_hash("w2-cached-yes")))
-            .body(Body::empty())
-            .unwrap(),
+        json!({
+            "url": "https://tokio.rs/tutorial",
+            "title": "Tokio tutorial",
+            "position": 1,
+            "query_hash": query_hash("w2-never-searched"),
+        }),
     )
     .await;
-    assert_eq!(status, StatusCode::OK);
-    let (status, body) = get_html(&app, "/history?origin=all&cached=1").await;
-    assert_eq!(status, StatusCode::OK);
-    assert_eq!(search_rows(&body), 0, "{body}");
-    assert!(
-        body.contains("that are still cached"),
-        "filtered-empty copy names the cached filter: {body}"
-    );
+
+    let (status, body) = get_json(&app, "/api/history?origin=all").await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let rows = items(&body);
+    let clicks: Vec<&Value> = rows.iter().filter(|r| r["kind"] == "click").collect();
+    assert_eq!(clicks.len(), 2, "{body}");
+    let matched = clicks
+        .iter()
+        .find(|r| r["query_hash"].as_str() == Some(query_hash("w2-click-join").as_str()))
+        .expect("click joining the search row");
+    assert_eq!(matched["url"], "https://example.com/w2-click");
+    assert_eq!(matched["title"], "W2 clicked title");
+    assert_eq!(matched["position"], 0);
+    let stray = clicks
+        .iter()
+        .find(|r| r["url"] == "https://tokio.rs/tutorial")
+        .expect("unmatched click is its own row");
+    assert_eq!(stray["position"], 1);
 }
 
-/// Acceptance: `since=24h` hides a row backdated in the temp DB; `since=all`
-/// brings it back.
+/// `since` windows hide backdated rows on the same filter grammar the
+/// page used (`24h`/`7d`/`30d`; `all` is the explicit no-window).
 #[tokio::test]
-async fn history_since_filter_hides_backdated_row() {
+async fn history_api_since_filter_hides_backdated_row() {
     let (app, state, _tmp) = app();
 
     state
@@ -241,148 +197,134 @@ async fn history_since_filter_hides_backdated_row() {
         .expect("backdated log row");
     search(&app, "w2-history-fresh").await;
 
-    let (status, body) = get_html(&app, "/history?origin=all&since=24h").await;
-    assert_eq!(status, StatusCode::OK);
-    assert!(body.contains("w2-history-fresh"), "{body}");
+    let (status, body) = get_json(&app, "/api/history?since=24h").await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let rows = items(&body);
     assert!(
-        !body.contains("w2-history-ancient"),
+        rows.iter().any(|r| r["query"] == "w2-history-fresh"),
+        "{body}"
+    );
+    assert!(
+        rows.iter().all(|r| r["query"] != "w2-history-ancient"),
         "backdated row must be hidden by since=24h: {body}"
     );
 
-    let (status, body) = get_html(&app, "/history?origin=all&since=all").await;
+    let (status, body) = get_json(&app, "/api/history?since=all").await;
     assert_eq!(status, StatusCode::OK);
-    assert!(body.contains("w2-history-ancient"), "{body}");
-    assert!(body.contains("w2-history-fresh"), "{body}");
+    let rows = items(&body);
+    assert!(
+        rows.iter().any(|r| r["query"] == "w2-history-ancient"),
+        "{body}"
+    );
 
-    // The other advertised windows accept their tokens too.
     for window in ["7d", "30d"] {
-        let (status, _) = get_html(&app, &format!("/history?origin=all&since={window}")).await;
+        let (status, _) = get_json(&app, &format!("/api/history?since={window}")).await;
         assert_eq!(status, StatusCode::OK, "since={window}");
     }
-    // And the API takes the same tokens (one filter grammar).
-    let (status, body) = get_json(&app, "/api/history?since=24h").await;
-    assert_eq!(status, StatusCode::OK);
-    let rows = body.as_array().unwrap();
-    assert!(
-        rows.iter().all(|r| r["query"] != "w2-history-ancient"),
-        "api since=24h must hide the backdated row: {body}"
-    );
 }
 
-/// `q` is a URL-param substring filter over the stored query.
+/// `q` is a substring filter over the stored query; a blank `q=` is no
+/// filter at all (one grammar, no params-vs-page drift).
 #[tokio::test]
-async fn history_q_filter_narrows_rows() {
+async fn history_api_q_filter_and_blank_q() {
     let (app, _state, _tmp) = app();
-    search(&app, "w2-filter-alpha").await;
-    search(&app, "w2-filter-beta").await;
+    search(&app, "w2-q-hit").await;
+    search(&app, "w2-other").await;
 
-    let (status, body) = get_html(&app, "/history?origin=all&q=alpha").await;
-    assert_eq!(status, StatusCode::OK);
-    assert!(body.contains("w2-filter-alpha"), "{body}");
-    assert!(!body.contains("w2-filter-beta"), "{body}");
-    // The filter input re-renders the active value.
-    assert!(body.contains(r#"value="alpha""#), "{body}");
+    let (status, body) = get_json(&app, "/api/history?origin=all&q=q-hit").await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let rows = items(&body);
+    assert_eq!(rows.len(), 1, "{body}");
+    assert_eq!(rows[0]["query"], "w2-q-hit");
+
+    let (status, body) = get_json(&app, "/api/history?origin=all&q=").await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(items(&body).len(), 2, "blank q= keeps every row: {body}");
 }
 
-/// History preserves the submitted casing and spacing from `query_raw`.
+/// `origin=all` is the explicit no-filter; `origin=user|agent` narrows;
+/// a bad value is a 400.
 #[tokio::test]
-async fn history_page_displays_original_query() {
-    let (app, _state, _tmp) = app();
-    let (status, _) = get_json(&app, "/api/search?q=Rust%20%20History").await;
-    assert_eq!(status, StatusCode::OK);
+async fn history_api_origin_filter() {
+    let (app, state, _tmp) = app();
+    // A user-origin row (the SPA's "mine") next to an api-origin search.
+    state
+        .store()
+        .log_search(log_row(
+            chrono::Utc::now(),
+            "w2-origin-user",
+            LogSource::Network,
+        ))
+        .await
+        .expect("user log row");
+    search(&app, "w2-origin-api").await;
 
-    let (status, body) = get_html(&app, "/history?origin=all").await;
-    assert_eq!(status, StatusCode::OK);
+    let (status, body) = get_json(&app, "/api/history?origin=user").await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let rows = items(&body);
     assert!(
-        body.contains("Rust  History"),
-        "original query text: {body}"
+        rows.iter().any(|r| r["query"] == "w2-origin-user"),
+        "{body}"
     );
     assert!(
-        body.contains(r#"href="/search?q=Rust%20%20History""#),
-        "re-run preserves the original query: {body}"
+        rows.iter().all(|r| r["query"] != "w2-origin-api"),
+        "origin=user hides the api-origin row: {body}"
     );
+
+    let (status, _) = get_json(&app, "/api/history?origin=bogus").await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "bad origin is a 400");
 }
 
-/// A click joins its search row (same `query_hash`): the clicks cell shows
-/// the count and the linked title.
+/// `cached=1` keeps only rows whose query has a live `cache_entries`
+/// row — the deleted entry drops the row off the feed.
 #[tokio::test]
-async fn history_row_joins_clicks() {
+async fn history_api_cached_filter() {
     let (app, _state, _tmp) = app();
-    search(&app, "w2-click-join").await;
+    search(&app, "w2-cached-yes").await;
+    search(&app, "w2-cached-maybe").await;
 
-    let beacon = json!({
-        "url": "https://example.com/w2-click",
-        "title": "W2 clicked title",
-        "position": 0,
-        "query_hash": query_hash("w2-click-join"),
-    });
-    let (status, _) = call(
+    let (status, body) = get_json(&app, "/api/history?origin=all&cached=1").await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(items(&body).len(), 2, "{body}");
+
+    let (status, body) = call(
         &app,
         Request::builder()
-            .method(Method::POST)
-            .uri("/api/click")
-            .header("content-type", "application/json")
-            .body(Body::from(serde_json::to_vec(&beacon).unwrap()))
+            .method(Method::DELETE)
+            .uri(format!("/api/cache/{}", query_hash("w2-cached-maybe")))
+            .body(Body::empty())
             .unwrap(),
     )
     .await;
-    assert_eq!(status, StatusCode::NO_CONTENT);
+    assert_eq!(status, StatusCode::OK, "{body}");
 
-    let (status, body) = get_html(&app, "/history?origin=all").await;
+    let (status, body) = get_json(&app, "/api/history?origin=all&cached=1").await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(
-        search_rows(&body),
-        1,
-        "click joins the search row, not a new row: {body}"
-    );
-    assert!(
-        body.contains(">1 click<"),
-        "summary singular reads `1 click`: {body}"
-    );
-    // Nested line: domain, title link (new tab), 1-based #position.
-    assert!(body.contains("example.com"), "{body}");
-    assert!(body.contains("W2 clicked title"), "{body}");
-    assert!(body.contains("https://example.com/w2-click"), "{body}");
-    assert!(body.contains(r#"target="_blank""#), "{body}");
-    assert!(body.contains("#1"), "{body}");
-    // A click nests as an open <details>, not a row of its own.
-    assert!(!body.contains("click only"), "{body}");
+    let rows = items(&body);
+    assert_eq!(rows.len(), 1, "{body}");
+    assert_eq!(rows[0]["query"], "w2-cached-yes", "{body}");
 }
 
-/// A click whose `query_hash` matches no search row renders as its own
-/// `(click only)` row with dashes in the search columns.
+/// The 200-row cap (`HISTORY_LIMIT`): 205 seeded rows return exactly 200.
 #[tokio::test]
-async fn history_unmatched_click_renders_click_only_row() {
-    let (app, _state, _tmp) = app();
-    search(&app, "w2-real-search").await;
+async fn history_api_caps_at_200_rows() {
+    let (app, state, _tmp) = app();
+    let now = chrono::Utc::now();
+    for i in 0..205 {
+        state
+            .store()
+            .log_search(log_row(
+                now - chrono::Duration::seconds(i64::from(i)),
+                &format!("w2-cap-{i}"),
+                LogSource::Network,
+            ))
+            .await
+            .expect("log_search");
+    }
 
-    let beacon = json!({
-        "url": "https://tokio.rs/tutorial",
-        "title": "Tokio tutorial",
-        "position": 1,
-        "query_hash": query_hash("w2-never-searched"),
-    });
-    let (status, _) = call(
-        &app,
-        Request::builder()
-            .method(Method::POST)
-            .uri("/api/click")
-            .header("content-type", "application/json")
-            .body(Body::from(serde_json::to_vec(&beacon).unwrap()))
-            .unwrap(),
-    )
-    .await;
-    assert_eq!(status, StatusCode::NO_CONTENT);
-
-    let (status, body) = get_html(&app, "/history?origin=all").await;
-    assert_eq!(status, StatusCode::OK);
-    assert_eq!(search_rows(&body), 1, "one search row: {body}");
-    assert!(body.contains("(click only)"), "{body}");
-    assert!(body.contains("tokio.rs"), "{body}");
-    assert!(body.contains("Tokio tutorial"), "{body}");
-    assert!(body.contains("#2"), "position is 1-based: {body}");
-    // The click row does not turn into a search row.
-    assert_eq!(body.matches("(click only)").count(), 1, "{body}");
+    let (status, body) = get_json(&app, "/api/history?origin=all").await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(items(&body).len(), 200, "{body}");
 }
 
 /// Delete is audited (`history.delete`, actor `ui` via `X-Cauce-Client`)
@@ -392,22 +334,15 @@ async fn history_delete_removes_row_clicks_and_audits() {
     let (app, state, _tmp) = app();
     search(&app, "w2-delete-me").await;
 
-    let beacon = json!({
-        "url": "https://example.com/w2-delete",
-        "position": 0,
-        "query_hash": query_hash("w2-delete-me"),
-    });
-    let (status, _) = call(
+    click(
         &app,
-        Request::builder()
-            .method(Method::POST)
-            .uri("/api/click")
-            .header("content-type", "application/json")
-            .body(Body::from(serde_json::to_vec(&beacon).unwrap()))
-            .unwrap(),
+        json!({
+            "url": "https://example.com/w2-delete",
+            "position": 0,
+            "query_hash": query_hash("w2-delete-me"),
+        }),
     )
     .await;
-    assert_eq!(status, StatusCode::NO_CONTENT);
 
     let (status, body) = get_json(&app, "/api/history?origin=all").await;
     assert_eq!(status, StatusCode::OK);
@@ -434,10 +369,7 @@ async fn history_delete_removes_row_clicks_and_audits() {
     assert_eq!(body["deleted"], true);
     assert_eq!(body["clicks_removed"], 1);
 
-    // Row and its clicks are gone from the page and the feed.
-    let (status, body) = get_html(&app, "/history?origin=all").await;
-    assert_eq!(status, StatusCode::OK);
-    assert!(!body.contains("w2-delete-me"), "{body}");
+    // The row and its clicks are gone from the feed.
     let (_, feed) = get_json(&app, "/api/history?origin=all").await;
     assert!(
         !feed
@@ -499,452 +431,4 @@ async fn history_delete_removes_row_clicks_and_audits() {
     )
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
-}
-
-/// Row affordances: re-run link, copy-json link, payload link on a cached
-/// row, htmx delete, full request id in the footer.
-#[tokio::test]
-async fn history_row_actions_and_request_id() {
-    let (app, _state, _tmp) = app();
-    search(&app, "w2-actions").await;
-
-    let (status, body) = get_html(&app, "/history?origin=all").await;
-    assert_eq!(status, StatusCode::OK);
-    assert!(
-        body.contains(r#"href="/search?q=w2-actions""#),
-        "re-run link: {body}"
-    );
-    assert!(
-        body.contains(r#"href="/api/search?q=w2-actions" class="copy-json""#),
-        "copy-json link: {body}"
-    );
-    assert!(
-        body.contains(r#"href="/cache?q=w2-actions#"#),
-        "payload link on a cached row: {body}"
-    );
-    assert!(
-        body.contains(r#"hx-delete="/api/history/"#),
-        "htmx delete: {body}"
-    );
-    assert!(
-        body.contains(r#"hx-headers='{"X-Cauce-Client":"ui"}'"#),
-        "delete sends the ui client header: {body}"
-    );
-    // A failed delete (e.g. 404 on an already-gone row) surfaces inline:
-    // htmx response-error writes `error: delete failed (<status>)` into
-    // the row's notice span.
-    assert!(
-        body.contains("hx-on::response-error"),
-        "delete wires a response-error handler: {body}"
-    );
-    assert!(
-        body.contains(r#"class="row-error""#),
-        "row carries the inline error slot: {body}"
-    );
-    // The footer carries the full request id as selectable text, never
-    // abbreviated.
-    let marker = r#"class="request-id">"#;
-    let pos = body
-        .find(marker)
-        .unwrap_or_else(|| panic!("request id element missing: {body}"))
-        + marker.len();
-    let id = &body[pos..pos + 36];
-    assert!(
-        id.chars().all(|c| c.is_ascii_hexdigit() || c == '-') && id.matches('-').count() == 4,
-        "full request id in the footer, got {id:?}: {body}"
-    );
-    assert!(
-        !body.contains(r#"title=""#),
-        "no abbreviated id with a title tooltip: {body}"
-    );
-}
-
-/// Empty state: a fresh store renders the one-sentence empty line; a
-/// filter that matches nothing renders the filtered-empty sentence naming
-/// the active filter.
-#[tokio::test]
-async fn history_page_empty_state() {
-    let (app, _state, _tmp) = app();
-    let (status, body) = get_html(&app, "/history?origin=all").await;
-    assert_eq!(status, StatusCode::OK);
-    assert!(
-        body.contains("nothing searched yet. run a search and it lands here."),
-        "{body}"
-    );
-
-    search(&app, "w2-empty-check").await;
-    let (status, body) = get_html(&app, "/history?origin=all&q=no-such-query").await;
-    assert_eq!(status, StatusCode::OK);
-    // Askama escapes the quotes around the query text.
-    assert!(
-        body.contains("no searches match") && body.contains("no-such-query"),
-        "filtered-empty names the active q filter: {body}"
-    );
-    // `clear` is offered while a filter is active. `origin=all` also
-    // counts as active (#254) — it deviates from the page's default
-    // `origin=user` filter.
-    assert!(body.contains(">clear<"), "{body}");
-    let (_, body) = get_html(&app, "/history?origin=all").await;
-    assert!(body.contains(">clear<"), "{body}");
-    let (_, body) = get_html(&app, "/history").await;
-    assert!(!body.contains(">clear<"), "{body}");
-}
-
-/// `Accept: application/json` on `/history` is the same data path as
-/// `/api/history` — and `Accept: text/html` on `/api/history` renders the
-/// page: one handler, negotiated (W2-02 settled input).
-#[tokio::test]
-async fn history_page_json_negotiation() {
-    let (app, _state, _tmp) = app();
-    search(&app, "w2-json-neg").await;
-
-    let (status, body) = get_json(&app, "/history?origin=all").await;
-    assert_eq!(status, StatusCode::OK);
-    let rows = body.as_array().expect("json array");
-    assert_eq!(rows.len(), 1);
-    assert_eq!(rows[0]["kind"], "search");
-    assert_eq!(rows[0]["query"], "w2-json-neg");
-
-    let (status, body) = get_html(&app, "/api/history?origin=all").await;
-    assert_eq!(status, StatusCode::OK);
-    assert!(
-        body.contains(r#"<table class="history">"#),
-        "/api/history under text/html renders the page: {body}"
-    );
-    assert_eq!(search_rows(&body), 1);
-}
-
-/// HTML rows equal the JSON rows for the same params (rubric 9.2: same
-/// params, same defaults, same row set).
-#[tokio::test]
-async fn history_page_html_rows_match_json_rows() {
-    let (app, _state, _tmp) = app();
-    search(&app, "w2-parity-a").await;
-    search(&app, "w2-parity-b").await;
-    let beacon = json!({
-        "url": "https://parity.example.com/x",
-        "title": "parity click",
-        "position": 0,
-        "query_hash": query_hash("w2-parity-a"),
-    });
-    let (status, _) = call(
-        &app,
-        Request::builder()
-            .method(Method::POST)
-            .uri("/api/click")
-            .header("content-type", "application/json")
-            .body(Body::from(serde_json::to_vec(&beacon).unwrap()))
-            .unwrap(),
-    )
-    .await;
-    assert_eq!(status, StatusCode::NO_CONTENT);
-
-    for (uri, api_uri) in [
-        ("/history?origin=all", "/api/history?origin=all"),
-        (
-            "/api/history?since=24h&origin=all",
-            "/api/history?since=24h&origin=all",
-        ),
-    ] {
-        let (status, feed) = get_json(&app, api_uri).await;
-        assert_eq!(status, StatusCode::OK);
-        let feed = feed.as_array().unwrap();
-        let searches = feed.iter().filter(|i| i["kind"] == "search").count();
-
-        let (status, body) = get_html(&app, uri).await;
-        assert_eq!(status, StatusCode::OK);
-        assert_eq!(
-            search_rows(&body),
-            searches,
-            "HTML row count == JSON search count for {uri}"
-        );
-        for item in feed {
-            if item["kind"] == "search" {
-                let q = item["query"].as_str().unwrap();
-                assert!(body.contains(q), "{uri}: row for {q} missing");
-            }
-        }
-    }
-}
-
-/// Header stats line: `N searches in last 24h · N total · N clicks today`.
-#[tokio::test]
-async fn history_stats_line_counts_searches_and_clicks() {
-    let (app, _state, _tmp) = app();
-    search(&app, "w2-stats-a").await;
-    search(&app, "w2-stats-b").await;
-    let beacon = json!({
-        "url": "https://stats.example.com/x",
-        "position": 0,
-        "query_hash": query_hash("w2-stats-a"),
-    });
-    let (status, _) = call(
-        &app,
-        Request::builder()
-            .method(Method::POST)
-            .uri("/api/click")
-            .header("content-type", "application/json")
-            .body(Body::from(serde_json::to_vec(&beacon).unwrap()))
-            .unwrap(),
-    )
-    .await;
-    assert_eq!(status, StatusCode::NO_CONTENT);
-
-    let (status, body) = get_html(&app, "/history?origin=all").await;
-    assert_eq!(status, StatusCode::OK);
-    assert!(
-        body.contains("2 searches in last 24h · 2 total · 1 clicks today"),
-        "stats line: {body}"
-    );
-}
-
-/// Exactly 200 available rows are not reported as truncated.
-#[tokio::test]
-async fn history_page_exactly_200_rows_is_not_marked_capped() {
-    let (app, state, _tmp) = app();
-    let now = chrono::Utc::now();
-    for i in 0..200 {
-        state
-            .store()
-            .log_search(log_row(
-                now - chrono::Duration::seconds(i64::from(i)),
-                &format!("w2-exact-cap-{i}"),
-                LogSource::Network,
-            ))
-            .await
-            .expect("log_search");
-    }
-
-    let (status, body) = get_html(&app, "/history?origin=all").await;
-    assert_eq!(status, StatusCode::OK);
-    assert_eq!(search_rows(&body), 200);
-    assert!(
-        !body.contains("use the filters to reach older searches"),
-        "exactly 200 rows are not truncated: {body}"
-    );
-}
-
-/// The 200-row cap: more rows in the feed still render exactly 200.
-#[tokio::test]
-async fn history_page_caps_at_200_rows() {
-    let (app, state, _tmp) = app();
-    let now = chrono::Utc::now();
-    for i in 0..205 {
-        state
-            .store()
-            .log_search(log_row(
-                now - chrono::Duration::seconds(i64::from(i)),
-                &format!("w2-cap-{i}"),
-                LogSource::Network,
-            ))
-            .await
-            .expect("log_search");
-    }
-
-    let (status, body) = get_html(&app, "/history?origin=all").await;
-    assert_eq!(status, StatusCode::OK);
-    assert_eq!(search_rows(&body), 200, "page caps at 200 rows: {body}");
-    assert!(
-        body.contains("showing 200 of 205 · use the filters to reach older searches"),
-        "the cap note renders when the feed is truncated: {body}"
-    );
-}
-
-/// Blank `q=` is no filter: JSON and HTML agree, the page shows the
-/// fresh-store empty copy and offers no `clear`.
-#[tokio::test]
-async fn history_blank_q_is_no_filter() {
-    let (app, _state, _tmp) = app();
-
-    let (status, body) = get_html(&app, "/history?since=all&q=").await;
-    assert_eq!(status, StatusCode::OK);
-    assert!(
-        body.contains("nothing searched yet"),
-        "blank q renders the unfiltered empty state: {body}"
-    );
-    assert!(
-        !body.contains(">clear<"),
-        "no clear link when no filter is active: {body}"
-    );
-
-    search(&app, "w2-blank-q").await;
-    let (status, feed) = get_json(&app, "/api/history?q=%20").await;
-    assert_eq!(status, StatusCode::OK);
-    let feed = feed.as_array().unwrap();
-    assert_eq!(
-        feed.iter().filter(|i| i["kind"] == "search").count(),
-        1,
-        "whitespace q must not filter rows: {feed:?}"
-    );
-}
-
-/// A click whose `search_log` row fell outside the rendered window (here:
-/// filtered out by `q`, which keeps clicks) must NOT render as
-/// `(click only)` — it is dropped. A click with no `search_log` row at
-/// all still renders `(click only)`.
-#[tokio::test]
-async fn history_off_window_click_is_not_click_only() {
-    let (app, _state, _tmp) = app();
-    search(&app, "w2-offwin").await;
-
-    // Click attached to an existing (but filtered-out) search.
-    let click = json!({
-        "query_hash": query_hash("w2-offwin"),
-        "url": "https://offwin.example.com/picked",
-        "title": "off-window click",
-        "position": 0
-    });
-    let (status, _) = call(
-        &app,
-        Request::builder()
-            .method(Method::POST)
-            .uri("/api/click")
-            .header("content-type", "application/json")
-            .body(Body::from(click.to_string()))
-            .unwrap(),
-    )
-    .await;
-    assert_eq!(status, StatusCode::NO_CONTENT);
-
-    // Orphan click: no search_log row anywhere for this hash.
-    let orphan = json!({
-        "query_hash": query_hash("w2-never-searched"),
-        "url": "https://orphan.example.com/picked",
-        "title": "true orphan click",
-        "position": 1
-    });
-    let (status, _) = call(
-        &app,
-        Request::builder()
-            .method(Method::POST)
-            .uri("/api/click")
-            .header("content-type", "application/json")
-            .body(Body::from(orphan.to_string()))
-            .unwrap(),
-    )
-    .await;
-    assert_eq!(status, StatusCode::NO_CONTENT);
-
-    // `q` filters searches only; both clicks remain in the feed.
-    let (status, body) = get_html(&app, "/history?origin=all&since=all&q=no-such-query").await;
-    assert_eq!(status, StatusCode::OK);
-    assert!(
-        !body.contains("offwin.example.com"),
-        "click whose search exists off-window is dropped: {body}"
-    );
-    assert!(
-        body.contains("orphan.example.com"),
-        "true orphan click still renders: {body}"
-    );
-    assert_eq!(
-        body.matches("(click only)").count(),
-        1,
-        "only the true orphan renders click-only: {body}"
-    );
-}
-
-/// `cached · expired`: an entry past its `expires_at` still present in the
-/// store renders the expired state — no link, no `payload` action.
-#[tokio::test]
-async fn history_source_renders_expired_cache() {
-    let (app, state, _tmp) = app();
-
-    // Seed a real entry through the pipeline, then overwrite it with a
-    // zero-TTL write so `expires_at` is already past at render time.
-    search(&app, "w2-expired").await;
-    let (status, resp) = get_json(&app, "/api/search?q=w2-expired").await;
-    assert_eq!(status, StatusCode::OK);
-    let resp: cauce_core::SearchResponse = serde_json::from_value(resp).unwrap();
-    state
-        .store()
-        .put(
-            &CacheKey::from(&SearchRequest {
-                q: "w2-expired".to_string(),
-                page: 1,
-                lang: None,
-                time_range: None,
-                safesearch: SafeSearch::default(),
-                engines: None,
-                client: ClientKind::Api,
-                origin: cauce_core::SearchOrigin::User,
-            }),
-            &resp,
-            std::time::Duration::ZERO,
-        )
-        .await
-        .expect("put expired entry");
-
-    let (status, body) = get_html(&app, "/history?origin=all").await;
-    assert_eq!(status, StatusCode::OK);
-    assert!(
-        body.contains("cached · expired"),
-        "expired entry renders `cached · expired`: {body}"
-    );
-    assert!(
-        !body.contains(">payload<"),
-        "no payload action for an expired source: {body}"
-    );
-}
-
-/// Day-group headers: rows on different local days get a `<tr class="day">`
-/// header each, newest day first.
-#[tokio::test]
-async fn history_day_headers_group_rows() {
-    let (app, state, _tmp) = app();
-    let now = chrono::Utc::now();
-    let old_day = now - chrono::Duration::days(3);
-    state
-        .store()
-        .log_search(log_row(now, "w2-day-new", LogSource::Network))
-        .await
-        .expect("log today");
-    state
-        .store()
-        .log_search(log_row(old_day, "w2-day-old", LogSource::Network))
-        .await
-        .expect("log old");
-
-    let (status, body) = get_html(&app, "/history?origin=all&since=all").await;
-    assert_eq!(status, StatusCode::OK);
-    assert_eq!(
-        body.matches(r#"<tr class="day">"#).count(),
-        2,
-        "one day header per local day: {body}"
-    );
-    let old_label = old_day
-        .with_timezone(&chrono::Local)
-        .format("%Y-%m-%d")
-        .to_string();
-    assert!(body.contains(&old_label), "old day header: {body}");
-}
-
-/// `since` accepts only `24h|7d|30d|all` (plus absolute forms); an unknown
-/// token is a 400 with the API error envelope, and the select re-renders
-/// the three window options selected correctly.
-#[tokio::test]
-async fn history_since_validation_and_select_state() {
-    let (app, _state, _tmp) = app();
-
-    let (status, body) = get_json(&app, "/api/history?since=bogus").await;
-    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
-    assert_eq!(body["error"]["code"], "bad_request", "{body}");
-    assert!(
-        body["error"]["request_id"].as_str().is_some(),
-        "envelope request_id: {body}"
-    );
-
-    for window in ["24h", "7d", "30d"] {
-        let (status, body) = get_html(&app, &format!("/history?origin=all&since={window}")).await;
-        assert_eq!(status, StatusCode::OK, "since={window}");
-        assert!(
-            body.contains(&format!(r#"value="{window}" selected"#)),
-            "since={window} re-renders selected: {body}"
-        );
-        for other in ["24h", "7d", "30d"].iter().filter(|w| **w != window) {
-            assert!(
-                !body.contains(&format!(r#"value="{other}" selected"#)),
-                "since={window} must not mark {other}: {body}"
-            );
-        }
-    }
 }

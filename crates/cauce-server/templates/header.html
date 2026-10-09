@@ -12,17 +12,17 @@
   <nav class="nav-primary" aria-label="{{ crate::i18n::tr("common.nav_primary_label") }}">
     <a href="/"{% if nav_active == "search" %} aria-current="page"{% endif %}>{{ crate::i18n::tr("common.nav_search") }}</a>
     {% if answer_available %}<a href="/answer"{% if nav_active == "answer" %} aria-current="page"{% endif %}>{{ crate::i18n::tr("common.nav_answer") }}</a>{% endif %}
-    <a href="/history"{% if nav_active == "history" %} aria-current="page"{% endif %}>{{ crate::i18n::tr("common.nav_history") }}</a>
-    <a href="/dashboard"{% if nav_active == "dashboard" %} aria-current="page"{% endif %}>{{ crate::i18n::tr("common.nav_dashboard") }}</a>
-    <a href="/archive"{% if nav_active == "archive" %} aria-current="page"{% endif %}>{{ crate::i18n::tr("common.nav_archive") }}</a>
+    <a href="/app/history"{% if nav_active == "history" %} aria-current="page"{% endif %}>{{ crate::i18n::tr("common.nav_history") }}</a>
+    <a href="/app/dashboard"{% if nav_active == "dashboard" %} aria-current="page"{% endif %}>{{ crate::i18n::tr("common.nav_dashboard") }}</a>
+    <a href="/app/archive"{% if nav_active == "archive" %} aria-current="page"{% endif %}>{{ crate::i18n::tr("common.nav_archive") }}</a>
   </nav>
   <div class="nav-right">
     <nav class="nav-operator" aria-label="{{ crate::i18n::tr("common.nav_operator_label") }}">
-      <a href="/engines"{% if nav_active == "engines" %} aria-current="page"{% endif %}>{{ crate::i18n::tr("common.nav_engines") }}</a>
-      <a href="/cache"{% if nav_active == "cache" %} aria-current="page"{% endif %}>{{ crate::i18n::tr("common.nav_cache") }}</a>
-      <a href="/audit"{% if nav_active == "audit" %} aria-current="page"{% endif %}>{{ crate::i18n::tr("common.nav_audit") }}</a>
+      <a href="/app/admin?tab=engines"{% if nav_active == "engines" %} aria-current="page"{% endif %}>{{ crate::i18n::tr("common.nav_engines") }}</a>
+      <a href="/app/admin?tab=cache"{% if nav_active == "cache" %} aria-current="page"{% endif %}>{{ crate::i18n::tr("common.nav_cache") }}</a>
+      <a href="/app/admin?tab=audit"{% if nav_active == "audit" %} aria-current="page"{% endif %}>{{ crate::i18n::tr("common.nav_audit") }}</a>
     </nav>
-    <a href="/settings"{% if nav_active == "settings" %} aria-current="page"{% endif %}>{{ crate::i18n::tr("common.nav_settings") }}</a>
+    <a href="/app/settings"{% if nav_active == "settings" %} aria-current="page"{% endif %}>{{ crate::i18n::tr("common.nav_settings") }}</a>
     <span class="nav-version">{{ crate::html::VERSION_LABEL }}</span>
     <button type="button" id="theme-toggle"
       data-label-system="{{ crate::i18n::tr("common.theme_system") }}"
@@ -34,9 +34,9 @@
     <details class="nav-more">
       <summary>{{ crate::i18n::tr("common.nav_more") }}</summary>
       <nav class="nav-more-links" aria-label="{{ crate::i18n::tr("common.nav_operator_label") }}">
-        <a href="/engines"{% if nav_active == "engines" %} aria-current="page"{% endif %}>{{ crate::i18n::tr("common.nav_engines") }}</a>
-        <a href="/cache"{% if nav_active == "cache" %} aria-current="page"{% endif %}>{{ crate::i18n::tr("common.nav_cache") }}</a>
-        <a href="/audit"{% if nav_active == "audit" %} aria-current="page"{% endif %}>{{ crate::i18n::tr("common.nav_audit") }}</a>
+        <a href="/app/admin?tab=engines"{% if nav_active == "engines" %} aria-current="page"{% endif %}>{{ crate::i18n::tr("common.nav_engines") }}</a>
+        <a href="/app/admin?tab=cache"{% if nav_active == "cache" %} aria-current="page"{% endif %}>{{ crate::i18n::tr("common.nav_cache") }}</a>
+        <a href="/app/admin?tab=audit"{% if nav_active == "audit" %} aria-current="page"{% endif %}>{{ crate::i18n::tr("common.nav_audit") }}</a>
       </nav>
     </details>
   </div>

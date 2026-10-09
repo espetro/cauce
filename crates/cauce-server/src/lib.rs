@@ -11,12 +11,6 @@ rust_i18n::i18n!("locales", fallback = "en");
 mod app;
 #[cfg(feature = "ui")]
 mod audit_page;
-#[cfg(feature = "ui")]
-mod cache_page;
-#[cfg(feature = "ui")]
-mod dashboard;
-#[cfg(feature = "ui")]
-mod engines_page;
 
 mod error;
 mod handlers;

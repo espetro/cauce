@@ -37,6 +37,9 @@ pub async fn cache_list(
 /// exists; parsing, filter semantics, limits, and store selection remain
 /// authoritative here for both surfaces.
 #[derive(Debug, Clone, TS)]
+/// `limit`/`offset`/`query` ride the HTMX pager shape (kept for the
+/// `CacheListing` wire export); the JSON arm serializes `entries` only.
+#[allow(dead_code)]
 pub struct CacheListing {
     pub(crate) entries: Vec<cauce_core::CachedSearch>,
     pub(crate) limit: u32,
@@ -110,24 +113,14 @@ pub async fn cache_get(
 ) -> Result<Response, ApiError> {
     match cache_get_entry(&state, &ctx, &headers, &key).await {
         Ok(resp) => Ok(resp),
-        Err(e) => {
-            #[cfg(feature = "ui")]
-            if crate::cache_page::accepts_html(&headers) {
-                return Ok(crate::cache_page::payload_error(
-                    e.status(),
-                    crate::cache_page::is_htmx(&headers),
-                ));
-            }
-            Err(e)
-        }
+        Err(e) => Err(e),
     }
 }
 
-#[cfg_attr(not(feature = "ui"), allow(unused_variables))]
 async fn cache_get_entry(
     state: &AppState,
     ctx: &RequestCtx,
-    headers: &HeaderMap,
+    _headers: &HeaderMap,
     key: &str,
 ) -> Result<Response, ApiError> {
     let key = cache_key(ctx, key)?;
@@ -137,14 +130,7 @@ async fn cache_get_entry(
         .await
         .map_err(|e| ctx.store(&e))?
     {
-        Some(entry) => {
-            #[cfg(feature = "ui")]
-            if crate::cache_page::accepts_html(headers) {
-                return crate::cache_page::payload(&entry, ctx.request_id.as_uuid())
-                    .map(IntoResponse::into_response);
-            }
-            Ok(Json(entry).into_response())
-        }
+        Some(entry) => Ok(Json(entry).into_response()),
         None => Err(ctx.not_found(format!("no cache entry for key {key}"))),
     }
 }

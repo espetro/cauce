@@ -1,7 +1,8 @@
-//! `/audit` and `/trace/{id}` page tests (W2-06).
+//! `/api/audit` filter/listing tests and the `/trace/{id}` page (W2-06;
+//! the `/audit` page moved to `/app/admin?tab=audit` in FX-05).
 //!
 //! Acceptance: a cache delete made the way W2-04's page makes it
-//! (`DELETE /api/cache/{key}` with `X-Cauce-Client: ui`) shows on `/audit`
+//! (`DELETE /api/cache/{key}` with `X-Cauce-Client: ui`) shows on `/api/audit`
 //! with actor `ui`; `/trace/<id>` of a replay search lists the engine span
 //! (rendered through the same `trace_request`/`render_trace` pair as
 //! `cauce trace`).
@@ -84,10 +85,11 @@ async fn ui_cache_delete(router: &Router, q: &str) -> String {
 }
 
 /// W2-06 acceptance, first half: a cache delete written by the UI surface
-/// appears on `/audit` with actor `ui`, newest first, with expandable
-/// details and a `/trace/<id>` link on its request id.
+/// lands on `/api/audit` with actor `ui`, newest first, carrying the
+/// request id the audit tab links to `/trace/<id>` (the `/audit` page
+/// itself moved to `/app/admin?tab=audit` in FX-05).
 #[tokio::test]
-async fn audit_page_lists_ui_cache_delete() {
+async fn audit_api_lists_ui_cache_delete() {
     let (app, _state, _tmp) = app();
     ui_cache_delete(&app, "audit-seed").await;
 
@@ -101,88 +103,85 @@ async fn audit_page_lists_ui_cache_delete() {
     let resp = app.clone().oneshot(request).await.expect("response");
     assert_eq!(resp.status(), StatusCode::OK);
 
-    let (status, body) = get_html(&app, "/audit").await;
+    let (status, body) = get_json(&app, "/api/audit").await;
     assert_eq!(status, StatusCode::OK, "{body}");
-    // Action cells render `<code>…</code>`; a bare `contains("cache.delete")`
-    // would match the filter form's placeholder text.
+    let rows = body.as_array().expect("audit rows");
+    let actions: Vec<&str> = rows.iter().filter_map(|r| r["action"].as_str()).collect();
     assert!(
-        body.contains("<code>cache.delete</code>"),
-        "delete row missing: {body}"
-    );
-    assert!(
-        body.contains("<td class=\"c-actor\">ui</td>"),
-        "actor ui missing: {body}"
-    );
-    assert!(
-        body.contains("<code>engine.reset</code>"),
+        actions.contains(&"engine.reset"),
         "reset row missing: {body}"
     );
     assert!(
-        body.find("<code>engine.reset</code>") < body.find("<code>cache.delete</code>"),
+        actions.contains(&"cache.delete"),
+        "delete row missing: {body}"
+    );
+    assert!(
+        actions.iter().position(|a| *a == "engine.reset")
+            < actions.iter().position(|a| *a == "cache.delete"),
         "rows should be newest first:\n{body}"
     );
+    let delete = rows
+        .iter()
+        .find(|r| r["action"].as_str() == Some("cache.delete"))
+        .expect("delete row");
+    assert_eq!(delete["actor"].as_str(), Some("ui"));
     assert!(
-        body.contains("<details><summary>"),
-        "details should be expandable: {body}"
+        delete["request_id"]
+            .as_str()
+            .map(|s| !s.is_empty())
+            .unwrap_or(false),
+        "request id the tab links to /trace/<id>: {body}"
     );
+    let reset = rows
+        .iter()
+        .find(|r| r["action"].as_str() == Some("engine.reset"))
+        .expect("reset row");
     assert!(
-        body.contains("href=\"/trace/"),
-        "request_id should link to /trace/<id>: {body}"
-    );
-    // Every page shows the request id of the data it rendered.
-    assert!(
-        body.contains("class=\"request-id\""),
-        "footer request id missing: {body}"
+        reset["details"].is_object() && !reset["details"].as_object().unwrap().is_empty(),
+        "reset details carry the engine id: {body}"
     );
 }
 
-/// `actor` and `action` URL params filter the listing; a filter that
-/// matches nothing renders the filtered empty state, not an error.
+/// `actor` and `action` URL params filter the JSON listing; a filter
+/// that matches nothing answers an empty array, not an error.
 #[tokio::test]
-async fn audit_page_filters_by_actor_and_action() {
+async fn audit_api_filters_by_actor_and_action() {
     let (app, _state, _tmp) = app();
     ui_cache_delete(&app, "audit-filter-seed").await;
 
-    let (status, body) = get_html(&app, "/audit?actor=ui").await;
+    let (status, body) = get_json(&app, "/api/audit?actor=ui").await;
     assert_eq!(status, StatusCode::OK);
-    assert!(body.contains("<code>cache.delete</code>"), "{body}");
-
-    let (status, body) = get_html(&app, "/audit?actor=cli").await;
-    assert_eq!(status, StatusCode::OK);
+    let rows = body.as_array().unwrap();
     assert!(
-        !body.contains("<code>cache.delete</code>"),
-        "cli filter should hide the ui row: {body}"
-    );
-    assert!(
-        body.contains("no audit rows match actor &#34;cli&#34;"),
-        "filtered empty state should name the active filter: {body}"
+        rows.iter()
+            .any(|r| r["action"].as_str() == Some("cache.delete")),
+        "{body}"
     );
 
-    let (status, body) = get_html(&app, "/audit?action=cache.delete").await;
+    let (status, body) = get_json(&app, "/api/audit?actor=cli").await;
     assert_eq!(status, StatusCode::OK);
-    assert!(body.contains("<code>cache.delete</code>"), "{body}");
-    // `cache.delete` writes `{}` details: an empty object must omit the
-    // toggle the same way `null` does. The assertion is the row's
-    // adjacent `<details><summary>` pair: a bare `<summary` also matches
-    // the header's `more` menu (W2-08), and `<details` the stylesheet's
-    // comment.
-    assert!(
-        !body.contains("<details><summary>"),
-        "empty-object details must omit the toggle: {body}"
-    );
+    assert_eq!(body.as_array().unwrap().len(), 0, "{body}");
 
-    let (status, body) = get_html(&app, "/audit?action=config.put").await;
+    let (status, body) = get_json(&app, "/api/audit?action=cache.delete").await;
     assert_eq!(status, StatusCode::OK);
-    assert!(!body.contains("<code>cache.delete</code>"), "{body}");
+    let rows = body.as_array().unwrap();
+    assert_eq!(rows.len(), 1, "{body}");
+    // `cache.delete` writes `{}` details — the wire keeps the empty
+    // object; the SPA's toggle check treats it like `null`.
+    assert_eq!(rows[0]["details"], serde_json::json!({}), "{body}");
 
-    // Unknown params are 400s, same as the JSON surface.
-    let (status, _) = get_html(&app, "/audit?bogus=1").await;
+    let (status, body) = get_json(&app, "/api/audit?action=config.put").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body.as_array().unwrap().len(), 0, "{body}");
+
+    // Unknown params are 400s.
+    let (status, _) = get_json(&app, "/api/audit?bogus=1").await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
 }
 
-/// The HTML and JSON surfaces share default limits and empty-filter handling.
+/// The listing's default limit is 50 rows.
 #[tokio::test]
-async fn audit_page_shares_api_defaults_and_empty_filters() {
+async fn audit_api_default_limit_and_empty_filters() {
     let (app, state, _tmp) = app();
     for index in 0..55 {
         state
@@ -204,79 +203,9 @@ async fn audit_page_shares_api_defaults_and_empty_filters() {
     assert_eq!(status, StatusCode::OK);
     let api_rows = api_body.as_array().expect("audit rows");
     assert_eq!(api_rows.len(), 50, "API default limit changed: {api_body}");
-
-    let (status, body) = get_html(&app, "/audit?actor=&action=").await;
-    assert_eq!(status, StatusCode::OK, "{body}");
     assert!(
-        body.contains("50 rows"),
-        "HTML must use the API default limit and treat empty filters equally: {body}"
-    );
-    // The listing is exactly at the limit: the cap note must show.
-    assert!(
-        body.contains("showing the newest 50"),
-        "cap note missing: {body}"
-    );
-    // All 50 seeded rows have null details: no details toggle may render.
-    // (Adjacent pair — see the note above about the header's `more` menu.)
-    assert!(
-        !body.contains("<details><summary>"),
-        "null details must omit the toggle: {body}"
-    );
-}
-
-/// `Accept: application/json` on `/audit` delegates to the `/api/audit`
-/// handler — one data path for page and API.
-#[tokio::test]
-async fn audit_page_negotiates_json() {
-    let (app, _state, _tmp) = app();
-    ui_cache_delete(&app, "audit-json-seed").await;
-
-    let (status, body) = get_json(&app, "/audit").await;
-    assert_eq!(status, StatusCode::OK, "{body}");
-    let rows = body.as_array().expect("audit rows");
-    assert_eq!(rows.len(), 1, "{body}");
-    assert_eq!(rows[0]["action"], "cache.delete");
-    assert_eq!(rows[0]["actor"], "ui");
-}
-
-/// The filter `<select>`s are populated from the distinct actors/actions
-/// the store has seen (`Store::audit_facets`), each with an `any` default.
-#[tokio::test]
-async fn audit_page_selects_populate_from_facets() {
-    let (app, _state, _tmp) = app();
-    ui_cache_delete(&app, "audit-facets-seed").await;
-
-    let (status, body) = get_html(&app, "/audit").await;
-    assert_eq!(status, StatusCode::OK, "{body}");
-    assert!(body.contains("<select name=\"actor\""), "{body}");
-    assert!(body.contains("<select name=\"action\""), "{body}");
-    assert!(
-        body.contains("<option value=\"ui\""),
-        "actor option missing: {body}"
-    );
-    assert!(
-        body.contains("<option value=\"cache.delete\""),
-        "action option missing: {body}"
-    );
-}
-
-/// Filtered listings say `1 row matching` / `N rows matching` and the
-/// filtered-empty copy names every active filter.
-#[tokio::test]
-async fn audit_page_filtered_count_and_empty_copy() {
-    let (app, _state, _tmp) = app();
-    ui_cache_delete(&app, "audit-count-seed").await;
-
-    let (status, body) = get_html(&app, "/audit?actor=ui").await;
-    assert_eq!(status, StatusCode::OK, "{body}");
-    assert!(body.contains("1 row matching"), "{body}");
-
-    let (status, body) = get_html(&app, "/audit?actor=ui&action=config.put").await;
-    assert_eq!(status, StatusCode::OK, "{body}");
-    assert!(body.contains("0 rows matching"), "{body}");
-    assert!(
-        body.contains("no audit rows match actor &#34;ui&#34; and action &#34;config.put&#34;"),
-        "filtered empty must name both filters: {body}"
+        api_rows.iter().all(|r| r["details"].is_null()),
+        "null details stay null on the wire: {api_body}"
     );
 }
 

@@ -1,6 +1,5 @@
 //! `GET /api/archive` (W5-02): the archived-page browsing + `pages_fts`
-//! search surface. `Accept: text/html` renders the `/archive` page through
-//! the same data path (the W2-02 one-data-path convention).
+//! search surface — pure JSON since FX-05 ported `/archive` into the SPA.
 //!
 //! This Source Code Form is subject to the terms of the Mozilla Public
 //! License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -8,7 +7,7 @@
 
 use axum::Extension;
 use axum::extract::State;
-use axum::http::{HeaderMap, Uri};
+use axum::http::Uri;
 use axum::response::{IntoResponse, Json, Response};
 use cauce_core::PageHit;
 use serde::Serialize;
@@ -21,8 +20,8 @@ use crate::app::AppState;
 use crate::error::ApiError;
 use crate::middleware::RequestCtx;
 
-/// `GET /api/archive` default page size (the `/archive` page's row
-/// budget; `HISTORY_LIMIT`'s role here).
+/// `GET /api/archive` default page size (the SPA `/archive` listing's
+/// row budget; `HISTORY_LIMIT`'s role here).
 pub(crate) const ARCHIVE_LIMIT: u32 = 50;
 
 /// One archive row on the JSON wire: a `PageHit` with its snippet's
@@ -70,9 +69,9 @@ impl From<&PageHit> for ArchiveRow {
     }
 }
 
-/// The shared archive query result for the JSON route and the HTMX page:
-/// the parsed request (`query` is `None` for the browsing arm), the hits,
-/// and the `limit`+1 peek the page turns into a pager.
+/// The shared archive query result for the JSON route: the parsed
+/// request (`query` is `None` for the browsing arm), the hits, and the
+/// `limit`+1 peek the caller turns into a pager.
 #[derive(Debug)]
 pub(crate) struct ArchiveData {
     /// The `?q=` text as typed (only on the search arm).
@@ -89,28 +88,20 @@ pub(crate) struct ArchiveData {
 
 /// `GET /api/archive?q&limit&offset` (W5-02): with `q`, `pages_fts` hits
 /// in bm25 rank order; without it, the newest `pages` rows first — the
-/// W5-02 listing surface this route declares in ROUTES. `Accept:
-/// text/html` renders `/archive` through the same data path.
+/// W5-02 listing surface this route declares in ROUTES.
 pub async fn archive_search(
     State(state): State<AppState>,
     Extension(ctx): Extension<RequestCtx>,
     uri: Uri,
-    headers: HeaderMap,
 ) -> Result<Response, ApiError> {
-    #[cfg(feature = "ui")]
-    if crate::html::prefers_html(&headers) {
-        return crate::html::archive_page(State(state), Extension(ctx), uri).await;
-    }
-    #[cfg(not(feature = "ui"))]
-    let _ = &headers;
     archive_inner(&state, &ctx, &uri)
         .await
         .map(|data| Json(archive_response(&ctx, &data)).into_response())
 }
 
-/// One data path for `GET /api/archive` and the `/archive` page. The
-/// store sees `limit + 1` on the browsing arm so the page knows whether a
-/// next page exists (the `cache_list_data` peek pattern).
+/// The `GET /api/archive` data path. The store sees `limit + 1` on the
+/// browsing arm so the response knows whether a next page exists (the
+/// `cache_list_data` peek pattern).
 pub(crate) async fn archive_inner(
     state: &AppState,
     ctx: &RequestCtx,
