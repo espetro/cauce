@@ -4,14 +4,19 @@
   file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
   `/app/admin?tab=audit` — one-for-one with `templates/audit.html`:
-  actor/action facet selects, count + cap note, the `.audit-table`
-  (target + actor columns collapse under 700px; the action cell
-  re-prefixes `actor ·` at narrow widths), `details` JSON cells, and
-  `request_id` links to the still-HTMX `/trace/{id}` page.
+  actor/action facet selects (UiSelect, "" stays the `any` sentinel),
+  count + cap note, the `.audit-table` (target + actor columns collapse
+  under 700px; the action cell re-prefixes `actor ·` at narrow widths),
+  per-row UiCollapsible JSON cells, and `request_id` links to the
+  still-HTMX `/trace/{id}` page.
 -->
 <script lang="ts">
+  import { CaretRightIcon } from "phosphor-svelte";
   import { navigate } from "../../app/router.svelte.js";
-  import { fmt, spa } from "../../lib/i18n.js";
+  import { spa } from "../../lib/i18n.js";
+  import UiButton from "../../ui/button.svelte";
+  import UiCollapsible from "../../ui/collapsible.svelte";
+  import UiSelect from "../../ui/select.svelte";
   import type { createAuditTab } from "./audit.svelte.js";
 
   interface AuditTabProps {
@@ -21,6 +26,15 @@
   let { tab }: AuditTabProps = $props();
   const a = spa.audit;
   const s = $derived(tab.state);
+
+  const actorOptions = $derived([
+    { value: "", label: a.any },
+    ...s.actorOptions.map((o) => ({ value: o, label: o })),
+  ]);
+  const actionOptions = $derived([
+    { value: "", label: a.any },
+    ...s.actionOptions.map((o) => ({ value: o, label: o })),
+  ]);
 </script>
 
 <form
@@ -30,19 +44,21 @@
     tab.submit(navigate);
   }}
 >
-  <select name="actor" aria-label={a.actor_label} bind:value={s.actor}>
-    <option value="">{a.any}</option>
-    {#each s.actorOptions as o}<option value={o} selected={o === s.actor}
-        >{o}</option
-      >{/each}
-  </select>
-  <select name="action" aria-label={a.action_label} bind:value={s.action}>
-    <option value="">{a.any}</option>
-    {#each s.actionOptions as o}<option value={o} selected={o === s.action}
-        >{o}</option
-      >{/each}
-  </select>
-  <button type="submit">{a.filter}</button>
+  <UiSelect
+    name="actor"
+    ariaLabel={a.actor_label}
+    value={s.actor}
+    onValueChange={(v) => (s.actor = v)}
+    options={actorOptions}
+  />
+  <UiSelect
+    name="action"
+    ariaLabel={a.action_label}
+    value={s.action}
+    onValueChange={(v) => (s.action = v)}
+    options={actionOptions}
+  />
+  <UiButton type="submit">{a.filter}</UiButton>
   {#if s.filtered}<a href="/app/admin?tab=audit">{a.clear}</a>{/if}
 </form>
 
@@ -107,13 +123,21 @@
             </td>
             <td class="details-cell">
               {#if row.details !== ""}
-                <details>
-                  <summary>{a.details_summary}</summary>
+                <UiCollapsible>
+                  {#snippet trigger(open)}
+                    <span class="details-summary">
+                      <span class="details-chevron" class:open aria-hidden="true"
+                        ><CaretRightIcon size={12} style="vertical-align: -0.125em" /></span
+                      >{a.details_summary}
+                    </span>
+                  {/snippet}
                   <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+                  <!-- tabindex=0 keeps the scrollable pre keyboard
+                       scrollable; ScrollArea declined (plan §3.6). -->
                   <pre tabindex="0" role="group" aria-label={a.details_summary}
                     >{row.details}</pre
                   >
-                </details>
+                </UiCollapsible>
               {/if}
             </td>
           </tr>
@@ -148,6 +172,18 @@
   .audit-table td.details-cell {
     white-space: normal;
     min-width: 0;
+  }
+  .details-summary {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+  }
+  .details-chevron {
+    display: inline-block;
+    transition: transform 140ms var(--ease-out);
+  }
+  .details-chevron.open {
+    transform: rotate(90deg);
   }
   .audit-table td.details-cell pre {
     max-width: 28rem;

@@ -27,7 +27,11 @@
 
   let { params }: AnswerPageProps = $props();
 
-  /** §7.2.3: follow the stream only while the viewport is already at the bottom. */
+  /** §7.2.3: follow the stream only while the viewport is already at
+      the bottom. The scroll-follow hooks below stay hand-rolled on
+      purpose: scroll anchoring is behavior, not an interactive widget
+      — no bits-ui primitive (and no ui/ wrapper) exists for it, so it
+      falls under the migration's justified-exception rule. */
   const FOLLOW_MARGIN = 48;
 
   function isAtBottom(): boolean {
@@ -41,7 +45,8 @@
         window.scrollTo({ top: document.documentElement.scrollHeight });
       },
       onBeginTurn: () => {
-        // The new turn mounts at the tail — a user-initiated scroll to it.
+        // The new turn mounts at the tail — a user-initiated scroll to
+        // it (same hand-rolled anchor as the follow hooks above).
         void tick().then(() =>
           window.scrollTo({ top: document.documentElement.scrollHeight }),
         );
@@ -94,6 +99,9 @@
     <p class="answer-ask">{SA.ask_prompt}</p>
     <Omnibox bind:value={askQ} bind:aiMode={askAi} onsubmit={askSubmit} />
   {:else}
+    <!-- Same .vh h1 convention as SearchPage: the running query is the
+         page's heading; axe page-has-heading-one. -->
+    <h1 class="vh">{q || SA.submit}</h1>
     <div class="answer-thread" aria-live="polite">
       {#each thread.turns as turn (turn.n)}
         <AnswerTurn

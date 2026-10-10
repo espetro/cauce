@@ -7,8 +7,8 @@
   `settings_cache.html`: search / engines / admission / logging /
   cache / AI fieldsets posting the same dotted field names to
   `PUT /api/config`. The admin form is a formisch `Form` (per-field
-  number validation) on vendored `ui/` Bits UI controls (Checkbox,
-  Select). Wire degradations (documented on #266): no env provenance so
+  number validation) on vendored `ui/` Bits UI controls (Button,
+  Checkbox, Select). Wire degradations (documented on #266): no env provenance so
   nothing is `disabled`, no `engines_pinned` greying, no models
   datalist, no `config_path` in the hint.
 -->
@@ -19,6 +19,7 @@
   import { capabilities } from "../../lib/capabilities.svelte.js";
   import { byok, setByok } from "../../lib/byok.svelte.js";
   import type { ByokCreds } from "../../lib/byok.svelte.js";
+  import UiButton from "../../ui/button.svelte";
   import UiCheckbox from "../../ui/checkbox.svelte";
   import UiSelect from "../../ui/select.svelte";
   import type { createSettingsPage } from "./settings.svelte.js";
@@ -117,7 +118,7 @@
           />
         </label>
       </div>
-      <button type="submit">{s.save}</button>
+      <UiButton type="submit">{s.save}</UiButton>
       {#if byokSaved}<span class="form-status">{s.saved}</span>{/if}
     </fieldset>
   </form>
@@ -346,11 +347,13 @@
       <legend>{s.section_cache}</legend>
       {#if st.cacheLine !== ""}<p class="hint">{st.cacheLine}</p>{/if}
       <p class="cache-actions">
-        <button type="button" onclick={() => page.bulkDelete("expired")}
-          >{s.delete_expired}</button
+        <UiButton size="sm" onclick={() => page.bulkDelete("expired")}
+          >{s.delete_expired}</UiButton
         >
-        <button type="button" onclick={() => page.bulkDelete("all")}
-          >{s.delete_all}</button
+        <UiButton
+          size="sm"
+          variant="danger"
+          onclick={() => page.bulkDelete("all")}>{s.delete_all}</UiButton
         >
         <a href="/app/admin?tab=cache">{s.browse_entries}</a>
       </p>
@@ -473,7 +476,7 @@
       </Field>
     </fieldset>
 
-    <button type="submit" disabled={form.isSubmitting}>{s.save}</button>
+    <UiButton type="submit" disabled={form.isSubmitting}>{s.save}</UiButton>
     <span
       id="settings-status"
       role="status"
@@ -519,15 +522,6 @@
     flex-wrap: wrap;
     gap: 0.5rem;
     align-items: center;
-  }
-  .cache-actions button {
-    padding: 0.2rem 0.6rem;
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    background: var(--bg);
-    color: var(--fg);
-    font-size: 0.8125rem;
-    cursor: pointer;
   }
   .form-status {
     margin-left: 0.75rem;

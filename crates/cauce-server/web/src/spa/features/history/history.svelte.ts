@@ -31,6 +31,7 @@ import { capabilities, loadCapabilities } from "../../lib/capabilities.svelte.js
 import { historyLoad, historyRemove } from "../../lib/localHistory.js";
 import { fmtDay, fmtHm, humanSeconds } from "../../lib/format.js";
 import { fmt, spa } from "../../lib/i18n.js";
+import { confirm } from "../../ui/confirm.js";
 
 const H = () => spa.history;
 
@@ -391,7 +392,12 @@ export function createHistoryPage() {
   }
 
   async function remove(row: HistRow): Promise<void> {
-    if (!window.confirm(row.deleteConfirm)) return;
+    const ok = await confirm({
+      title: H().delete,
+      description: row.deleteConfirm,
+      danger: true,
+    });
+    if (!ok) return;
     row.error = "";
     try {
       await loadCapabilities();

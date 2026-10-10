@@ -14,8 +14,10 @@ paths redirect onto it). Layout (`src/spa/`): `app/` entry + shell +
 typecheck — plain tsc excludes this tree; Tailwind v4 is the only styling
 system (tokens in `app.css` `@theme inline`; the small inline stylesheet
 that styles the residual `/trace/{id}` and `/answer/{id}` pages mirrors
-them in `src/pages/mod.rs`); features import `ui/` + `lib/` only, no
-cross-feature imports.
+them in `src/pages/mod.rs`); features import `ui/` + `ai/` + `lib/` only, no
+cross-feature imports (`ai/` is the DS-AI vendored sv-prompt-kit
+foundation — composer/loader/steps/source-chip — sitting alongside
+the `ui/` bits-ui wrappers).
 
 Two typescripts coexist deliberately: `typescript ~6` is the classic API
 svelte-check drives internally, and `@typescript/native` (an npm alias of

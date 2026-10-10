@@ -328,3 +328,38 @@ not leaked.
   (same URLs 200 on retry), not app errors — exclude them when judging "0 console errors".
 - `GET /opensearch.xml` downloads as a file in Chrome (Save dialog) rather than rendering —
   the dialog itself is the "it answers" evidence.
+
+## CDP mobile emulation + console sweep (no devtools GUI)
+
+Chrome here runs `--remote-debugging-port=29229`; plain `browser_console` returns
+nothing for the SPA. Node v24's built-in `WebSocket` talks CDP directly — no deps.
+Helper scripts live at `~/e2e/bin/cdp.js <ws-url> '<cmds-json>'` and
+`~/e2e/bin/cdp_log.js <ws-url>` (enables Log+Runtime+Page, reloads, prints console
+errors/warnings/exceptions). Get the page WS URL from `GET :29229/json`.
+
+- ~390px without the device toolbar: `Emulation.setDeviceMetricsOverride`
+  (390x720, dsf 2, mobile:true), then drive with the normal computer tool.
+  `Emulation.clearDeviceMetricsOverride` does NOT restore — set explicit
+  desktop metrics (e.g. 1280x700 dsf 1 mobile:false) to go back.
+  h-overflow check: `innerWidth+'|'+document.documentElement.scrollWidth`.
+- `playwright-core` + `chromium.connectOverCDP('http://localhost:29229')` also
+  works — use `waitUntil:'domcontentloaded'` (networkidle can hang on long-poll).
+
+## Public-mode capability caveat
+
+On `public_instance`, `serverHistory`/`sharedStats` are off: `/app/dashboard`
+renders only the instance card (no days segment) and `/app/history` reads
+browser-local IndexedDB history — seed it by running real omnibox searches.
+
+## Confirm-dialog adversarial checks
+
+The app-level `UiConfirmHost` is a FIFO (`ui/confirm.ts`). PR #291 testing found
+Escape wedging the queue — worth re-checking on every dialog change:
+- queue two confirms (a JS `el.click()` dispatches even while the modal is up —
+  real pointer clicks are correctly blocked by `body pointer-events:none` +
+  `pointer-events:auto` overlay), then Escape-settle the first: the second
+  request's dialog MUST appear. If not, the host wedged.
+- exercise cancel AND confirm on row delete + bulk delete separately, then any
+  other confirm — latches can survive an episode.
+- `body pointer-events:none` does NOT stop synthetic `.click()` dispatch —
+  that's how you queue adversarial confirms, not a defect.

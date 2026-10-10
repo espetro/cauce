@@ -21,6 +21,7 @@ import {
 } from "../../lib/localHistory.js";
 import { fmtTs, hostOf } from "../../lib/format.js";
 import { spa } from "../../lib/i18n.js";
+import { confirm } from "../../ui/confirm.js";
 
 const A = () => spa.archive;
 
@@ -180,11 +181,21 @@ export function createArchivePage() {
   }
 
   async function remove(row: ArchiveRowView): Promise<void> {
-    if (!window.confirm(A().confirm_row)) return;
+    const ok = await confirm({
+      title: A().delete_row,
+      description: A().confirm_row,
+      danger: true,
+    });
+    if (!ok) return;
     row.markdownError = "";
     try {
       await deletePage(row.url);
       row.gone = true;
+      // `rows` keeps gone entries — recount the visible ones.
+      state.countLine = countLine(
+        state.rows.filter((r) => !r.gone).length,
+        state.searching,
+      );
     } catch (e) {
       row.markdownError = e instanceof Error ? e.message : String(e);
     }

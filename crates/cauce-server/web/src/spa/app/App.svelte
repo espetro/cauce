@@ -11,6 +11,9 @@
 -->
 <script lang="ts">
   import { onMount } from "svelte";
+  import { Tooltip } from "bits-ui";
+  import { IconContext } from "phosphor-svelte";
+  import UiConfirmHost from "../ui/confirm-host.svelte";
   import { route, navigate, onPopState, routeVisible, ROUTE_REQUIRES } from "./router.svelte.js";
   import { applyTheme } from "./theme.svelte.js";
   import { capabilities, loadCapabilities } from "../lib/capabilities.svelte.js";
@@ -29,6 +32,11 @@
   onMount(() => {
     applyTheme();
     void loadCapabilities();
+    // justified: delegated `a[href]` click routing stays bespoke — it
+    // is event delegation for SPA navigation, not an interactive
+    // widget, so no Bits UI primitive (or `ui/` wrapper) applies to
+    // it. It also keeps `ui/dropdown-menu` link items and every plain
+    // route anchor working without per-link wiring.
     const onClick = (event: MouseEvent) => {
       if (
         event.defaultPrevented ||
@@ -80,8 +88,14 @@
   const routeKey = $derived(route.path + "?" + route.params.toString());
 </script>
 
-<TopNav {active} />
-{#key routeKey}
+<!-- One icon system for the whole SPA: phosphor-svelte at the "light"
+  weight (the thin-stroke tier the design tokens assume). Portaled
+  Bits UI content still inherits this context — it follows the
+  component tree, not the DOM. -->
+<IconContext values={{ weight: "light" }}>
+<Tooltip.Provider delayDuration={300}>
+  <TopNav {active} />
+  {#key routeKey}
   {#if !routeVisible(route.path, capabilities.loaded && capabilities.flags.adminSurface, capabilities.loaded && capabilities.flags.archiving, capabilities.flags.allowUserKeys || capabilities.flags.allowUserBaseUrl)}
     <GateBlock requires={ROUTE_REQUIRES[route.path]} />
   {:else if route.path === "/"}
@@ -109,3 +123,6 @@
     </main>
   {/if}
 {/key}
+</Tooltip.Provider>
+</IconContext>
+<UiConfirmHost />

@@ -5,7 +5,9 @@
 
   Search Assist (W7-02 port of `web/src/assist.ts`; FX-04 moved it here
   so `features/answer/` owns the AI surfaces — `routes/SearchPage.svelte`
-  wires it in): an on-demand card that answers from the already-returned
+  wires it in; DS-AI puts its busy state on `AiLoader`/`AiTextShimmer`
+  and its citations rail on `AiSourceChip`): an on-demand card that
+  answers from the already-returned
   result set — the POST carries `context_results`, so no engine re-fetch
   happens. Frame behavior is identical to the HTMX card: `sources`
   renders domain chips up front, `delta` appends raw text, `done`
@@ -14,7 +16,11 @@
   Ns`). Fire-once per search.
 -->
 <script lang="ts">
-  import { tick } from "svelte";
+  import { tick, type ComponentProps } from "svelte";
+  import AiLoader from "../../ai/loader.svelte";
+  import AiTextShimmer from "../../ai/text-shimmer.svelte";
+  import AiSourceChip from "../../ai/source-chip.svelte";
+  import UiButton from "../../ui/button.svelte";
   import { postAnswer, errorFrom } from "../../lib/api.js";
   import { byokWire } from "../../lib/byok.svelte.js";
   import { capabilities } from "../../lib/capabilities.svelte.js";
@@ -130,19 +136,30 @@
      the trigger stays inert until `meta` arms `context` (disabled). -->
 <section id="assist" class="assist" data-q={q}>
   {#if !fired}
-    <button
-      type="button"
-      id="assist-btn"
-      class="assist-trigger"
-      aria-controls="assist-card"
-      aria-expanded="false"
+    <!-- The trigger is a UiButton but the reveal stays bespoke: the
+         card fires exactly once per search and can never collapse
+         back — a disclosure primitive models open/close toggling,
+         which would imply a toggle this card deliberately lacks. -->
+    <UiButton
+      variant="primary"
       {disabled}
-      onclick={fire}>{spa.assist.trigger}</button
+      onclick={fire}
+      {...({
+        id: "assist-btn",
+        "aria-controls": "assist-card",
+      } as ComponentProps<typeof UiButton>)}
+      >{spa.assist.trigger}</UiButton
     >
   {:else}
     <div id="assist-card" class="assist-card" aria-live="polite" aria-busy={busy}>
       <div class="assist-head">
-        <span class="assist-label">{spa.assist.label}</span>
+        <span class="assist-label">
+          {#if busy}
+            <AiLoader size="sm" /><AiTextShimmer>{spa.assist.label}</AiTextShimmer>
+          {:else}
+            {spa.assist.label}
+          {/if}
+        </span>
         {#if askUrl}
           <a class="assist-ask" href={askUrl}>{spa.assist.ask_ai}</a>
         {/if}
@@ -176,20 +193,13 @@
         <div id="assist-sources" class="assist-sources">
           {#each sources as src, i (src.url)}
             {@const host = hostOf(src.url)}
-            <a
-              class="assist-chip"
+            <AiSourceChip
               id="asrc-{i + 1}"
               href={src.url}
-              target="_blank"
-              rel="noopener"
-            >
-              {#if host}
-                <img src={faviconUrl(host)} width="16" height="16" alt="" loading="lazy" />
-                <span>{host}</span>
-              {:else}
-                {src.title || src.url}
-              {/if}
-            </a>
+              {host}
+              faviconUrl={host ? faviconUrl(host) : undefined}
+              title={src.title}
+            />
           {/each}
         </div>
       {/if}
@@ -204,21 +214,6 @@
 <style>
   .assist {
     margin: 0 0 1rem;
-  }
-
-  .assist-trigger {
-    padding: 0.5rem 1rem;
-    border: none;
-    border-radius: var(--radius);
-    background: var(--accent);
-    color: #fff;
-    font-size: 0.875rem;
-    cursor: pointer;
-  }
-
-  .assist-trigger:disabled {
-    opacity: 0.5;
-    cursor: default;
   }
 
   .assist-card {
@@ -253,27 +248,6 @@
     flex-wrap: wrap;
     gap: 0.375rem;
     margin: 0.25rem 0 0.5rem;
-  }
-
-  .assist-chip {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.3rem;
-    border: 1px solid var(--border);
-    border-radius: 999px;
-    background: var(--bg);
-    color: var(--fg);
-    font-size: 0.8125rem;
-    padding: 0.125rem 0.625rem;
-    text-decoration: none;
-  }
-
-  .assist-chip:hover {
-    border-color: var(--accent);
-  }
-
-  .assist-chip img {
-    border-radius: 50%;
   }
 
   .assist-note {

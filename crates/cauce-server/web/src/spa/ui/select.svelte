@@ -11,6 +11,7 @@
 -->
 <script lang="ts">
   import { Select } from "bits-ui";
+  import { CaretDownIcon, CheckIcon } from "phosphor-svelte";
 
   interface Option {
     value: string;
@@ -26,6 +27,7 @@
     disabled?: boolean;
     name?: string;
     id?: string;
+    ariaLabel?: string;
     ariaInvalid?: boolean;
   }
 
@@ -37,6 +39,7 @@
     disabled = false,
     name,
     id,
+    ariaLabel,
     ariaInvalid,
   }: Props = $props();
 
@@ -67,29 +70,22 @@
   {disabled}
   {name}
 >
+  <!-- axe label-content-name-mismatch: the trigger's visible text is the
+       selected value, so the accessible name must contain it —
+       "Since: Any time", not just "Since". -->
   <Select.Trigger
     class="ui-select-trigger"
     {id}
     {disabled}
+    aria-label={ariaLabel === undefined
+      ? undefined
+      : `${ariaLabel}: ${selectedLabel || placeholder || ""}`}
     aria-invalid={ariaInvalid || undefined}
   >
     <span class="ui-select-label" class:placeholder={selectedLabel === ""}>
       {selectedLabel === "" ? placeholder : selectedLabel}
     </span>
-    <svg
-      class="ui-select-chevron"
-      viewBox="0 0 12 12"
-      fill="none"
-      aria-hidden="true"
-    >
-      <path
-        d="M3 4.5 6 7.5 9 4.5"
-        stroke="currentColor"
-        stroke-width="1.4"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-      />
-    </svg>
+    <CaretDownIcon class="ui-select-chevron" aria-hidden="true" />
   </Select.Trigger>
   <Select.Portal>
     <Select.Content class="ui-select-content" sideOffset={4}>
@@ -102,21 +98,11 @@
             disabled={item.disabled}
           >
             {#snippet children({ selected })}
-              <svg
+              <CheckIcon
                 class="ui-select-check"
-                viewBox="0 0 12 12"
-                fill="none"
                 aria-hidden="true"
-                style:visibility={selected ? "visible" : "hidden"}
-              >
-                <path
-                  d="M2.5 6.5 5 9l4.5-6"
-                  stroke="currentColor"
-                  stroke-width="1.6"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                />
-              </svg>
+                style={selected ? "visibility:visible" : "visibility:hidden"}
+              />
               {item.label}
             {/snippet}
           </Select.Item>
@@ -172,7 +158,7 @@
     border-radius: var(--radius);
     background: var(--bg);
     color: var(--fg);
-    box-shadow: 0 4px 12px rgb(0 0 0 / 0.12);
+    box-shadow: var(--shadow);
     z-index: 50;
   }
 
