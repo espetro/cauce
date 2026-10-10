@@ -53,6 +53,6 @@ parse:
   .points li:last-child { border-bottom: 0; }
   .points strong { color: var(--fg); }
   @media (max-width: 820px) {
-    .cols { grid-template-columns: 1fr; gap: 28px; }
+    .cols { grid-template-columns: minmax(0, 1fr); gap: 28px; }
   }
 </style>

@@ -59,6 +59,6 @@
   }
   figure img { display: block; }
   @media (max-width: 820px) {
-    .split { grid-template-columns: 1fr; gap: 32px; }
+    .split { grid-template-columns: minmax(0, 1fr); gap: 32px; }
   }
 </style>

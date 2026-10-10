@@ -46,6 +46,7 @@ pre {
   border: 1px solid var(--line);
   border-radius: 8px;
   overflow-x: auto;
+  max-width: 100%;
   font-size: 13px;
   line-height: 1.5;
 }
@@ -53,5 +54,8 @@ h1, h2, h3 { line-height: 1.15; letter-spacing: -0.02em; }
 img { max-width: 100%; }
 
 .wrap { max-width: 1060px; margin: 0 auto; padding: 0 20px; }
+/* grid items default to min-width:auto — a long unbreakable line
+   (code, urls) would otherwise blow the track past the viewport. */
+.grid > *, .cols > *, .block { min-width: 0; }
 section { padding: 64px 0; }
 .muted { color: var(--muted); }

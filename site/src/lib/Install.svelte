@@ -60,6 +60,6 @@ cargo install --locked --git https://github.com/espetro/cauce cauce-cli`;
   th, td { padding: 12px 16px; text-align: left; border-bottom: 1px solid var(--line); }
   th { font-size: 13px; color: var(--fg); font-weight: 500; white-space: nowrap; }
   @media (max-width: 820px) {
-    .cols { grid-template-columns: 1fr; }
+    .cols { grid-template-columns: minmax(0, 1fr); }
   }
 </style>

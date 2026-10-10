@@ -38,7 +38,7 @@ curl 'http://127.0.0.1:4479/api/search?q=reciprocal+rank+fusion'
           SSE, an AI answer mode, history, admin, dark/light themes — on your
           own loopback.
         </p>
-        <p class="mono small muted">GET /app/* · /answer/{id}</p>
+        <p class="mono small muted">{"GET /app/* · /answer/{id}"}</p>
       </div>
 
       <div class="card">
