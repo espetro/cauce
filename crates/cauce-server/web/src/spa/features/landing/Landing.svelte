@@ -181,7 +181,7 @@ cargo install --locked --git https://github.com/espetro/cauce cauce-cli`;
     <span class="muted">Local metasearch for humans and agents.</span>
     <a href="https://github.com/espetro/cauce">GitHub</a>
     <a href="https://github.com/espetro/cauce/releases">Releases</a>
-    <a href="https://github.com/espetro/cauce/tree/main/docs">Docs</a>
+    <a href="https://docs.cauce.fyi">Docs</a>
     <a href="https://github.com/espetro/cauce/blob/main/LICENSE">MPL-2.0</a>
   </footer>
 </div>

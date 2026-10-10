@@ -116,3 +116,11 @@ contrib/loadtest.sh
 [tasks."hooks:install"]
 description = "Point git at .githooks/ (pre-push runs mise run validate)"
 run = "git config core.hooksPath .githooks && echo 'core.hooksPath=.githooks'"
+
+[tasks.docs]
+description = "Serve the docmd docs site locally (end-user docs/ + .agents/docs copied to docs/developers)"
+run = """
+set -e
+rsync -a --delete .agents/docs/ docs/developers/
+npx -y @docmd/core dev
+"""

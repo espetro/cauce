@@ -41,6 +41,9 @@ rm -rf pages-dist
 mkdir -p pages-dist/app
 cp -r crates/cauce-server/assets/spa/. pages-dist/app/
 
+# Docs are NOT in this bundle: docs.cauce.fyi is a separate Pages
+# project built by deploy/cf-pages/build-docs.sh off this same repo.
+
 # `_redirects` carries static rules only — the API proxy lives in
 # `functions/` because a 200-rewrite cannot target an external origin.
 # No `/` redirect: the apex IS the landing (the SPA boots its home
