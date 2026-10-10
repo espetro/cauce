@@ -14,6 +14,7 @@
   import { capabilities, reloadCapabilities } from "../lib/capabilities.svelte.js";
   import { adminToken, setAdminToken } from "../lib/admin.svelte.js";
   import type { RouteRequirement } from "./router.svelte.js";
+  import UiButton from "../ui/button.svelte";
 
   interface GateBlockProps {
     requires: RouteRequirement;
@@ -47,15 +48,15 @@
         autocomplete="off"
         bind:value={draft}
       />
-      <button type="submit">{spa.app.admin_token_save}</button>
+      <UiButton type="submit" variant="primary">{spa.app.admin_token_save}</UiButton>
       {#if adminToken.value !== ""}
-        <button
-          type="button"
+        <UiButton
+          variant="default"
           onclick={() => {
             setAdminToken("");
             draft = "";
             void reloadCapabilities();
-          }}>{spa.app.admin_token_clear}</button
+          }}>{spa.app.admin_token_clear}</UiButton
         >
       {/if}
       <p class="meta">{spa.app.admin_token_hint}</p>

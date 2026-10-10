@@ -5,11 +5,14 @@
 
   `/app/admin?tab=cache` — one-for-one with `templates/cache.html`:
   `q` filter form, count + filtered-cap line, expired/all bulk delete,
-  `<details>` rows with lazy pretty-JSON payload, row delete, pager.
+  `UiCollapsible` rows with lazy pretty-JSON payload, row delete, pager.
 -->
 <script lang="ts">
+  import { CaretLeftIcon, CaretRightIcon } from "phosphor-svelte";
   import { navigate } from "../../app/router.svelte.js";
   import { spa } from "../../lib/i18n.js";
+  import UiButton from "../../ui/button.svelte";
+  import UiCollapsible from "../../ui/collapsible.svelte";
   import type { createCacheTab } from "./cache.svelte.js";
 
   interface CacheTabProps {
@@ -34,7 +37,7 @@
     bind:value={s.q}
     placeholder={c.filter_placeholder}
   />
-  <button type="submit">{c.filter_button}</button>
+  <UiButton type="submit">{c.filter_button}</UiButton>
   {#if s.searching}
     <a href="/app/admin?tab=cache">{c.filter_clear}</a>
   {/if}
@@ -54,11 +57,11 @@
 {:else}
   {#if s.rows.length > 0}
     <div class="cache-actions">
-      <button type="button" onclick={() => tab.bulk("expired")}
-        >{c.delete_expired}</button
+      <UiButton size="sm" onclick={() => tab.bulk("expired")}
+        >{c.delete_expired}</UiButton
       >
-      <button type="button" class="danger" onclick={() => tab.bulk("all")}
-        >{c.delete_all}</button
+      <UiButton size="sm" variant="danger" onclick={() => tab.bulk("all")}
+        >{c.delete_all}</UiButton
       >
       {#if s.bulkError}<span class="row-error">{s.bulkError}</span>{/if}
     </div>
@@ -72,38 +75,41 @@
     {#if !row.gone}
       <article class="cache-entry" class:expired={row.expired}>
         <div class="cache-row">
-          <details
-            id={row.key}
-            class="cache-details"
-            ontoggle={(e) => {
-              if ((e.target as HTMLDetailsElement).open)
-                tab.loadPayload(row);
-            }}
-          >
-            <summary>
-              <span class="cache-query">{row.query}</span>
-              <span class="cache-meta">
-                <span>{row.created}</span>
-                <span class="cache-expires">{row.expires}</span>
-                <span>{row.hitsLabel}</span>
-                <span>{row.engines}</span>
-                <span>{row.size}</span>
-              </span>
-            </summary>
-            <div class="cache-payload">
-              {#if row.payloadLoading}
-                {c.payload_loading}
-              {:else if row.payloadError !== ""}
-                <span class="row-error">{row.payloadError}</span>
-              {:else if row.payload !== ""}
-                <pre class="code-view">{row.payload}</pre>
-              {/if}
-            </div>
-          </details>
-          <button
-            type="button"
-            class="cache-delete"
-            onclick={() => tab.remove(row)}>{c.delete_row}</button
+          <div class="cache-disclosure">
+            <UiCollapsible
+              id={row.key}
+              onOpenChange={(open) => {
+                if (open) tab.loadPayload(row);
+              }}
+            >
+              {#snippet trigger(open)}
+                <span class="cache-chevron" class:open aria-hidden="true"
+                  ><CaretRightIcon size={12} style="vertical-align: -0.125em" /></span
+                >
+                <span class="cache-query">{row.query}</span>
+                <span class="cache-meta">
+                  <span>{row.created}</span>
+                  <span class="cache-expires">{row.expires}</span>
+                  <span>{row.hitsLabel}</span>
+                  <span>{row.engines}</span>
+                  <span>{row.size}</span>
+                </span>
+              {/snippet}
+              <div class="cache-payload">
+                {#if row.payloadLoading}
+                  {c.payload_loading}
+                {:else if row.payloadError !== ""}
+                  <span class="row-error">{row.payloadError}</span>
+                {:else if row.payload !== ""}
+                  <pre class="code-view">{row.payload}</pre>
+                {/if}
+              </div>
+            </UiCollapsible>
+          </div>
+          <UiButton
+            size="sm"
+            variant="danger"
+            onclick={() => tab.remove(row)}>{c.delete_row}</UiButton
           >
         </div>
       </article>
@@ -113,10 +119,16 @@
   {#if !s.searching && (s.offset > 0 || s.hasNext)}
     <div class="pager meta">
       {#if s.offset > 0}
-        <a href={tab.pagerUrl(s.offset - 50)}>&larr; {c.page_prev}</a>
+        <a href={tab.pagerUrl(s.offset - 50)}
+          ><CaretLeftIcon size={13} aria-hidden="true" style="vertical-align: -0.125em" />
+          {c.page_prev}</a
+        >
       {/if}
       {#if s.hasNext}
-        <a href={tab.pagerUrl(s.offset + 50)}>{c.page_next} &rarr;</a>
+        <a href={tab.pagerUrl(s.offset + 50)}
+          >{c.page_next}
+          <CaretRightIcon size={13} aria-hidden="true" style="vertical-align: -0.125em" /></a
+        >
       {/if}
     </div>
   {/if}
@@ -128,18 +140,6 @@
     gap: 0.5rem;
     align-items: center;
     margin-bottom: 0.75rem;
-  }
-  .cache-actions button {
-    padding: 0.25rem 0.75rem;
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    background: var(--bg);
-    color: var(--fg);
-    font-size: 0.875rem;
-    cursor: pointer;
-  }
-  .cache-actions button.danger {
-    color: var(--warn);
   }
   .cache-entry {
     border-bottom: 1px solid var(--border);
@@ -154,17 +154,25 @@
     gap: 0.5rem;
     min-width: 0;
   }
-  .cache-details {
+  .cache-disclosure {
     flex: 1 1 auto;
     min-width: 0;
   }
-  .cache-details summary {
-    display: flex;
+  /* The trigger is the row's flex-wrap container (was the disclosure
+     summary); the wrapper's own recipe supplies flex/cursor/font — this
+     only restores the wrap + baseline alignment. */
+  .cache-disclosure :global(.ui-collapsible-trigger) {
     flex-wrap: wrap;
     align-items: baseline;
     gap: 0.25rem 0.75rem;
-    cursor: pointer;
     min-width: 0;
+  }
+  .cache-chevron {
+    display: inline-block;
+    transition: transform 140ms var(--ease-out);
+  }
+  .cache-chevron.open {
+    transform: rotate(90deg);
   }
   .cache-query {
     font-weight: 600;
@@ -183,14 +191,9 @@
   .expired .cache-expires {
     color: var(--warn);
   }
-  .cache-delete {
+  /* Row delete keeps the old flex-shrink so it never wraps under the
+     disclosure column. */
+  .cache-row :global(.ui-button) {
     flex-shrink: 0;
-    padding: 0.15rem 0.5rem;
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    background: var(--bg);
-    color: var(--warn);
-    font-size: 0.8125rem;
-    cursor: pointer;
   }
 </style>

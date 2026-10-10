@@ -10,6 +10,7 @@
 -->
 <script lang="ts">
   import { Checkbox } from "bits-ui";
+  import { CheckIcon } from "phosphor-svelte";
 
   interface Props {
     checked?: boolean;
@@ -19,6 +20,7 @@
     id?: string;
     required?: boolean;
     ariaInvalid?: boolean;
+    ariaLabel?: string;
   }
 
   let {
@@ -29,6 +31,7 @@
     id,
     required,
     ariaInvalid,
+    ariaLabel,
   }: Props = $props();
 </script>
 
@@ -41,23 +44,11 @@
   {id}
   {required}
   aria-invalid={ariaInvalid || undefined}
+  aria-label={ariaLabel}
 >
   {#snippet children({ checked: on })}
     {#if on}
-      <svg
-        class="ui-checkbox-mark"
-        viewBox="0 0 12 12"
-        fill="none"
-        aria-hidden="true"
-      >
-        <path
-          d="M2.5 6.5 5 9l4.5-6"
-          stroke="currentColor"
-          stroke-width="1.6"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-        />
-      </svg>
+      <CheckIcon class="ui-checkbox-mark" aria-hidden="true" />
     {/if}
   {/snippet}
 </Checkbox.Root>

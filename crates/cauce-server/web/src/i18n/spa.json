@@ -106,6 +106,8 @@
   },
   "common": {
     "brand": "cauce",
+    "cancel": "Cancel",
+    "confirm": "Confirm",
     "dash": "-",
     "nav_answer": "answer",
     "nav_archive": "archive",

@@ -20,6 +20,7 @@ import {
 } from "../../lib/api.js";
 import { fmtTs, humanBytes, humanSeconds } from "../../lib/format.js";
 import { fmt, spa } from "../../lib/i18n.js";
+import { confirm } from "../../ui/confirm.js";
 
 const C = () => spa.cache;
 
@@ -143,7 +144,12 @@ export function createCacheTab() {
   }
 
   async function remove(row: CacheRow): Promise<void> {
-    if (!window.confirm(C().confirm_row)) return;
+    const ok = await confirm({
+      title: C().delete_row,
+      description: C().confirm_row,
+      danger: true,
+    });
+    if (!ok) return;
     row.payloadError = "";
     try {
       await deleteCacheEntry(row.key);
@@ -158,8 +164,13 @@ export function createCacheTab() {
   }
 
   async function bulk(scope: "expired" | "all"): Promise<void> {
-    const msg = scope === "expired" ? C().confirm_expired : C().confirm_all;
-    if (!window.confirm(msg)) return;
+    const ok = await confirm({
+      title: scope === "expired" ? C().delete_expired : C().delete_all,
+      description:
+        scope === "expired" ? C().confirm_expired : C().confirm_all,
+      danger: true,
+    });
+    if (!ok) return;
     state.bulkError = "";
     try {
       await deleteCacheBulk(scope);

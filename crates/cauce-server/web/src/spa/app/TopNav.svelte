@@ -5,20 +5,53 @@
 
   The variant-E sticky chrome (§7.1): same header on every surface —
   brand + primary nav left, quiet operator group + settings + theme
-  toggle right, operator links collapsing into the `more` <details>
-  below 700px (the shape the old `templates/header.html` had). Links
-  without an SPA twin stay plain `/...` hrefs (full load); `/app`-bound
-  links route client-side via App's delegated click.
+  toggle right, operator links collapsing into a `more` dropdown below
+  700px (the shape the old `templates/header.html` had). Links without
+  an SPA twin stay plain `/...` hrefs (full load); `/app`-bound links —
+  including the menu's link items — route client-side via App's
+  delegated click.
 -->
 <script lang="ts">
+  import type { ComponentProps } from "svelte";
+  import { SunIcon, MoonIcon, CircleHalfIcon } from "phosphor-svelte";
   import { spa } from "../lib/i18n.js";
   import { capabilities } from "../lib/capabilities.svelte.js";
   import { appHref, routeVisible } from "./router.svelte.js";
-  import { cycleTheme, themeAria, themeWord } from "./theme.svelte.js";
+  import { cycleTheme, theme, themeAria } from "./theme.svelte.js";
+  import UiButton from "../ui/button.svelte";
+  import UiTooltip from "../ui/tooltip.svelte";
+  import UiDropdownMenu, {
+    type DropdownItem,
+  } from "../ui/dropdown-menu.svelte";
 
-  let { active = "" }: { active?: string } = $props();
+  interface TopNavProps {
+    active?: string;
+  }
+
+  let { active = "" }: TopNavProps = $props();
 
   const c = spa.common;
+
+  const moreItems: DropdownItem[] = $derived([
+    {
+      type: "link",
+      label: c.nav_engines,
+      href: appHref("/admin?tab=engines"),
+      current: active === "engines",
+    },
+    {
+      type: "link",
+      label: c.nav_cache,
+      href: appHref("/admin?tab=cache"),
+      current: active === "cache",
+    },
+    {
+      type: "link",
+      label: c.nav_audit,
+      href: appHref("/admin?tab=audit"),
+      current: active === "audit",
+    },
+  ]);
 </script>
 
 <header class="site">
@@ -49,22 +82,43 @@
     {#if capabilities.loaded && routeVisible("/settings", capabilities.flags.adminSurface, capabilities.flags.archiving, capabilities.flags.allowUserKeys || capabilities.flags.allowUserBaseUrl)}
       <a href={appHref("/settings")} aria-current={active === "settings" ? "page" : undefined}>{c.nav_settings}</a>
     {/if}
-    <button
-      type="button"
-      id="theme-toggle"
-      aria-label={themeAria()}
-      title={c.theme_switch}
-      onclick={cycleTheme}>{themeWord()}</button
-    >
+    <!-- justified: the theme control cycles three states
+      (system → light → dark), so it is not a binary `Toggle` and a
+      `ToggleGroup` of one makes no sense either — it stays a single
+      `UiButton` with a `UiTooltip` (plan §3.7). The icon mirrors the
+      active state; the tooltip carries the `theme_switch` label the
+      old `title=` attribute had. -->
+    <UiTooltip content={c.theme_switch} side="bottom">
+      {#snippet trigger(props)}
+        <UiButton
+          {...(props as ComponentProps<typeof UiButton>)}
+          variant="default"
+          size="icon"
+          ariaLabel={themeAria()}
+          onclick={cycleTheme}
+        >
+          {#if theme.value === "light"}
+            <SunIcon size={15} aria-hidden="true" />
+          {:else if theme.value === "dark"}
+            <MoonIcon size={15} aria-hidden="true" />
+          {:else}
+            <CircleHalfIcon size={15} aria-hidden="true" />
+          {/if}
+        </UiButton>
+      {/snippet}
+    </UiTooltip>
     {#if capabilities.loaded && capabilities.flags.adminSurface}
-      <details class="nav-more">
-        <summary>{c.nav_more}</summary>
-        <nav class="nav-more-links" aria-label={c.nav_operator_label}>
-          <a href={appHref("/admin?tab=engines")} aria-current={active === "engines" ? "page" : undefined}>{c.nav_engines}</a>
-          <a href={appHref("/admin?tab=cache")} aria-current={active === "cache" ? "page" : undefined}>{c.nav_cache}</a>
-          <a href={appHref("/admin?tab=audit")} aria-current={active === "audit" ? "page" : undefined}>{c.nav_audit}</a>
-        </nav>
-      </details>
+      <span class="nav-more">
+        <UiDropdownMenu items={moreItems} ariaLabel={c.nav_operator_label}>
+          {#snippet trigger(props)}
+            <UiButton
+              {...(props as ComponentProps<typeof UiButton>)}
+              variant="ghost"
+              size="sm">{c.nav_more}</UiButton
+            >
+          {/snippet}
+        </UiDropdownMenu>
+      </span>
     {/if}
   </div>
 </header>
@@ -131,50 +185,22 @@
     gap: 0.9rem;
   }
 
-  #theme-toggle {
-    padding: 0.1rem 0.6rem;
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    background: var(--bg);
-    color: var(--muted);
-    font-size: 0.8125rem;
-    cursor: pointer;
+  /* ≥36px hit area on the mobile nav row (plan §1.3). */
+  @media (width < 700px) {
+    .nav-right :global(.ui-button[data-size="icon"]) {
+      width: 2.25rem;
+      height: 2.25rem;
+      min-height: 2.25rem;
+    }
   }
 
-  /* CSS-only collapse: operator links move into `more` below 700px. */
-  .nav-more {
-    position: relative;
-  }
-
-  .nav-more > summary {
-    cursor: pointer;
-    color: var(--muted);
-    list-style: none;
-  }
-
-  .nav-more > summary::-webkit-details-marker {
-    display: none;
-  }
-
-  .nav-more[open] > summary {
+  /* The open menu trigger takes the accent, like the old open
+     disclosure did. */
+  .nav-more :global(.ui-button[data-state="open"]) {
     color: var(--accent);
   }
 
-  .nav-more-links {
-    position: absolute;
-    right: 0;
-    top: 100%;
-    display: flex;
-    flex-direction: column;
-    gap: 0.4rem;
-    min-width: 6.5rem;
-    padding: 0.5rem 0.75rem;
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    background: var(--bg);
-    box-shadow: 0 2px 8px rgb(0 0 0 / 15%);
-  }
-
+  /* CSS-only collapse: operator links move into `more` below 700px. */
   @media (width >= 700px) {
     .nav-operator {
       display: flex;

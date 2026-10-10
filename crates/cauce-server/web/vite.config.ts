@@ -12,6 +12,7 @@
 import { fileURLToPath } from "node:url";
 import { svelte } from "@sveltejs/vite-plugin-svelte";
 import tailwindcss from "@tailwindcss/vite";
+import { sveltePhosphorOptimize } from "phosphor-svelte/vite";
 import { defineConfig } from "vite";
 
 export default defineConfig({
@@ -22,6 +23,9 @@ export default defineConfig({
     svelte({
       configFile: fileURLToPath(new URL("../svelte.config.js", import.meta.url)),
     }),
+    // Rewrites `phosphor-svelte` barrel imports to per-icon deep imports —
+    // without it the build compiles all ~1.6k icon components.
+    sveltePhosphorOptimize(),
     tailwindcss(),
   ],
   build: {

@@ -27,6 +27,7 @@ import {
 } from "../../lib/api.js";
 import { fmtHm, humanBytes } from "../../lib/format.js";
 import { spa } from "../../lib/i18n.js";
+import { confirm } from "../../ui/confirm.js";
 
 const S = () => spa.settings;
 
@@ -191,9 +192,13 @@ export function createSettingsPage() {
   }
 
   async function bulkDelete(scope: "expired" | "all"): Promise<void> {
-    const msg =
-      scope === "expired" ? S().confirm_expired : S().confirm_all;
-    if (!window.confirm(msg)) return;
+    const ok = await confirm({
+      title: scope === "expired" ? S().delete_expired : S().delete_all,
+      description:
+        scope === "expired" ? S().confirm_expired : S().confirm_all,
+      danger: true,
+    });
+    if (!ok) return;
     state.cacheError = "";
     try {
       await deleteCacheBulk(scope);

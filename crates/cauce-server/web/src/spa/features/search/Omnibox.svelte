@@ -3,16 +3,25 @@
   License, v. 2.0. If a copy of the MPL was not distributed with this
   file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-  The variant-E composer (§7.1): a box, not a pill — an input row
-  (query + send) and a tool row (the Search/✦Ask mode segment, the
-  `ai_mode` pill's composer form). `compact` is the /search shape;
-  landing renders it full-size. Submit delegates to the owning page
-  (navigate for search, `/answer?q=` handoff in AI mode).
+  The variant-E composer (§7.1), now on the `ai/prompt-input`
+  foundation (DS-AI): `AiPromptInput` supplies the boxed composer +
+  context (value flow, Enter-submit, autosize textarea), the tool row
+  is `AiPromptActions` and the Search/✦Ask mode segment stays
+  `UiToggleGroup` — the foundation ships no segmented control, so the
+  ui/ wrapper remains the primitive. Send stays a UiButton icon.
+  `compact` is the /search shape; landing renders it full-size.
+  Submit delegates to the owning page (navigate for search,
+  `/answer?q=` handoff in AI mode).
 -->
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { ArrowUpIcon } from "phosphor-svelte";
   import { spa } from "../../lib/i18n.js";
   import { capabilities } from "../../lib/capabilities.svelte.js";
+  import AiPromptInput from "../../ai/prompt-input/prompt-input.svelte";
+  import AiPromptTextarea from "../../ai/prompt-input/prompt-input-textarea.svelte";
+  import AiPromptActions from "../../ai/prompt-input/prompt-input-actions.svelte";
+  import UiButton from "../../ui/button.svelte";
+  import UiToggleGroup from "../../ui/toggle-group.svelte";
 
   interface OmniboxProps {
     value?: string;
@@ -20,6 +29,11 @@
     compact?: boolean;
     autofocus?: boolean;
     onsubmit: () => void;
+  }
+
+  interface ModeOption {
+    value: "search" | "ai";
+    label: string;
   }
 
   let {
@@ -30,142 +44,80 @@
     onsubmit,
   }: OmniboxProps = $props();
 
-  let inputEl = $state<HTMLInputElement>();
+  // bind:ref into a $bindable prop throws props_invalid_value on
+  // undefined — the ref must start as null, never undefined.
+  let inputEl = $state<HTMLTextAreaElement | null>(null);
 
-  onMount(() => {
-    if (autofocus) inputEl?.focus();
-  });
+  const modeOptions = $derived<ModeOption[]>([
+    { value: "search", label: spa.search.submit },
+    { value: "ai", label: spa.search.ai_mode },
+  ]);
 
   function arm(mode: "search" | "ai") {
     aiMode = mode === "ai";
     inputEl?.focus();
   }
+
+  // ToggleGroup single writes "" when the pressed item is re-pressed; the
+  // mode segment must always resolve to one of the two modes. The setter
+  // ignores "", and because the binding is a getter/setter pair the group
+  // keeps reading the armed mode instead of drifting to a local fallback.
+  function armFromGroup(mode: string) {
+    if (mode === "search" || mode === "ai") arm(mode);
+  }
 </script>
 
 <form
-  class="composer"
-  class:compact
+  class="composer-form"
   onsubmit={(e) => {
     e.preventDefault();
     onsubmit();
   }}
 >
-  <div class="input-row">
-    <input
-      bind:this={inputEl}
-      type="search"
-      name="q"
-      bind:value
-      placeholder={aiMode ? spa.answer.placeholder : spa.search.placeholder}
-      aria-label={aiMode ? spa.answer.placeholder : spa.search.placeholder}
-      autocomplete="off"
-    />
-    <button type="submit" class="send">{aiMode ? spa.answer.submit : spa.search.submit}</button>
-  </div>
-  {#if capabilities.aiEnabled}
-    <div class="tool-row">
-      <div class="segment" role="group">
-        <button
-          type="button"
-          aria-pressed={!aiMode}
-          onclick={() => arm("search")}>{spa.search.submit}</button
-        >
-        <button
-          type="button"
-          aria-pressed={aiMode}
-          data-placeholder={spa.answer.placeholder}
-          data-submit={spa.answer.submit}
-          onclick={() => arm("ai")}>✦ {spa.search.ai_mode}</button
-        >
-      </div>
+  <AiPromptInput {value} onValueChange={(v) => (value = v)} onSubmit={onsubmit} {compact}>
+    <div class="input-row">
+      <AiPromptTextarea
+        bind:ref={inputEl}
+        {autofocus}
+        name="q"
+        autocomplete="off"
+        placeholder={aiMode ? spa.answer.placeholder : spa.search.placeholder}
+        ariaLabel={aiMode ? spa.answer.placeholder : spa.search.placeholder}
+      />
+      <UiButton
+        type="submit"
+        variant="primary"
+        size="icon"
+        disabled={!value.trim()}
+        ariaLabel={aiMode ? spa.answer.submit : spa.search.submit}
+        ><ArrowUpIcon size={15} aria-hidden="true" /></UiButton
+      >
     </div>
-  {/if}
+    {#if capabilities.aiEnabled}
+      <AiPromptActions>
+        <UiToggleGroup
+          bind:value={() => (aiMode ? "ai" : "search"), armFromGroup}
+          options={modeOptions}
+        />
+      </AiPromptActions>
+    {/if}
+  </AiPromptInput>
 </form>
 
 <style>
-  .composer {
-    display: flex;
-    flex-direction: column;
-    gap: 0.375rem;
+  .composer-form {
     margin-bottom: 1rem;
-    padding: 0.5rem;
-    border: 1px solid var(--border);
-    border-radius: calc(var(--radius) * 1.5);
-    background: var(--bg);
-  }
-
-  .composer:focus-within {
-    border-color: var(--accent);
-  }
-
-  .composer.compact {
-    padding: 0.375rem;
-    margin-bottom: 0.75rem;
   }
 
   .input-row {
     display: flex;
     gap: 0.375rem;
-    align-items: center;
+    align-items: flex-end;
     min-width: 0;
   }
 
-  input[type="search"] {
+  .input-row :global(.ai-prompt-textarea) {
     flex: 1 1 auto;
     min-width: 0;
-    padding: 0.5rem;
-    border: none;
-    border-radius: var(--radius);
-    background: transparent;
-    color: var(--fg);
-    font-size: 1rem;
-  }
-
-  input[type="search"]:focus {
-    outline: none;
-  }
-
-  .send {
-    flex: none;
-    padding: 0.5rem 1rem;
-    border: none;
-    border-radius: var(--radius);
-    background: var(--accent);
-    color: #fff;
-    font-size: 1rem;
-    cursor: pointer;
-  }
-
-  .compact .send {
-    padding: 0.375rem 0.875rem;
-  }
-
-  .tool-row {
-    display: flex;
-    align-items: center;
-    padding: 0 0.125rem;
-  }
-
-  .segment {
-    display: inline-flex;
-    gap: 0.125rem;
-    padding: 0.125rem;
-    border: 1px solid var(--border);
-    border-radius: 999px;
-  }
-
-  .segment button {
-    padding: 0.25rem 0.75rem;
-    border: none;
-    border-radius: 999px;
-    background: transparent;
-    color: var(--muted);
-    font-size: 0.8125rem;
-    cursor: pointer;
-  }
-
-  .segment button[aria-pressed="true"] {
-    background: var(--accent);
-    color: #fff;
   }
 </style>

@@ -10,6 +10,7 @@
 -->
 <script lang="ts">
   import { onDestroy, onMount } from "svelte";
+  import { CaretRightIcon } from "phosphor-svelte";
   import { appHref, navigate } from "../app/router.svelte.js";
   import { capabilities } from "../lib/capabilities.svelte.js";
   import { spa } from "../lib/i18n.js";
@@ -17,6 +18,8 @@
   import Omnibox from "../features/search/Omnibox.svelte";
   import ResultRows from "../features/search/ResultRows.svelte";
   import AssistCard from "../features/answer/AssistCard.svelte";
+  import UiButton from "../ui/button.svelte";
+  import UiCollapsible from "../ui/collapsible.svelte";
 
   interface SearchPageProps {
     params: URLSearchParams;
@@ -54,10 +57,16 @@
         {#if page.countText}<span id="result-count">{page.countText}</span>{/if}
         {#if page.metaText}<span id="search-meta">{page.metaText}</span>{/if}
         {#if page.metaDetail}
-          <details class="meta-detail">
-            <summary>{spa.app.cache_details}</summary>
-            <span>{page.metaDetail}</span>
-          </details>
+          <UiCollapsible>
+            {#snippet trigger(open)}
+              <span class="meta-detail-summary">
+                <span class="meta-detail-chevron" class:open aria-hidden="true"
+                  ><CaretRightIcon size={12} style="vertical-align: -0.125em" /></span
+                >{spa.app.cache_details}
+              </span>
+            {/snippet}
+            <span class="meta-detail-body">{page.metaDetail}</span>
+          </UiCollapsible>
         {/if}
         {#if page.requestId}
           <span id="request-id" class="request-id" title={page.requestIdFull}>{page.requestId}</span>
@@ -82,35 +91,40 @@
       {/if}
       <ResultRows rows={page.rows} emptyText={page.emptyText} onclick={(r) => page.clickRow(r)} />
       {#if page.moreVisible}
-        <button
-          type="button"
-          class="more-btn"
-          disabled={page.moreBusy}
-          onclick={() => page.loadMore()}>{spa.search.more}</button
-        >
+        <div class="more-row">
+          <UiButton disabled={page.moreBusy} onclick={() => page.loadMore()}
+            >{spa.search.more}</UiButton
+          >
+        </div>
       {/if}
     {/if}
   {/if}
 </main>
 
 <style>
-  .more-btn {
+  .more-row {
     margin: 0.75rem 0;
-    padding: 0.5rem 1rem;
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    background: var(--bg);
-    color: var(--fg);
-    font-size: 0.875rem;
-    cursor: pointer;
   }
 
-  .more-btn:hover:not(:disabled) {
-    border-color: var(--accent);
+  /* The former details/summary disclosure look: a quiet chevron
+     that rotates open, label unchanged. */
+  .meta-detail-summary {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
   }
 
-  .more-btn:disabled {
-    opacity: 0.5;
-    cursor: default;
+  .meta-detail-chevron {
+    display: inline-block;
+    transition: transform 140ms var(--ease-out);
+  }
+
+  .meta-detail-chevron.open {
+    transform: rotate(90deg);
+  }
+
+  .meta-detail-body {
+    display: inline-block;
+    padding-left: 1rem;
   }
 </style>
