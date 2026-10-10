@@ -15,6 +15,7 @@ import type { ApiError } from "../../types/ApiError.js";
 import type { Capabilities } from "../../types/Capabilities.js";
 import type { InstanceInfo } from "../../types/InstanceInfo.js";
 import { authHeader } from "./admin.svelte.js";
+import { noteApiCall } from "./backend.svelte.js";
 import type { ArchiveResponse } from "../../types/ArchiveResponse.js";
 import type { AuditRow } from "../../types/AuditRow.js";
 import type { CachedSearch } from "../../types/CachedSearch.js";
@@ -36,6 +37,24 @@ const UI_HEADERS = { "X-Cauce-Client": "ui" } as const;
  */
 function headers(): Record<string, string> {
   return { ...UI_HEADERS, ...authHeader() };
+}
+
+/**
+ * `fetch` + health bookkeeping: every `/api/*` round-trip reports its
+ * outcome to the backend-health store (offline / degraded / ok) so the
+ * sonner toaster reflects connectivity without waiting for the next
+ * `/health` probe. Beacons stay on raw `fetch` — a fire-and-forget
+ * keepalive miss should not flip the health state.
+ */
+async function apiFetch(input: string, init: RequestInit): Promise<Response> {
+  try {
+    const res = await fetch(input, init);
+    noteApiCall(res);
+    return res;
+  } catch (err) {
+    noteApiCall(null);
+    throw err;
+  }
 }
 
 /** Query-string keys `parse_search_request` accepts. */
@@ -71,7 +90,7 @@ export function unknownRouteKeys(params: URLSearchParams): string[] {
 /** `GET /api/config` — the capabilities source (`ai`, `archive`). */
 export async function fetchConfig(): Promise<Config | null> {
   try {
-    const res = await fetch("/api/config", {
+    const res = await apiFetch("/api/config", {
       headers: { Accept: "application/json", ...headers() },
     });
     return res.ok ? ((await res.json()) as Config) : null;
@@ -84,7 +103,7 @@ export async function fetchConfig(): Promise<Config | null> {
 export async function fetchSearch(
   params: URLSearchParams,
 ): Promise<SearchResponse> {
-  const res = await fetch("/api/search?" + params.toString(), {
+  const res = await apiFetch("/api/search?" + params.toString(), {
     headers: { Accept: "application/json", ...headers() },
   });
   if (!res.ok) throw await errorFrom(res);
@@ -145,7 +164,7 @@ export function postAnswer(
   body: AnswerBody,
   signal?: AbortSignal,
 ): Promise<Response> {
-  return fetch("/api/answer", {
+  return apiFetch("/api/answer", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -162,7 +181,7 @@ export function postAnswer(
 /* ------------------------------------------------------------------ */
 
 async function getJson<T>(path: string): Promise<T> {
-  const res = await fetch(path, {
+  const res = await apiFetch(path, {
     headers: { Accept: "application/json", ...headers() },
   });
   if (!res.ok) throw await errorFrom(res);
@@ -170,7 +189,7 @@ async function getJson<T>(path: string): Promise<T> {
 }
 
 async function delJson(path: string): Promise<void> {
-  const res = await fetch(path, { method: "DELETE", headers: headers() });
+  const res = await apiFetch(path, { method: "DELETE", headers: headers() });
   if (!res.ok) throw await errorFrom(res);
 }
 
@@ -207,7 +226,7 @@ export async function postEngine(
   id: string,
   op: "reset" | "enable" | "disable",
 ): Promise<EngineToggleAck> {
-  const res = await fetch(
+  const res = await apiFetch(
     "/api/engines/" + encodeURIComponent(id) + "/" + op,
     { method: "POST", headers: headers() },
   );
@@ -270,7 +289,7 @@ export function deletePage(url: string): Promise<void> {
 export async function putConfig(
   body: URLSearchParams,
 ): Promise<ConfigPutResponse> {
-  const res = await fetch("/api/config", {
+  const res = await apiFetch("/api/config", {
     method: "PUT",
     headers: {
       "Content-Type": "application/x-www-form-urlencoded",
@@ -289,7 +308,7 @@ export async function putConfig(
  */
 export async function fetchCapabilities(): Promise<Capabilities | null> {
   try {
-    const res = await fetch("/api/capabilities", {
+    const res = await apiFetch("/api/capabilities", {
       headers: { Accept: "application/json", ...headers() },
     });
     return res.ok ? ((await res.json()) as Capabilities) : null;
@@ -301,7 +320,7 @@ export async function fetchCapabilities(): Promise<Capabilities | null> {
 /** `GET /api/instance` — the public instance card + SPA bootstrap knobs. */
 export async function fetchInstance(): Promise<InstanceInfo | null> {
   try {
-    const res = await fetch("/api/instance", {
+    const res = await apiFetch("/api/instance", {
       headers: { Accept: "application/json", ...headers() },
     });
     return res.ok ? ((await res.json()) as InstanceInfo) : null;

@@ -15,6 +15,12 @@ description: How to spin up isolated `cauce serve` instances for e2e testing —
 - Start: `CAUCE_DATA_DIR=… CAUCE_CONFIG_DIR=… cauce serve --bind 127.0.0.1 --port <fixed>`.
   The e2e harness uses `--port 0` + parses `addr:` from stderr; for browser testing prefer a
   fixed port. `/health` answers 200 when up (≈1–2 s).
+  **`--bind` takes a HOST only** — `--bind 127.0.0.1:4490` exits 1 with
+  `"failed to lookup address information: Name or service not known"` (a DNS lookup, not a
+  SocketAddr parse). Serve logs go to `$CAUCE_DATA_DIR/logs/cauce.<date>.jsonl`, NOT
+  stdout — an "exit 1, empty log" launch failure is diagnosable there.
+  rust-embed debug builds serve `assets/spa` FROM DISK — a committed SPA rebuild needs no
+  cargo rebuild, just restart serve (verify with `curl /app/index.html | grep index-`).
 - **Backgrounding**: `setsid env … ./cauce serve … &` from a one-shot exec can get reaped
   when the command's process tree exits. For a serve that must outlive the command, run it
   in a persistent TTY shell or with `nohup … & disown` in a reused `shell_id` session.
@@ -342,6 +348,11 @@ errors/warnings/exceptions). Get the page WS URL from `GET :29229/json`.
   `Emulation.clearDeviceMetricsOverride` does NOT restore — set explicit
   desktop metrics (e.g. 1280x700 dsf 1 mobile:false) to go back.
   h-overflow check: `innerWidth+'|'+document.documentElement.scrollWidth`.
+- **Capturing transient toasts (sonner)**: short-lived toasts are easy to miss between
+  screenshots. Inject once via CDP `Runtime.evaluate`:
+  `window.__toastLog=[];new MutationObserver(()=>{const s=document.querySelector('section[aria-label^="Notifications"]');window.__toastLog.push(new Date().toISOString().slice(11,19)+" :: "+(s?s.innerText.replace(/\n+/g," | "):"NONE"))}).observe(document.body,{childList:true,subtree:true,characterData:true});`
+  then evaluate `JSON.stringify(window.__toastLog)` for timestamped evidence of every
+  toast mount/update/dismiss.
 - `playwright-core` + `chromium.connectOverCDP('http://localhost:29229')` also
   works — use `waitUntil:'domcontentloaded'` (networkidle can hang on long-poll).
 

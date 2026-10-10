@@ -14,6 +14,8 @@
   import { Tooltip } from "bits-ui";
   import { IconContext } from "phosphor-svelte";
   import UiConfirmHost from "../ui/confirm-host.svelte";
+  import UiToaster from "../ui/toaster.svelte";
+  import { startBackendProbe } from "../lib/backend.svelte.js";
   import { route, navigate, onPopState, routeVisible, ROUTE_REQUIRES } from "./router.svelte.js";
   import { applyTheme } from "./theme.svelte.js";
   import { capabilities, loadCapabilities } from "../lib/capabilities.svelte.js";
@@ -31,6 +33,7 @@
 
   onMount(() => {
     applyTheme();
+    const stopProbe = startBackendProbe();
     void loadCapabilities();
     // justified: delegated `a[href]` click routing stays bespoke — it
     // is event delegation for SPA navigation, not an interactive
@@ -60,6 +63,7 @@
     document.addEventListener("click", onClick);
     window.addEventListener("popstate", onPopState);
     return () => {
+      stopProbe();
       document.removeEventListener("click", onClick);
       window.removeEventListener("popstate", onPopState);
     };
@@ -126,3 +130,4 @@
 </Tooltip.Provider>
 </IconContext>
 <UiConfirmHost />
+<UiToaster />
