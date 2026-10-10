@@ -70,11 +70,16 @@
   {disabled}
   {name}
 >
+  <!-- axe label-content-name-mismatch: the trigger's visible text is the
+       selected value, so the accessible name must contain it —
+       "Since: Any time", not just "Since". -->
   <Select.Trigger
     class="ui-select-trigger"
     {id}
     {disabled}
-    aria-label={ariaLabel}
+    aria-label={ariaLabel === undefined
+      ? undefined
+      : `${ariaLabel}: ${selectedLabel || placeholder || ""}`}
     aria-invalid={ariaInvalid || undefined}
   >
     <span class="ui-select-label" class:placeholder={selectedLabel === ""}>

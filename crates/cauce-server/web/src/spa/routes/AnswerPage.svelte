@@ -99,6 +99,9 @@
     <p class="answer-ask">{SA.ask_prompt}</p>
     <Omnibox bind:value={askQ} bind:aiMode={askAi} onsubmit={askSubmit} />
   {:else}
+    <!-- Same .vh h1 convention as SearchPage: the running query is the
+         page's heading; axe page-has-heading-one. -->
+    <h1 class="vh">{q || SA.submit}</h1>
     <div class="answer-thread" aria-live="polite">
       {#each thread.turns as turn (turn.n)}
         <AnswerTurn

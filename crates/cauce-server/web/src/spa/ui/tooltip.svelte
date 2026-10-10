@@ -65,7 +65,7 @@
     color: var(--fg);
     font-size: 0.75rem;
     line-height: 1.4;
-    box-shadow: 0 4px 12px rgb(0 0 0 / 0.12);
+    box-shadow: var(--shadow);
     z-index: 50;
     animation: ui-tooltip-in 150ms ease-out;
   }
