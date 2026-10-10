@@ -363,42 +363,8 @@ body {
   text-decoration: underline;
 }
 
-/* §7.2: steps collapse quiet by default — a muted disclosure, never
-   a live progress banner. The list inside keeps the legacy dot-join. */
-.answer-steps {
-  margin: 0 0 0.5rem;
-  color: var(--muted);
-  font-size: 0.875rem;
-}
-
-.answer-steps-summary {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3rem;
-}
-
-.answer-steps-chevron {
-  display: inline-block;
-  transition: transform 140ms var(--ease-out);
-}
-
-.answer-steps-chevron.open {
-  transform: rotate(90deg);
-}
-
-.answer-steps ol {
-  list-style: none;
-  margin: 0.25rem 0 0;
-  padding: 0;
-}
-
-.answer-steps li {
-  display: inline;
-}
-
-.answer-steps li + li::before {
-  content: " · ";
-}
+/* §7.2 steps disclosure is styled inside `ai/steps.svelte` (DS-AI):
+   quiet/muted, closed by default, never a live progress banner. */
 
 /* [n] badge on a source card — the a.cite anchors retarget to it. */
 .cite-badge {
@@ -473,20 +439,14 @@ body {
 }
 
 /* W7-04/§7.2: the follow-up composer pins to the viewport bottom so
-   the next question is always in reach. */
+   the next question is always in reach (DS-AI: its field is the
+   `ai/prompt-input` boxed composer — the bar stays hairline + sticky). */
 #answer-followup {
   position: sticky;
   bottom: 0;
-  display: flex;
-  gap: 0.5rem;
   padding: 0.5rem 0;
   background: var(--bg);
   border-top: 1px solid var(--border);
-}
-
-#answer-followup input {
-  flex: 1;
-  min-width: 0;
 }
 
 /* ------------------------------------------------------------------ */

@@ -3,19 +3,21 @@
   License, v. 2.0. If a copy of the MPL was not distributed with this
   file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-  One thread turn (§7.1): query bubble, meta row (status / retrieval
-  path / confidence / ungrounded / cached / model / request-id), the
-  step lines collapsed into a quiet `UiCollapsible` by default (§7.2),
-  the answer body (pre-wrap deltas while streaming, server-sanitized
-  `.md` once `done.html` lands), then — only at `done` — the numbered
-  source cards and related questions. `edit` shows on the last settled
-  turn and rewinds it into the composer.
+  One thread turn (§7.1): query bubble, meta row (status — an
+  `AiLoader` + `AiTextShimmer` while the turn is in flight — /
+  retrieval path / confidence / ungrounded / cached / model /
+  request-id), the step lines in an `AiSteps` rail collapsed quiet by
+  default (§7.2), the answer body (pre-wrap deltas while streaming,
+  server-sanitized `.md` once `done.html` lands), then — only at
+  `done` — the numbered source cards and related questions. `edit`
+  shows on the last settled turn and rewinds it into the composer.
 -->
 <script lang="ts">
-  import { CaretRightIcon } from "phosphor-svelte";
   import SourceCard from "./SourceCard.svelte";
+  import AiLoader from "../../ai/loader.svelte";
+  import AiTextShimmer from "../../ai/text-shimmer.svelte";
+  import AiSteps from "../../ai/steps.svelte";
   import UiButton from "../../ui/button.svelte";
-  import UiCollapsible from "../../ui/collapsible.svelte";
   import { SA, fmt } from "../../lib/i18n.js";
   import type { AnswerTurnState } from "./thread.svelte.js";
 
@@ -55,7 +57,13 @@
     {/if}
   </p>
   <p class="meta">
-    <span class="answer-status">{turn.status}</span>
+    <span class="answer-status" role="status">
+      {#if !turn.terminal}
+        <AiLoader size="sm" /><AiTextShimmer>{turn.status}</AiTextShimmer>
+      {:else}
+        {turn.status}
+      {/if}
+    </span>
     {#if turn.pathText}
       <span class="meta-chip answer-path" data-path={turn.pathKind}>{turn.pathText}</span>
     {/if}
@@ -78,22 +86,7 @@
     {/if}
   </p>
   {#if turn.steps.length}
-    <div class="answer-steps">
-      <UiCollapsible>
-        {#snippet trigger(open)}
-          <span class="answer-steps-summary">
-            <span class="answer-steps-chevron" class:open aria-hidden="true"
-              ><CaretRightIcon size={12} style="vertical-align: -0.125em" /></span
-            >{fmt(SA.steps, { n: turn.steps.length })}
-          </span>
-        {/snippet}
-        <ol>
-          {#each turn.steps as step}
-            <li>{step}</li>
-          {/each}
-        </ol>
-      </UiCollapsible>
-    </div>
+    <AiSteps label={fmt(SA.steps, { n: turn.steps.length })} steps={turn.steps} />
   {/if}
   {#if turn.ungrounded}
     <p class="ungrounded">{SA.ungrounded}</p>

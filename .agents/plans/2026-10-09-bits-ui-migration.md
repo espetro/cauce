@@ -266,6 +266,50 @@ rooted.
   button`); regenerate and commit `assets/spa/` + any `pnpm-lock`
   drift; run all four gates green.
 
+### Group 5 — AI surfaces (1 task)
+
+- **DS-AI AI-mode surfaces on an AI-chat foundation** —
+  `web/src/spa/ai/` (new, vendored), `features/answer/*`,
+  `features/search/Omnibox.svelte`, `routes/AnswerPage.svelte`,
+  `routes/SearchPage.svelte`, `web/AGENTS.md` (features may also
+  import `ai/`).
+
+  **Foundation choice: sv-prompt-kit** (Svelte Prompt Kit —
+  `sv-prompt-kit.vercel.app`, the lightweight registry sibling of
+  Svelte AI Elements). Adopted the shadcn way the plan already
+  uses for `ui/`: components vendored into `web/src/spa/ai/`,
+  restyled on the app tokens, zero new npm deps (`runed`'s
+  `watch` → `$effect`, lucide → `phosphor-svelte`, shadcn
+  registry-deps → `ui/` wrappers). Its composer (PromptInput
+  context + textarea + actions), loader, text-shimmer, steps and
+  source-chip cover the whole scope — composer send/stop +
+  disabled/submitting states, streaming indicator, sources
+  rail, assist card — without owning the wire:
+  `features/answer/thread.svelte.ts` keeps the SSE-over-POST
+  plumbing verbatim.
+  - why-not **TanStack AI** (`@tanstack/ai-svelte`): a data-layer
+    chat client only — no presentation components, and its
+    chunk/stream protocol would replace `thread.svelte.ts`
+    rather than adapt to the named-frame SSE
+    (`step`/`delta`/`sources`/`done`/`error`, sources held to
+    `done`, stop-keeps-partial, `editLast` rewind).
+  - why-not **Vercel AI SDK + ai-elements Svelte port**: the SDK
+    is likewise a data layer expecting the UI-message stream
+    protocol, and the registry's flagship blocks drag `ai@^6`,
+    `streamdown-svelte`, `shiki`, `mode-watcher` for client-side
+    markdown — dead weight when the server already renders and
+    sanitizes `done.html`; heavier than the scope needs.
+  Vendored pieces: `ai/prompt-input/` (context/root/textarea/
+  actions), `ai/loader.svelte` (typing variant), `ai/
+  text-shimmer.svelte`, `ai/steps.svelte` (composed on
+  `UiCollapsible`), `ai/source-chip.svelte`. Consumers: Omnibox
+  (composer + send; the mode segment stays `UiToggleGroup` —
+  the foundation ships no segmented control), FollowupComposer
+  (send/stop swap on `isLoading`), AnswerTurn (`AiLoader` +
+  `AiTextShimmer` status, `AiSteps`), AssistCard (busy loader,
+  `AiSourceChip` rail). `ui/` wrappers remain the primitives
+  for everything the foundation does not cover.
+
 ## 5. Shared rules for every task
 
 - Commits: Conventional Commits, atomic, `git commit -s`, MPL-2.0
