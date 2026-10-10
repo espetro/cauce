@@ -11,7 +11,9 @@
   import { navigate } from "../app/router.svelte.js";
   import { createSearchPage } from "../features/search/search.svelte.js";
   import { spa } from "../lib/i18n.js";
+  import { LANDING } from "../lib/flags.js";
   import Omnibox from "../features/search/Omnibox.svelte";
+  import Landing from "../features/landing/Landing.svelte";
 
   // The submit hand-off lives in the feature state (`submit` decides
   // search vs AI-mode navigation); the landing page only drives it.
@@ -24,7 +26,7 @@
 
 <main>
   <h1 class="vh">{spa.common.brand}</h1>
-  <div class="hero">
+  <div class:hero={!LANDING} class:hero-landing={LANDING}>
     <Omnibox
       bind:value={page.q}
       bind:aiMode={page.aiMode}
@@ -32,10 +34,16 @@
       onsubmit={() => page.submit(navigate)}
     />
   </div>
+  {#if LANDING}
+    <Landing />
+  {/if}
 </main>
 
 <style>
   .hero {
     margin: 18vh 0 0;
+  }
+  .hero-landing {
+    margin: 10vh 0 0;
   }
 </style>
