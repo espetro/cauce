@@ -695,4 +695,37 @@ table.data tr.detail td {
   margin: 0.25rem 0;
 }
 
+/* ui/toaster (svelte-sonner) on the app tokens. The toaster portals
+   outside the component tree so these vars must be global — sonner's
+   styled toasts read `--normal-*`/`--error-*`/`--success-*`/`--warning-*`
+   from the toaster element. Errors keep the neutral surface and flag
+   state on the border/text accent instead of sonner's solid fills —
+   the flat hairline look the rest of the chrome uses. */
+[data-sonner-toaster] {
+  --normal-bg: var(--bg);
+  --normal-border: var(--border);
+  --normal-text: var(--fg);
+  --error-bg: var(--bg);
+  --error-border: var(--warn);
+  --error-text: var(--fg);
+  --warning-bg: var(--bg);
+  --warning-border: var(--warn);
+  --warning-text: var(--fg);
+  --success-bg: var(--bg);
+  --success-border: var(--accent);
+  --success-text: var(--fg);
+  font-family: inherit;
+}
+
+[data-sonner-toaster] [data-sonner-toast] {
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+/* Keep the persistent "backend unreachable" toast readable: it parks
+   at bottom-center until `/health` recovers or the user dismisses. */
+[data-sonner-toaster] [data-sonner-toast] [data-description] {
+  color: var(--muted);
+}
+
 
