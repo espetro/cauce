@@ -539,19 +539,6 @@ body {
   color: var(--muted);
 }
 
-/* Load-bearing `:not([class*="ui-"])`: ui/ wrappers render buttons
-   (UiButton, UiSelect trigger, UiCheckbox, UiCollapsible trigger) whose
-   own recipes this legacy rule would out-specify — the class guard keeps
-   it scoped to raw stragglers like the archive filter submit. */
-.filters button:not([class*="ui-"]) {
-  padding: 0.25rem 0.75rem;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--bg);
-  color: var(--fg);
-  cursor: pointer;
-}
-
 .filters a.clear {
   color: var(--muted);
 }
@@ -603,7 +590,7 @@ table.data tr.detail td {
   }
 }
 
-/* Row secondary actions — buttons styled as links like the HTMX page. */
+/* Row secondary actions — quiet links like the HTMX page. */
 .row-actions {
   display: inline-flex;
   flex-wrap: wrap;
@@ -612,21 +599,12 @@ table.data tr.detail td {
   font-size: 0.875rem;
 }
 
-.row-actions a,
-.row-actions button:not([class*="ui-"]) {
+.row-actions a {
   color: var(--accent);
-  background: none;
-  border: 0;
-  padding: 0;
-  font: inherit;
-  cursor: pointer;
   text-decoration: none;
 }
 
-/* Same class guard as the filters rule above: a ui/ wrapper inside
-   .row-actions keeps its own variant hover, never the link underline. */
-.row-actions a:hover,
-.row-actions button:not([class*="ui-"]):hover {
+.row-actions a:hover {
   text-decoration: underline;
 }
 
@@ -740,8 +718,7 @@ table.data tr.detail td {
 
 .settings-form .frow input[type="text"],
 .settings-form .frow input[type="number"],
-.settings-form .frow input[type="password"],
-.settings-form .frow select {
+.settings-form .frow input[type="password"] {
   flex: 1 1 auto;
   min-width: 0;
   padding: 0.25rem 0.4rem;
@@ -758,33 +735,4 @@ table.data tr.detail td {
   margin: 0.25rem 0;
 }
 
-.settings-form button[type="submit"] {
-  padding: 0.35rem 1.25rem;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--bg);
-  color: var(--fg);
-  font: inherit;
-  cursor: pointer;
-}
 
-/* Admin tab bar. */
-.tabs {
-  display: flex;
-  gap: 0.25rem;
-  border-bottom: 1px solid var(--border);
-  margin-bottom: 1rem;
-}
-
-.tabs a {
-  padding: 0.35rem 0.9rem;
-  color: var(--muted);
-  text-decoration: none;
-  border-bottom: 2px solid transparent;
-  margin-bottom: -1px;
-}
-
-.tabs a[aria-current="page"] {
-  color: var(--accent);
-  border-bottom-color: var(--accent);
-}

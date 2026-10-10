@@ -12,6 +12,7 @@
   turn and rewinds it into the composer.
 -->
 <script lang="ts">
+  import { CaretRightIcon } from "phosphor-svelte";
   import SourceCard from "./SourceCard.svelte";
   import UiButton from "../../ui/button.svelte";
   import UiCollapsible from "../../ui/collapsible.svelte";
@@ -81,7 +82,8 @@
       <UiCollapsible>
         {#snippet trigger(open)}
           <span class="answer-steps-summary">
-            <span class="answer-steps-chevron" class:open aria-hidden="true">▸</span
+            <span class="answer-steps-chevron" class:open aria-hidden="true"
+              ><CaretRightIcon size={12} style="vertical-align: -0.125em" /></span
             >{fmt(SA.steps, { n: turn.steps.length })}
           </span>
         {/snippet}

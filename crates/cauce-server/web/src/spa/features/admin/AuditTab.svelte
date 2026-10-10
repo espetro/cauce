@@ -11,6 +11,7 @@
   still-HTMX `/trace/{id}` page.
 -->
 <script lang="ts">
+  import { CaretRightIcon } from "phosphor-svelte";
   import { navigate } from "../../app/router.svelte.js";
   import { spa } from "../../lib/i18n.js";
   import UiButton from "../../ui/button.svelte";
@@ -126,7 +127,7 @@
                   {#snippet trigger(open)}
                     <span class="details-summary">
                       <span class="details-chevron" class:open aria-hidden="true"
-                        >▸</span
+                        ><CaretRightIcon size={12} style="vertical-align: -0.125em" /></span
                       >{a.details_summary}
                     </span>
                   {/snippet}

@@ -10,6 +10,7 @@
 -->
 <script lang="ts">
   import { onDestroy, onMount } from "svelte";
+  import { CaretRightIcon } from "phosphor-svelte";
   import { appHref, navigate } from "../app/router.svelte.js";
   import { capabilities } from "../lib/capabilities.svelte.js";
   import { spa } from "../lib/i18n.js";
@@ -59,7 +60,8 @@
           <UiCollapsible>
             {#snippet trigger(open)}
               <span class="meta-detail-summary">
-                <span class="meta-detail-chevron" class:open aria-hidden="true">▸</span
+                <span class="meta-detail-chevron" class:open aria-hidden="true"
+                  ><CaretRightIcon size={12} style="vertical-align: -0.125em" /></span
                 >{spa.app.cache_details}
               </span>
             {/snippet}

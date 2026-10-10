@@ -142,7 +142,6 @@
       {...({
         id: "assist-btn",
         "aria-controls": "assist-card",
-        "aria-expanded": "false",
       } as ComponentProps<typeof UiButton>)}
       >{spa.assist.trigger}</UiButton
     >

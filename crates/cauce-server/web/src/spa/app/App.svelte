@@ -12,6 +12,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { Tooltip } from "bits-ui";
+  import { IconContext } from "phosphor-svelte";
   import UiConfirmHost from "../ui/confirm-host.svelte";
   import { route, navigate, onPopState, routeVisible, ROUTE_REQUIRES } from "./router.svelte.js";
   import { applyTheme } from "./theme.svelte.js";
@@ -87,6 +88,11 @@
   const routeKey = $derived(route.path + "?" + route.params.toString());
 </script>
 
+<!-- One icon system for the whole SPA: phosphor-svelte at the "light"
+  weight (the thin-stroke tier the design tokens assume). Portaled
+  Bits UI content still inherits this context — it follows the
+  component tree, not the DOM. -->
+<IconContext values={{ weight: "light" }}>
 <Tooltip.Provider delayDuration={300}>
   <TopNav {active} />
   {#key routeKey}
@@ -118,4 +124,5 @@
   {/if}
 {/key}
 </Tooltip.Provider>
+</IconContext>
 <UiConfirmHost />

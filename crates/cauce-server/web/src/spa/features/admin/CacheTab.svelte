@@ -8,6 +8,7 @@
   `UiCollapsible` rows with lazy pretty-JSON payload, row delete, pager.
 -->
 <script lang="ts">
+  import { CaretLeftIcon, CaretRightIcon } from "phosphor-svelte";
   import { navigate } from "../../app/router.svelte.js";
   import { spa } from "../../lib/i18n.js";
   import UiButton from "../../ui/button.svelte";
@@ -83,7 +84,7 @@
             >
               {#snippet trigger(open)}
                 <span class="cache-chevron" class:open aria-hidden="true"
-                  >▸</span
+                  ><CaretRightIcon size={12} style="vertical-align: -0.125em" /></span
                 >
                 <span class="cache-query">{row.query}</span>
                 <span class="cache-meta">
@@ -118,10 +119,16 @@
   {#if !s.searching && (s.offset > 0 || s.hasNext)}
     <div class="pager meta">
       {#if s.offset > 0}
-        <a href={tab.pagerUrl(s.offset - 50)}>&larr; {c.page_prev}</a>
+        <a href={tab.pagerUrl(s.offset - 50)}
+          ><CaretLeftIcon size={13} aria-hidden="true" style="vertical-align: -0.125em" />
+          {c.page_prev}</a
+        >
       {/if}
       {#if s.hasNext}
-        <a href={tab.pagerUrl(s.offset + 50)}>{c.page_next} &rarr;</a>
+        <a href={tab.pagerUrl(s.offset + 50)}
+          >{c.page_next}
+          <CaretRightIcon size={13} aria-hidden="true" style="vertical-align: -0.125em" /></a
+        >
       {/if}
     </div>
   {/if}

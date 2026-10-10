@@ -9,6 +9,7 @@
   is down.
 -->
 <script lang="ts">
+  import { CaretLeftIcon, CaretRightIcon } from "phosphor-svelte";
   import { navigate } from "../../app/router.svelte.js";
   import { spa } from "../../lib/i18n.js";
   import UiButton from "../../ui/button.svelte";
@@ -74,7 +75,7 @@
             >
               {#snippet trigger(open)}
                 <span class="archive-chevron" class:open aria-hidden="true"
-                  >▸</span
+                  ><CaretRightIcon size={12} style="vertical-align: -0.125em" /></span
                 >
                 <span class="archive-title">{row.title}</span>
                 <span class="archive-meta">
@@ -111,10 +112,16 @@
   {#if !s.searching && (s.offset > 0 || s.hasMore)}
     <div class="pager meta">
       {#if s.offset > 0}
-        <a href={page.pagerUrl(s.offset - page.LIMIT)}>&larr; {a.page_prev}</a>
+        <a href={page.pagerUrl(s.offset - page.LIMIT)}
+          ><CaretLeftIcon size={13} aria-hidden="true" style="vertical-align: -0.125em" />
+          {a.page_prev}</a
+        >
       {/if}
       {#if s.hasMore}
-        <a href={page.pagerUrl(s.offset + page.LIMIT)}>{a.page_next} &rarr;</a>
+        <a href={page.pagerUrl(s.offset + page.LIMIT)}
+          >{a.page_next}
+          <CaretRightIcon size={13} aria-hidden="true" style="vertical-align: -0.125em" /></a
+        >
       {/if}
     </div>
   {/if}

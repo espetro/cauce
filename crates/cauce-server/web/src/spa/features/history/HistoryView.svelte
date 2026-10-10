@@ -12,6 +12,7 @@
   UiButton submit + row delete.
 -->
 <script lang="ts">
+  import { CaretRightIcon } from "phosphor-svelte";
   import { navigate } from "../../app/router.svelte.js";
   import { spa } from "../../lib/i18n.js";
   import UiButton from "../../ui/button.svelte";
@@ -146,7 +147,7 @@
                 <UiCollapsible open={row.clicks.length > 0}>
                   {#snippet trigger(open)}
                     <span class="clicks-chevron" class:open aria-hidden="true"
-                      >▸</span
+                      ><CaretRightIcon size={12} style="vertical-align: -0.125em" /></span
                     >{row.clicks.length} {row.clicksWord}
                   {/snippet}
                   {#each row.clicks as c}

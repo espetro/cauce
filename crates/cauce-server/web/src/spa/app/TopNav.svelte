@@ -13,6 +13,7 @@
 -->
 <script lang="ts">
   import type { ComponentProps } from "svelte";
+  import { SunIcon, MoonIcon, CircleHalfIcon } from "phosphor-svelte";
   import { spa } from "../lib/i18n.js";
   import { capabilities } from "../lib/capabilities.svelte.js";
   import { appHref, routeVisible } from "./router.svelte.js";
@@ -97,48 +98,11 @@
           onclick={cycleTheme}
         >
           {#if theme.value === "light"}
-            <svg
-              viewBox="0 0 16 16"
-              width="15"
-              height="15"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.4"
-              stroke-linecap="round"
-              aria-hidden="true"
-            >
-              <circle cx="8" cy="8" r="3" />
-              <path
-                d="M8 1.4v1.7M8 12.9v1.7M1.4 8h1.7M12.9 8h1.7M3.3 3.3l1.2 1.2M11.5 11.5l1.2 1.2M12.7 3.3l-1.2 1.2M4.5 11.5l-1.2 1.2"
-              />
-            </svg>
+            <SunIcon size={15} aria-hidden="true" />
           {:else if theme.value === "dark"}
-            <svg
-              viewBox="0 0 16 16"
-              width="15"
-              height="15"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.4"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              aria-hidden="true"
-            >
-              <path d="M13.4 9.4A5.6 5.6 0 1 1 6.6 2.6a4.5 4.5 0 0 0 6.8 6.8Z" />
-            </svg>
+            <MoonIcon size={15} aria-hidden="true" />
           {:else}
-            <svg
-              viewBox="0 0 16 16"
-              width="15"
-              height="15"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.4"
-              aria-hidden="true"
-            >
-              <circle cx="8" cy="8" r="5.4" />
-              <path d="M8 2.6a5.4 5.4 0 0 1 0 10.8Z" fill="currentColor" stroke="none" />
-            </svg>
+            <CircleHalfIcon size={15} aria-hidden="true" />
           {/if}
         </UiButton>
       {/snippet}

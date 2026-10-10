@@ -11,6 +11,7 @@
 -->
 <script lang="ts">
   import { onMount } from "svelte";
+  import { ArrowUpIcon } from "phosphor-svelte";
   import { spa } from "../../lib/i18n.js";
   import { capabilities } from "../../lib/capabilities.svelte.js";
   import UiButton from "../../ui/button.svelte";
@@ -41,7 +42,7 @@
 
   const modeOptions = $derived<ModeOption[]>([
     { value: "search", label: spa.search.submit },
-    { value: "ai", label: "✦ " + spa.search.ai_mode },
+    { value: "ai", label: spa.search.ai_mode },
   ]);
 
   onMount(() => {
@@ -86,7 +87,7 @@
       size="icon"
       disabled={!value.trim()}
       ariaLabel={aiMode ? spa.answer.submit : spa.search.submit}
-      ><span aria-hidden="true" class="send-icon">↑</span></UiButton
+      ><ArrowUpIcon size={15} aria-hidden="true" /></UiButton
     >
   </div>
   {#if capabilities.aiEnabled}
@@ -140,12 +141,6 @@
 
   input[type="search"]:focus {
     outline: none;
-  }
-
-  /* ui/button's icon size is a fixed square; the glyph sizes itself. */
-  .send-icon {
-    font-size: 1rem;
-    line-height: 1;
   }
 
   .tool-row {

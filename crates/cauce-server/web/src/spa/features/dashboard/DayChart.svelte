@@ -5,6 +5,8 @@
 
   The searches-per-day stacked-bar SVG — the `day_bars` geometry that
   used to be precomputed in `src/dashboard.rs`, now client-side.
+  justified: this is a data chart, not an icon — it stays a raw inline
+  SVG (the DS-12 icon-library sweep only covers icon glyphs).
   `<title>` on each rect stays (plan §3.12): it is already the
   accessible hover on SVG, and wrapping 60 rect bars in UiTooltip
   triggers is friction with no payoff.
