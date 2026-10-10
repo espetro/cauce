@@ -6,18 +6,30 @@
   `ui/alert-dialog` — vendored Bits UI `AlertDialog`
   (AlertDialog.Root/Portal/Overlay/Content/Title/Description/Action/
   Cancel) restyled on the app tokens. Composed by `ui/confirm`'s
-  UiConfirmHost — features never mount it directly. One-way data flow:
-  controlled `open` plus `onConfirm`/`onCancel` callbacks; Escape and
-  programmatic close both surface as `onCancel`, and the `answered`
-  guard keeps a button answer from also reporting the Close primitive's
-  `onOpenChange(false)` as a dismissal. `danger` switches the action to
-  the warn fill for destructive ops.
+  UiConfirmHost — features never mount it directly. Controlled via
+  `bind:open` plus `onConfirm`/`onCancel` callbacks; Escape and
+  programmatic close both surface as `onCancel`. `danger` switches
+  the action to the warn fill for destructive ops.
+
+  `open` is `$bindable` and bound through to `AlertDialog.Root`: a
+  bare `{open}` prop lets Root's internal `$bindable` fallback drift
+  from the parent (same trap as `ui/toggle-group`'s value — a close
+  write lands in the fallback and the parent's unchanged expression
+  never pushes back). The `answered` latch swallows the trailing
+  close write a settled Cancel/Action click still emits — without
+  it the write would cancel the NEXT queued confirm — and the
+  effect re-arms it on every episode change (`key` identity or
+  `open` flip).
 -->
 <script lang="ts">
   import { AlertDialog } from "bits-ui";
 
   interface Props {
     open: boolean;
+    /** Identity of the request being shown — a change re-arms
+        `answered`; without it two queued requests with identical
+        title/description are indistinguishable episodes. */
+    key?: unknown;
     title: string;
     description: string;
     confirmLabel: string;
@@ -28,7 +40,8 @@
   }
 
   let {
-    open,
+    open = $bindable(),
+    key,
     title,
     description,
     confirmLabel,
@@ -38,18 +51,29 @@
     onCancel,
   }: Props = $props();
 
-  // Action/Cancel are Close primitives — their click also fires
-  // `onOpenChange(false)`, which must not be reported as a second
-  // (cancel) answer.
+  // Action/Cancel are Close primitives — their click still pushes a
+  // close write through the binding, which must not be reported as
+  // a second (cancel) answer. Prop-driven opens never go through
+  // the setter, so open/key changes are the re-arm signal.
   let answered = false;
 
-  function handleOpenChange(next: boolean): void {
+  $effect(() => {
+    void key;
+    void open;
+    answered = false;
+  });
+
+  // Binding setter — every close Root initiates (Escape, Close
+  // primitives) lands here, so an unsettled close IS a cancel
+  // answer; no close path can bypass the queue.
+  function setOpen(next: boolean): void {
     if (next) {
-      answered = false;
+      open = true;
       return;
     }
     if (!answered) onCancel();
     answered = false;
+    open = false;
   }
 
   function handleConfirm(): void {
@@ -63,7 +87,7 @@
   }
 </script>
 
-<AlertDialog.Root {open} onOpenChange={handleOpenChange}>
+<AlertDialog.Root bind:open={() => open, setOpen}>
   <AlertDialog.Portal>
     <AlertDialog.Overlay class="ui-alert-dialog-overlay" />
     <AlertDialog.Content class="ui-alert-dialog-content">
@@ -98,6 +122,9 @@
     inset: 0;
     background: var(--overlay);
     z-index: 50;
+    /* ScrollLock sets body pointer-events:none — re-arm the scrim
+       so it eats clicks instead of leaking them to the page. */
+    pointer-events: auto;
     animation: ui-alert-overlay-in 200ms var(--ease-out);
   }
 

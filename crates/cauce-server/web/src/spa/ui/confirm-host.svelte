@@ -21,8 +21,12 @@
   $effect(() => subscribeConfirm((head) => (request = head)));
 </script>
 
+<!-- `request` is the single source of truth for `open`: Root's
+     close writes surface through `settleConfirm` (cancel), so the
+     binding setter deliberately drops them. -->
 <UiAlertDialog
-  open={request !== null}
+  bind:open={() => request !== null, (_v) => void _v}
+  key={request}
   title={request?.title ?? ""}
   description={request?.description ?? ""}
   confirmLabel={request?.confirmLabel ?? spa.common.confirm}

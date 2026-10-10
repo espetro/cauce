@@ -191,6 +191,11 @@ export function createArchivePage() {
     try {
       await deletePage(row.url);
       row.gone = true;
+      // `rows` keeps gone entries — recount the visible ones.
+      state.countLine = countLine(
+        state.rows.filter((r) => !r.gone).length,
+        state.searching,
+      );
     } catch (e) {
       row.markdownError = e instanceof Error ? e.message : String(e);
     }
