@@ -665,6 +665,15 @@ app:
   archiving_off: the archive is disabled on this instance
   # `details` summary hiding TTL/cache jargon in public mode.
   cache_details: cache details
+  # Backend-health toasts (`lib/backend.svelte.ts`): fired when the
+  # `/health` probe or an `/api/*` outcome flips reachability — the
+  # split CF Pages deploy can serve the SPA with no backend at all.
+  backend_down_title: Can't reach the cauce API
+  backend_down_desc: Search and answers are offline — the UI keeps working; local history and archive still load.
+  backend_degraded_title: The cauce API is degraded
+  backend_degraded_desc: The backend is up but reporting errors — some calls may fail.
+  backend_retry: retry now
+  backend_back: Backend is back
 
 admin:
   # FX-05 merged ops surface `/app/admin` — tab labels reuse nav casing.

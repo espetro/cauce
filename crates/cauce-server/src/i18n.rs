@@ -174,6 +174,12 @@ pub fn spa_bundle() -> Value {
                 "app.instance_privacy",
                 "app.archiving_off",
                 "app.cache_details",
+                "app.backend_down_title",
+                "app.backend_down_desc",
+                "app.backend_degraded_title",
+                "app.backend_degraded_desc",
+                "app.backend_retry",
+                "app.backend_back",
             ][..],
         ),
         // FX-05 admin/read pages — the whole `history`/`dashboard`/
