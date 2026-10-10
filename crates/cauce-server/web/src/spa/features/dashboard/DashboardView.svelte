@@ -4,14 +4,15 @@
   file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
   `/app/dashboard` markup — one-for-one with `templates/dashboard.html`:
-  ?days=7|30 window links, the panel grid (searches/day SVG chart, hit
+  ?days=7|30 window segment, the panel grid (searches/day SVG chart, hit
   rate, latency, clients, outcomes, reliability, top/zero queries,
   engine eval), the engines table and the cache block.
 -->
 <script lang="ts">
-  import { appHref } from "../../app/router.svelte.js";
+  import { appHref, navigate } from "../../app/router.svelte.js";
   import { capabilities } from "../../lib/capabilities.svelte.js";
   import { spa } from "../../lib/i18n.js";
+  import UiToggleGroup from "../../ui/toggle-group.svelte";
   import type { createDashboardPage } from "./dashboard.svelte.js";
   import DayChart from "./DayChart.svelte";
 
@@ -23,6 +24,19 @@
   const d = spa.dashboard;
   const s = $derived(page.state);
   const v = $derived(page.view());
+
+  // ToggleGroup single writes "" when the pressed item is re-pressed;
+  // the window must always resolve to a days value. The setter ignores
+  // "", and because the binding is a getter/setter pair the group keeps
+  // reading `s.days` instead of drifting to a local fallback. The
+  // ?days= navigation remounts the route (`{#key routeKey}`) and is
+  // also the deep-link path — `/app/dashboard?days=30` loads the 30-day
+  // window straight from the URL.
+  function pickDays(days: string) {
+    if (days === "7" || days === "30") {
+      navigate(appHref("/dashboard") + "?days=" + days);
+    }
+  }
 </script>
 
 <h1>{d.title}</h1>
@@ -43,18 +57,17 @@
     <p class="muted">{spa.app.instance_privacy}</p>
   </section>
 {:else}
-<p class="meta window">
+<div class="meta window">
   {d.window}:
-  <a
-    href={appHref("/dashboard") + "?days=7"}
-    aria-current={s.days === 7 ? "page" : undefined}>{d.days_7}</a
-  >
-  ·
-  <a
-    href={appHref("/dashboard") + "?days=30"}
-    aria-current={s.days === 30 ? "page" : undefined}>{d.days_30}</a
-  >
-</p>
+  <UiToggleGroup
+    bind:value={() => String(s.days), pickDays}
+    options={[
+      { value: "7", label: d.days_7 },
+      { value: "30", label: d.days_30 },
+    ]}
+    ariaLabel={d.window}
+  />
+</div>
 
 {#if s.loading}
   <p class="stats">…</p>
@@ -253,13 +266,13 @@
 {/if}
 
 <style>
-  .window a {
-    color: var(--accent);
-  }
-  .window a[aria-current] {
-    font-weight: 700;
-    color: var(--fg);
-    text-decoration: none;
+  /* The window segment replaces the ?days= links; ToggleGroup.Root
+     renders a div, so the row is a flex div, not a p. */
+  .window {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
   }
   .panels {
     display: grid;

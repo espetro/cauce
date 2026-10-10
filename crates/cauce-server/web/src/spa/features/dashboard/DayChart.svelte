@@ -5,6 +5,9 @@
 
   The searches-per-day stacked-bar SVG — the `day_bars` geometry that
   used to be precomputed in `src/dashboard.rs`, now client-side.
+  `<title>` on each rect stays (plan §3.12): it is already the
+  accessible hover on SVG, and wrapping 60 rect bars in UiTooltip
+  triggers is friction with no payoff.
 -->
 <script lang="ts">
   import { CHART_H_TICKS, CHART_W, type DayBar } from "./dashboard.svelte.js";
