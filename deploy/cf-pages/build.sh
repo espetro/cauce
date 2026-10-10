@@ -41,6 +41,16 @@ rm -rf pages-dist
 mkdir -p pages-dist/app
 cp -r crates/cauce-server/assets/spa/. pages-dist/app/
 
+# Docs site (docmd): end-user docs/ plus a build-time copy of the
+# developer docs in .agents/docs (docmd doesn't follow symlinks, so
+# the copy keeps .agents/docs canonical). Served at /docs/ — links are
+# relative so the mount needs no base-path config.
+rm -rf docs/developers docs-site
+mkdir -p docs/developers
+rsync -a .agents/docs/ docs/developers/
+npx -y @docmd/core build
+cp -r docs-site pages-dist/docs
+
 # `_redirects` carries static rules only — the API proxy lives in
 # `functions/` because a 200-rewrite cannot target an external origin.
 # No `/` redirect: the apex IS the landing (the SPA boots its home
@@ -53,4 +63,4 @@ EOF
 # app for deep links like /app/search?q=...
 cp crates/cauce-server/assets/spa/index.html pages-dist/index.html
 
-echo "pages-dist ready (API_ORIGIN=$API_ORIGIN)"
+echo "pages-dist ready (API_ORIGIN=$API_ORIGIN, app=/ landing=/ docs=/docs)"
