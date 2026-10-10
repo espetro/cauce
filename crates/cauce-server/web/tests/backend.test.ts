@@ -72,6 +72,21 @@ describe("probeBackend", () => {
     expect(toast.error).toHaveBeenCalled();
   });
 
+  it("a non-JSON 5xx (edge/proxy error page) reads as offline", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response("<html>edge error</html>", {
+            status: 530,
+            headers: { "content-type": "text/html" },
+          }),
+      ),
+    );
+    expect(await probeBackend()).toBe("offline");
+    expect(toast.error).toHaveBeenCalled();
+  });
+
   it("a thrown fetch marks offline", async () => {
     vi.stubGlobal(
       "fetch",
@@ -94,10 +109,21 @@ describe("noteApiCall", () => {
     );
   });
 
-  it("5xx on an api call marks degraded", () => {
-    noteApiCall(new Response("err", { status: 502 }));
+  it("a JSON 5xx on an api call marks degraded", () => {
+    noteApiCall(jsonResponse(502, { error: "store failed" }));
     expect(backend.health).toBe("degraded");
     expect(toast.warning).toHaveBeenCalled();
+  });
+
+  it("a non-JSON 5xx on an api call reads as offline — proxy error page", () => {
+    noteApiCall(
+      new Response("<html>edge error</html>", {
+        status: 530,
+        headers: { "content-type": "text/html" },
+      }),
+    );
+    expect(backend.health).toBe("offline");
+    expect(toast.error).toHaveBeenCalled();
   });
 
   it("recovery dismisses the parked toast and confirms once", () => {

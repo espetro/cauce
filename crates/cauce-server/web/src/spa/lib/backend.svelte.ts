@@ -41,23 +41,32 @@ let started = false;
 
 /**
  * Record the outcome of one `/api/*` call. `null` = the fetch itself
- * threw (offline); a 5xx leaves the API reachable but degraded; any
- * `res.ok` call proves the backend is up even mid-"degraded" probe
- * (the health endpoint checks store connectivity, not API health).
+ * threw (offline); a JSON 5xx leaves the API reachable but degraded
+ * while a non-JSON 5xx is an edge/proxy page — offline; any `res.ok`
+ * call proves the backend is up even mid-"degraded" probe (the health
+ * endpoint checks store connectivity, not API health).
  */
 export function noteApiCall(res: Response | null): void {
   if (res === null) setHealth("offline");
-  else if (res.status >= 500) setHealth("degraded");
-  else if (res.ok) setHealth("ok");
+  else if (res.status >= 500) {
+    // A JSON 5xx is the API's own error body — reachable but degraded;
+    // a non-JSON 5xx is an edge/proxy error page, i.e. the origin is
+    // unreachable and "offline" describes it better.
+    setHealth(isJson(res) ? "degraded" : "offline");
+  } else if (res.ok) setHealth("ok");
+}
+
+function isJson(res: Response): boolean {
+  return (res.headers.get("content-type") ?? "").includes("json");
 }
 
 /**
- * One `/health` probe. 200 `{status:"ok"}` → ok; 503 `{status:"degraded"}`
- * (store trouble) or any 5xx → degraded/offline by semantics: the split
- * deploy's proxy only 5xxs when the origin itself is unreachable, so
- * non-503 failures read as "offline" — except a 200 that isn't the
- * health JSON (the Pages SPA fallback answering `/health` means the
- * proxy functions are not deployed, i.e. no backend path exists).
+ * One `/health` probe. 200 `{status:"ok"}` → ok; a 503 carrying the
+ * health JSON → degraded (the API reports store trouble); any other
+ * non-ok → offline (the split deploy's proxy only 5xxs when the origin
+ * itself is unreachable) — including a 200 that isn't the health JSON
+ * (the Pages SPA fallback answering `/health` means the proxy
+ * functions are not deployed, i.e. no backend path exists).
  */
 export async function probeBackend(): Promise<BackendHealth> {
   let next: BackendHealth;
@@ -75,7 +84,9 @@ export async function probeBackend(): Promise<BackendHealth> {
       else setHealth("offline");
       return backend.health;
     }
-    next = res.status === 503 ? "degraded" : "offline";
+    // A 503 carrying the health JSON is the API reporting store trouble
+    // (degraded); a non-JSON 5xx is an edge/proxy page — offline.
+    next = res.status === 503 && isJson(res) ? "degraded" : "offline";
   } catch {
     next = "offline";
   }
