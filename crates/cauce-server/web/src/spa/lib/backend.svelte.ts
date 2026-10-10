@@ -121,7 +121,16 @@ function setHealth(next: BackendHealth, version = ""): void {
         description:
           next === "offline" ? spa.app.backend_down_desc : spa.app.backend_degraded_desc,
         duration: Number.POSITIVE_INFINITY,
-        action: { label: spa.app.backend_retry, onClick: () => void probeBackend() },
+        action: {
+          label: spa.app.backend_retry,
+          // keep the toast up through the probe — sonner deletes it
+          // after onClick unless prevented, which would drop the only
+          // offline indicator while the backend is still down.
+          onClick: (event: MouseEvent) => {
+            event.preventDefault();
+            void probeBackend();
+          },
+        },
         dismissible: true,
       },
     );

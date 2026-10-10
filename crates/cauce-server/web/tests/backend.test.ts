@@ -135,6 +135,22 @@ describe("noteApiCall", () => {
     expect(toast.success).toHaveBeenCalledTimes(1);
   });
 
+  it("the retry action keeps the toast up (preventDefault) and re-probes", () => {
+    noteApiCall(null);
+    const action = vi.mocked(toast.error).mock.calls[0]?.[1]?.action as unknown as {
+      onClick: (e: MouseEvent) => void;
+    };
+    const probe = vi.fn(async () => jsonResponse(503, { status: "degraded" }));
+    vi.stubGlobal("fetch", probe);
+    const event = { preventDefault: vi.fn() };
+    action.onClick(event as unknown as MouseEvent);
+    expect(event.preventDefault).toHaveBeenCalled();
+    expect(probe).toHaveBeenCalledWith(
+      "/health",
+      expect.objectContaining({ headers: { Accept: "application/json" } }),
+    );
+  });
+
   it("4xx never flips health — auth errors are not connectivity", () => {
     noteApiCall(new Response("no", { status: 403 }));
     expect(backend.health).toBe("unknown");
