@@ -13,6 +13,11 @@
 #   Build command: bash deploy/cf-pages/build.sh
 #   Output dir:    pages-dist
 #   Env var:       API_ORIGIN=https://<backend origin, e.g. api.cauce.fyi>
+#
+# VITE_CAUCE_LANDING=1 bakes the landing bundle: the apex serves the
+# app's home layout with the product sections below it (duckduckgo.com
+# model). The binary's rust-embed build stays app-only — self-hosts get
+# the plain layout.
 
 set -euo pipefail
 
@@ -30,7 +35,7 @@ corepack prepare \
   --activate
 
 pnpm --dir crates/cauce-server install --frozen-lockfile
-pnpm --dir crates/cauce-server build:spa
+VITE_CAUCE_LANDING=1 pnpm --dir crates/cauce-server build:spa
 
 rm -rf pages-dist
 mkdir -p pages-dist/app
@@ -38,8 +43,9 @@ cp -r crates/cauce-server/assets/spa/. pages-dist/app/
 
 # `_redirects` carries static rules only — the API proxy lives in
 # `functions/` because a 200-rewrite cannot target an external origin.
+# No `/` redirect: the apex IS the landing (the SPA boots its home
+# route there), duckduckgo.com-style.
 cat > pages-dist/_redirects <<'EOF'
-/ /app/ 302
 EOF
 
 # No SPA-fallback rule is needed: without a top-level 404.html, Pages
