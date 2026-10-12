@@ -513,17 +513,18 @@ async fn live_router_matches_routes_table() {
     }
 }
 
-/// `GET /favicon.ico` serves the embedded SVG icon — the wave-0 browser
+/// `GET /favicon.ico` serves the embedded ICO icon — the wave-0 browser
 /// pass saw it 404 on every page load (#87). `ui` builds only.
 #[cfg(feature = "ui")]
 #[tokio::test]
 async fn favicon_is_served() {
     let (router, _state, _tmp) = app();
-    let (status, headers, body) = get_headers(&router, "/favicon.ico").await;
+    let (status, headers, body) = get_bytes(&router, "/favicon.ico").await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(headers[header::CONTENT_TYPE], "image/svg+xml");
+    assert_eq!(headers[header::CONTENT_TYPE], "image/x-icon");
+    // ICO files start with a 6-byte ICONDIR header: reserved 0x0000, type 0x0001.
     assert!(
-        body.starts_with("<svg"),
-        "favicon body should be the embedded SVG: {body:?}"
+        body.len() > 6 && body.starts_with(&[0, 0, 1, 0]),
+        "favicon body should be the embedded ICO: {body:?}"
     );
 }
