@@ -1,7 +1,17 @@
 # Install
 
 cauce is a single self-contained Rust binary (engines + UI + AI + archive compiled in; rustls, no
-OpenSSL). Install from a GitHub release or build from a checkout.
+OpenSSL). Install with mise, from a GitHub release, or build from a checkout.
+
+## Install with mise
+
+```bash
+mise use -g github:espetro/cauce
+cauce serve     # UI + API + MCP on http://127.0.0.1:4479
+```
+
+This pulls the latest release binary for your platform. To run once without installing:
+`mise x github:espetro/cauce -- cauce serve`.
 
 ## Install a release binary
 
