@@ -1,14 +1,12 @@
 # Install
 
-v3 is a single self-contained Rust binary, `cauce` (engines + UI + AI +
-archive compiled in; rustls, no OpenSSL). Install from a GitHub release or
-build from a checkout.
+cauce is a single self-contained Rust binary (engines + UI + AI + archive compiled in; rustls, no
+OpenSSL). Install from a GitHub release or build from a checkout.
 
 ## Install a release binary
 
-Pick the tarball for your platform under
-<https://github.com/espetro/cauce/releases> (Linux x86_64 glibc and musl,
-Linux aarch64, macOS arm64 and x86_64), e.g.:
+Pick the tarball for your platform under <https://github.com/espetro/cauce/releases> (Linux x86_64
+glibc and musl, Linux aarch64, macOS arm64 and x86_64), e.g.:
 
 ```bash
 curl -LO https://github.com/espetro/cauce/releases/download/v0.5.0/cauce-v0.5.0-x86_64-unknown-linux-gnu.tar.gz
@@ -28,10 +26,9 @@ macOS removes the quarantine attribute before first run:
 xattr -d com.apple.quarantine ./cauce
 ```
 
-The bundled `ddgs` exec engine is not in the release binaries — it needs a
-source checkout and python3 (`uv sync --project sdk/python --extra ddgs`),
-so it stays a custom-build option. Disable it in `config.toml` with the
-`[[engines]]` block shown below.
+The bundled `ddgs` exec engine is not in the release binaries — it needs a source checkout and
+python3 (`uv sync --project sdk/python --extra ddgs`), so it stays a custom-build option. Disable it
+in `config.toml` with the `[[engines]]` block shown below.
 
 ## Build and install
 
@@ -56,24 +53,22 @@ cauce serve --headless     # API + MCP only
 cauce mcp                  # stdio MCP transport, no HTTP listener
 ```
 
-Defaults: loopback bind on port 4479 (`--bind`/`--port` or
-`CAUCE_SERVER_HOST`/`CAUCE_SERVER_PORT` override), config at
-`~/.config/cauce/config.toml`, data and logs under `~/.local/share/cauce/`.
+Defaults: loopback bind on port 4479 (`--bind`/`--port` or `CAUCE_SERVER_HOST`/`CAUCE_SERVER_PORT`
+override), config at `~/.config/cauce/config.toml`, data and logs under `~/.local/share/cauce/`.
 
-When serving browser discovery URLs behind TLS or a portless proxy, set the
-canonical external origin in `[server]`. It is used for the absolute URLs in
-`/opensearch.xml`; request `Host` and forwarded headers are not trusted for
-this purpose. If omitted, the configured bind host and port are used over HTTP.
+When serving browser discovery URLs behind TLS or a portless proxy, set the canonical external
+origin in `[server]`. It is used for the absolute URLs in `/opensearch.xml`; request `Host` and
+forwarded headers are not trusted for this purpose. If omitted, the configured bind host and port
+are used over HTTP.
 
 ```toml
 [server]
 public_url = "https://search.localhost"
 ```
 
-The default engine set is the `ddgs` exec bridge plus every enabled
-declarative spec (`bing`, `brave`; `wikipedia` ships `enabled: false`).
-Pin a set with `CAUCE_ENGINES=bing,brave` or `[[engines]]` entries in
-`config.toml`, e.g. to enable wikipedia:
+The default engine set is the `ddgs` exec bridge plus every enabled declarative spec (`bing`,
+`brave`; `wikipedia` ships `enabled: false`). Pin a set with `CAUCE_ENGINES=bing,brave` or
+`[[engines]]` entries in `config.toml`, e.g. to enable wikipedia:
 
 ```toml
 [[engines]]
@@ -82,10 +77,9 @@ kind = "declarative"
 enabled = true
 ```
 
-AI answers (`/answer`, `POST /api/answer`) are configured under `[ai]` —
-provider settings plus the answer loop's budget knobs. Every key takes a
-`CAUCE_AI_*` env override (`CAUCE_AI_MAX_TURNS`, `CAUCE_AI_MAX_SEARCHES`,
-`CAUCE_AI_PROVIDER_BUDGET_S`, `CAUCE_AI_VERIFY`) and applies on save
+AI answers (`/answer`, `POST /api/answer`) are configured under `[ai]` — provider settings plus the
+answer loop's budget knobs. Every key takes a `CAUCE_AI_*` env override (`CAUCE_AI_MAX_TURNS`,
+`CAUCE_AI_MAX_SEARCHES`, `CAUCE_AI_PROVIDER_BUDGET_S`, `CAUCE_AI_VERIFY`) and applies on save
 without a restart:
 
 ```toml
@@ -103,9 +97,9 @@ verify = false               # reserved for the groundedness verifier (#232)
 
 ## Supervision (oxmgr / launchd)
 
-oxmgr supervises long-running apps on this machine; it owns the launchd
-entries. Replace the v2 entry (`command = ".../uv/tools/oxe/bin/oxe"`) in
-`~/.config/oxmgr/oxfile.toml` with the v3 binary:
+oxmgr supervises long-running apps on this machine; it owns the launchd entries. Replace any
+previous `oxe` entry (`command = ".../uv/tools/oxe/bin/oxe"`) in `~/.config/oxmgr/oxfile.toml` with
+the cauce binary:
 
 ```toml
 [[apps]]
@@ -122,16 +116,17 @@ health_max_failures = 3
 
 Notes:
 
-- `command` needs the absolute path to the installed binary; oxmgr does
-  not expand `~`.
-- Keep the port at the default 4479 so the existing health check and the
-  portless alias below keep working.
-- The v2 entry's `env = { OXE_BACKENDS = ... }` can be dropped; v3
+- `command` needs the absolute path to the installed binary; oxmgr does not expand `~`.
+
+- Keep the port at the default 4479 so the existing health check and the portless alias below keep
+  working.
+
+- An `env = { OXE_BACKENDS = ... }` entry left over from the old `oxe` app can be dropped; cauce
   ignores it.
-- The bundled `ddgs` exec engine only works when `cauce` runs from the
-  repo checkout (its relative `sdk/python/...` path resolves by walking
-  up from the process cwd) and its `uv` venv exists (`uv sync --project
-  sdk/python --extra ddgs`). Under supervision, disable it in
+
+- The bundled `ddgs` exec engine only works when `cauce` runs from the repo checkout (its relative
+  `sdk/python/...` path resolves by walking up from the process cwd) and its `uv` venv exists
+  (`uv sync --project sdk/python --extra ddgs`). Under supervision, disable it in
   `~/.config/cauce/config.toml`:
 
   ```toml
@@ -143,11 +138,10 @@ Notes:
   args = ["sdk/python/cauce_engine_sdk/ddgs_auto.py"]
   ```
 
-  (`CAUCE_ENGINES` cannot name `bing`/`brave`: the pin validates against
-  `[[engines]]` entries and built-ins, and embedded specs are only
-  auto-registered when the pin is unset.) To keep ddgs instead, give its
-  `[[engines]]` block absolute `command`/`args` pointing at the venv's
-  python and `ddgs_auto.py`.
+  (`CAUCE_ENGINES` cannot name `bing`/`brave`: the pin validates against `[[engines]]` entries and
+  built-ins, and embedded specs are only auto-registered when the pin is unset.) To keep ddgs
+  instead, give its `[[engines]]` block absolute `command`/`args` pointing at the venv's python and
+  `ddgs_auto.py`.
 
 Apply the single app (never restart the daemon for a per-app change):
 
@@ -165,10 +159,9 @@ portless alias search 4479 --force
 portless list | grep search   # confirm the route
 ```
 
-This is a fixed-port supervised service, so use `portless alias`, not
-`portless <name> <cmd>` (which is for agent-started dev servers).
+This is a fixed-port supervised service, so use `portless alias`, not `portless <name> <cmd>` (which
+is for agent-started dev servers).
 
 ## Agent wiring
 
-MCP and HTTP wiring snippets for Claude Code, Hermes, maki and curl live
-in [agents.md](agents.md).
+MCP and HTTP wiring snippets for Claude Code, Hermes, maki and curl live in [agents.md](agents.md).

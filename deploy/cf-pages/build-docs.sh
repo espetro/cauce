@@ -35,10 +35,12 @@ node -v
 # Developer docs are canonical in .agents/docs; docmd doesn't follow
 # symlinks and skips gitignored paths, so stage a real copy (the dir is
 # deliberately not in .gitignore — see its comment). cp, not rsync —
-# rsync is not in the Pages build image.
+# rsync is not in the Pages build image. screens/ is internal design
+# material and stays off the public docs site.
 rm -rf docs/developers docs-site
 mkdir -p docs/developers
 cp -a .agents/docs/. docs/developers/
+rm -rf docs/developers/screens
 
 npx -y @docmd/core build
 
