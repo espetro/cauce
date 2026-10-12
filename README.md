@@ -1,5 +1,9 @@
 # cauce
 
+<p align="center">
+  <img src="assets/brand/cauce-mark-512.png" alt="cauce" width="160" />
+</p>
+
 Local metasearch for humans and agents: one web UI, one HTTP API, one MCP server, one shared
 TTL cache. Tail-tolerant fan-out over pluggable search engines, SQLite storage, single binary.
 
