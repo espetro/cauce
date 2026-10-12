@@ -1,21 +1,19 @@
 # Agent wiring
 
-cauce serves MCP over streamable HTTP at `https://search.localhost/mcp`
-(the portless alias for `127.0.0.1:4479`; see [install.md](install.md)).
-Note the exact path: v3 mounts `/mcp`; a v2 config pointing at
-`/mcp/` (trailing slash) gets a 404.
-Four tools:
+cauce serves MCP over streamable HTTP at `https://search.localhost/mcp` (the portless alias for
+`127.0.0.1:4479`; see [install.md](install.md)). Note the exact path: `/mcp`. A config pointing at
+`/mcp/` (trailing slash) gets a 404. Four tools:
 
-| Tool | Purpose |
-|---|---|
-| `search_web` | Canonical search: `query`, `page?`, `engines?`, `lang?`, `ttl_s?` → cauce `SearchResponse` with `meta.request_id` and `meta.source` |
-| `exa_search` | Frozen Exa wire shape (`query`, `num_results?`, `type?`, `source?`, `exclude_domains?`, `category?`) for existing Exa-compatible wiring |
-| `cache_status` | Cache stats snapshot plus `request_id` |
-| `cache_invalidate` | Invalidate by `key`, `expired`, or `all` (exactly one selector; audited) |
+| Tool               | Purpose                                                                                                                                 |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `search_web`       | Canonical search: `query`, `page?`, `engines?`, `lang?`, `ttl_s?` → cauce `SearchResponse` with `meta.request_id` and `meta.source`     |
+| `exa_search`       | Frozen Exa wire shape (`query`, `num_results?`, `type?`, `source?`, `exclude_domains?`, `category?`) for existing Exa-compatible wiring |
+| `cache_status`     | Cache stats snapshot plus `request_id`                                                                                                  |
+| `cache_invalidate` | Invalidate by `key`, `expired`, or `all` (exactly one selector; audited)                                                                |
 
-While iterating on harnesses, pin `engines=["wikipedia"]` (keyless,
-gentle rate limits; needs a `[[engines]]` config entry since it ships
-`enabled: false`) or `engines=["replay"]` (deterministic, offline).
+While iterating on harnesses, pin `engines=["wikipedia"]` (keyless, gentle rate limits; needs a
+`[[engines]]` config entry since it ships `enabled: false`) or `engines=["replay"]` (deterministic,
+offline).
 
 ## Claude Code
 
@@ -45,9 +43,9 @@ yes | hermes mcp add search --url https://search.localhost/mcp --auth header
 hermes mcp list   # confirm 'search' enabled
 ```
 
-Then in interactive `hermes chat`, the tools are available under their
-standard names (Hermes prefixes `mcp__search__` automatically). Note:
-hermes `-z` (one-shot) mode does not load MCP tools — use `chat`.
+Then in interactive `hermes chat`, the tools are available under their standard names (Hermes
+prefixes `mcp__search__` automatically). Note: hermes `-z` (one-shot) mode does not load MCP tools —
+use `chat`.
 
 ## maki
 
@@ -59,16 +57,14 @@ url = "https://search.localhost/mcp"
 enabled = true
 ```
 
-maki's `-p` (one-shot) mode only loads OAuth-capable servers from that
-file and the proxy exposes a plain streamable-HTTP transport, so the
-tools may not register in `-p`; run maki interactively.
+maki's `-p` (one-shot) mode only loads OAuth-capable servers from that file and the proxy exposes a
+plain streamable-HTTP transport, so the tools may not register in `-p`; run maki interactively.
 
 ## Generic HTTP clients (curl, scripts, other agents)
 
-The endpoint is streamable HTTP: every POST needs
-`Accept: application/json, text/event-stream`, and calls after
-`initialize` carry the `mcp-session-id` response header. Responses are
-SSE frames (`data: {jsonrpc}` lines).
+The endpoint is streamable HTTP: every POST needs `Accept: application/json, text/event-stream`, and
+calls after `initialize` carry the `mcp-session-id` response header. Responses are SSE frames
+(`data: {jsonrpc}` lines).
 
 ```bash
 MCP=https://search.localhost/mcp
@@ -95,5 +91,5 @@ curl -sS "$MCP" \
   -d '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"search_web","arguments":{"query":"rust async tokio","engines":["wikipedia"]}}}'
 ```
 
-For plain HTTP without MCP, `GET /api/search?q=...` returns the same
-`SearchResponse` JSON `search_web` wraps.
+For plain HTTP without MCP, `GET /api/search?q=...` returns the same `SearchResponse` JSON
+`search_web` wraps.

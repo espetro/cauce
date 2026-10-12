@@ -53,6 +53,20 @@ pub async fn get_headers(router: &Router, uri: &str) -> (StatusCode, HeaderMap, 
     (status, headers, String::from_utf8(bytes.to_vec()).unwrap())
 }
 
+/// Bare GET: status + headers + raw body bytes (binary assets like the ICO favicon).
+#[allow(dead_code)]
+pub async fn get_bytes(router: &Router, uri: &str) -> (StatusCode, HeaderMap, Vec<u8>) {
+    let resp = router
+        .clone()
+        .oneshot(req("GET", uri))
+        .await
+        .expect("response");
+    let status = resp.status();
+    let headers = resp.headers().clone();
+    let bytes = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+    (status, headers, bytes.to_vec())
+}
+
 /// Bare GET: status + headers + JSON-parsed body (`Null` on non-JSON).
 #[allow(dead_code)]
 pub async fn get(router: &Router, uri: &str) -> (StatusCode, HeaderMap, Value) {

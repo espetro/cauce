@@ -1,6 +1,6 @@
 //! Embedded static assets: the favicon and the OpenSearch descriptor.
 //!
-//! `GET /favicon.ico` serves the embedded SVG every browser probes; the
+//! `GET /favicon.ico` serves the embedded ICO every browser probes; the
 //! OpenSearch descriptor (`GET /opensearch.xml`) is the public document
 //! `<link rel="search">` in the SPA shell points browsers at.
 //!
@@ -24,21 +24,21 @@ use crate::app::{AppState, RouterOptions};
 #[folder = "assets/"]
 struct Assets;
 
-static FAVICON_SVG: LazyLock<Cow<'static, [u8]>> = LazyLock::new(|| {
-    Assets::get("favicon.svg")
+static FAVICON_ICO: LazyLock<Cow<'static, [u8]>> = LazyLock::new(|| {
+    Assets::get("favicon.ico")
         .map(|f| f.data)
         .unwrap_or_default()
 });
 
-/// `GET /favicon.ico`: the embedded SVG site icon. Browsers request this
+/// `GET /favicon.ico`: the embedded site icon. Browsers request this
 /// path on every page load; wave-0 verification saw it 404 each time (#87).
 pub async fn favicon() -> Response {
     (
         [
-            (header::CONTENT_TYPE, "image/svg+xml"),
+            (header::CONTENT_TYPE, "image/x-icon"),
             (header::CACHE_CONTROL, "public, max-age=86400"),
         ],
-        FAVICON_SVG.clone(),
+        FAVICON_ICO.clone(),
     )
         .into_response()
 }

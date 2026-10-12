@@ -15,6 +15,7 @@
   import type { ComponentProps } from "svelte";
   import { SunIcon, MoonIcon, CircleHalfIcon } from "phosphor-svelte";
   import { spa } from "../lib/i18n.js";
+  import markUrl from "../assets/cauce-mark.png";
   import { capabilities } from "../lib/capabilities.svelte.js";
   import { appHref, routeVisible } from "./router.svelte.js";
   import { cycleTheme, theme, themeAria } from "./theme.svelte.js";
@@ -55,7 +56,7 @@
 </script>
 
 <header class="site">
-  <a class="brand" href={appHref("/")}>{c.brand}</a>
+  <a class="brand" href={appHref("/")}><img class="brand-mark" src={markUrl} alt="" />{c.brand}</a>
   <nav class="nav-primary" aria-label={c.nav_primary_label}>
     <a href={appHref("/")} aria-current={active === "search" ? "page" : undefined}
       >{c.nav_search}</a
@@ -157,6 +158,15 @@
 
   .brand {
     font-weight: 700;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+  }
+
+  .brand-mark {
+    width: 1.25rem;
+    height: 1.25rem;
+    display: block;
   }
 
   .nav-primary,
