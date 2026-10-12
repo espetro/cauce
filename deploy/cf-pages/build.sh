@@ -56,4 +56,13 @@ EOF
 # app for deep links like /app/search?q=...
 cp crates/cauce-server/assets/spa/index.html pages-dist/index.html
 
+# Root statics the SPA shell links to (favicon, apple-touch, og image).
+# `functions/favicon.ico.ts` is gone — a static file serves the same
+# bytes with no origin dependency, which also works while the backend
+# is absent. To swap the og image, copy another option from
+# `assets/brand/og/` over `assets/brand/og.png`.
+cp assets/brand/favicon.ico pages-dist/favicon.ico
+cp assets/brand/apple-touch-icon.png pages-dist/apple-touch-icon.png
+cp assets/brand/og.png pages-dist/og.png
+
 echo "pages-dist ready (API_ORIGIN=$API_ORIGIN)"

@@ -121,6 +121,6 @@ run = "git config core.hooksPath .githooks && echo 'core.hooksPath=.githooks'"
 description = "Serve the docmd docs site locally (end-user docs/ + .agents/docs copied to docs/developers)"
 run = """
 set -e
-rsync -a --delete .agents/docs/ docs/developers/
+rsync -a --delete --exclude='screens/' .agents/docs/ docs/developers/
 npx -y @docmd/core dev
 """

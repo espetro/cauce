@@ -14,4 +14,18 @@ module.exports = {
   autoTitleFromH1: true,
   copyCode: true,
   pageNavigation: true,
+  favicon: "assets/favicon.ico",
+  logo: {
+    // Neutral mark — the same image reads on both themes.
+    light: "assets/images/cauce-mark-64.png",
+    dark: "assets/images/cauce-mark-64.png",
+    href: "/",
+    alt: "cauce",
+    height: "26px",
+  },
+  plugins: {
+    // Docmd's LLM chat widget is off; the static llms.txt/okf bundles
+    // the build already ships are the agent surface we support.
+    ai: { assistant: false },
+  },
 };
