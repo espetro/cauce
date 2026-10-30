@@ -337,6 +337,7 @@ export class AnswerThread {
       q: turn.q,
       context_results: null,
       history: this.history.length ? [...this.history] : null,
+      thread_id: null,
       // PUB-03: the browser's BYOK creds, only the fields the instance
       // advertises (a stale stored base_url can't 403 the request).
       ai: byokWire(capabilities.flags),
