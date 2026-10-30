@@ -37,6 +37,22 @@ export function navigate(to: string): void {
   scrollTo(0, 0);
 }
 
+/**
+ * Merge `updates` into the current query string with `history.replaceState`
+ * (null / "" removes a key). Toggles that are key steps of a user flow
+ * (mode, open panel) mirror themselves here so a deep link or a test can
+ * land on the state directly; `route` is left alone so the page is not
+ * remounted.
+ */
+export function setParams(updates: Record<string, string | null>): void {
+  const url = new URL(location.href);
+  for (const [key, value] of Object.entries(updates)) {
+    if (value) url.searchParams.set(key, value);
+    else url.searchParams.delete(key);
+  }
+  history.replaceState({}, "", url.pathname + url.search + url.hash);
+}
+
 /** `popstate` handler — re-reads `location` into `route`. */
 export function onPopState(): void {
   const next = parseLocation();

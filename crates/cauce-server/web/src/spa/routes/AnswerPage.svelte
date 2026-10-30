@@ -15,8 +15,8 @@
   server-rendered `/answer/{log_id}` stays a durable single-answer link.
 -->
 <script lang="ts">
-  import { onDestroy, tick } from "svelte";
-  import { appHref, navigate } from "../app/router.svelte.js";
+  import { onDestroy, tick, untrack } from "svelte";
+  import { appHref, navigate, setParams } from "../app/router.svelte.js";
   import { capabilities } from "../lib/capabilities.svelte.js";
   import { SA } from "../lib/i18n.js";
   import { createAnswerThread } from "../features/answer/thread.svelte.js";
@@ -56,7 +56,7 @@
         );
       },
       onThreadId: (id) => {
-        history.replaceState({}, "", appHref("/answer?thread=" + encodeURIComponent(id)));
+        setParams({ thread: id, q: null });
       },
   });
 
@@ -80,7 +80,8 @@
 
   // UX-04: the turn the sources panel is scoped to (1-based; 0 = closed)
   // and the chip to hand focus back to on close.
-  let sourcesTurn = $state(0);
+  // `?sources=<n>` deep-links the panel open on turn n.
+  let sourcesTurn = $state(untrack(() => Number(params.get("sources")) || 0));
   let sourcesOpener: HTMLElement | null = null;
   const panelTurn = $derived(thread.turns.find((t) => t.n === sourcesTurn));
 
@@ -92,10 +93,12 @@
     }
     sourcesTurn = n;
     sourcesOpener = opener;
+    setParams({ sources: String(n) });
   }
 
   function closeSources(): void {
     sourcesTurn = 0;
+    setParams({ sources: null });
     sourcesOpener?.focus();
     sourcesOpener = null;
   }
