@@ -189,10 +189,10 @@ fn audit_writes_event_and_row() {
     use std::sync::Mutex;
 
     use cauce_core::{
-        AnswerKey, AnswerLogRow, AnswerRow, AuditFilter, AuditRow, CacheKey, CacheResultHit,
-        CacheState, CachedAnswer, CachedSearch, ClickRow, DeleteAnswerLog, DeleteSearchLog,
-        EngineHealthRow, HistoryFilter, HistoryItem, HistoryStats, PageHit, PageRow, SearchLogRow,
-        SearchResponse, StatsSnapshot, Store, StoreError,
+        AnswerKey, AnswerLogRow, AnswerRow, AnswerThreadRow, AuditFilter, AuditRow, CacheKey,
+        CacheResultHit, CacheState, CachedAnswer, CachedSearch, ClickRow, DeleteAnswerLog,
+        DeleteSearchLog, EngineHealthRow, HistoryFilter, HistoryItem, HistoryStats, PageHit,
+        PageRow, SearchLogRow, SearchResponse, StatsSnapshot, Store, StoreError,
     };
 
     struct Spy {
@@ -254,6 +254,22 @@ fn audit_writes_event_and_row() {
             unimplemented!()
         }
         async fn record_click(&self, _: ClickRow) -> Result<(), StoreError> {
+            unimplemented!()
+        }
+        async fn upsert_thread(&self, _: AnswerThreadRow) -> Result<(), StoreError> {
+            unimplemented!()
+        }
+        async fn list_threads(&self, _: &str, _: u32) -> Result<Vec<AnswerThreadRow>, StoreError> {
+            unimplemented!()
+        }
+        async fn get_thread(
+            &self,
+            _: &str,
+            _: &str,
+        ) -> Result<Option<AnswerThreadRow>, StoreError> {
+            unimplemented!()
+        }
+        async fn delete_thread(&self, _: &str, _: &str) -> Result<bool, StoreError> {
             unimplemented!()
         }
         async fn list_history(&self, _: &HistoryFilter) -> Result<Vec<HistoryItem>, StoreError> {

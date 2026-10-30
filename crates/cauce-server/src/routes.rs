@@ -321,4 +321,12 @@ pub const ROUTES: &[RouteSpec] = &[
     // stamps `immutable` on hashed assets and `no-cache` on the shell,
     // and handler-set headers always win.
     html("/app/{*rest}", 8).shared(),
+    // UX-01: the server-authoritative conversation surface. Owner-scoped,
+    // not `.admin()`: isolation is the handler's owner key (`"local"` in
+    // local mode, the hashed bearer identity in public mode) and a
+    // foreign id is a plain 404 — the same rule the plan names for
+    // threads, so a public instance never leaks another user's thread.
+    json("GET", "/api/threads", 8),
+    json("GET", "/api/threads/{id}", 8),
+    json("DELETE", "/api/threads/{id}", 8),
 ];

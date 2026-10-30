@@ -49,6 +49,7 @@ axum = "0.8"
 chrono = { version = "0.4", features = ["serde"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+sha2 = "0.10"
 thiserror = "2"
 # axum::serve + graceful-shutdown signals; the optional OTLP layer relies on
 # the multi-thread runtime feature set too.

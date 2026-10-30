@@ -638,6 +638,10 @@ fn handler_for(spec: &RouteSpec, state: &AppState) -> Option<MethodRouter<AppSta
         ("GET", "/metrics", RouteKind::Json) => Some(get(handlers::metrics)),
         ("GET", "/api/config", RouteKind::Json) => Some(get(handlers::config_get)),
         ("PUT", "/api/config", RouteKind::Json) => Some(put(handlers::config_put)),
+        // UX-01: the owner-scoped thread surface (list / hydrate / delete).
+        ("GET", "/api/threads", RouteKind::Json) => Some(get(handlers::threads_list)),
+        ("GET", "/api/threads/{id}", RouteKind::Json) => Some(get(handlers::threads_get)),
+        ("DELETE", "/api/threads/{id}", RouteKind::Json) => Some(delete(handlers::threads_delete)),
         // FX-07: the instance-mode bootstrap pair.
         ("GET", "/api/capabilities", RouteKind::Json) => Some(get(handlers::capabilities)),
         ("GET", "/api/instance", RouteKind::Json) => Some(get(handlers::instance)),

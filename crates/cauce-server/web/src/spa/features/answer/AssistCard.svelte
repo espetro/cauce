@@ -114,6 +114,7 @@
         q,
         context_results: contextCapped,
         history: null,
+        thread_id: null,
         // PUB-03: BYOK creds, only fields the instance advertises.
         ai: byokWire(capabilities.flags),
       });

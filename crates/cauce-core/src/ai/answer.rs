@@ -68,6 +68,12 @@ pub enum AnswerFrame {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[ts(type = "number")]
         log_id: Option<i64>,
+        /// The persisted thread id (UX-01), present only when the
+        /// request carried `thread_id` and the completed turn was
+        /// upserted; the SPA rewrites the URL to
+        /// `/app/answer?thread=<id>` with it. Absent otherwise.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        thread_id: Option<String>,
     },
     /// Terminal frame for failures that abort the stream before a `done`
     /// can be built — provider error, iterations exhausted.
