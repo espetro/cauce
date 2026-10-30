@@ -8,7 +8,7 @@
 -->
 <script lang="ts">
   import { onMount } from "svelte";
-  import { navigate } from "../app/router.svelte.js";
+  import { navigate, route, setParams } from "../app/router.svelte.js";
   import { createSearchPage } from "../features/search/search.svelte.js";
   import { spa } from "../lib/i18n.js";
   import { LANDING } from "../lib/flags.js";
@@ -18,6 +18,8 @@
   // The submit hand-off lives in the feature state (`submit` decides
   // search vs AI-mode navigation); the landing page only drives it.
   const page = createSearchPage();
+  // `/app/?mode=ai` lands with the AI segment armed; the toggle mirrors it back.
+  page.aiMode = route.params.get("mode") === "ai";
 
   onMount(() => {
     document.title = spa.common.brand;
@@ -31,6 +33,7 @@
       bind:value={page.q}
       bind:aiMode={page.aiMode}
       autofocus
+      onmodechange={(mode) => setParams({ mode: mode === "ai" ? "ai" : null })}
       onsubmit={() => page.submit(navigate)}
     />
   </div>

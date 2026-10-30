@@ -89,14 +89,9 @@
 <header class="site">
   <a class="brand" href={appHref("/")}><img class="brand-mark" src={markUrl} alt="" />{c.brand}</a>
   <nav class="nav-primary" aria-label={c.nav_primary_label}>
-    <a href={appHref("/")} aria-current={active === "search" ? "page" : undefined}
+    <a href={appHref("/")} aria-current={active === "search" || active === "answer" ? "page" : undefined}
       >{c.nav_search}</a
     >
-    {#if capabilities.aiEnabled}
-      <a href={appHref("/answer")} aria-current={active === "answer" ? "page" : undefined}
-        >{c.nav_answer}</a
-      >
-    {/if}
     <a href={appHref("/history")} aria-current={active === "history" ? "page" : undefined}>{c.nav_history}</a>
   </nav>
   <div class="nav-right">

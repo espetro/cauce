@@ -207,9 +207,25 @@ body {
   border-bottom: 1px solid var(--border);
 }
 
+.rows article {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 0.5rem;
+}
+
 .rows article img {
-  vertical-align: middle;
-  margin-right: 0.5rem;
+  margin: 0;
+}
+
+.rows article a {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rows article .snippet {
+  grid-column: 1 / -1;
 }
 
 .rows article a {
@@ -225,7 +241,6 @@ body {
 .rows .host {
   color: var(--muted);
   font-size: 0.875rem;
-  margin-left: 0.5rem;
 }
 
 /* UX-05: two lines, then an ellipsis. */
@@ -691,3 +706,11 @@ table.data tr.detail td {
 }
 
 
+
+/* UX-10: the sources side panel pushes the page aside on desktop instead
+   of covering it; the body re-centres in the space left of the panel. */
+@media (width >= 700px) {
+  body:has(.sources-panel) {
+    margin-right: calc(min(24rem, 40vw) + 1rem);
+  }
+}

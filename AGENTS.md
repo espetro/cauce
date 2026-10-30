@@ -72,6 +72,7 @@ test resolves.
 - Conventional Commits, atomic commits, no AI attribution trailers.
 - Plans live in `.agents/plans/`; a plan exists on disk before implementation begins.
 - Agent memory: read `.agents/MEMORY.md` at session start, write dated notes at session end.
+- SPA toggles and navigation that are key steps of a user flow (mode, tab, open panel, thread) are mirrored in the URL (`setParams` in `app/router.svelte.ts`), so agents and tests can deep-link to the state instead of driving the UI.
 - Verification policy is the plan's section 7: golden path on the `replay` engine first,
   live canaries gated behind `CAUCE_LIVE=1`, no fixture-only UI states, every mounted route in
   the routes table.
