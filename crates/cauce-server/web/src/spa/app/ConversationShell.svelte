@@ -45,9 +45,13 @@
 </main>
 
 <style>
+  /* Fill the viewport below the sticky header so the docked composer
+     rests at the bottom edge even on a one-turn thread (and the mobile
+     sources drawer, which sits above it, never lands on top of it). */
   .conversation-shell {
     display: flex;
     flex-direction: column;
+    min-height: calc(100dvh - 4.5rem);
   }
 
   .prompt-card {
@@ -71,6 +75,7 @@
 
   .shell-body {
     order: 2;
+    flex: 1;
     min-width: 0;
   }
 

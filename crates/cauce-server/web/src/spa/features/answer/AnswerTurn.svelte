@@ -13,8 +13,7 @@
   shows on the last settled turn and rewinds it into the composer.
 -->
 <script lang="ts">
-  import SourceCard from "./SourceCard.svelte";
-  import AiLoader from "../../ai/loader.svelte";
+    import AiLoader from "../../ai/loader.svelte";
   import AiTextShimmer from "../../ai/text-shimmer.svelte";
   import AiSteps from "../../ai/steps.svelte";
   import UiButton from "../../ui/button.svelte";
@@ -30,15 +29,18 @@
     relatedHref: (q: string) => string;
     /** False on turn 1 when the shell's prompt card already shows it. */
     showQuestion?: boolean;
+    /** UX-04: open the sources panel scoped to this turn. */
+    onsources: (opener: HTMLElement | null) => void;
   }
 
-  let { turn, editable, onedit, relatedHref, showQuestion = true }: AnswerTurnProps = $props();
+  let { turn, editable, onedit, relatedHref, showQuestion = true, onsources }: AnswerTurnProps = $props();
 
   let textEl = $state<HTMLElement>();
 
   // #226: `done.html` is server-rendered + sanitized — inject it via
   // `{@html}`, then retarget the `a.cite[data-cite]` placeholders to
-  // this turn's numbered cards (`#src-<turn>-<n>`). Kept hand-rolled on
+  // this turn's numbered source rows (`#src-<turn>-<n>`); UX-04: a click
+  // on one opens the sources panel for this turn instead of jumping. Kept hand-rolled on
   // purpose: the effect rewrites anchors inside server-injected markup,
   // a DOM concern no ui/ primitive can own — there is no Bits UI part
   // for post-injection anchor surgery.
@@ -46,7 +48,12 @@
     if (!turn.html || !textEl) return;
     for (const a of textEl.querySelectorAll<HTMLAnchorElement>("a.cite[data-cite]")) {
       const n = a.getAttribute("data-cite");
-      if (n) a.setAttribute("href", `#src-${turn.n}-${n}`);
+      if (!n) continue;
+      a.setAttribute("href", `#src-${turn.n}-${n}`);
+      a.onclick = (event) => {
+        event.preventDefault();
+        onsources(null);
+      };
     }
   });
 </script>
@@ -99,14 +106,12 @@
     </div>
   {/if}
   {#if turn.sources.length}
-    <section class="answer-sources">
-      <h3 class="section-label">{SA.sources}</h3>
-      <div class="sources-row">
-        {#each turn.sources as source, i (source.url + i)}
-          <SourceCard {source} n={i + 1} turn={turn.n} />
-        {/each}
-      </div>
-    </section>
+    <UiButton
+      variant="ghost"
+      size="sm"
+      onclick={(event) => onsources(event.currentTarget as HTMLElement)}
+      >{fmt(SA.sources_chip, { n: turn.sources.length })}</UiButton
+    >
   {/if}
   {#if turn.related.length}
     <div class="answer-related">
