@@ -174,14 +174,15 @@
     font-size: 0.875rem;
   }
 
-  /* Bottom drawer: ≤80vh, bottom edge flush so the page's sticky
-     composer (z-index 1) stays reachable above/behind via page scroll. */
+  /* Bottom drawer: ≤80vh including the docked composer's height, and
+     seated above it so the sticky composer (UX-03) is never covered. */
   @media (width < 700px) {
     .sources-panel {
       top: auto;
       left: 0;
+      bottom: var(--composer-clearance, 4.75rem);
       width: auto;
-      max-height: 80vh;
+      max-height: calc(80vh - var(--composer-clearance, 4.75rem));
       border-left: none;
       border-top: 1px solid var(--border);
       border-radius: 0.75rem 0.75rem 0 0;
