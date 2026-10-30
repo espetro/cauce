@@ -21,7 +21,8 @@
   import { SA } from "../lib/i18n.js";
   import { createAnswerThread } from "../features/answer/thread.svelte.js";
   import AnswerTurn from "../features/answer/AnswerTurn.svelte";
-  import FollowupComposer from "../features/answer/FollowupComposer.svelte";
+    import SourcesPanel from "../features/answer/SourcesPanel.svelte";
+  import ConversationShell from "../app/ConversationShell.svelte";
   import Omnibox from "../features/search/Omnibox.svelte";
 
   interface AnswerPageProps {
@@ -77,6 +78,26 @@
     );
   }
 
+  // UX-04: the turn the sources panel is scoped to (1-based; 0 = closed)
+  // and the chip to hand focus back to on close.
+  let sourcesTurn = $state(0);
+  let sourcesOpener: HTMLElement | null = null;
+  const panelTurn = $derived(thread.turns.find((t) => t.n === sourcesTurn));
+
+  function openSources(n: number, opener: HTMLElement | null): void {
+    sourcesTurn = n;
+    sourcesOpener = opener;
+  }
+
+  function closeSources(): void {
+    sourcesTurn = 0;
+    sourcesOpener?.focus();
+    sourcesOpener = null;
+  }
+
+  // The question that opened the thread — the shell's prompt card.
+  const firstQ = $derived(thread.turns[0]?.q || q);
+
   // `?q=` starts turn 1 — gated on the capabilities fetch (it resolves
   // after mount, so the check must be reactive, not onMount).
   let started = $state(false);
@@ -101,42 +122,64 @@
   onDestroy(() => thread.dispose());
 </script>
 
-<main class="answer-page">
-  {#if !capabilities.loaded}
-    <!-- capabilities fetch in flight — render nothing rather than flash -->
-  {:else if !capabilities.aiEnabled}
+{#if !capabilities.loaded}
+  <!-- capabilities fetch in flight — render nothing rather than flash -->
+{:else if !capabilities.aiEnabled}
+  <main class="answer-page">
     <p class="answer-disabled">
       {SA.disabled}
       <a href="/settings">{SA.disabled_link}</a>
     </p>
-  {:else if !q && !threadParam && !thread.turns.length}
-    <h1 class="vh">{SA.submit}</h1>
-    <p class="answer-ask">{SA.ask_prompt}</p>
-    <Omnibox bind:value={askQ} bind:aiMode={askAi} onsubmit={askSubmit} />
-  {:else}
-    <!-- Same .vh h1 convention as SearchPage: the running query is the
-         page's heading; axe page-has-heading-one. -->
-    <h1 class="vh">{q || thread.turns[0]?.q || SA.submit}</h1>
-    {#if thread.unavailable}
-      <p class="answer-disabled">{SA.thread_unavailable}</p>
-    {/if}
-    <div class="answer-thread" aria-live="polite">
-      {#each thread.turns as turn (turn.n)}
-        <AnswerTurn
-          {turn}
-          editable={turn.terminal && !turn.error && !turn.stopped && !thread.busy &&
-            turn === thread.turns[thread.turns.length - 1]}
-          onedit={() => thread.editLast()}
-          relatedHref={(r) => appHref("/answer?q=" + encodeURIComponent(r))}
+  </main>
+{:else}
+  <ConversationShell
+    heading={firstQ || SA.submit}
+    prompt={firstQ}
+    docked={thread.turns.length > 0}
+  >
+    {#snippet composer()}
+      {#if thread.turns.length}
+        <Omnibox
+          followup
+          bind:value={thread.composerText}
+          busy={thread.busy}
+          onstop={() => thread.stop()}
+          hint={thread.hint}
+          onsubmit={() => thread.startTurn(thread.composerText)}
         />
-      {/each}
-    </div>
-    <FollowupComposer
-      bind:value={thread.composerText}
-      busy={thread.busy}
-      onsubmit={(v) => thread.startTurn(v)}
-      onstop={() => thread.stop()}
-      hint={thread.hint}
+      {:else if !q && !threadParam}
+        <!-- Bare `/app/answer`: the omnibox is the ask form; its segment
+             toggle decides intent. -->
+        <Omnibox bind:value={askQ} bind:aiMode={askAi} onsubmit={askSubmit} />
+      {/if}
+    {/snippet}
+    {#if !q && !threadParam && !thread.turns.length}
+      <p class="answer-ask">{SA.ask_prompt}</p>
+    {:else}
+      {#if thread.unavailable}
+        <p class="answer-disabled">{SA.thread_unavailable}</p>
+      {/if}
+      <div class="answer-thread" aria-live="polite">
+        {#each thread.turns as turn, i (turn.n)}
+          <AnswerTurn
+            {turn}
+            showQuestion={i > 0}
+            editable={turn.terminal && !turn.error && !turn.stopped && !thread.busy &&
+              turn === thread.turns[thread.turns.length - 1]}
+            onedit={() => thread.editLast()}
+            onsources={(opener) => openSources(turn.n, opener)}
+            relatedHref={(r) => appHref("/answer?q=" + encodeURIComponent(r))}
+          />
+        {/each}
+      </div>
+    {/if}
+  </ConversationShell>
+  {#if panelTurn}
+    <SourcesPanel
+      turn={panelTurn.n}
+      total={thread.turns.length}
+      sources={panelTurn.sources}
+      onclose={closeSources}
     />
   {/if}
-</main>
+{/if}

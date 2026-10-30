@@ -31,7 +31,6 @@ import {
 } from "../../lib/localHistory.js";
 import { hostOf } from "../../lib/format.js";
 import { S, spa, fmt } from "../../lib/i18n.js";
-import type { AnswerSource } from "../../../types/AnswerSource.js";
 import type { ApiError } from "../../../types/ApiError.js";
 import type { EngineError } from "../../../types/EngineError.js";
 import type { ResultsFrame } from "../../../types/ResultsFrame.js";
@@ -52,22 +51,6 @@ const ERR_KINDS: Record<string, string> = {
 export function errorKind(value: EngineError): string {
   const kind = typeof value === "string" ? value : Object.keys(value)[0];
   return ERR_KINDS[kind] || S.err_unknown;
-}
-
-/** `badge + engine statuses` — the line `renderMeta`/`badge()` compose. */
-export function metaLineText(meta: SearchMeta, fullCacheBadge: boolean): string {
-  const statuses = engineStatuses(meta);
-  const base =
-    meta.source === "network"
-      ? fmt(S.live_badge, { ms: meta.elapsed_ms })
-      : meta.source.cache.stale
-        ? S.stale_badge
-        : // The stream only sees `source != network` ("cached"); the JSON
-          // arm carries age/ttl for the server-rendered badge text.
-          fullCacheBadge
-          ? fmt(S.cached_badge, { age: meta.source.cache.age_s, ttl: meta.source.cache.ttl_s })
-          : S.cached;
-  return statuses.length ? base + " · " + statuses.join(" · ") : base;
 }
 
 /** `engine_statuses()`: every engine report, ok names included. */
@@ -115,11 +98,12 @@ export class SearchPageState {
   hasSearched = $state(false);
   streaming = $state(false);
   loading = $state(false);
-  statusText = $state("");
+  /** Stream/transport failure text (empty = none). */
+  streamError = $state("");
   countText = $state("");
-  metaText = $state("");
-  /** FX-07: TTL/cache jargon behind a `details` expander (public mode). */
-  metaDetail = $state("");
+  /** UX-05 meta-line parts: `12 results · 140 ms · cached`. */
+  elapsedText = $state("");
+  cacheText = $state("");
   requestId = $state("");
   requestIdFull = $state("");
   newAbove = $state("");
@@ -127,8 +111,6 @@ export class SearchPageState {
   errorText = $state("");
   moreVisible = $state(false);
   moreBusy = $state(false);
-  /** Top rows (final order when known) armed into the Assist POST. */
-  assistContext = $state<AnswerSource[]>([]);
   /** The `CacheKey` this search's beacons join on (`null` = unknown). */
   hash = $state<string | null>(null);
 
@@ -293,10 +275,10 @@ export class SearchPageState {
     this.hasSearched = false;
     this.streaming = false;
     this.loading = false;
-    this.statusText = "";
+    this.streamError = "";
     this.countText = "";
-    this.metaText = "";
-    this.metaDetail = "";
+    this.elapsedText = "";
+    this.cacheText = "";
     this.requestId = "";
     this.requestIdFull = "";
     this.newAbove = "";
@@ -304,7 +286,6 @@ export class SearchPageState {
     this.errorText = "";
     this.moreVisible = false;
     this.moreBusy = false;
-    this.assistContext = [];
     this.hash = null;
   }
 
@@ -325,10 +306,8 @@ export class SearchPageState {
 
   #stream(api: URLSearchParams): void {
     this.streaming = true;
-    this.statusText = S.waiting;
-    // The SSR shell fills the badge slot with "searching..." until
-    // `meta` replaces it with the real badge.
-    this.metaText = spa.search.searching;
+    // "searching..." holds the cache slot until `meta` lands.
+    this.cacheText = spa.search.searching;
     const source = new EventSource(streamUrl(api));
     this.#source = source;
     source.addEventListener("results", (event) => {
@@ -348,9 +327,9 @@ export class SearchPageState {
       if (typeof data !== "string") return;
       try {
         const payload = JSON.parse(data) as ApiError;
-        this.statusText = payload.error?.message ?? S.err_unknown;
+        this.streamError = payload.error?.message ?? S.err_unknown;
       } catch {
-        this.statusText = S.invalid_stream;
+        this.streamError = S.invalid_stream;
       }
       this.streaming = false;
       source.close();
@@ -375,7 +354,7 @@ export class SearchPageState {
     try {
       payload = JSON.parse(data) as ResultsFrame;
     } catch {
-      this.statusText = S.invalid_stream;
+      this.streamError = S.invalid_stream;
       return;
     }
     for (const r of payload.results) {
@@ -395,29 +374,23 @@ export class SearchPageState {
     try {
       meta = JSON.parse(data) as StreamMeta;
     } catch {
-      this.statusText = S.invalid_stream;
+      this.streamError = S.invalid_stream;
       this.streaming = false;
       return;
     }
-    this.#metaFor(meta, false);
+    this.#metaFor(meta);
     this.requestIdFull = meta.request_id;
     this.requestId = meta.request_id.slice(0, 8);
-    this.statusText = S.complete;
     this.streaming = false;
     this.#recordSearch(meta, meta.order.length);
-
-    // Arm Assist with the top rows in final order (cap 10).
-    this.assistContext = meta.order
-      .map((key) => this.#byKey.get(key))
-      .filter((r): r is StreamResult => r !== undefined)
-      .slice(0, 10)
-      .map((r) => ({ url: r.url, title: r.title, snippet: r.snippet, engine: r.engine }));
 
     // Hide anything the final merge did not keep.
     const rank = new Map(meta.order.map((key, i) => [key, i]));
     for (const row of this.rows) {
       if (!rank.has(row.key)) row.hidden = true;
     }
+    // The meta count must agree with the rows left on screen.
+    this.countText = this.rows.filter((row) => !row.hidden).length + " " + S.results;
     const prevRanks: number[] = [];
     let outranking = 0;
     for (const key of this.#arrivals) {
@@ -435,16 +408,11 @@ export class SearchPageState {
   #renderJson(resp: SearchResponse): void {
     this.rows = resp.results.map((r, i) => this.#toRow(r, i));
     this.countText = resp.results.length + " " + S.results;
-    this.#metaFor(resp.meta, true);
+    this.#metaFor(resp.meta);
     this.#recordSearch(resp.meta, resp.results.length);
     this.requestIdFull = resp.meta.request_id;
     this.requestId = resp.meta.request_id.slice(0, 8);
-    this.assistContext = resp.results.slice(0, 10).map((r) => ({
-      url: r.url,
-      title: r.title,
-      snippet: r.snippet,
-      engine: r.engine,
-    }));
+
     this.moreVisible = resp.results.length > 0;
     if (!resp.results.length) {
       const statuses = statusesText(resp.meta);
@@ -453,27 +421,28 @@ export class SearchPageState {
   }
 
   /**
+   * UX-05: the meta line's elapsed + cache parts, plus any engine that
+   * failed (an honest state, never hidden).
+   */
+  #metaFor(meta: SearchMeta): void {
+    const failed = meta.engines_used
+      .filter((report) => report.status !== "ok")
+      .map((report) =>
+        fmt(S.engine_failed, {
+          engine: report.engine,
+          kind: typeof report.status === "string" ? report.status : errorKind(report.status.failed),
+        }),
+      );
+    this.elapsedText = Math.round(meta.elapsed_ms) + " ms";
+    let cache = "";
+    if (meta.source !== "network") cache = meta.source.cache.stale ? S.stale_badge : S.cached;
+    this.cacheText = [cache, ...failed].filter(Boolean).join(" · ");
+  }
+
+  /**
    * FX-07: on a public instance the server writes no `search_log` —
    * the same row shape goes to browser-local history instead.
    */
-  /**
-   * Meta line + the FX-07 detail: on a public instance the
-   * `cached · age · ttl` badge reads just `cached`, with the TTL
-   * jargon parked in `metaDetail` for the `details` expander.
-   */
-  #metaFor(meta: SearchMeta, fullCacheBadge: boolean): void {
-    const publicMode =
-      capabilities.loaded && !capabilities.flags.sharedStats;
-    this.metaText = metaLineText(meta, publicMode ? false : fullCacheBadge);
-    this.metaDetail =
-      publicMode && meta.source !== "network"
-        ? fmt(S.cached_badge, {
-            age: meta.source.cache.age_s,
-            ttl: meta.source.cache.ttl_s,
-          })
-        : "";
-  }
-
   #recordSearch(meta: SearchMeta, count: number): void {
     if (capabilities.flags.serverHistory) return;
     historyRecord({
