@@ -10,7 +10,6 @@
 -->
 <script lang="ts">
   import { onDestroy, onMount } from "svelte";
-  import { CaretRightIcon } from "phosphor-svelte";
   import { appHref, navigate } from "../app/router.svelte.js";
   import { capabilities } from "../lib/capabilities.svelte.js";
   import { spa } from "../lib/i18n.js";
@@ -18,9 +17,7 @@
   import ConversationShell from "../app/ConversationShell.svelte";
   import Omnibox from "../features/search/Omnibox.svelte";
   import ResultRows from "../features/search/ResultRows.svelte";
-  import AssistCard from "../features/answer/AssistCard.svelte";
   import UiButton from "../ui/button.svelte";
-  import UiCollapsible from "../ui/collapsible.svelte";
 
   interface SearchPageProps {
     params: URLSearchParams;
@@ -58,41 +55,20 @@
     {#if page.errorText}
       <p class="field-error" role="alert">{page.errorText}</p>
     {:else}
-      <div class="meta">
+      <p class="meta search-meta">
         {#if page.countText}<span id="result-count">{page.countText}</span>{/if}
-        {#if page.metaText}<span id="search-meta">{page.metaText}</span>{/if}
-        {#if page.metaDetail}
-          <UiCollapsible>
-            {#snippet trigger(open)}
-              <span class="meta-detail-summary">
-                <span class="meta-detail-chevron" class:open aria-hidden="true"
-                  ><CaretRightIcon size={12} style="vertical-align: -0.125em" /></span
-                >{spa.app.cache_details}
-              </span>
-            {/snippet}
-            <span class="meta-detail-body">{page.metaDetail}</span>
-          </UiCollapsible>
-        {/if}
+        {#if page.elapsedText}<span>{page.elapsedText}</span>{/if}
+        {#if page.cacheText}<span id="search-meta">{page.cacheText}</span>{/if}
         {#if page.requestId}
           <span id="request-id" class="request-id" title={page.requestIdFull}>{page.requestId}</span>
         {/if}
         {#if askUrl}<span><a id="ask-link" href={askUrl}>{spa.answer.ask_link}</a></span>{/if}
-      </div>
-      {#if page.statusText}
-        <div id="search-stream" aria-live="polite" aria-busy={page.streaming}>
-          <span id="stream-status" role="status">{page.statusText}</span>
-        </div>
+      </p>
+      {#if page.streamError}
+        <p class="field-error" role="alert">{page.streamError}</p>
       {/if}
       {#if page.newAbove}
         <p id="new-results-above" class="new-results-above" role="status">{page.newAbove}</p>
-      {/if}
-      {#if capabilities.aiEnabled}
-        <AssistCard
-          q={page.q}
-          context={page.assistContext}
-          {askUrl}
-          disabled={page.streaming}
-        />
       {/if}
       <ResultRows rows={page.rows} emptyText={page.emptyText} onclick={(r) => page.clickRow(r)} />
       {#if page.moreVisible}
@@ -109,27 +85,5 @@
 <style>
   .more-row {
     margin: 0.75rem 0;
-  }
-
-  /* The former details/summary disclosure look: a quiet chevron
-     that rotates open, label unchanged. */
-  .meta-detail-summary {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.3rem;
-  }
-
-  .meta-detail-chevron {
-    display: inline-block;
-    transition: transform 140ms var(--ease-out);
-  }
-
-  .meta-detail-chevron.open {
-    transform: rotate(90deg);
-  }
-
-  .meta-detail-body {
-    display: inline-block;
-    padding-left: 1rem;
   }
 </style>
