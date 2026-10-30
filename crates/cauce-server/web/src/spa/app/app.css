@@ -375,39 +375,6 @@ body {
   vertical-align: super;
 }
 
-.source-card {
-  margin: 0.75rem 0;
-  padding: 0.75rem;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-}
-
-.source-card .source-title {
-  color: var(--accent);
-  text-decoration: none;
-}
-
-.source-card .source-title:hover {
-  text-decoration: underline;
-}
-
-.source-card .source-title img {
-  border-radius: 50%;
-  vertical-align: -0.2em;
-  margin-right: 0.3rem;
-}
-
-.source-card .host {
-  color: var(--muted);
-  font-size: 0.875rem;
-  margin: 0.125rem 0;
-}
-
-.source-card .snippet {
-  color: var(--muted);
-  margin: 0.25rem 0 0;
-}
-
 /* The zero-source flag: visible without shouting. */
 .ungrounded {
   border-left: 3px solid #b91c1c;
