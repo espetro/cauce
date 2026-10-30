@@ -11,6 +11,8 @@
   import { spa } from "../lib/i18n.js";
   import { createHistoryPage } from "../features/history/history.svelte.js";
   import HistoryView from "../features/history/HistoryView.svelte";
+  import ThreadsSection from "../features/history/ThreadsSection.svelte";
+  import { createThreadsSection } from "../features/history/threads.svelte.js";
 
   interface HistoryPageProps {
     params: URLSearchParams;
@@ -19,13 +21,16 @@
   let { params }: HistoryPageProps = $props();
 
   const page = createHistoryPage();
+  const threads = createThreadsSection();
 
   onMount(() => {
     void page.run(params);
+    void threads.load();
     document.title = `${spa.history.title} · ${spa.common.brand}`;
   });
 </script>
 
 <main>
+  <ThreadsSection section={threads} />
   <HistoryView {page} />
 </main>

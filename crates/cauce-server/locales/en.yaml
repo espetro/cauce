@@ -242,6 +242,12 @@ settings:
 # `/history` page copy (W2-02).
 history:
   title: History
+  # UX-07 Conversations section above the feed.
+  threads_title: Conversations
+  # `{n}` = turn count of a saved conversation.
+  threads_turns: '{n} turns'
+  threads_delete_title: Delete this conversation?
+  threads_delete_failed: could not delete
   # Stats line: `N searches in last 24h · N total · N clicks today`.
   stat_searches_24h: searches in last 24h
   stat_total: total
