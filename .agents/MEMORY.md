@@ -372,3 +372,12 @@ global store, and is never shared with or copied into another project.
 - Post-merge e2e caught two serving regressions the teardown's own tests missed — both are the same lesson: asserting a 200 is not verifying an SPA.
 - `spa_nested` must probe the `{*rest}` wildcard (`assets/<name>`), never `uri.path()` — the mount prefix `/app` never matches embed keys, so every bundle answered `text/html` and the SPA shipped blank (#276). `ui_shell::app_assets_serve_the_embedded_bundle` now follows the shell's own `src=` and asserts JS MIME + immutable cache.
 - `spa::to_app` concatenated raw path → `/` landed on unrouted `/app/` (`{*rest}` needs a non-empty tail) → 404 JSON on the front door (#277). `/app/` has its own ROUTES row 308→`/app`; routes-table/EXPECTED sets and plan §6 must name it — the conformance test parses the plan markdown.
+
+## 2026-10-29 - W8 Gemini-class UX (v0.9.0, branches v3/ux-01..ux-09)
+
+- Threads are server-authoritative (`answer_thread`, owner-scoped) with a client-authoritative live transcript; the SPA URL is `/app/answer?thread=<id>` (inside the mount). The old `replaceState` to `/answer/{log_id}` left the SPA, which was the follow-up bug. `/answer/{id}` stays as the durable single-answer page.
+- PRs are stacked: #316 (UX-01) <- #317 (UX-02) <- #318 (UX-03) <- #319 (UX-04), #320 (UX-05) and #321 (UX-06) on UX-03, #322 (UX-07) on UX-02. Retarget each as its base merges.
+- The pre-push hook needs several GB of Rust build output per worktree; with many worktrees the laptop disk fills (ENOSPC kills even the shell). Share one `CARGO_TARGET_DIR` across worktrees and delete stale `target/` dirs after pushing.
+- `build:spa` writes into the committed `assets/spa`; the landing flag build would clobber it (see UX-08 note on #313).
+- UX-08 is audit-only: no landing changes. The landing shares `TopNav`, so it inherits the waffle.
+- Manual playwright walkthroughs for UX-03 to UX-07 were NOT run.
