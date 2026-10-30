@@ -15,6 +15,9 @@ import {
   type AnswerStrings,
 } from "../src/spa/features/answer/thread.svelte.js";
 import type { AnswerBody } from "../src/types/AnswerBody.js";
+import type { AnswerThreadRow } from "../src/types/AnswerThreadRow.js";
+import type { AnswerTurn } from "../src/types/AnswerTurn.js";
+import { cacheThread } from "../src/spa/lib/threadCache.js";
 
 const S: AnswerStrings = {
   cached: "cached",
@@ -34,6 +37,9 @@ const S: AnswerStrings = {
   tool_web: "web",
   ungrounded: "ungrounded",
   waiting: "answering...",
+  turns_warn: "{n} of {max} turns used",
+  history_too_long: "over the {max}-turn limit",
+  thread_unavailable: "could not load",
 };
 
 type Fetch = (body: AnswerBody, signal?: AbortSignal) => Promise<Response>;
@@ -116,6 +122,9 @@ interface ThreadDeps {
   isAtBottom?: () => boolean;
   scrollToBottom?: () => void;
   onLogId?: (id: number) => void;
+  onThreadId?: (id: string) => void;
+  fetchThreadImpl?: (id: string) => Promise<AnswerThreadRow>;
+  newId?: () => string;
 }
 
 function thread(deps: ThreadDeps = {}): AnswerThread {
@@ -384,5 +393,141 @@ describe("AnswerThread — done rendering + chips", () => {
     );
     expect(t.turns[0].error).toBe("stream failed");
     expect(t.turns[0].terminal).toBe(true);
+  });
+});
+
+/** A user/assistant transcript of `n` exchanges. */
+function pairs(n: number): AnswerTurn[] {
+  const out: AnswerTurn[] = [];
+  for (let i = 1; i <= n; i++) {
+    out.push({ role: "user", content: `q${i}` }, { role: "assistant", content: `a${i}` });
+  }
+  return out;
+}
+
+function row(id: string, turns: AnswerTurn[]): AnswerThreadRow {
+  return { id, owner: "local", title: "q1", created_at: "", updated_at: "", turns };
+}
+
+describe("AnswerThread — UX-02 thread hydration", () => {
+  it("sends a stable client thread_id and surfaces done.thread_id", async () => {
+    const bodies: AnswerBody[] = [];
+    const onThreadId = vi.fn();
+    const t = thread({
+      newId: () => "t-1",
+      onThreadId,
+      fetchImpl: (b) => {
+        bodies.push(JSON.parse(JSON.stringify(b)) as AnswerBody);
+        return Promise.resolve(fakeResponse([DONE("ok", { thread_id: "t-1" })]));
+      },
+    });
+    t.startTurn("one");
+    await vi.waitFor(() => expect(t.busy).toBe(false));
+    t.startTurn("two");
+    await vi.waitFor(() => expect(t.busy).toBe(false));
+    expect(bodies.map((b) => b.thread_id)).toEqual(["t-1", "t-1"]);
+    expect(onThreadId).toHaveBeenCalledWith("t-1");
+    expect(t.threadId).toBe("t-1");
+  });
+
+  it("hydrates the whole transcript from the server row", async () => {
+    const t = thread({ fetchThreadImpl: (id) => Promise.resolve(row(id, pairs(2))) });
+    await t.hydrate("t-9");
+    expect(t.turns.map((x) => x.q)).toEqual(["q1", "q2"]);
+    expect(t.turns[1].deltas).toBe("a2");
+    expect(t.turns.every((x) => x.terminal)).toBe(true);
+    expect(t.history).toEqual(pairs(2));
+    expect(t.unavailable).toBe(false);
+  });
+
+  it("a hydrated thread continues: the follow-up replays the loaded history", async () => {
+    let seen: AnswerBody | null = null;
+    const t = thread({
+      fetchThreadImpl: (id) => Promise.resolve(row(id, pairs(1))),
+      fetchImpl: (b) => {
+        seen = JSON.parse(JSON.stringify(b)) as AnswerBody;
+        return Promise.resolve(fakeResponse([DONE("ok")]));
+      },
+    });
+    await t.hydrate("t-9");
+    t.startTurn("next");
+    await vi.waitFor(() => expect(t.busy).toBe(false));
+    expect(seen!.thread_id).toBe("t-9");
+    expect(seen!.history).toEqual(pairs(1));
+    expect(t.turns[1].n).toBe(2);
+  });
+
+  it("falls back to the localStorage copy when the server read fails", async () => {
+    cacheThread("t-7", pairs(1));
+    const t = thread({ fetchThreadImpl: () => Promise.reject(new Error("HTTP 500")) });
+    await t.hydrate("t-7");
+    expect(t.turns).toHaveLength(1);
+    expect(t.turns[0].q).toBe("q1");
+    expect(t.unavailable).toBe(false);
+  });
+
+  it("flags the thread unavailable when neither source has it", async () => {
+    const t = thread({ fetchThreadImpl: () => Promise.reject(new Error("HTTP 404")) });
+    await t.hydrate("nope");
+    expect(t.turns).toHaveLength(0);
+    expect(t.unavailable).toBe(true);
+  });
+
+  it("back/forward: reset + hydrate swaps to the other thread", async () => {
+    const t = thread({
+      fetchThreadImpl: (id) => Promise.resolve(row(id, id === "a" ? pairs(1) : pairs(2))),
+    });
+    await t.hydrate("a");
+    expect(t.turns).toHaveLength(1);
+    t.reset();
+    await t.hydrate("b");
+    expect(t.threadId).toBe("b");
+    expect(t.turns).toHaveLength(2);
+  });
+
+  it("a completed turn refreshes the local copy", async () => {
+    const t = thread({ newId: () => "t-5", fetchImpl: () => Promise.resolve(fakeResponse([DONE("ok")])) });
+    t.startTurn("hi");
+    await vi.waitFor(() => expect(t.busy).toBe(false));
+    expect(JSON.parse(localStorage.getItem("cauce:thread:t-5") ?? "[]")).toEqual([
+      { role: "user", content: "hi" },
+      { role: "assistant", content: "ok" },
+    ]);
+  });
+});
+
+describe("AnswerThread — UX-02 history cap", () => {
+  it("shows the counter hint from 15 turns on", async () => {
+    const t = thread({ fetchThreadImpl: (id) => Promise.resolve(row(id, pairs(14))) });
+    await t.hydrate("x");
+    expect(t.hint).toBe("");
+    const t2 = thread({ fetchThreadImpl: (id) => Promise.resolve(row(id, pairs(15))) });
+    await t2.hydrate("y");
+    expect(t2.hint).toBe("15 of 20 turns used");
+  });
+
+  it("refuses a 21st turn client-side with the specific message", async () => {
+    const fetchImpl = vi.fn();
+    const t = thread({ fetchImpl, fetchThreadImpl: (id) => Promise.resolve(row(id, pairs(20))) });
+    await t.hydrate("x");
+    t.startTurn("one too many");
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(t.current?.error).toBe("over the 20-turn limit");
+  });
+
+  it("maps the server's 400 on history to the specific message", async () => {
+    const res = {
+      ok: false,
+      status: 400,
+      json: () => Promise.resolve({ error: { message: "bad request" } }),
+    } as unknown as Response;
+    const t = thread({
+      fetchThreadImpl: (id) => Promise.resolve(row(id, pairs(2))),
+      fetchImpl: () => Promise.resolve(res),
+    });
+    await t.hydrate("x");
+    t.startTurn("more");
+    await vi.waitFor(() => expect(t.busy).toBe(false));
+    expect(t.current?.error).toBe("over the 20-turn limit");
   });
 });

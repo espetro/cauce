@@ -11,6 +11,7 @@
  */
 
 import type { AnswerBody } from "../../types/AnswerBody.js";
+import type { AnswerThreadRow } from "../../types/AnswerThreadRow.js";
 import type { ApiError } from "../../types/ApiError.js";
 import type { Capabilities } from "../../types/Capabilities.js";
 import type { InstanceInfo } from "../../types/InstanceInfo.js";
@@ -191,6 +192,11 @@ async function getJson<T>(path: string): Promise<T> {
 async function delJson(path: string): Promise<void> {
   const res = await apiFetch(path, { method: "DELETE", headers: headers() });
   if (!res.ok) throw await errorFrom(res);
+}
+
+/** `GET /api/threads/{id}` — the UX-02 hydration read (owner-scoped). */
+export function fetchThread(id: string): Promise<AnswerThreadRow> {
+  return getJson("/api/threads/" + encodeURIComponent(id));
 }
 
 /** `GET /api/stats?days=N` — the dashboard's whole data plane. */

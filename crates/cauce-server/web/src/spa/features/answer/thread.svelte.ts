@@ -25,9 +25,10 @@
 // `svelte/types` carries the ambient rune globals ($state, ...) — needed
 // for plain tsc when tests pull this file into their program.
 
-import { errorFrom, postAnswer } from "../../lib/api.js";
+import { errorFrom, fetchThread, postAnswer } from "../../lib/api.js";
 import { byokWire } from "../../lib/byok.svelte.js";
 import { capabilities } from "../../lib/capabilities.svelte.js";
+import { cacheThread, cachedThread } from "../../lib/threadCache.js";
 import { parseSseFrame, pumpSse, type SseResponse } from "../../lib/sse.js";
 import { SA, fmt } from "../../lib/i18n.js";
 import type { AnswerBody } from "../../../types/AnswerBody.js";
@@ -56,6 +57,9 @@ export interface AnswerStrings {
   stream_failed: string;
   invalid_stream: string;
   stopped: string;
+  turns_warn: string;
+  history_too_long: string;
+  thread_unavailable: string;
 }
 
 /** One exchange of the thread — a query bubble plus its reply state. */
@@ -101,14 +105,25 @@ export interface ThreadHooks {
   scrollToBottom?: () => void;
   /** A new turn mounted — the shell scrolls it into view. */
   onBeginTurn?: (turn: AnswerTurnState) => void;
-  /** `done`/`error` `log_id` — the shell `replaceState`s the URL. */
+  /** `done`/`error` `log_id` — the `answer_log` artifact id (share link). */
   onLogId?: (id: number) => void;
+  /** `done.thread_id` — the shell `replaceState`s `/app/answer?thread=<id>`. */
+  onThreadId?: (id: string) => void;
 }
 
 export interface ThreadDeps extends ThreadHooks {
   fetchImpl?: typeof postAnswer;
+  /** `GET /api/threads/{id}` (injectable for tests). */
+  fetchThreadImpl?: typeof fetchThread;
+  /** Thread id minter (injectable for tests). */
+  newId?: () => string;
   now?: () => number;
 }
+
+/** The server's `history` cap (`handlers/answer.rs`), in turns. */
+export const MAX_TURNS = 20;
+/** The composer hint appears once a thread reaches this many turns. */
+export const WARN_TURNS = 15;
 
 function newTurn(n: number, q: string, S: AnswerStrings): AnswerTurnState {
   return {
@@ -142,20 +157,92 @@ export class AnswerThread {
   busy = $state(false);
   /** The question the composer should hold (restored on stop/edit). */
   composerText = $state("");
+  /** Client-minted conversation id, sent as `thread_id` on every turn. */
+  threadId = $state("");
+  /** A `?thread=` read is in flight. */
+  hydrating = $state(false);
+  /** A `?thread=` read failed and no local copy exists. */
+  unavailable = $state(false);
 
   #S: AnswerStrings;
   #fetch: typeof postAnswer;
+  #fetchThread: typeof fetchThread;
+  #newId: () => string;
   #hooks: ThreadHooks;
   #abort: AbortController | null = null;
 
   constructor(S: AnswerStrings, deps: ThreadDeps = {}) {
     this.#S = S;
     this.#fetch = deps.fetchImpl ?? postAnswer;
+    this.#fetchThread = deps.fetchThreadImpl ?? fetchThread;
+    this.#newId = deps.newId ?? (() => crypto.randomUUID());
     this.#hooks = deps;
   }
 
   get current(): AnswerTurnState | null {
     return this.turns.length ? this.turns[this.turns.length - 1] : null;
+  }
+
+  /** Completed exchanges in `history` (a pair is one turn). */
+  get turnCount(): number {
+    return this.history.length / 2;
+  }
+
+  /** The composer hint: set from {@link WARN_TURNS} on, else empty. */
+  get hint(): string {
+    return this.turnCount >= WARN_TURNS
+      ? fmt(this.#S.turns_warn, { n: this.turnCount, max: MAX_TURNS })
+      : "";
+  }
+
+  #capMessage(): string {
+    return fmt(this.#S.history_too_long, { max: MAX_TURNS });
+  }
+
+  /** Drop the live transcript (route switched to another thread). */
+  reset(): void {
+    this.dispose();
+    this.turns = [];
+    this.history = [];
+    this.busy = false;
+    this.composerText = "";
+    this.threadId = "";
+    this.unavailable = false;
+  }
+
+  /**
+   * Rebuild the transcript for `?thread=<id>`: the server row first,
+   * the `localStorage` copy when that read fails. Hydrated turns carry
+   * their answer text only (the row stores the transcript, not the
+   * per-run sources), so they render settled, source-less.
+   */
+  async hydrate(id: string): Promise<void> {
+    this.threadId = id;
+    this.hydrating = true;
+    this.unavailable = false;
+    let pairs: AnswerTurn[] | null;
+    try {
+      pairs = (await this.#fetchThread(id)).turns;
+    } catch {
+      pairs = cachedThread(id);
+    }
+    this.hydrating = false;
+    // A newer navigation reset or re-pointed the thread mid-read.
+    if (this.threadId !== id) return;
+    if (!pairs || pairs.length < 2) {
+      this.unavailable = true;
+      return;
+    }
+    const turns: AnswerTurnState[] = [];
+    for (let i = 0; i + 1 < pairs.length; i += 2) {
+      const t = newTurn(turns.length + 1, pairs[i].content, this.#S);
+      t.deltas = pairs[i + 1].content;
+      t.status = this.#S.complete;
+      t.terminal = true;
+      turns.push(t);
+    }
+    this.turns = turns;
+    this.history = pairs.slice(0, turns.length * 2);
   }
 
   /** True while the viewport is already at the bottom (§7.2.3). */
@@ -177,6 +264,11 @@ export class AnswerThread {
     // proxy (writes to the raw object never reach the state tree).
     const proxied = this.turns[this.turns.length - 1];
     this.#hooks.onBeginTurn?.(proxied);
+    // Past the server cap the POST would 400: say so up front.
+    if (this.turnCount >= MAX_TURNS) {
+      return this.#fail(proxied, this.#capMessage());
+    }
+    if (!this.threadId) this.threadId = this.#newId();
     void this.#stream(proxied);
   }
 
@@ -203,6 +295,7 @@ export class AnswerThread {
     this.turns.pop();
     this.history.pop();
     this.history.pop();
+    if (this.threadId) cacheThread(this.threadId, $state.snapshot(this.history));
     this.composerText = turn.q;
   }
 
@@ -266,11 +359,13 @@ export class AnswerThread {
     turn.requestId = done.request_id || "";
     turn.status = this.#S.complete;
     turn.terminal = true;
-    // #254: swap `?q=` for `/answer/{id}` so reload/back re-read the
-    // stored render instead of re-running the loop.
     if (done.log_id != null) this.#hooks.onLogId?.(done.log_id);
     this.history.push({ role: "user", content: turn.q });
     this.history.push({ role: "assistant", content: done.answer || "" });
+    // UX-02: keep the URL inside the `/app` mount and a local copy for
+    // the reload fallback. The server row (`done.thread_id`) wins.
+    cacheThread(this.threadId, $state.snapshot(this.history));
+    if (done.thread_id) this.#hooks.onThreadId?.(done.thread_id);
     this.composerText = "";
     this.busy = false;
     this.#abort = null;
@@ -337,7 +432,7 @@ export class AnswerThread {
       q: turn.q,
       context_results: null,
       history: this.history.length ? [...this.history] : null,
-      thread_id: null,
+      thread_id: this.threadId || null,
       // PUB-03: the browser's BYOK creds, only the fields the instance
       // advertises (a stale stored base_url can't 403 the request).
       ai: byokWire(capabilities.flags),
@@ -345,6 +440,10 @@ export class AnswerThread {
     try {
       const res = await this.#fetch(body, this.#abort.signal);
       if (!res.ok) {
+        // The server's 400 on an over-cap history (20 turns / 64 KiB).
+        if (res.status === 400 && this.history.length) {
+          return this.#fail(turn, this.#capMessage());
+        }
         const e = await errorFrom(res);
         return this.#fail(turn, e.message.startsWith("HTTP ") ? this.#S.stream_failed + ": " + e.message : e.message);
       }
