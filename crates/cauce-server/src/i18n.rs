@@ -547,5 +547,9 @@ pub fn answer_bundle() -> Value {
         "answer.turns_warn",
         "answer.history_too_long",
         "answer.thread_unavailable",
+        "answer.sources_chip",
+        "answer.sources_title",
+        "answer.sources_close",
+        "answer.sources_drag",
     ])
 }

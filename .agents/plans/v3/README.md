@@ -15,6 +15,7 @@ wave is one issue, one branch, one PR.
 | W5 | `wave-5-archive-and-semantic.md` | 6 | 12-01 to 12-14 | P2 | `fetch_and_index`, `search_archive` (3 steps) |
 | W6 | `wave-6-postgres-and-multi-instance.md` | 7 | 12-15 to 12-28 | P2 | conformance suite green on SQLite, parameterised for a second impl (1 step) |
 | W7 | `wave-7-ai-ux.md` | 8 | — | P1 | first-class AI mode entry + SERP Search Assist + visible confidence + threads (4 steps) |
+| W8 | `wave-8-gemini-ux.md` | 9 | 10-30 to 11-14 | P1 | server threads + SPA hydration (follow-up bug fixed), conversation shell, sources panel, minimal results + nav (9 steps, EPIC #315) |
 | — | `ts-migration.md` | — | — | P1 | web frontend at TS level (b): strict `tsc` gate + rolldown; 3 issues #212/#213/#214 |
 | later | `later/*.md` | none | none | P3 | stubs only; not v3.0 |
 
@@ -37,6 +38,8 @@ W3 ─► W4 (AI) ─► W5 (archive); W3-07 (needs W1-06)
 W5 ─► W6 (conformance suite only; Postgres impl is `later/postgres-and-multi-instance.md`)
 W4 ─► W7 (AI-mode UX: entry points, SERP assist, confidence surfacing, threads; needs the
        W4 answer loop + SSE, independent of W6)
+W7 ─► W8 (Gemini-class UX: server threads + hydration fix the W7-04 client-owned-thread
+       caveat; UX-01 thread store is the root, the rest are UI layers on it)
 ```
 
 Rule: a step whose dependencies are not `Completed` on the board is not picked up. If you

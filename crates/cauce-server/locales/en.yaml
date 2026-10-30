@@ -615,6 +615,12 @@ answer:
   # UX-02: `/app/answer?thread=<id>` that neither the server nor the
   # local copy could supply.
   thread_unavailable: This conversation could not be loaded.
+  # UX-04: the per-turn chip that opens the sources panel; `{n}` is the count.
+  sources_chip: Sources ({n})
+  # UX-04: panel header, `Sources · turn N/M`.
+  sources_title: Sources · turn {n}/{m}
+  sources_close: Close sources
+  sources_drag: Drag down to dismiss
 
 # W7-02 Search Assist card on the SERP (the DDG/Kagi shape).
 assist:
