@@ -51,3 +51,6 @@ evals/results/
 # would silently drop the developer docs from the built site.
 # Exclude it locally via .git/info/exclude instead.
 docs-site/
+
+# machine-local cargo config (external SSD target dir) — not portable
+.cargo/
