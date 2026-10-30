@@ -15,6 +15,7 @@
   import { capabilities } from "../lib/capabilities.svelte.js";
   import { spa } from "../lib/i18n.js";
   import { createSearchPage } from "../features/search/search.svelte.js";
+  import ConversationShell from "../app/ConversationShell.svelte";
   import Omnibox from "../features/search/Omnibox.svelte";
   import ResultRows from "../features/search/ResultRows.svelte";
   import AssistCard from "../features/answer/AssistCard.svelte";
@@ -29,6 +30,9 @@
 
   const page = createSearchPage();
 
+  // The submitted query (route param, stable while the box is edited).
+  const submittedQ = $derived(page.hasSearched ? (params.get("q") ?? "").trim() : "");
+
   const askUrl = $derived(
     capabilities.aiEnabled ? appHref("/answer?q=" + encodeURIComponent(page.q)) : "",
   );
@@ -41,14 +45,15 @@
   onDestroy(() => page.dispose());
 </script>
 
-<main>
-  <h1 class="vh">{page.q || spa.common.brand}</h1>
-  <Omnibox
-    bind:value={page.q}
-    bind:aiMode={page.aiMode}
-    compact
-    onsubmit={() => page.submit(navigate)}
-  />
+<ConversationShell heading={page.q || spa.common.brand} prompt={submittedQ}>
+  {#snippet composer()}
+    <Omnibox
+      bind:value={page.q}
+      bind:aiMode={page.aiMode}
+      compact
+      onsubmit={() => page.submit(navigate)}
+    />
+  {/snippet}
   {#if page.hasSearched}
     {#if page.errorText}
       <p class="field-error" role="alert">{page.errorText}</p>
@@ -99,7 +104,7 @@
       {/if}
     {/if}
   {/if}
-</main>
+</ConversationShell>
 
 <style>
   .more-row {
