@@ -68,6 +68,18 @@ async fn log_clicks_history() {
 }
 
 #[tokio::test]
+async fn threads_roundtrip() {
+    let (store, _dir) = open();
+    cauce_core::conformance::threads_roundtrip(&store).await;
+}
+
+#[tokio::test]
+async fn threads_listing_and_delete() {
+    let (store, _dir) = open();
+    cauce_core::conformance::threads_listing_and_delete(&store).await;
+}
+
+#[tokio::test]
 async fn suggest() {
     let (store, _dir) = open();
     cauce_core::conformance::suggest(&store).await;
@@ -228,7 +240,7 @@ async fn reopen_is_idempotent() {
     let version: i64 = conn
         .query_row("SELECT max(version) FROM schema_version", [], |r| r.get(0))
         .unwrap();
-    assert_eq!(version, 5, "reopening must not re-run migrations");
+    assert_eq!(version, 6, "reopening must not re-run migrations");
 }
 
 /// `:memory:` would give every pooled connection a private database, so it is

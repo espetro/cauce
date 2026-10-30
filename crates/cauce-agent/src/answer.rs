@@ -347,6 +347,7 @@ impl AnswerLoop {
                                 request_id: run.request_id,
                                 ungrounded: false,
                                 log_id,
+                                thread_id: None,
                             },
                         );
                     }
@@ -620,6 +621,7 @@ impl AnswerLoop {
                 request_id: run.request_id,
                 ungrounded: sources.is_empty(),
                 log_id,
+                thread_id: None,
             },
         );
         // Grounded-only caching (#232): the deterministic groundedness
@@ -742,6 +744,7 @@ impl AnswerLoop {
                             ungrounded: false,
                             // `stream_assist` never logs a row (#254).
                             log_id: None,
+                            thread_id: None,
                         },
                     );
                 }
@@ -829,6 +832,7 @@ impl AnswerLoop {
                 cached: false,
                 // `stream_assist` never logs a row (#254).
                 log_id: None,
+                thread_id: None,
                 request_id: run.request_id,
                 ungrounded: results.is_empty(),
             },
