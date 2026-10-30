@@ -84,7 +84,12 @@
   let sourcesOpener: HTMLElement | null = null;
   const panelTurn = $derived(thread.turns.find((t) => t.n === sourcesTurn));
 
+  // The chip toggles: pressing the open turn's chip again closes it.
   function openSources(n: number, opener: HTMLElement | null): void {
+    if (sourcesTurn === n) {
+      closeSources();
+      return;
+    }
     sourcesTurn = n;
     sourcesOpener = opener;
   }
@@ -138,7 +143,7 @@
     docked={thread.turns.length > 0}
   >
     {#snippet composer()}
-      {#if thread.turns.length}
+      {#if thread.turns.length || q || threadParam}
         <Omnibox
           followup
           bind:value={thread.composerText}
@@ -147,10 +152,17 @@
           hint={thread.hint}
           onsubmit={() => thread.startTurn(thread.composerText)}
         />
-      {:else if !q && !threadParam}
+      {:else}
         <!-- Bare `/app/answer`: the omnibox is the ask form; its segment
              toggle decides intent. -->
-        <Omnibox bind:value={askQ} bind:aiMode={askAi} onsubmit={askSubmit} />
+        <Omnibox
+          bind:value={askQ}
+          bind:aiMode={askAi}
+          onmodechange={(mode) =>
+            mode === "search" &&
+            navigate(appHref(askQ.trim() ? "/search?q=" + encodeURIComponent(askQ.trim()) + "&stream=1" : "/"))}
+          onsubmit={askSubmit}
+        />
       {/if}
     {/snippet}
     {#if !q && !threadParam && !thread.turns.length}

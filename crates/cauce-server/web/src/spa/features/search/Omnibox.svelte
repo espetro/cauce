@@ -39,6 +39,8 @@
     followup?: boolean;
     busy?: boolean;
     onstop?: () => void;
+    /** Fired when the user flips the Search / AI segment (pages route on it). */
+    onmodechange?: (mode: "search" | "ai") => void;
     /** History-cap warning (empty = none). */
     hint?: string;
     onsubmit: () => void;
@@ -57,6 +59,7 @@
     followup = false,
     busy = false,
     onstop,
+    onmodechange,
     hint = "",
     onsubmit,
   }: OmniboxProps = $props();
@@ -83,6 +86,7 @@
   function arm(mode: "search" | "ai") {
     aiMode = mode === "ai";
     inputEl?.focus();
+    onmodechange?.(mode);
   }
 
   // ToggleGroup single writes "" when the pressed item is re-pressed; the

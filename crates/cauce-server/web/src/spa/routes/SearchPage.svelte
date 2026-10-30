@@ -27,11 +27,10 @@
 
   const page = createSearchPage();
 
-  // The submitted query (route param, stable while the box is edited).
-  const submittedQ = $derived(page.hasSearched ? (params.get("q") ?? "").trim() : "");
-
   const askUrl = $derived(
-    capabilities.aiEnabled ? appHref("/answer?q=" + encodeURIComponent(page.q)) : "",
+    capabilities.aiEnabled && page.q.trim()
+      ? appHref("/answer?q=" + encodeURIComponent(page.q.trim()))
+      : "",
   );
 
   onMount(() => {
@@ -42,12 +41,13 @@
   onDestroy(() => page.dispose());
 </script>
 
-<ConversationShell heading={page.q || spa.common.brand} prompt={submittedQ}>
+<ConversationShell heading={page.q || spa.common.brand}>
   {#snippet composer()}
     <Omnibox
       bind:value={page.q}
       bind:aiMode={page.aiMode}
       compact
+      onmodechange={(mode) => mode === "ai" && navigate(askUrl || appHref("/answer"))}
       onsubmit={() => page.submit(navigate)}
     />
   {/snippet}
