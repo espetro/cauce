@@ -180,9 +180,9 @@
     .sources-panel {
       top: auto;
       left: 0;
-      bottom: var(--composer-clearance, 4.75rem);
+      bottom: var(--composer-clearance, 5.5rem);
       width: auto;
-      max-height: calc(80vh - var(--composer-clearance, 4.75rem));
+      max-height: calc(80vh - var(--composer-clearance, 5.5rem));
       border-left: none;
       border-top: 1px solid var(--border);
       border-radius: 0.75rem 0.75rem 0 0;
