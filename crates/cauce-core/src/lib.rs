@@ -67,9 +67,9 @@ pub use response::{
 };
 pub use store::{
     AdmissionStats, AnswerKey, AnswerLogRow, AnswerPayload, AnswerRow, AnswerSource, AnswerStatus,
-    AuditFacets, AuditFilter, AuditRow, BreakerState, CacheResultHit, CacheState, CachedAnswer,
-    ClickRow, ClientCount, DayCount, DeleteAnswerLog, DeleteSearchLog, EngineHealthRow,
-    EngineStatsRow, HistoryFilter, HistoryItem, HistoryStats, LatencyPercentiles, LogSource,
-    PAGE_MARK_CLOSE, PAGE_MARK_OPEN, PageHit, PageRow, PhaseStats, QueryCount, SearchLogRow,
-    StatsSnapshot, Store, StoreError, StoreTuning, TierHit,
+    AnswerThreadRow, AuditFacets, AuditFilter, AuditRow, BreakerState, CacheResultHit, CacheState,
+    CachedAnswer, ClickRow, ClientCount, DayCount, DeleteAnswerLog, DeleteSearchLog,
+    EngineHealthRow, EngineStatsRow, HistoryFilter, HistoryItem, HistoryStats, LatencyPercentiles,
+    LogSource, PAGE_MARK_CLOSE, PAGE_MARK_OPEN, PageHit, PageRow, PhaseStats, QueryCount,
+    SearchLogRow, StatsSnapshot, Store, StoreError, StoreTuning, TierHit,
 };

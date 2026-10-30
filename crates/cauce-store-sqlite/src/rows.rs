@@ -9,9 +9,9 @@
 //! file, You can obtain one at <https://mozilla.org/MPL/2.0/>.
 
 use cauce_core::{
-    AnswerLogRow, AnswerStatus, AuditRow, BreakerState, CacheKey, CachedAnswer, CachedSearch,
-    ClickRow, ClientKind, EngineHealthRow, EngineId, LogSource, PageRow, SearchLogRow,
-    SearchOrigin, SearchResponse, StoreError, Tier,
+    AnswerLogRow, AnswerStatus, AnswerThreadRow, AuditRow, BreakerState, CacheKey, CachedAnswer,
+    CachedSearch, ClickRow, ClientKind, EngineHealthRow, EngineId, LogSource, PageRow,
+    SearchLogRow, SearchOrigin, SearchResponse, StoreError, Tier,
 };
 use chrono::{DateTime, Utc};
 use rusqlite::Row;
@@ -301,5 +301,20 @@ pub fn audit(row: &Row) -> Result<AuditRow, StoreError> {
         request_id: opt_text(row, 6, "request_id")?
             .map(|s| Uuid::parse_str(&s).map_err(|e| corrupt("request_id", e)))
             .transpose()?,
+    })
+}
+
+/// Column list shared by every `answer_thread` read (UX-01).
+pub const ANSWER_THREAD_COLS: &str = "id, owner, title, created_at, updated_at, turns_json";
+
+/// Decode one `answer_thread` row selected with [`ANSWER_THREAD_COLS`].
+pub fn answer_thread(row: &Row) -> Result<AnswerThreadRow, StoreError> {
+    Ok(AnswerThreadRow {
+        id: Uuid::parse_str(&text(row, 0, "id")?).map_err(|e| corrupt("id", e))?,
+        owner: text(row, 1, "owner")?,
+        title: text(row, 2, "title")?,
+        created_at: from_ms(int(row, 3, "created_at")?)?,
+        updated_at: from_ms(int(row, 4, "updated_at")?)?,
+        turns: json(row, 5, "turns_json")?,
     })
 }

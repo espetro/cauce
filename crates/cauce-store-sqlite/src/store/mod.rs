@@ -30,6 +30,7 @@ mod health;
 mod history;
 mod pages;
 mod stats;
+mod threads;
 #[cfg(test)]
 mod tests;
 
@@ -40,7 +41,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use cauce_core::{
-    AnswerKey, AnswerLogRow, AnswerRow, AuditFacets, AuditFilter, AuditRow, CacheKey,
+    AnswerKey, AnswerLogRow, AnswerRow, AnswerThreadRow, AuditFacets, AuditFilter, AuditRow, CacheKey,
     CacheResultHit, CacheState, CachedAnswer, CachedSearch, ClickRow, DeleteAnswerLog,
     DeleteSearchLog, EngineHealthRow, HistoryFilter, HistoryItem, HistoryStats, PageHit, PageRow,
     SearchLogRow, SearchResponse, StatsSnapshot, Store, StoreError, StoreTuning,
@@ -327,6 +328,26 @@ impl Store for SqliteStore {
 
     async fn record_click(&self, row: ClickRow) -> Result<(), StoreError> {
         self.record_click(row).await
+    }
+
+    async fn upsert_thread(&self, row: AnswerThreadRow) -> Result<(), StoreError> {
+        self.upsert_thread(row).await
+    }
+
+    async fn list_threads(
+        &self,
+        owner: &str,
+        limit: u32,
+    ) -> Result<Vec<AnswerThreadRow>, StoreError> {
+        self.list_threads(owner.to_string(), limit).await
+    }
+
+    async fn get_thread(&self, id: &str, owner: &str) -> Result<Option<AnswerThreadRow>, StoreError> {
+        self.get_thread(id.to_string(), owner.to_string()).await
+    }
+
+    async fn delete_thread(&self, id: &str, owner: &str) -> Result<bool, StoreError> {
+        self.delete_thread(id.to_string(), owner.to_string()).await
     }
 
     async fn list_history(&self, filter: &HistoryFilter) -> Result<Vec<HistoryItem>, StoreError> {
