@@ -12,10 +12,17 @@
   `compact` is the /search shape; landing renders it full-size.
   Submit delegates to the owning page (navigate for search,
   `/answer?q=` handoff in AI mode).
+  UX-03: this is the ONE composer of the conversation shell. `followup`
+  reshapes it for a running thread — no mode segment, the follow-up
+  placeholder, the `busy` state swapping send for stop (interruption is
+  a feature; the text survives so the user can edit + resubmit), and the
+  history-cap `hint`. Where it sits (top / sticky bottom) is the
+  shell's call, never this component's.
 -->
 <script lang="ts">
-  import { ArrowUpIcon } from "phosphor-svelte";
-  import { spa } from "../../lib/i18n.js";
+  import type { ComponentProps } from "svelte";
+  import { ArrowUpIcon, StopIcon } from "phosphor-svelte";
+  import { SA, spa } from "../../lib/i18n.js";
   import { capabilities } from "../../lib/capabilities.svelte.js";
   import AiPromptInput from "../../ai/prompt-input/prompt-input.svelte";
   import AiPromptTextarea from "../../ai/prompt-input/prompt-input-textarea.svelte";
@@ -28,6 +35,12 @@
     aiMode?: boolean;
     compact?: boolean;
     autofocus?: boolean;
+    /** Thread-follow-up shape: no mode segment, stop while busy. */
+    followup?: boolean;
+    busy?: boolean;
+    onstop?: () => void;
+    /** History-cap warning (empty = none). */
+    hint?: string;
     onsubmit: () => void;
   }
 
@@ -41,8 +54,22 @@
     aiMode = $bindable(false),
     compact = false,
     autofocus = false,
+    followup = false,
+    busy = false,
+    onstop,
+    hint = "",
     onsubmit,
   }: OmniboxProps = $props();
+
+  const placeholder = $derived.by(() => {
+    if (followup) return SA.followup_placeholder;
+    return aiMode ? spa.answer.placeholder : spa.search.placeholder;
+  });
+
+  const submitLabel = $derived.by(() => {
+    if (followup) return SA.followup_submit;
+    return aiMode ? spa.answer.submit : spa.search.submit;
+  });
 
   // bind:ref into a $bindable prop throws props_invalid_value on
   // undefined — the ref must start as null, never undefined.
@@ -69,31 +96,42 @@
 
 <form
   class="composer-form"
+  id={followup ? "answer-followup" : undefined}
   onsubmit={(e) => {
     e.preventDefault();
     onsubmit();
   }}
 >
-  <AiPromptInput {value} onValueChange={(v) => (value = v)} onSubmit={onsubmit} {compact}>
+  <AiPromptInput {value} onValueChange={(v) => (value = v)} isLoading={busy} onSubmit={onsubmit} {compact}>
     <div class="input-row">
       <AiPromptTextarea
         bind:ref={inputEl}
         {autofocus}
+        id={followup ? "followup-q" : undefined}
         name="q"
         autocomplete="off"
-        placeholder={aiMode ? spa.answer.placeholder : spa.search.placeholder}
-        ariaLabel={aiMode ? spa.answer.placeholder : spa.search.placeholder}
+        {placeholder}
+        ariaLabel={placeholder}
       />
-      <UiButton
-        type="submit"
-        variant="primary"
-        size="icon"
-        disabled={!value.trim()}
-        ariaLabel={aiMode ? spa.answer.submit : spa.search.submit}
-        ><ArrowUpIcon size={15} aria-hidden="true" /></UiButton
-      >
+      {#if busy && onstop}
+        <UiButton
+          {...({ id: "answer-stop" } as ComponentProps<typeof UiButton>)}
+          size="icon"
+          onclick={onstop}
+          ariaLabel={SA.stop}><StopIcon size={15} aria-hidden="true" /></UiButton
+        >
+      {:else}
+        <UiButton
+          type="submit"
+          variant="primary"
+          size="icon"
+          disabled={!value.trim()}
+          ariaLabel={submitLabel}
+          ><ArrowUpIcon size={15} aria-hidden="true" /></UiButton
+        >
+      {/if}
     </div>
-    {#if capabilities.aiEnabled}
+    {#if capabilities.aiEnabled && !followup}
       <AiPromptActions>
         <UiToggleGroup
           bind:value={() => (aiMode ? "ai" : "search"), armFromGroup}
@@ -102,11 +140,16 @@
       </AiPromptActions>
     {/if}
   </AiPromptInput>
+  {#if hint}
+    <p class="composer-hint" role="status">{hint}</p>
+  {/if}
 </form>
 
 <style>
-  .composer-form {
-    margin-bottom: 1rem;
+  .composer-hint {
+    margin: 0.25rem 0 0;
+    font-size: 0.8125rem;
+    color: var(--muted);
   }
 
   .input-row {
