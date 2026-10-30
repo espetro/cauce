@@ -27,12 +27,14 @@ common:
   nav_audit: audit
   # Header link to `/settings` (outside the operator group).
   nav_settings: settings
-  # Label of the collapsed operator-group menu below 700 px.
-  nav_more: more
+  # Header link to the docs site, inside the waffle menu.
+  nav_docs: docs
+  # `aria-label` of the waffle menu button and its mobile sheet.
+  nav_menu_label: more pages
+  # `aria-label` of the mobile sheet's close button.
+  nav_menu_close: close
   # `aria-label` of the primary nav landmark.
   nav_primary_label: primary
-  # `aria-label` of the operator nav landmark (inline and inside `more`).
-  nav_operator_label: operator
   # Theme toggle button text and `aria-label`; cycles system -> light
   # -> dark (W2-08). JS rewrites the text to the active state's word.
   theme_switch: theme
