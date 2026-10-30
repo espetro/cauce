@@ -543,5 +543,8 @@ pub fn answer_bundle() -> Value {
         "answer.disabled_link",
         "answer.placeholder",
         "answer.submit",
+        "answer.turns_warn",
+        "answer.history_too_long",
+        "answer.thread_unavailable",
     ])
 }
