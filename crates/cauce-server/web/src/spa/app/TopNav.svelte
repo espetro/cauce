@@ -3,17 +3,23 @@
   License, v. 2.0. If a copy of the MPL was not distributed with this
   file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-  The variant-E sticky chrome (§7.1): same header on every surface —
-  brand + primary nav left, quiet operator group + settings + theme
-  toggle right, operator links collapsing into a `more` dropdown below
-  700px (the shape the old `templates/header.html` had). Links without
-  an SPA twin stay plain `/...` hrefs (full load); `/app`-bound links —
-  including the menu's link items — route client-side via App's
-  delegated click.
+  The minimal sticky chrome (UX-06): brand + Search / Answer / History on
+  the left, theme toggle + waffle menu on the right. The waffle holds
+  everything else (Dashboard, Archive, Engines, Cache, Audit, Settings,
+  Docs), gated by `capabilities.flags` and `routeVisible` exactly as the
+  old header was. At >= 700px the waffle is a dropdown; below that it is
+  a full-screen sheet. Links without an SPA twin stay plain hrefs (full
+  load); `/app`-bound links route client-side via App's delegated click.
 -->
 <script lang="ts">
   import type { ComponentProps } from "svelte";
-  import { SunIcon, MoonIcon, CircleHalfIcon } from "phosphor-svelte";
+  import {
+    SunIcon,
+    MoonIcon,
+    CircleHalfIcon,
+    SquaresFourIcon,
+    XIcon,
+  } from "phosphor-svelte";
   import { spa } from "../lib/i18n.js";
   import markUrl from "../assets/cauce-mark.png";
   import { capabilities } from "../lib/capabilities.svelte.js";
@@ -33,27 +39,52 @@
 
   const c = spa.common;
 
-  const moreItems: DropdownItem[] = $derived([
-    {
-      type: "link",
-      label: c.nav_engines,
-      href: appHref("/admin?tab=engines"),
-      current: active === "engines",
-    },
-    {
-      type: "link",
-      label: c.nav_cache,
-      href: appHref("/admin?tab=cache"),
-      current: active === "cache",
-    },
-    {
-      type: "link",
-      label: c.nav_audit,
-      href: appHref("/admin?tab=audit"),
-      current: active === "audit",
-    },
-  ]);
+  const DOCS_URL = "https://docs.cauce.fyi";
+
+  interface WaffleEntry {
+    label: string;
+    href: string;
+    current: boolean;
+  }
+
+  let sheetOpen = $state(false);
+
+  const entries: WaffleEntry[] = $derived.by(() => {
+    const flags = capabilities.flags;
+    const out: WaffleEntry[] = [
+      { label: c.nav_dashboard, href: appHref("/dashboard"), current: active === "dashboard" },
+    ];
+    if (!capabilities.loaded) return out;
+    if (flags.archiving) {
+      out.push({ label: c.nav_archive, href: appHref("/archive"), current: active === "archive" });
+    }
+    if (flags.adminSurface) {
+      out.push(
+        { label: c.nav_engines, href: appHref("/admin?tab=engines"), current: active === "engines" },
+        { label: c.nav_cache, href: appHref("/admin?tab=cache"), current: active === "cache" },
+        { label: c.nav_audit, href: appHref("/admin?tab=audit"), current: active === "audit" },
+      );
+    }
+    if (
+      routeVisible(
+        "/settings",
+        flags.adminSurface,
+        flags.archiving,
+        flags.allowUserKeys || flags.allowUserBaseUrl,
+      )
+    ) {
+      out.push({ label: c.nav_settings, href: appHref("/settings"), current: active === "settings" });
+    }
+    out.push({ label: c.nav_docs, href: DOCS_URL, current: false });
+    return out;
+  });
+
+  const menuItems: DropdownItem[] = $derived(
+    entries.map((e): DropdownItem => ({ type: "link", ...e })),
+  );
 </script>
+
+<svelte:window onkeydown={(e) => e.key === "Escape" && (sheetOpen = false)} />
 
 <header class="site">
   <a class="brand" href={appHref("/")}><img class="brand-mark" src={markUrl} alt="" />{c.brand}</a>
@@ -67,22 +98,8 @@
       >
     {/if}
     <a href={appHref("/history")} aria-current={active === "history" ? "page" : undefined}>{c.nav_history}</a>
-    <a href={appHref("/dashboard")} aria-current={active === "dashboard" ? "page" : undefined}>{c.nav_dashboard}</a>
-    {#if capabilities.loaded && capabilities.flags.archiving}
-      <a href={appHref("/archive")} aria-current={active === "archive" ? "page" : undefined}>{c.nav_archive}</a>
-    {/if}
   </nav>
   <div class="nav-right">
-    {#if capabilities.loaded && capabilities.flags.adminSurface}
-      <nav class="nav-operator" aria-label={c.nav_operator_label}>
-        <a href={appHref("/admin?tab=engines")} aria-current={active === "engines" ? "page" : undefined}>{c.nav_engines}</a>
-        <a href={appHref("/admin?tab=cache")} aria-current={active === "cache" ? "page" : undefined}>{c.nav_cache}</a>
-        <a href={appHref("/admin?tab=audit")} aria-current={active === "audit" ? "page" : undefined}>{c.nav_audit}</a>
-      </nav>
-    {/if}
-    {#if capabilities.loaded && routeVisible("/settings", capabilities.flags.adminSurface, capabilities.flags.archiving, capabilities.flags.allowUserKeys || capabilities.flags.allowUserBaseUrl)}
-      <a href={appHref("/settings")} aria-current={active === "settings" ? "page" : undefined}>{c.nav_settings}</a>
-    {/if}
     <!-- justified: the theme control cycles three states
       (system → light → dark), so it is not a binary `Toggle` and a
       `ToggleGroup` of one makes no sense either — it stays a single
@@ -108,21 +125,55 @@
         </UiButton>
       {/snippet}
     </UiTooltip>
-    {#if capabilities.loaded && capabilities.flags.adminSurface}
-      <span class="nav-more">
-        <UiDropdownMenu items={moreItems} ariaLabel={c.nav_operator_label}>
-          {#snippet trigger(props)}
-            <UiButton
-              {...(props as ComponentProps<typeof UiButton>)}
-              variant="ghost"
-              size="sm">{c.nav_more}</UiButton
-            >
-          {/snippet}
-        </UiDropdownMenu>
-      </span>
-    {/if}
+    <span class="waffle-menu">
+      <UiDropdownMenu items={menuItems} ariaLabel={c.nav_menu_label}>
+        {#snippet trigger(props)}
+          <UiButton
+            {...(props as ComponentProps<typeof UiButton>)}
+            variant="default"
+            size="icon"
+            ariaLabel={c.nav_menu_label}
+          >
+            <SquaresFourIcon size={15} aria-hidden="true" />
+          </UiButton>
+        {/snippet}
+      </UiDropdownMenu>
+    </span>
+    <span class="waffle-sheet-trigger">
+      <UiButton
+        variant="default"
+        size="icon"
+        ariaLabel={c.nav_menu_label}
+        onclick={() => (sheetOpen = true)}
+      >
+        <SquaresFourIcon size={15} aria-hidden="true" />
+      </UiButton>
+    </span>
   </div>
 </header>
+
+{#if sheetOpen}
+  <div class="waffle-sheet" role="dialog" aria-modal="true" aria-label={c.nav_menu_label}>
+    <div class="waffle-sheet-bar">
+      <UiButton
+        variant="default"
+        size="icon"
+        ariaLabel={c.nav_menu_close}
+        onclick={() => (sheetOpen = false)}
+      >
+        <XIcon size={15} aria-hidden="true" />
+      </UiButton>
+    </div>
+    <!-- Link clicks bubble here: close the sheet, let the anchor (or
+      App's delegated router) navigate. -->
+    <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
+    <nav class="waffle-sheet-links" aria-label={c.nav_menu_label} onclick={() => (sheetOpen = false)}>
+      {#each entries as e (e.href)}
+        <a href={e.href} aria-current={e.current ? "page" : undefined}>{e.label}</a>
+      {/each}
+    </nav>
+  </div>
+{/if}
 
 <style>
   .site {
@@ -130,8 +181,7 @@
     top: 0;
     z-index: 10;
     display: flex;
-    flex-wrap: wrap;
-    align-items: baseline;
+    align-items: center;
     gap: 0.35rem 1rem;
     margin-bottom: 1rem;
     padding: 0.5rem 0;
@@ -172,8 +222,12 @@
   .nav-primary,
   .nav-right {
     display: flex;
-    align-items: baseline;
+    align-items: center;
     gap: 0.9rem;
+  }
+
+  .nav-primary {
+    min-width: 0;
   }
 
   .nav-right {
@@ -181,43 +235,56 @@
     color: var(--muted);
   }
 
-  .nav-right a {
-    color: var(--muted);
-  }
-
   .site a[aria-current="page"] {
     color: var(--accent);
   }
 
-  .nav-operator {
+  .waffle-sheet-trigger {
     display: none;
-    align-items: baseline;
-    gap: 0.9rem;
   }
 
-  /* ≥36px hit area on the mobile nav row (plan §1.3). */
+  .waffle-sheet {
+    position: fixed;
+    inset: 0;
+    z-index: 40;
+    display: flex;
+    flex-direction: column;
+    padding: 0.5rem 1rem 1.5rem;
+    background: var(--bg);
+    overflow-y: auto;
+  }
+
+  .waffle-sheet-bar {
+    display: flex;
+    justify-content: flex-end;
+  }
+
+  .waffle-sheet-links {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .waffle-sheet-links a {
+    padding: 0.85rem 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 1.125rem;
+  }
+
+  /* >=36px hit area on the mobile nav row (plan §1.3); the dropdown
+     gives way to the full-screen sheet. */
   @media (width < 700px) {
     .nav-right :global(.ui-button[data-size="icon"]) {
       width: 2.25rem;
       height: 2.25rem;
       min-height: 2.25rem;
     }
-  }
 
-  /* The open menu trigger takes the accent, like the old open
-     disclosure did. */
-  .nav-more :global(.ui-button[data-state="open"]) {
-    color: var(--accent);
-  }
-
-  /* CSS-only collapse: operator links move into `more` below 700px. */
-  @media (width >= 700px) {
-    .nav-operator {
-      display: flex;
+    .waffle-menu {
+      display: none;
     }
 
-    .nav-more {
-      display: none;
+    .waffle-sheet-trigger {
+      display: inline-flex;
     }
   }
 </style>
