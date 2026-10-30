@@ -7,9 +7,12 @@
   with the HTMX `/answer` page. `?q=` starts turn 1; the pinned
   composer appends follow-ups into the same thread. No `q` renders the
   omnibox (AI mode armed — flipping the segment hands off to
-  `/app/search`); AI capability off renders the disabled notice. A
-  `done.log_id` rewrites the URL to the HTMX `/answer/{id}` so reloads
-  read the stored render — that route stays server-rendered by design.
+  `/app/search`); AI capability off renders the disabled notice.
+  UX-02: `done.thread_id` rewrites the URL to `/app/answer?thread=<id>`
+  — inside the `/app` mount, so reload and back/forward stay in the
+  SPA — and `?thread=<id>` hydrates the transcript from
+  `GET /api/threads/{id}` (localStorage copy as the fallback). The
+  server-rendered `/answer/{log_id}` stays a durable single-answer link.
 -->
 <script lang="ts">
   import { onDestroy, tick } from "svelte";
@@ -51,12 +54,13 @@
           window.scrollTo({ top: document.documentElement.scrollHeight }),
         );
       },
-      onLogId: (id) => {
-        history.replaceState({}, "", "/answer/" + id);
+      onThreadId: (id) => {
+        history.replaceState({}, "", appHref("/answer?thread=" + encodeURIComponent(id)));
       },
   });
 
   const q = $derived(params.get("q") || "");
+  const threadParam = $derived(params.get("thread") || "");
 
   // Bare `/app/answer`: the omnibox is the ask form; its segment toggle
   // decides intent — Search hands off to `/app/search`, AI asks here.
@@ -83,6 +87,17 @@
     }
   });
 
+  // `?thread=<id>` (reload, back/forward, History resume): hydrate it.
+  // Re-runs when popstate points the page at another thread; a thread
+  // this page just created already carries its own id, so it no-ops.
+  $effect(() => {
+    const id = threadParam;
+    if (id && id !== thread.threadId && capabilities.aiEnabled) {
+      thread.reset();
+      void thread.hydrate(id);
+    }
+  });
+
   onDestroy(() => thread.dispose());
 </script>
 
@@ -94,14 +109,17 @@
       {SA.disabled}
       <a href="/settings">{SA.disabled_link}</a>
     </p>
-  {:else if !q && !thread.turns.length}
+  {:else if !q && !threadParam && !thread.turns.length}
     <h1 class="vh">{SA.submit}</h1>
     <p class="answer-ask">{SA.ask_prompt}</p>
     <Omnibox bind:value={askQ} bind:aiMode={askAi} onsubmit={askSubmit} />
   {:else}
     <!-- Same .vh h1 convention as SearchPage: the running query is the
          page's heading; axe page-has-heading-one. -->
-    <h1 class="vh">{q || SA.submit}</h1>
+    <h1 class="vh">{q || thread.turns[0]?.q || SA.submit}</h1>
+    {#if thread.unavailable}
+      <p class="answer-disabled">{SA.thread_unavailable}</p>
+    {/if}
     <div class="answer-thread" aria-live="polite">
       {#each thread.turns as turn (turn.n)}
         <AnswerTurn
@@ -118,6 +136,7 @@
       busy={thread.busy}
       onsubmit={(v) => thread.startTurn(v)}
       onstop={() => thread.stop()}
+      hint={thread.hint}
     />
   {/if}
 </main>

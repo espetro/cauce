@@ -604,6 +604,15 @@ answer:
   edit: edit
   # FX-04 SPA: lead on the no-query ask form (the omnibox lands here).
   ask_prompt: Ask a question to start a thread.
+  # UX-02: composer hint near the server's history cap; `{n}` is the
+  # completed turn count, `{max}` the cap.
+  turns_warn: '{n} of {max} turns used. Start a new thread soon.'
+  # UX-02: the server's 400 `bad_request` on an over-cap history,
+  # surfaced as the turn's own error instead of a generic stream failure.
+  history_too_long: This conversation exceeds the {max}-turn limit. Start a new thread.
+  # UX-02: `/app/answer?thread=<id>` that neither the server nor the
+  # local copy could supply.
+  thread_unavailable: This conversation could not be loaded.
 
 # W7-02 Search Assist card on the SERP (the DDG/Kagi shape).
 assist:
