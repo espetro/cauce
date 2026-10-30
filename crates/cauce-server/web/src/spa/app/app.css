@@ -438,17 +438,6 @@ body {
   color: var(--muted);
 }
 
-/* W7-04/§7.2: the follow-up composer pins to the viewport bottom so
-   the next question is always in reach (DS-AI: its field is the
-   `ai/prompt-input` boxed composer — the bar stays hairline + sticky). */
-#answer-followup {
-  position: sticky;
-  bottom: 0;
-  padding: 0.5rem 0;
-  background: var(--bg);
-  border-top: 1px solid var(--border);
-}
-
 /* ------------------------------------------------------------------ */
 /* FX-05 admin/read pages — shared table, filter and pager styles,     */
 /* one-for-one with the legacy sheet's `.filters`/`table.*`/`.pager`.  */
