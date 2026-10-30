@@ -74,17 +74,25 @@ process — you cannot give tier-1 and tier-2 different latencies from env. Mult
   (audit deep-links), `/opensearch.xml`, `/favicon.ico`.
 - SPA asset regression to keep checking: `/app/assets/index-<hash>.js` must answer
   `text/javascript` (a `text/html` answer bricks the whole SPA — #276).
-- Nav adapts at <700px: operator links collapse into a `more` disclosure.
+- Nav (0.9.0): logo + Search/Answer/History left, theme toggle + waffle menu right; below 700px the waffle is a full-screen sheet. Operator entries (Engines/Cache/Audit) only show with `adminSurface`.
 - The displayed result count reads `engines_used[].result_count` (engine-reported) while
   rendered rows are post-merge-collapse — a "10 results" header over 9 rows is the merge's
   `collapse_same_host_after`, not a missing row bug. Cached-path renders show the
   post-collapse count.
 - Ask flow: `step` frames → `Searching:` step chips, `delta` → answer text, `sources` →
-  numbered source cards, `done` → status + confidence + model chip + related links; an
+  a `Sources (N)` chip per turn that opens the sources panel/drawer, `done` → status + confidence + model chip + related links; an
   ungrounded answer renders "cites no sources — it may be ungrounded" and is NOT cached.
 - Click → archive: `<article>` links are `target="_blank"`; the click fires `POST /api/click`
   (clicks row) + `POST /api/pages` (archive index). Replay URLs are fabricated paths on real
   hosts → upstream 404 → nothing stored; the archive staying at 0 pages is correct.
+
+## Threads e2e (0.9.0, `/api/threads`)
+
+- `POST /api/answer` with `thread_id` upserts the thread and returns `done.thread_id`; omit it and nothing persists. `GET /api/threads` (newest first), `GET /api/threads/{id}`, `DELETE /api/threads/{id}`.
+- Owner isolation: local mode owner is `local`; in public mode a second bearer token must get `404` on the first token's thread id. Check this, it is the whole point of the owner column.
+- SPA URL is `/app/answer?thread=<id>`. Reload must show the full transcript; kill the server read (or use a fresh owner) to see the localStorage fallback. History at `/app/history` lists threads in a `Conversations` section.
+- History cap: 21+ turns returns `400 bad_request`; the UI warns at 15 and shows a specific error.
+- Landing preview: the landing is a build-time flag (`VITE_CAUCE_LANDING=1`). `pnpm build:spa` writes into the committed `assets/spa` (`emptyOutDir`), so build the landing with an `--outDir` outside the repo or `git checkout -- crates/cauce-server/assets/spa` afterwards, otherwise the artifact-freshness check fails. The out-of-repo recipe has not been run end to end.
 
 ## Check tactics
 
