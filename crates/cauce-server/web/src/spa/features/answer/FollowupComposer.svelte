@@ -26,9 +26,11 @@
     busy: boolean;
     onsubmit: (q: string) => void;
     onstop: () => void;
+    /** UX-02 history-cap warning (empty = none). */
+    hint?: string;
   }
 
-  let { value = $bindable(""), busy, onsubmit, onstop }: ComposerProps = $props();
+  let { value = $bindable(""), busy, onsubmit, onstop, hint = "" }: ComposerProps = $props();
 
   function submit(event: SubmitEvent): void {
     event.preventDefault();
@@ -65,9 +67,18 @@
       {/if}
     </div>
   </AiPromptInput>
+  {#if hint}
+    <p class="followup-hint" role="status">{hint}</p>
+  {/if}
 </form>
 
 <style>
+  .followup-hint {
+    margin: 0.25rem 0 0;
+    font-size: 0.8125rem;
+    color: var(--color-muted, inherit);
+  }
+
   .input-row {
     display: flex;
     gap: 0.375rem;

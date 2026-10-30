@@ -9,6 +9,7 @@
   "error_status": "answer failed",
   "followup_placeholder": "Ask a follow-up...",
   "followup_submit": "ask",
+  "history_too_long": "This conversation exceeds the {max}-turn limit. Start a new thread.",
   "invalid_stream": "unreadable answer stream",
   "path_direct": "answered directly — no search needed",
   "path_replay": "searched · {n} sources",
@@ -22,8 +23,10 @@
   "stopped": "stopped",
   "stream_failed": "answer stream failed",
   "submit": "ask",
+  "thread_unavailable": "This conversation could not be loaded.",
   "tool_archive": "archive",
   "tool_web": "web",
+  "turns_warn": "{n} of {max} turns used. Start a new thread soon.",
   "ungrounded": "this answer cites no sources — it may be ungrounded",
   "ungrounded_badge": "ungrounded",
   "waiting": "answering..."
