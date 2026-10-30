@@ -28,9 +28,11 @@
     onedit: () => void;
     /** Builds the href for a related-question link (routes inject the mapper). */
     relatedHref: (q: string) => string;
+    /** False on turn 1 when the shell's prompt card already shows it. */
+    showQuestion?: boolean;
   }
 
-  let { turn, editable, onedit, relatedHref }: AnswerTurnProps = $props();
+  let { turn, editable, onedit, relatedHref, showQuestion = true }: AnswerTurnProps = $props();
 
   let textEl = $state<HTMLElement>();
 
@@ -51,7 +53,7 @@
 
 <article class="answer-turn" id="turn-{turn.n}">
   <p class="turn-q">
-    {turn.q}
+    {#if showQuestion}{turn.q}{/if}
     {#if editable}
       <UiButton variant="ghost" size="sm" onclick={onedit}>{SA.edit}</UiButton>
     {/if}
