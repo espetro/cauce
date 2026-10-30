@@ -199,6 +199,16 @@ export function fetchThread(id: string): Promise<AnswerThreadRow> {
   return getJson("/api/threads/" + encodeURIComponent(id));
 }
 
+/** `GET /api/threads` — the caller's threads, newest first (UX-07). */
+export function fetchThreads(): Promise<AnswerThreadRow[]> {
+  return getJson("/api/threads");
+}
+
+/** `DELETE /api/threads/{id}` — drop one conversation (UX-07). */
+export function deleteThread(id: string): Promise<void> {
+  return delJson("/api/threads/" + encodeURIComponent(id));
+}
+
 /** `GET /api/stats?days=N` — the dashboard's whole data plane. */
 export function fetchStats(days: number): Promise<StatsSnapshot> {
   return getJson("/api/stats?days=" + days);
