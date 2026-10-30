@@ -1026,6 +1026,7 @@ mod tests {
             request_id: Uuid::nil(),
             ungrounded,
             log_id: None,
+            thread_id: None,
         }
     }
 

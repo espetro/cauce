@@ -116,8 +116,14 @@ const EXPECTED_WAVE8_UI_MOUNTED: &[(&str, &str)] =
 /// Wave-8 JSON rows mounted so far (FX-07): the instance-mode bootstrap
 /// pair. Both are open reads in every build — the payload, not the
 /// route, carries the mode/role.
-const EXPECTED_WAVE8_MOUNTED: &[(&str, &str)] =
-    &[("GET", "/api/capabilities"), ("GET", "/api/instance")];
+const EXPECTED_WAVE8_MOUNTED: &[(&str, &str)] = &[
+    ("GET", "/api/capabilities"),
+    ("GET", "/api/instance"),
+    // UX-01: the owner-scoped thread surface (list / hydrate / delete).
+    ("GET", "/api/threads"),
+    ("GET", "/api/threads/{id}"),
+    ("DELETE", "/api/threads/{id}"),
+];
 
 // ---------------------------------------------------------------------------
 // Plan-table parsing (parent plan section 6)

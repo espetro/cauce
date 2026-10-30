@@ -283,6 +283,7 @@ async fn tool_loop_yields_steps_deltas_sources_and_done() {
         request_id: got_id,
         ungrounded,
         log_id: _,
+        thread_id: _,
     } = done
     else {
         unreachable!()

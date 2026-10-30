@@ -1491,6 +1491,7 @@ mod tests {
             request_id: Uuid::nil(),
             ungrounded: false,
             log_id: Some(3),
+            thread_id: None,
         });
         let view = app.answer.as_ref().unwrap();
         let turn = &view.turns[0];
@@ -1518,6 +1519,7 @@ mod tests {
             request_id: Uuid::nil(),
             ungrounded: false,
             log_id: None,
+            thread_id: None,
         });
         assert!(app.answer.as_ref().unwrap().assist);
     }
@@ -1539,6 +1541,7 @@ mod tests {
             request_id: Uuid::nil(),
             ungrounded: false,
             log_id: None,
+            thread_id: None,
         });
         let md = answer_markdown(&app.answer.as_ref().unwrap().turns[0]);
         assert!(md.contains("body [1]"));

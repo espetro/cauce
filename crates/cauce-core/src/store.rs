@@ -22,6 +22,7 @@ use url::Url;
 use uuid::Uuid;
 
 use crate::Tier;
+use crate::ai::AnswerTurn;
 use crate::cache::{CacheKey, CachedSearch, normalize_query, push_str};
 use crate::engine::EngineId;
 use crate::request::{ClientKind, SearchOrigin};
@@ -575,6 +576,34 @@ impl AnswerStatus {
     }
 }
 
+/// `answer_thread` row (UX-01): the server-authoritative conversation.
+/// The SPA keeps the live transcript in memory and sends the full
+/// `history[]` each turn; the server upserts the completed turn on the
+/// terminal `done` frame and the SPA hydrates from `get_thread` on
+/// reload. Distinct from `AnswerLogRow`, the durable single-answer
+/// artifact — this is the conversation, not the run.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+pub struct AnswerThreadRow {
+    /// Client-minted thread id (UUIDv4 in the SPA today); the primary
+    /// key. `None` on an insert the caller wants minted server-side.
+    #[serde(default)]
+    #[ts(type = "string")]
+    pub id: Uuid,
+    /// Isolation key: `"local"` in local mode, the SHA-256 hex of the
+    /// bearer identity in public mode — never the raw token. Every
+    /// read filters by owner.
+    pub owner: String,
+    /// Human label (the first question, trimmed, in the SPA today).
+    #[serde(default)]
+    pub title: String,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    /// The completed `AnswerTurn[]` transcript, oldest first — strict
+    /// user/assistant pairs, the same shape `POST /api/answer` replays
+    /// (`turns_json` column).
+    pub turns: Vec<AnswerTurn>,
+}
+
 /// Aggregates for the `/history` header line and cap note (W2-02).
 #[derive(Debug, Clone, Copy, Default)]
 pub struct HistoryStats {
@@ -1036,6 +1065,36 @@ pub trait Store: Send + Sync {
 
     /// Click-through beacon (`POST /api/click`).
     async fn record_click(&self, row: ClickRow) -> Result<(), StoreError>;
+
+    // ---- answer threads ------------------------------------------------------
+
+    /// Insert or replace one conversation row (UX-01). The id is the
+    /// client-minted thread id; `owner` scopes every other method. The
+    /// caller writes the completed turn on the terminal `done` frame
+    /// and hydrates from `get_thread` on reload.
+    async fn upsert_thread(&self, row: AnswerThreadRow) -> Result<(), StoreError>;
+
+    /// The caller's conversations, `updated_at` newest-first
+    /// (`GET /api/threads`), capped at `limit` rows.
+    async fn list_threads(
+        &self,
+        owner: &str,
+        limit: u32,
+    ) -> Result<Vec<AnswerThreadRow>, StoreError>;
+
+    /// One conversation by id, `None` when the id is unknown **or owned
+    /// by someone else** — the owner scoping is the 404 rule, never a
+    /// leak (`GET /api/threads/{id}`).
+    async fn get_thread(
+        &self,
+        id: &str,
+        owner: &str,
+    ) -> Result<Option<AnswerThreadRow>, StoreError>;
+
+    /// Remove one conversation. Returns false when no row has that id
+    /// under `owner`. The caller writes the audit row
+    /// (`DELETE /api/threads/{id}`).
+    async fn delete_thread(&self, id: &str, owner: &str) -> Result<bool, StoreError>;
 
     /// Combined history feed (`GET /api/history`): searches and clicks merged
     /// newest-first.

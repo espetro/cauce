@@ -21,9 +21,11 @@ use cauce_core::{AnswerFrame, AnswerRequest, AnswerRole, AnswerSource, AnswerTur
 use serde::Deserialize;
 use tokio_stream::StreamExt;
 use ts_rs::TS;
+use uuid::Uuid;
 
 use crate::app::AppState;
 use crate::error::ApiError;
+use crate::handlers::thread_owner;
 use crate::middleware::RequestCtx;
 
 /// Bounds on the client-replayed thread (W7-04): enough turns for a
@@ -52,6 +54,14 @@ pub struct AnswerBody {
     /// Mutually exclusive with `context_results`: assist stays
     /// single-turn.
     history: Option<Vec<AnswerTurn>>,
+    /// UX-01: the client-minted thread id. Present selects
+    /// server-authoritative persistence — the completed turn is upserted
+    /// into `answer_thread` under the caller's owner key on the terminal
+    /// `done` frame, and `done.thread_id` echoes the id so the SPA can
+    /// rewrite the URL to `/app/answer?thread=<id>`. Absent keeps the
+    /// W7-04 behaviour exactly: client-owned thread, no persistence.
+    #[serde(default)]
+    thread_id: Option<Uuid>,
     /// PUB-03 BYOK override: merged over the loaded `[ai]` config under
     /// its gates (`ai.allow_user_keys`, `ai.allow_user_base_url`) — a
     /// request carrying its own `api_key` bills the caller's provider
@@ -178,7 +188,7 @@ pub async fn answer(
     }
     let req = AnswerRequest {
         q: q.to_string(),
-        history,
+        history: history.clone(),
         client: ctx.client.clone(),
         request_id: Some(ctx.request_id.as_uuid()),
         actor: Some(ctx.actor(&headers)),
@@ -187,22 +197,116 @@ pub async fn answer(
         Some(results) => loop_.stream_assist(&req, results),
         None => loop_.stream_answer(&req),
     };
-    let events = tokio_stream::wrappers::UnboundedReceiverStream::new(receiver).map(|frame| {
-        let name = match &frame {
-            AnswerFrame::Step { .. } => "step",
-            AnswerFrame::Delta { .. } => "delta",
-            AnswerFrame::Sources { .. } => "sources",
-            AnswerFrame::Done { .. } => "done",
-            AnswerFrame::Error { .. } => "error",
-        };
-        Ok::<Event, Infallible>(
-            Event::default()
-                .event(name)
-                .json_data(&frame)
-                .expect("answer frame serializes"),
-        )
+    // UX-01: server-authoritative persistence. With a `thread_id`, the
+    // terminal `done` frame upserts the completed turn (the replayed
+    // history plus this question/answer pair) under the caller's owner
+    // key before the frame reaches the client, and the frame carries
+    // `thread_id` so the SPA can rewrite the URL to
+    // `/app/answer?thread=<id>`. A store fault never breaks the stream:
+    // it only drops `done.thread_id`, the same fail-open contract the
+    // `answer_log` write follows. Error frames persist nothing — a
+    // failed run must not extend the stored transcript.
+    let persist_ctx = body.thread_id.map(|thread_id| {
+        let owner = thread_owner(&state, &headers);
+        let turns: Vec<AnswerTurn> = history
+            .iter()
+            .map(|turn| AnswerTurn {
+                role: turn.role,
+                content: turn.content.clone(),
+            })
+            .collect();
+        // The first question names the thread; a first turn answers with
+        // the question itself.
+        let title = turns
+            .first()
+            .map(|turn| turn.content.clone())
+            .unwrap_or_else(|| q.to_string());
+        (thread_id, owner, turns, title)
     });
-    Ok(Sse::new(events)
+    let q_owned = q.to_string();
+    let store = state.store().clone();
+    let request_id = ctx.request_id.as_uuid();
+    let events =
+        tokio_stream::wrappers::UnboundedReceiverStream::new(receiver).then(move |frame| {
+            let persist_ctx = persist_ctx.clone();
+            let store = store.clone();
+            let q_owned = q_owned.clone();
+            async move {
+                let name: &'static str = match &frame {
+                    AnswerFrame::Step { .. } => "step",
+                    AnswerFrame::Delta { .. } => "delta",
+                    AnswerFrame::Sources { .. } => "sources",
+                    AnswerFrame::Done { .. } => "done",
+                    AnswerFrame::Error { .. } => "error",
+                };
+                let AnswerFrame::Done { answer, .. } = &frame else {
+                    let payload = serde_json::to_value(&frame).expect("answer frame serializes");
+                    return Ok((name, payload));
+                };
+                let Some((thread_id, owner, mut turns, title)) = persist_ctx else {
+                    let payload = serde_json::to_value(&frame).expect("answer frame serializes");
+                    return Ok((name, payload));
+                };
+                turns.push(AnswerTurn {
+                    role: AnswerRole::User,
+                    content: q_owned,
+                });
+                turns.push(AnswerTurn {
+                    role: AnswerRole::Assistant,
+                    content: answer.clone(),
+                });
+                let now = chrono::Utc::now();
+                let row = cauce_core::AnswerThreadRow {
+                    id: thread_id,
+                    owner,
+                    title,
+                    created_at: now,
+                    updated_at: now,
+                    turns,
+                };
+                if let Err(e) = store.upsert_thread(row).await {
+                    tracing::warn!(request_id = %request_id, error = %e, "thread upsert failed");
+                    let payload = serde_json::to_value(&frame).expect("answer frame serializes");
+                    return Ok((name, payload));
+                }
+                let frame = match frame {
+                    AnswerFrame::Done {
+                        answer,
+                        html,
+                        confidence,
+                        model,
+                        related_questions,
+                        cached,
+                        request_id,
+                        ungrounded,
+                        log_id,
+                        ..
+                    } => AnswerFrame::Done {
+                        answer,
+                        html,
+                        confidence,
+                        model,
+                        related_questions,
+                        cached,
+                        request_id,
+                        ungrounded,
+                        log_id,
+                        thread_id: Some(thread_id.to_string()),
+                    },
+                    other => other,
+                };
+                let payload = serde_json::to_value(&frame).expect("answer frame serializes");
+                Ok::<_, Infallible>((name, payload))
+            }
+        });
+    let sse_events = events.map(|Ok((name, payload))| {
+        let out: Result<Event, Infallible> = Ok(Event::default()
+            .event(name)
+            .json_data(payload)
+            .expect("answer frame serializes"));
+        out
+    });
+    Ok(Sse::new(sse_events)
         .keep_alive(KeepAlive::default())
         .into_response())
 }

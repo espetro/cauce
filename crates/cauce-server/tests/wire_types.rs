@@ -72,6 +72,10 @@ const WIRE_TABLE: &[(&str, &str, &[&str])] = &[
     ("DELETE", "/api/history/{id}", &["HistoryDeleteAck"]),
     ("DELETE", "/api/answer-log/{id}", &["AnswerLogDeleteAck"]),
     ("GET", "/api/answer-log/{id}", &["AnswerLogRow"]),
+    // UX-01: the owner-scoped thread surface.
+    ("GET", "/api/threads", &["AnswerThreadRow"]),
+    ("GET", "/api/threads/{id}", &["AnswerThreadRow"]),
+    ("DELETE", "/api/threads/{id}", &[]),
     ("GET", "/api/suggest", &["SuggestResponse"]),
     ("GET", "/api/report", &["ReportBundle"]),
     // FX-07: the instance-mode bootstrap pair.
@@ -128,6 +132,7 @@ fn export(out_dir: &Path) {
         cauce_core::config::Config::export_all(&cfg),
         cauce_core::EngineHealthRow::export_all(&cfg),
         cauce_core::AnswerLogRow::export_all(&cfg),
+        cauce_core::AnswerThreadRow::export_all(&cfg),
         cauce_core::PageRow::export_all(&cfg),
         cauce_core::report::ReportBundle::export_all(&cfg),
         cauce_server::CacheListing::export_all(&cfg),

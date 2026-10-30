@@ -34,6 +34,7 @@ mod history;
 mod lexical;
 mod pages;
 mod stats;
+mod threads;
 
 pub use answers::answers_roundtrip;
 pub use audit::audit_trail;
@@ -43,6 +44,7 @@ pub use history::{answer_log, log_clicks_history, suggest};
 pub use lexical::{cache_fts_search, lexical_search};
 pub use pages::{pages_roundtrip, pages_search_and_delete};
 pub use stats::stats_aggregates;
+pub use threads::{threads_listing_and_delete, threads_roundtrip};
 
 use chrono::{DateTime, Utc};
 use url::Url;
@@ -160,6 +162,8 @@ pub async fn run_all(store: &impl Store) {
     audit_trail(store).await;
     pages_roundtrip(store).await;
     pages_search_and_delete(store).await;
+    threads_roundtrip(store).await;
+    threads_listing_and_delete(store).await;
     answers_roundtrip(store).await;
     cache_admin(store).await;
 }

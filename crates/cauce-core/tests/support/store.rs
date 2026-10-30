@@ -12,10 +12,10 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use cauce_core::{
-    AnswerKey, AnswerLogRow, AnswerRow, AuditFilter, AuditRow, CacheKey, CacheResultHit,
-    CacheState, CachedAnswer, CachedSearch, ClickRow, DeleteAnswerLog, DeleteSearchLog,
-    EngineHealthRow, EngineStatus, HistoryFilter, HistoryItem, HistoryStats, PageHit, PageRow,
-    SearchLogRow, SearchResponse, StatsSnapshot, Store, StoreError,
+    AnswerKey, AnswerLogRow, AnswerRow, AnswerThreadRow, AuditFilter, AuditRow, CacheKey,
+    CacheResultHit, CacheState, CachedAnswer, CachedSearch, ClickRow, DeleteAnswerLog,
+    DeleteSearchLog, EngineHealthRow, EngineStatus, HistoryFilter, HistoryItem, HistoryStats,
+    PageHit, PageRow, SearchLogRow, SearchResponse, StatsSnapshot, Store, StoreError,
 };
 use chrono::{DateTime, Utc};
 
@@ -287,6 +287,19 @@ impl Store for StubStore {
         unimplemented!()
     }
     async fn delete_search_log(&self, _: i64) -> Result<Option<DeleteSearchLog>, StoreError> {
+        unimplemented!()
+    }
+
+    async fn upsert_thread(&self, _: AnswerThreadRow) -> Result<(), StoreError> {
+        unimplemented!()
+    }
+    async fn list_threads(&self, _: &str, _: u32) -> Result<Vec<AnswerThreadRow>, StoreError> {
+        unimplemented!()
+    }
+    async fn get_thread(&self, _: &str, _: &str) -> Result<Option<AnswerThreadRow>, StoreError> {
+        unimplemented!()
+    }
+    async fn delete_thread(&self, _: &str, _: &str) -> Result<bool, StoreError> {
         unimplemented!()
     }
     async fn put_page(&self, row: &PageRow) -> Result<(), StoreError> {
