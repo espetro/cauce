@@ -38,7 +38,14 @@ ungrounded?: boolean,
  * re-reads the stored row instead of re-running the loop.
  * Absent when the log write failed open.
  */
-log_id?: number, } | { "type": "error", message: string, 
+log_id?: number, 
+/**
+ * The persisted thread id (UX-01), present only when the
+ * request carried `thread_id` and the completed turn was
+ * upserted; the SPA rewrites the URL to
+ * `/app/answer?thread=<id>` with it. Absent otherwise.
+ */
+thread_id?: string | null, } | { "type": "error", message: string, 
 /**
  * Provider retry hint, only on rate limits.
  */

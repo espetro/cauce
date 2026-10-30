@@ -1076,12 +1076,20 @@ pub trait Store: Send + Sync {
 
     /// The caller's conversations, `updated_at` newest-first
     /// (`GET /api/threads`), capped at `limit` rows.
-    async fn list_threads(&self, owner: &str, limit: u32) -> Result<Vec<AnswerThreadRow>, StoreError>;
+    async fn list_threads(
+        &self,
+        owner: &str,
+        limit: u32,
+    ) -> Result<Vec<AnswerThreadRow>, StoreError>;
 
     /// One conversation by id, `None` when the id is unknown **or owned
     /// by someone else** — the owner scoping is the 404 rule, never a
     /// leak (`GET /api/threads/{id}`).
-    async fn get_thread(&self, id: &str, owner: &str) -> Result<Option<AnswerThreadRow>, StoreError>;
+    async fn get_thread(
+        &self,
+        id: &str,
+        owner: &str,
+    ) -> Result<Option<AnswerThreadRow>, StoreError>;
 
     /// Remove one conversation. Returns false when no row has that id
     /// under `owner`. The caller writes the audit row

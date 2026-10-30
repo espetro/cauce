@@ -37,8 +37,14 @@ pub async fn threads_roundtrip(store: &impl Store) {
 
     // Upsert is idempotent on id: a re-upsert (the next completed turn)
     // replaces the row, it does not duplicate.
-    store.upsert_thread(mine.clone()).await.expect("upsert mine");
-    store.upsert_thread(other.clone()).await.expect("upsert other");
+    store
+        .upsert_thread(mine.clone())
+        .await
+        .expect("upsert mine");
+    store
+        .upsert_thread(other.clone())
+        .await
+        .expect("upsert other");
 
     let got = store
         .get_thread(&mine.id.to_string(), "conf-owner")

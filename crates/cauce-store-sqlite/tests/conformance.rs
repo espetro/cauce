@@ -252,3 +252,68 @@ fn memory_database_is_rejected() {
         .expect(":memory: must be rejected");
     assert!(err.to_string().contains(":memory:"));
 }
+
+/// UX-01 acceptance: `0006_answer_threads` applies on an existing v5
+/// database. Build the schema exactly as a v0.8.x install would have it
+/// (migrations 0001..0005, recorded in `schema_version`), then open the
+/// store and confirm only 0006 is pending and the table works.
+#[tokio::test]
+async fn migration_0006_applies_on_existing_v5_database() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("cauce.db");
+
+    {
+        let conn = rusqlite::Connection::open(&path).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE schema_version (
+                version    INTEGER PRIMARY KEY,
+                name       TEXT NOT NULL,
+                applied_at INTEGER NOT NULL
+            );",
+        )
+        .unwrap();
+        let v5: &[(&str, &str)] = &[
+            ("0001_init", include_str!("../migrations/0001_init.sql")),
+            (
+                "0002_search_log_query_raw",
+                include_str!("../migrations/0002_search_log_query_raw.sql"),
+            ),
+            (
+                "0003_answers",
+                include_str!("../migrations/0003_answers.sql"),
+            ),
+            ("0004_pages", include_str!("../migrations/0004_pages.sql")),
+            (
+                "0005_ai_history",
+                include_str!("../migrations/0005_ai_history.sql"),
+            ),
+        ];
+        for (idx, (name, sql)) in v5.iter().enumerate() {
+            conn.execute_batch(sql).unwrap();
+            conn.execute(
+                "INSERT INTO schema_version (version, name, applied_at) VALUES (?1, ?2, 0)",
+                rusqlite::params![idx as i64 + 1, name],
+            )
+            .unwrap();
+        }
+        // Pre-0006 there is no thread table.
+        let has_threads: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = 'answer_thread'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(has_threads, 0);
+    }
+
+    let store = SqliteStore::open(&path, StoreTuning::default()).unwrap();
+    let conn = rusqlite::Connection::open(&path).unwrap();
+    let version: i64 = conn
+        .query_row("SELECT max(version) FROM schema_version", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(version, 6, "opening a v5 database applies 0006");
+
+    // The migrated store serves the thread surface.
+    cauce_core::conformance::threads_roundtrip(&store).await;
+}

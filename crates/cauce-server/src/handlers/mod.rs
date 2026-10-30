@@ -47,6 +47,7 @@ mod pages;
 mod report;
 mod search;
 mod suggest;
+mod threads;
 
 #[cfg(feature = "ai")]
 pub use answer::{AnswerBody, answer};
@@ -73,6 +74,7 @@ pub use pages::{IndexBody, PageDeleteAck, pages_delete, pages_get, pages_index};
 pub use report::report;
 pub use search::{search, search_stream};
 pub use suggest::{SuggestResponse, suggest};
+pub use threads::{thread_owner, threads_delete, threads_get, threads_list};
 
 /// Cap on caller-supplied `limit`/`offset`-style page sizes.
 pub(super) const MAX_LIMIT: u32 = 1_000;
