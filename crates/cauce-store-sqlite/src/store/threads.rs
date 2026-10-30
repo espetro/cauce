@@ -91,7 +91,11 @@ impl SqliteStore {
     }
 
     /// Remove one thread; false when no row has that id under `owner`.
-    pub(super) async fn delete_thread(&self, id: String, owner: String) -> Result<bool, StoreError> {
+    pub(super) async fn delete_thread(
+        &self,
+        id: String,
+        owner: String,
+    ) -> Result<bool, StoreError> {
         // Validate the shape once here so a malformed id never silently
         // deletes nothing: the handlers parse the UUID first, this is
         // the store-side backstop.

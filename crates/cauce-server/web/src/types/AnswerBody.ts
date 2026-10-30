@@ -30,6 +30,15 @@ context_results: Array<AnswerSource> | null,
  */
 history: Array<AnswerTurn> | null, 
 /**
+ * UX-01: the client-minted thread id. Present selects
+ * server-authoritative persistence — the completed turn is upserted
+ * into `answer_thread` under the caller's owner key on the terminal
+ * `done` frame, and `done.thread_id` echoes the id so the SPA can
+ * rewrite the URL to `/app/answer?thread=<id>`. Absent keeps the
+ * W7-04 behaviour exactly: client-owned thread, no persistence.
+ */
+thread_id: string | null, 
+/**
  * PUB-03 BYOK override: merged over the loaded `[ai]` config under
  * its gates (`ai.allow_user_keys`, `ai.allow_user_base_url`) — a
  * request carrying its own `api_key` bills the caller's provider

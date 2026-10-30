@@ -30,9 +30,9 @@ mod health;
 mod history;
 mod pages;
 mod stats;
-mod threads;
 #[cfg(test)]
 mod tests;
+mod threads;
 
 use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -41,8 +41,8 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use cauce_core::{
-    AnswerKey, AnswerLogRow, AnswerRow, AnswerThreadRow, AuditFacets, AuditFilter, AuditRow, CacheKey,
-    CacheResultHit, CacheState, CachedAnswer, CachedSearch, ClickRow, DeleteAnswerLog,
+    AnswerKey, AnswerLogRow, AnswerRow, AnswerThreadRow, AuditFacets, AuditFilter, AuditRow,
+    CacheKey, CacheResultHit, CacheState, CachedAnswer, CachedSearch, ClickRow, DeleteAnswerLog,
     DeleteSearchLog, EngineHealthRow, HistoryFilter, HistoryItem, HistoryStats, PageHit, PageRow,
     SearchLogRow, SearchResponse, StatsSnapshot, Store, StoreError, StoreTuning,
 };
@@ -342,7 +342,11 @@ impl Store for SqliteStore {
         self.list_threads(owner.to_string(), limit).await
     }
 
-    async fn get_thread(&self, id: &str, owner: &str) -> Result<Option<AnswerThreadRow>, StoreError> {
+    async fn get_thread(
+        &self,
+        id: &str,
+        owner: &str,
+    ) -> Result<Option<AnswerThreadRow>, StoreError> {
         self.get_thread(id.to_string(), owner.to_string()).await
     }
 
