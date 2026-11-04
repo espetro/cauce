@@ -43,7 +43,7 @@
     ariaInvalid,
   }: Props = $props();
 
-  // Bits UI items can't carry "" — map it to a sentinel in both
+  // Bits UI items reject "" as a value — map it to a sentinel in both
   // directions so callers keep plain "" semantics.
   const EMPTY = "__none__";
   const items = $derived(
