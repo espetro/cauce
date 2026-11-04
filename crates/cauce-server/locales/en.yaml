@@ -118,6 +118,33 @@ search:
   # Kind word when the wire payload names none.
   err_unknown: failed
 
+# D3: the shared FilterBar's copy (search + history surfaces).
+filter:
+  # Column labels.
+  time_range: time range
+  safesearch: safe search
+  engines: engines
+  lang: language
+  # Time-range options; the empty value means "any time".
+  time_range_all: any time
+  time_range_day: past day
+  time_range_week: past week
+  time_range_month: past month
+  time_range_year: past year
+  # Safe-search levels; the empty value means "off".
+  safesearch_off: 'off'
+  safesearch_moderate: moderate
+  safesearch_strict: strict
+  # Engine multi-select placeholder + hint.
+  engines_placeholder: select engines…
+  engines_hint: leave empty for defaults
+  # Language input placeholder.
+  lang_placeholder: e.g. en
+  # Submit button label.
+  submit: search
+  # "Clear filters" link.
+  clear: clear
+
 # `/cache` page copy (W2-04).
 cache:
   page_title: Cache
@@ -240,6 +267,31 @@ settings:
   byok_protocol: Protocol
   byok_protocol_default: instance default
   byok_base_url_locked: not allowed by this instance
+  # D2 settings rebuild: tab bar + general/privacy rows.
+  general_tab: General
+  privacy_tab: Privacy
+  search_defaults_tab: Search defaults
+  instance_tab: Instance
+  ai_tab: AI
+  section_general: General
+  section_privacy: Privacy
+  section_search_defaults: Search defaults
+  theme: Theme
+  language: Language
+  results_per_page: Results per page
+  safe_search: Safe search
+  safesearch_off: 'off'
+  safesearch_moderate: moderate
+  safesearch_strict: strict
+  region: Region
+  default_engines: Default engines
+  default_engines_hint: Set per engine in the Engines page.
+  page_size: Page size
+  ttl_default: Default
+  page_size_default: Default
+  theme_system: system
+  theme_light: light
+  theme_dark: dark
 
 # `/history` page copy (W2-02).
 history:
