@@ -29,6 +29,10 @@ services:
     ports:
       - "80:80"
       - "443:443"
+      # Local-dev caveat: on machines running the portless LaunchDaemon
+      # (sh.portless.proxy, serves *.localhost on loopback 80/443), these host
+      # binds fail. Drop the mapping or remap (e.g. "8443:443") when bringing
+      # the stack up locally; server deployments are unaffected.
     volumes:
       - ./contrib/Caddyfile.docker:/etc/caddy/Caddyfile:ro
       - caddy-data:/data

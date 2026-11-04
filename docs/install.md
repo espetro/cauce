@@ -172,6 +172,20 @@ portless list | grep search   # confirm the route
 This is a fixed-port supervised service, so use `portless alias`, not `portless <name> <cmd>` (which
 is for agent-started dev servers).
 
+The proxy must also survive reboots: install it as a LaunchDaemon so it binds loopback 443 at boot,
+before login:
+
+```bash
+sudo portless service install
+sudo portless service status   # expect: Installed: yes, Proxy on 443: responding
+```
+
+Port-443 conflict with Dory: Dory's `*.dory.local`/custom-domain ingress binds wildcard `*:80`/`*:443`
+and blocks portless (which then silently falls back to port 1355, breaking `https://search.localhost`).
+On this machine Dory's ingress is deauthorized (Settings → Network); if `*.dory.local` routing is ever
+re-enabled, search.localhost breaks until one side yields 443 — see the "Port 443 ownership" section in
+`~/.config/oxmgr/README.md` for the coexistence options.
+
 ## Agent wiring
 
 MCP and HTTP wiring snippets for Claude Code, Hermes, maki and curl live in [agents.md](agents.md).
