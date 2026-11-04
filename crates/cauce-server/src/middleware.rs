@@ -145,25 +145,35 @@ fn client_kind(headers: &HeaderMap, path: &str) -> ClientKind {
 
 /// The allow list for the Host/Origin guard (W1-13), frozen at router
 /// build: every loopback name (`localhost`, `*.localhost` portless
-/// aliases, `127.0.0.0/8`, `::1`) plus the configured bind host, so a
+/// aliases, `127.0.0.0/8`, `::1`), the configured bind host, and the
+/// `server.allowed_hosts` names (named deployments behind a proxy), so a
 /// `PUT /api/config` swapping `server.host` cannot widen what the live
 /// listener accepts.
 #[derive(Debug, Clone)]
 pub struct HostGuard {
     bind_host: String,
+    allowed_hosts: Vec<String>,
 }
 
 impl HostGuard {
-    pub fn new(bind_host: &str) -> Self {
+    pub fn new(bind_host: &str, allowed_hosts: &[String]) -> Self {
         Self {
             bind_host: host_part(bind_host).to_ascii_lowercase(),
+            allowed_hosts: allowed_hosts
+                .iter()
+                .map(|h| host_part(h).to_ascii_lowercase())
+                .collect(),
         }
     }
 
     /// `authority` (a `Host` value or an `Origin`'s host) names this
-    /// server when it is loopback or equals the configured bind host.
+    /// server when it is loopback, equals the configured bind host, or
+    /// is on the `server.allowed_hosts` list.
     fn allows(&self, authority: &str) -> bool {
-        is_loopback_host(authority) || host_part(authority).eq_ignore_ascii_case(&self.bind_host)
+        let h = host_part(authority);
+        is_loopback_host(authority)
+            || h.eq_ignore_ascii_case(&self.bind_host)
+            || self.allowed_hosts.iter().any(|a| h.eq_ignore_ascii_case(a))
     }
 }
 

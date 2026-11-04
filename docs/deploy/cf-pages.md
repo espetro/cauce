@@ -42,7 +42,10 @@ cloudflared at `api.cauce.fyi`. On top of the public-instance base config, one e
 ```toml
 [server]
 public_instance = true
-public_origin   = "https://cauce.fyi"   # used in opensearch.xml etc.
+public_url      = "https://cauce.fyi"   # used in opensearch.xml etc.
+# Both public names: the tunnel delivers `Host: api.cauce.fyi`, and
+# browsers send `Origin: https://cauce.fyi` on mutating /api calls.
+allowed_hosts   = ["api.cauce.fyi", "cauce.fyi"]
 
 [rate_limit]
 trust_proxy_headers = true
