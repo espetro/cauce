@@ -381,3 +381,14 @@ global store, and is never shared with or copied into another project.
 - `build:spa` writes into the committed `assets/spa`; the landing flag build would clobber it (see UX-08 note on #313).
 - UX-08 is audit-only: no landing changes. The landing shares `TopNav`, so it inherits the waffle.
 - Manual playwright walkthroughs for UX-03 to UX-07 were NOT run.
+
+## 2026-11-04 - v0.9.0 released and deployed to production (parent: UX-09 #305)
+
+- Tag v0.9.0 pushed (dea2eae); release workflow ran the gate green, 6 targets built. PRs #325 (server.allowed_hosts) and #326 (DS-20 craft pass: type scale, hero copy, row grids) merged before the tag.
+- cauce.fyi (CF Pages project `cauce`, Git-connected to espetro/cauce-instance) serves v0.9.0 with the functions/ proxy: deployment d3b183fa. Manual direct upload 4e4bb4e1 preceded it while the instance CI path was being fixed.
+- The instance repo's Pages CI never worked two ways: its GH Actions workflow needed CLOUDFLARE_* secrets the repo does not have, and CF's Git integration looked for `deploy/cf-pages/build.sh` inside the instance checkout where the path didn't exist. Fixed in cfb07f9 + 9a4dcb5: the instance repo now carries the build script (clones the pinned tag, builds app+landing, stages pages-dist AND functions/), and cauce.version is a bare semver that gets the `v` prefix at clone time.
+- `wrangler pages deploy <dir>` reads `functions/` from the cwd, not the output dir — staging functions/ next to pages-dist is what makes /api, /health, /mcp pass through on cauce.fyi.
+- api.cauce.fyi (OVH VPS) runs 0.9.0 (aaab830 + allowed_hosts cherry-pick) under systemd cauce.service (/usr/local/bin/cauce, user cauce, ProtectSystem=strict). NOT oxmgr/mise as the old instance docs claimed — docs fixed in the same commits.
+- Engine set on the public instance: bing + brave enabled (declarative, in-binary specs), replay + ddgs disabled. /api/instance lists all configured ids with engineCount=2 (enabled only) — by design.
+- Verified in production with playwright: DS-20 type scale live (h1 22px/600, h2 30px), two-line result rows, single composer query, meta line, 0 console errors, real bing/brave results on /app/search?q=rust.
+- Open: CF cache rule + WAF rule are dashboard tasks (OAuth token lacks rulesets scope); VPS binary upgrade to the released tarball pending asset publication (embedded SPA is pre-DS-20 but unreachable through cauce.fyi).
