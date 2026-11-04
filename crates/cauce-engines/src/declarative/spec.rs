@@ -163,6 +163,23 @@ pub struct RequestSpec {
     /// without a `market:` map fails compilation.
     #[serde(default)]
     pub market: Option<BTreeMap<String, String>>,
+    /// Optional per-engine request parameter map. Keys are query param
+    /// names; values are maps from enum variant display name to the
+    /// literal string rendered into the URL. When a field is omitted
+    /// (unset), the value renders as the empty string and the separator
+    /// `&` is suppressed. Example:
+    ///
+    ///   params:
+    ///     time_range:
+    ///       day: "filters=ex1:\"ez1\""
+    ///       week: "filters=ex1:\"ez2\""
+    ///       month: "filters=ex1:\"ez3\""
+    ///     safesearch:
+    ///       strict: "adlt=strict"
+    ///       moderate: "adlt=moderate"
+    ///       off: "adlt=off"
+    #[serde(default)]
+    pub params: Option<BTreeMap<String, BTreeMap<String, String>>>,
 }
 
 /// `parse.kind`.
@@ -349,7 +366,13 @@ impl CompiledSpec {
             .as_ref()
             .and_then(|m| resolve_market(m, "en"));
 
-        validate_template(&spec.request.url, "request.url", probe_market).map_err(invalid)?;
+        validate_template(
+            &spec.request.url,
+            "request.url",
+            probe_market,
+            spec.request.params.as_ref(),
+        )
+        .map_err(invalid)?;
         // The URL must render to an absolute URL for a plausible request.
         let probe = render_template(
             &spec.request.url,
@@ -359,6 +382,9 @@ impl CompiledSpec {
                 page_size: spec.page_size,
                 lang: "en",
                 market: probe_market,
+                time_range: None,
+                safesearch: None,
+                params: spec.request.params.as_ref(),
             },
         )
         .map_err(|e| invalid(e.to_string()))?;
@@ -378,6 +404,7 @@ impl CompiledSpec {
                 &interpolated,
                 &format!("request.headers.{name}"),
                 probe_market,
+                spec.request.params.as_ref(),
             )
             .map_err(invalid)?;
             headers.push((name, interpolated));
@@ -495,6 +522,9 @@ impl CompiledSpec {
                 .market
                 .as_ref()
                 .and_then(|m| resolve_market(m, lang)),
+            time_range: req.time_range.map(|t| t.as_str()),
+            safesearch: Some(req.safesearch.as_str()),
+            params: self.spec.request.params.as_ref(),
         }
     }
 
@@ -606,6 +636,22 @@ pub(crate) struct TemplateVars<'a> {
     /// Market code `lang` resolves to through `request.market`; `None`
     /// when the spec has no map (`{market}` then fails to render).
     pub market: Option<&'a str>,
+    /// Freshness window: day / week / month / year. Rendered as
+    /// `filters=ex1:"ez1"` (Bing) or `tf=pw` (Brave). Omitted when the
+    /// engine's `params.time_range` map has no matching variant; the caller
+    /// must suppress the `&` separator if the rendered value is empty.
+    pub time_range: Option<&'a str>,
+    /// Safe-search level. Rendered as `adlt=strict|moderate|off` (Bing) or
+    /// `safesearch=strict|moderate|off` (Brave). Omitted when the engine's
+    /// `params.safesearch` map has no matching variant; the caller must
+    /// suppress the `&` separator if the rendered value is empty.
+    pub safesearch: Option<&'a str>,
+    /// Optional per-engine request parameter map. Keys are query param
+    /// names (e.g. `time_range`, `safesearch`); values are maps from
+    /// enum variant display name to the literal string rendered into the
+    /// URL. When the map is `None` or the field is absent, the token
+    /// renders as the empty string.
+    pub params: Option<&'a BTreeMap<String, BTreeMap<String, String>>>,
 }
 
 /// `{q}` encodes with the form-urlencoding byte serializer (space ->
@@ -673,6 +719,20 @@ fn resolve_token(token: &str, vars: &TemplateVars<'_>) -> Result<String, EngineE
         "page" => numeric(i64::from(vars.page)),
         "page0" => numeric(i64::from(vars.page.saturating_sub(1))),
         "offset" => numeric(i64::from(vars.page.saturating_sub(1)) * i64::from(vars.page_size)),
+        "time_range" if delta == 0 => {
+            let rendered = match (vars.time_range, vars.params.and_then(|p| p.get("time_range"))) {
+                (Some(variant), Some(map)) => map.get(variant).cloned().unwrap_or_default(),
+                _ => String::new(),
+            };
+            Ok(rendered)
+        }
+        "safesearch" if delta == 0 => {
+            let rendered = match (vars.safesearch, vars.params.and_then(|p| p.get("safesearch"))) {
+                (Some(variant), Some(map)) => map.get(variant).cloned().unwrap_or_default(),
+                _ => String::new(),
+            };
+            Ok(rendered)
+        }
         _ => Err(EngineError::Transport(format!(
             "unknown template token {{{token}}}"
         ))),
@@ -726,13 +786,21 @@ fn resolve_market<'a>(market: &'a BTreeMap<String, String>, lang: &str) -> Optio
 /// unterminated braces when the spec loads instead of at search time.
 /// `market` is the spec's probe value so `{market}` without a
 /// `request.market` map fails here.
-fn validate_template(template: &str, where_: &str, market: Option<&str>) -> Result<(), String> {
+fn validate_template(
+    template: &str,
+    where_: &str,
+    market: Option<&str>,
+    params: Option<&BTreeMap<String, BTreeMap<String, String>>>,
+) -> Result<(), String> {
     let vars = TemplateVars {
         q: "x",
         page: 1,
         page_size: 10,
         lang: "en",
         market,
+        time_range: None,
+        safesearch: None,
+        params,
     };
     render_template(template, &vars).map_err(|e| format!("{where_}: {e}"))?;
     Ok(())

@@ -22,6 +22,16 @@ request:
   headers:
     Accept-Language: "{lang}"
   timeout_ms: 2500
+  params:
+    time_range:
+      day: "pd"
+      week: "pw"
+      month: "pm"
+      year: "py"
+    safesearch:
+      strict: "safesearch=strict"
+      moderate: "safesearch=moderate"
+      off: "safesearch=off"
 parse:
   kind: html
   results: 'div.snippet[data-type="web"]'
