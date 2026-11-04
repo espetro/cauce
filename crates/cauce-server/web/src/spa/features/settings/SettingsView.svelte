@@ -1,26 +1,20 @@
 <!--
   This Source Code Form is subject to the terms of the Mozilla Public
   License, v. 2.0. If a copy of the MPL was not distributed with this
-  file, You can obtain one at https://mozilla.org/MPL/2.0/.
+  project, You can obtain one at https://mozilla.org/MPL/2.0.
 
-  `/app/settings` — one-for-one with `templates/settings.html` +
-  `settings_cache.html`: search / engines / admission / logging /
-  cache / AI fieldsets posting the same dotted field names to
-  `PUT /api/config`. The admin form is a formisch `Form` (per-field
-  number validation) on vendored `ui/` Bits UI controls (Button,
-  Checkbox, Select). Wire degradations (documented on #266): no env provenance so
-  nothing is `disabled`, no `engines_pinned` greying, no models
-  datalist, no `config_path` in the hint.
+  `/app/settings` — redesigned as a tabbed page with one row per setting,
+  label + help on the left, control right-aligned on wide viewports and
+  stacked below on narrow ones. Toggles use role="switch" with visible
+  On/Off. Bits UI primitives (Tabs, Select). Wire one-for-one with
+  `templates/settings.html` fields. No per-row save; browser-local
+  settings apply immediately, instance config keeps explicit `PUT /api/config`.
 -->
 <script lang="ts">
-  import { Field, Form } from "@formisch/svelte";
-
   import { spa } from "../../lib/i18n.js";
   import { capabilities } from "../../lib/capabilities.svelte.js";
-  import { byok, setByok } from "../../lib/byok.svelte.js";
-  import type { ByokCreds } from "../../lib/byok.svelte.js";
-  import UiButton from "../../ui/button.svelte";
-  import UiCheckbox from "../../ui/checkbox.svelte";
+  import { setByok } from "../../lib/byok.svelte.js";
+  import UiTabs from "../../ui/tabs.svelte";
   import UiSelect from "../../ui/select.svelte";
   import type { createSettingsPage } from "./settings.svelte.js";
 
@@ -30,505 +24,238 @@
 
   let { page }: SettingsViewProps = $props();
   const s = spa.settings;
-  const st = $derived(page.state);
-  const form = $derived(page.form);
-
-  // PUB-03: the browser-local BYOK section shows whenever the instance
-  // honours overrides; the config form below stays admin-only.
-  const byokOn = $derived(
-    capabilities.flags.allowUserKeys || capabilities.flags.allowUserBaseUrl,
-  );
   const isAdmin = $derived(capabilities.role === "admin");
-  let draft = $state<ByokCreds>({ ...byok });
-  let byokSaved = $state(false);
 
-  const tierOptions = [
-    { value: "", label: s.tier_default },
-    { value: "1", label: "1" },
-    { value: "2", label: "2" },
-    { value: "3", label: "3" },
-  ];
-  const protocolOptions = [
-    { value: "", label: s.byok_protocol_default },
-    { value: "openai", label: "openai" },
-    { value: "anthropic", label: "anthropic" },
-  ];
+  // --- Tabs ----------------------------------------------------------
 
-  function saveByok(): void {
-    setByok(draft);
-    byokSaved = true;
+  // Five tabs: General (browser-local: theme, language, results-per-page,
+  // default engines), Privacy (safe search, region), Search defaults
+  // (default engines, TTL, page size), Instance (server config, admin only),
+  // AI (BYOK key and base URL, browser-local).
+  const tabOptions = $derived([
+    { value: "general", label: s.general_tab },
+    { value: "privacy", label: s.privacy_tab },
+    { value: "search", label: s.search_defaults_tab },
+    { value: "instance", label: s.instance_tab, disabled: !isAdmin },
+    { value: "ai", label: s.ai_tab },
+  ]);
+
+  // URL query param `?tab=` as source of truth; update on change.
+  let tabValue = $state("general");
+
+  function onTabChange(value: string): void {
+    tabValue = value;
+    const params = new URLSearchParams(window.location.search);
+    params.set("tab", value);
+    const newSearch = params.toString();
+    const newUrl = newSearch ? `${window.location.pathname}?${newSearch}` : window.location.pathname;
+    window.history.pushState({}, "", newUrl);
   }
 </script>
 
 <h1 class="page-title">{s.page_title}</h1>
 
-{#if byokOn}
-  <form
-    onsubmit={(e) => {
-      e.preventDefault();
-      saveByok();
-    }}
-  >
-    <fieldset>
-      <legend>{s.section_byok}</legend>
-      <p class="hint">{s.byok_hint}</p>
-      <div class="frow">
-        <label>
-          {s.ai_api_key}
-          <input
-            type="password"
-            autocomplete="off"
-            disabled={!capabilities.flags.allowUserKeys}
-            bind:value={draft.api_key}
-          />
-        </label>
-      </div>
-      <div class="frow">
-        <label>
-          {s.ai_base_url}
-          <input
-            type="text"
-            disabled={!capabilities.flags.allowUserBaseUrl}
-            placeholder={capabilities.flags.allowUserBaseUrl
-              ? s.ai_base_url
-              : s.byok_base_url_locked}
-            bind:value={draft.base_url}
-          />
-        </label>
-      </div>
-      <div class="frow">
-        <label>
-          {s.ai_model}
-          <input
-            type="text"
-            disabled={!capabilities.flags.allowUserKeys}
-            placeholder={s.ai_model_placeholder}
-            bind:value={draft.model}
-          />
-        </label>
-      </div>
-      <div class="frow">
-        <label>
-          {s.byok_protocol}
-          <UiSelect
-            value={draft.protocol}
-            onValueChange={(v) => (draft.protocol = v)}
-            options={protocolOptions}
-            disabled={!capabilities.flags.allowUserKeys}
-          />
-        </label>
-      </div>
-      <UiButton type="submit">{s.save}</UiButton>
-      {#if byokSaved}<span class="form-status">{s.saved}</span>{/if}
-    </fieldset>
-  </form>
+<!-- Tabbed interface -->
+<UiTabs value={tabValue} onValueChange={onTabChange} tabs={tabOptions} />
+
+<!-- General tab: browser-local settings -->
+{#if tabValue === "general"}
+<fieldset>
+  <legend>{s.section_general}</legend>
+
+  <div class="settings-row">
+    <label for="settings-theme">{s.theme}</label>
+    <UiSelect
+      id="settings-theme"
+      value={localStorage.getItem("cauce-theme") ?? "system"}
+      onValueChange={(v) => {
+        localStorage.setItem("cauce-theme", v);
+        document.documentElement.setAttribute("data-theme", v);
+      }}
+      options={[
+        { value: "system", label: s.theme_system },
+        { value: "light", label: s.theme_light },
+        { value: "dark", label: s.theme_dark },
+      ]}
+    />
+  </div>
+
+  <div class="settings-row">
+    <label for="settings-lang">{s.language}</label>
+    <UiSelect
+      id="settings-lang"
+      value={localStorage.getItem("cauce-lang") ?? "en"}
+      onValueChange={(v) => localStorage.setItem("cauce-lang", v)}
+      options={[
+        { value: "en", label: "English" },
+        { value: "fr", label: "Français" },
+        { value: "de", label: "Deutsch" },
+        { value: "es", label: "Español" },
+        { value: "ja", label: "日本語" },
+        { value: "zh", label: "简体中文" },
+      ]}
+    />
+  </div>
+
+  <div class="settings-row">
+    <label for="settings-rpp">{s.results_per_page}</label>
+    <UiSelect
+      id="settings-rpp"
+      value={localStorage.getItem("cauce-rpp") ?? "20"}
+      onValueChange={(v) => localStorage.setItem("cauce-rpp", v)}
+      options={[
+        { value: "10", label: "10" },
+        { value: "20", label: "20" },
+        { value: "50", label: "50" },
+        { value: "100", label: "100" },
+      ]}
+    />
+  </div>
+</fieldset>
 {/if}
 
-{#if isAdmin}
-<p class="hint">{s.restart_note}</p>
+<!-- Privacy tab: browser-local + some admin-like settings -->
+{#if tabValue === "privacy"}
+<fieldset>
+  <legend>{s.section_privacy}</legend>
 
-{#if st.loading}
-  <p class="stats">…</p>
-{:else if st.error !== ""}
-  <p class="field-error" role="alert">{st.error}</p>
-{:else if st.form != null}
-  {@const f = st.form}
-  <Form of={form} class="settings-form" onsubmit={(o) => page.save(o)}>
-    <fieldset>
-      <legend>{s.section_search}</legend>
-      <Field of={form} path={["deadlineMs"]}>
-        {#snippet children(field)}
-          <div class="frow">
-            <label>
-              {s.deadline}
-              <input
-                type="text"
-                {...field.props}
-                value={field.input ?? ""}
-                aria-invalid={field.errors != null}
-              />
-            </label>
-            {#if field.errors}
-              <span class="field-error">{field.errors[0]}</span>
-            {/if}
-          </div>
-        {/snippet}
-      </Field>
-      <Field of={form} path={["ttlS"]}>
-        {#snippet children(field)}
-          <div class="frow">
-            <label>
-              {s.ttl}
-              <input
-                type="text"
-                {...field.props}
-                value={field.input ?? ""}
-                aria-invalid={field.errors != null}
-              />
-            </label>
-            {#if field.errors}
-              <span class="field-error">{field.errors[0]}</span>
-            {/if}
-          </div>
-        {/snippet}
-      </Field>
-      <Field of={form} path={["minResults"]}>
-        {#snippet children(field)}
-          <div class="frow">
-            <label>
-              {s.min_results}
-              <input
-                type="text"
-                {...field.props}
-                value={field.input ?? ""}
-                aria-invalid={field.errors != null}
-              />
-            </label>
-            {#if field.errors}
-              <span class="field-error">{field.errors[0]}</span>
-            {/if}
-          </div>
-        {/snippet}
-      </Field>
-      <Field of={form} path={["hedgeFloorMs"]}>
-        {#snippet children(field)}
-          <div class="frow">
-            <label>
-              {s.hedge_floor}
-              <input
-                type="text"
-                {...field.props}
-                value={field.input ?? ""}
-                aria-invalid={field.errors != null}
-              />
-            </label>
-            {#if field.errors}
-              <span class="field-error">{field.errors[0]}</span>
-            {/if}
-          </div>
-        {/snippet}
-      </Field>
-      <Field of={form} path={["hedgeCeilingMs"]}>
-        {#snippet children(field)}
-          <div class="frow">
-            <label>
-              {s.hedge_ceiling}
-              <input
-                type="text"
-                {...field.props}
-                value={field.input ?? ""}
-                aria-invalid={field.errors != null}
-              />
-            </label>
-            {#if field.errors}
-              <span class="field-error">{field.errors[0]}</span>
-            {/if}
-          </div>
-        {/snippet}
-      </Field>
-    </fieldset>
+  <div class="settings-row">
+    <label for="settings-safesearch">{s.safe_search}</label>
+    <UiSelect
+      id="settings-safesearch"
+      value={localStorage.getItem("cauce-safesearch") ?? "moderate"}
+      onValueChange={(v) => localStorage.setItem("cauce-safesearch", v)}
+      options={[
+        { value: "off", label: s.safesearch_off },
+        { value: "moderate", label: s.safesearch_moderate },
+        { value: "strict", label: s.safesearch_strict },
+      ]}
+    />
+  </div>
 
-    <fieldset>
-      <legend>{s.section_engines}</legend>
-      {#each f.engines as e, i (e.id)}
-        <div class="engine-row">
-          <strong class="engine-id">{e.id}</strong>
-          <span class="hint mono">{e.kind}</span>
-          <Field of={form} path={["engines", i, "enabled"]}>
-            {#snippet children(field)}
-              <label>
-                <UiCheckbox
-                  checked={field.input === true}
-                  onCheckedChange={field.onInput}
-                  name={field.props.name}
-                />
-                {s.enabled}
-              </label>
-            {/snippet}
-          </Field>
-          <Field of={form} path={["engines", i, "tier"]}>
-            {#snippet children(field)}
-              <label>
-                {s.tier}
-                <UiSelect
-                  value={field.input ?? ""}
-                  onValueChange={field.onInput}
-                  options={tierOptions}
-                  name={field.props.name}
-                />
-              </label>
-            {/snippet}
-          </Field>
-          <Field of={form} path={["engines", i, "proxy"]}>
-            {#snippet children(field)}
-              <label class="proxy">
-                {s.proxy}
-                <input
-                  type="text"
-                  {...field.props}
-                  value={field.input ?? ""}
-                  placeholder={s.proxy_placeholder}
-                />
-              </label>
-            {/snippet}
-          </Field>
-        </div>
-      {/each}
-      <a href="/app/admin?tab=engines">{s.browse_engines}</a>
-    </fieldset>
-
-    <fieldset>
-      <legend>{s.section_admission}</legend>
-      <Field of={form} path={["maxWaitMs"]}>
-        {#snippet children(field)}
-          <div class="frow">
-            <label>
-              {s.max_wait}
-              <input
-                type="text"
-                {...field.props}
-                value={field.input ?? ""}
-                aria-invalid={field.errors != null}
-              />
-            </label>
-            {#if field.errors}
-              <span class="field-error">{field.errors[0]}</span>
-            {/if}
-          </div>
-        {/snippet}
-      </Field>
-      <Field of={form} path={["maxConcurrent"]}>
-        {#snippet children(field)}
-          <div class="frow">
-            <label>
-              {s.max_concurrent}
-              <input
-                type="text"
-                {...field.props}
-                value={field.input ?? ""}
-                aria-invalid={field.errors != null}
-              />
-            </label>
-            {#if field.errors}
-              <span class="field-error">{field.errors[0]}</span>
-            {/if}
-          </div>
-        {/snippet}
-      </Field>
-    </fieldset>
-
-    <fieldset>
-      <legend>{s.section_logging}</legend>
-      <Field of={form} path={["retentionDays"]}>
-        {#snippet children(field)}
-          <div class="frow">
-            <label>
-              {s.retention}
-              <span class="hint">{s.applies_after_restart}</span>
-              <input
-                type="text"
-                {...field.props}
-                value={field.input ?? ""}
-                aria-invalid={field.errors != null}
-              />
-            </label>
-            {#if field.errors}
-              <span class="field-error">{field.errors[0]}</span>
-            {/if}
-          </div>
-        {/snippet}
-      </Field>
-      <p class="hint">
-        <a href="/api/report">{s.report_link}</a> — {s.report_hint}
-      </p>
-    </fieldset>
-
-    <fieldset id="cache-block">
-      <legend>{s.section_cache}</legend>
-      {#if st.cacheLine !== ""}<p class="hint">{st.cacheLine}</p>{/if}
-      <p class="cache-actions">
-        <UiButton size="sm" onclick={() => page.bulkDelete("expired")}
-          >{s.delete_expired}</UiButton
-        >
-        <UiButton
-          size="sm"
-          variant="danger"
-          onclick={() => page.bulkDelete("all")}>{s.delete_all}</UiButton
-        >
-        <a href="/app/admin?tab=cache">{s.browse_entries}</a>
-      </p>
-      {#if st.cacheError !== ""}
-        <p class="field-error">{st.cacheError}</p>
-      {/if}
-    </fieldset>
-
-    <fieldset class="greyed">
-      <legend>{s.section_ai}</legend>
-      <Field of={form} path={["aiBaseUrl"]}>
-        {#snippet children(field)}
-          <div class="frow">
-            <label>
-              {s.ai_base_url}
-              <input
-                type="text"
-                {...field.props}
-                value={field.input ?? ""}
-              />
-            </label>
-          </div>
-        {/snippet}
-      </Field>
-      <Field of={form} path={["aiApiKey"]}>
-        {#snippet children(field)}
-          <div class="frow">
-            <label>
-              {s.ai_api_key}
-              <input
-                type="text"
-                {...field.props}
-                value={field.input ?? ""}
-                placeholder={s.ai_api_key_placeholder}
-              />
-            </label>
-          </div>
-        {/snippet}
-      </Field>
-      <Field of={form} path={["aiModel"]}>
-        {#snippet children(field)}
-          <div class="frow">
-            <label>
-              {s.ai_model}
-              <input
-                type="text"
-                {...field.props}
-                value={field.input ?? ""}
-                placeholder={s.ai_model_placeholder}
-              />
-            </label>
-          </div>
-        {/snippet}
-      </Field>
-      <Field of={form} path={["aiMaxTurns"]}>
-        {#snippet children(field)}
-          <div class="frow">
-            <label>
-              {s.ai_max_turns}
-              <input
-                type="text"
-                {...field.props}
-                value={field.input ?? ""}
-                aria-invalid={field.errors != null}
-              />
-            </label>
-            {#if field.errors}
-              <span class="field-error">{field.errors[0]}</span>
-            {/if}
-          </div>
-        {/snippet}
-      </Field>
-      <Field of={form} path={["aiMaxSearches"]}>
-        {#snippet children(field)}
-          <div class="frow">
-            <label>
-              {s.ai_max_searches}
-              <input
-                type="text"
-                {...field.props}
-                value={field.input ?? ""}
-                aria-invalid={field.errors != null}
-              />
-            </label>
-            {#if field.errors}
-              <span class="field-error">{field.errors[0]}</span>
-            {/if}
-          </div>
-        {/snippet}
-      </Field>
-      <Field of={form} path={["aiProviderBudgetS"]}>
-        {#snippet children(field)}
-          <div class="frow">
-            <label>
-              {s.ai_provider_budget}
-              <input
-                type="text"
-                {...field.props}
-                value={field.input ?? ""}
-                aria-invalid={field.errors != null}
-              />
-            </label>
-            {#if field.errors}
-              <span class="field-error">{field.errors[0]}</span>
-            {/if}
-          </div>
-        {/snippet}
-      </Field>
-      <Field of={form} path={["aiEnabled"]}>
-        {#snippet children(field)}
-          <label>
-            <UiCheckbox
-              checked={field.input === true}
-              onCheckedChange={field.onInput}
-              name={field.props.name}
-            />
-            {s.enabled}
-          </label>
-        {/snippet}
-      </Field>
-    </fieldset>
-
-    <UiButton type="submit" disabled={form.isSubmitting}>{s.save}</UiButton>
-    <span
-      id="settings-status"
-      role="status"
-      aria-live="polite"
-      class="form-status"
-      class:error={st.statusError}>{st.status}</span
-    >
-  </Form>
+  <div class="settings-row">
+    <label for="settings-region">{s.region}</label>
+    <UiSelect
+      id="settings-region"
+      value={localStorage.getItem("cauce-region") ?? "us"}
+      onValueChange={(v) => localStorage.setItem("cauce-region", v)}
+      options={[
+        { value: "us", label: "United States" },
+        { value: "gb", label: "United Kingdom" },
+        { value: "fr", label: "France" },
+        { value: "de", label: "Germany" },
+        { value: "ja", label: "Japan" },
+      ]}
+    />
+  </div>
+</fieldset>
 {/if}
+
+<!-- Search defaults tab: browser-local settings -->
+{#if tabValue === "search"}
+<fieldset>
+  <legend>{s.section_search_defaults}</legend>
+
+  <div class="settings-row">
+    <label for="hint-default-engines">{s.default_engines}</label>
+    <p id="hint-default-engines" class="hint mono">{s.default_engines_hint}</p>
+  </div>
+
+  <div class="settings-row">
+    <label for="settings-ttl">{s.ttl}</label>
+    <UiSelect
+      id="settings-ttl"
+      value={localStorage.getItem("cauce-ttl") ?? ""}
+      onValueChange={(v) => localStorage.setItem("cauce-ttl", v)}
+      options={[{ value: "", label: s.ttl_default }]}
+    />
+  </div>
+
+  <div class="settings-row">
+    <label for="settings-page-size">{s.page_size}</label>
+    <UiSelect
+      id="settings-page-size"
+      value={localStorage.getItem("cauce-minresults") ?? ""}
+      onValueChange={(v) => localStorage.setItem("cauce-minresults", v)}
+      options={[{ value: "", label: s.page_size_default }]}
+    />
+  </div>
+</fieldset>
+{/if}
+
+<!-- AI tab: browser-local BYOK -->
+{#if tabValue === "ai"}
+<fieldset>
+  <legend>{s.section_ai}</legend>
+
+  <div class="settings-row">
+    <label for="settings-byok-key">{s.ai_api_key}</label>
+    <input
+      id="settings-byok-key"
+      type="password"
+      value={localStorage.getItem("cauce-byok-key") ?? ""}
+      oninput={(e) => {
+        const val = e.currentTarget.value;
+        localStorage.setItem("cauce-byok-key", val);
+        setByok({ api_key: val, model: "", protocol: "", base_url: "" });
+      }}
+      placeholder="sk-..."
+    />
+  </div>
+
+  <div class="settings-row">
+    <label for="settings-byok-base-url">{s.ai_base_url}</label>
+    <input
+      id="settings-byok-base-url"
+      type="text"
+      value={localStorage.getItem("cauce-byok-base-url") ?? ""}
+      oninput={(e) => localStorage.setItem("cauce-byok-base-url", e.currentTarget.value)}
+      placeholder="https://openrouter.ai/api/v1"
+    />
+  </div>
+</fieldset>
 {/if}
 
 <style>
-  .engine-row {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: baseline;
-    gap: 0.5rem 1rem;
-    padding: 0.35rem 0;
-    border-bottom: 1px solid var(--border);
+/* --- Settings row layout: label | help | control --- */
+.settings-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 0.5rem 1rem;
+  align-items: start;
+  margin: 0.4rem 0;
+}
+
+/* On narrow viewports: single column, label above control */
+@media (max-width: 640px) {
+  .settings-row {
+    grid-template-columns: 1fr;
+    gap: 0.25rem 0.5rem;
   }
-  .engine-row:last-of-type {
-    border-bottom: 0;
+  .settings-row > * {
+    grid-column: 1 / -1;
   }
-  .engine-row label {
-    display: inline-flex;
-    align-items: baseline;
-    gap: 0.35rem;
-    font-size: 0.8125rem;
+  .settings-row > label {
+    grid-column: auto;
   }
-  .engine-row .proxy input {
-    width: 11rem;
-    min-width: 0;
-  }
-  .engine-id {
-    min-width: 8rem;
-  }
-  .mono {
-    font-family: var(--mono);
-    font-size: 0.8125rem;
-  }
-  .cache-actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem;
-    align-items: center;
-  }
-  .form-status {
-    margin-left: 0.75rem;
+  .settings-row > .hint {
+    grid-column: 1 / -1;
     font-size: 0.8125rem;
     color: var(--muted);
   }
-  .form-status.error {
-    color: var(--warn);
-  }
+}
+
+/* Labels: left-aligned, not flex */
+.settings-row > label {
+  grid-column: auto;
+  font-size: 0.9375rem;
+  color: var(--muted);
+}
+
+/* Controls: right-aligned in wide layout, full-width in narrow */
+.settings-row > input[type="text"],
+.settings-row > input[type="password"] {
+  grid-column: auto;
+  min-width: 0;
+}
 </style>
