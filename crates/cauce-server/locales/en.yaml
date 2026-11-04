@@ -292,6 +292,20 @@ settings:
   theme_system: system
   theme_light: light
   theme_dark: dark
+  # D6 settings rebuild: single page, grouped sections, two-column
+  # label/field grid, explicit save semantics.
+  section_browser: Browser
+  browser_hint: Saved in this browser, applied immediately.
+  section_instance: Instance
+  instance_hint: Server config — review, then Save. Marked keys need a restart.
+  discard: Discard
+  discard_confirm_title: Discard changes?
+  discard_confirm_body: Unsaved instance config edits will be lost.
+  saved_toast: Settings saved
+  saved_restart_toast: 'Settings saved — restart needed for {keys}'
+  save_failed_toast: Could not save settings
+  dirty_toast_title: Unsaved changes
+  dirty_toast_body: You have unsaved instance config edits.
 
 # `/history` page copy (W2-02).
 history:
