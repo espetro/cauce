@@ -4,7 +4,7 @@
 [tools]
 rust = { version = "1.98.0", components = ["rustfmt", "clippy"] }
 node = "24.19.0"
-"npm:pnpm" = "11.21.0"
+pnpm = "12.16.1"
 "cargo:cargo-deny" = "0.20.2"
 "cargo:cargo-nextest" = "0.9.146"
 "ubi:hatoo/oha" = "1.16.0"
