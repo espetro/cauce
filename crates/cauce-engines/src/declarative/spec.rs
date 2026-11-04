@@ -720,14 +720,20 @@ fn resolve_token(token: &str, vars: &TemplateVars<'_>) -> Result<String, EngineE
         "page0" => numeric(i64::from(vars.page.saturating_sub(1))),
         "offset" => numeric(i64::from(vars.page.saturating_sub(1)) * i64::from(vars.page_size)),
         "time_range" if delta == 0 => {
-            let rendered = match (vars.time_range, vars.params.and_then(|p| p.get("time_range"))) {
+            let rendered = match (
+                vars.time_range,
+                vars.params.and_then(|p| p.get("time_range")),
+            ) {
                 (Some(variant), Some(map)) => map.get(variant).cloned().unwrap_or_default(),
                 _ => String::new(),
             };
             Ok(rendered)
         }
         "safesearch" if delta == 0 => {
-            let rendered = match (vars.safesearch, vars.params.and_then(|p| p.get("safesearch"))) {
+            let rendered = match (
+                vars.safesearch,
+                vars.params.and_then(|p| p.get("safesearch")),
+            ) {
                 (Some(variant), Some(map)) => map.get(variant).cloned().unwrap_or_default(),
                 _ => String::new(),
             };
