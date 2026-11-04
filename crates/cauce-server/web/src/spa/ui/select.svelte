@@ -120,7 +120,9 @@
     gap: 0.5rem;
     flex: 1 1 auto;
     min-width: 0;
-    padding: 0.25rem 0.4rem;
+    /* DS-20D: the shared control height. */
+    height: var(--control-h);
+    padding: 0 0.625rem;
     border: 1px solid var(--border);
     border-radius: var(--radius);
     background: var(--bg);

@@ -27,6 +27,11 @@
 <main>
   <h1 class="vh">{spa.common.brand}</h1>
   <div class:hero={!LANDING} class:hero-landing={LANDING}>
+    <!-- DS-20C: the hero names the product. The vh h1 stays the axe
+        heading; the visible eyebrow + subtitle answer "what is this?"
+        for a first-time visitor without scrolling. -->
+    <p class="eyebrow">{spa.app.home_eyebrow}</p>
+    <p class="subtitle">{spa.app.home_subtitle}</p>
     <Omnibox
       bind:value={page.q}
       bind:aiMode={page.aiMode}
@@ -45,5 +50,12 @@
   }
   .hero-landing {
     margin: 10vh 0 0;
+  }
+  .hero :global(.eyebrow) {
+    margin-bottom: 0.625rem;
+  }
+  .hero :global(.subtitle) {
+    margin-bottom: 1.25rem;
+    max-width: 36rem;
   }
 </style>

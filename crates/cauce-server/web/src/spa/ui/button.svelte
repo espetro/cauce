@@ -155,9 +155,10 @@
   }
 
   :global(.ui-button[data-size="md"]) {
-    min-height: 2rem;
-    padding: 0.3rem 0.8rem;
-    font-size: 0.9375rem;
+    /* DS-20D: the shared control height. */
+    min-height: var(--control-h);
+    padding: 0 0.75rem;
+    font-size: var(--text-base);
   }
 
   :global(.ui-button[data-size="sm"]) {

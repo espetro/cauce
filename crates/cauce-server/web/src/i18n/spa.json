@@ -26,6 +26,8 @@
     "backend_down_title": "Can't reach the cauce API",
     "backend_retry": "retry now",
     "cache_details": "cache details",
+    "home_eyebrow": "metasearch for humans and agents",
+    "home_subtitle": "One server, three surfaces — a web UI, an HTTP API and an MCP server, over the same cache.",
     "instance_card": "instance",
     "instance_engines": "engines",
     "instance_privacy": "searches are answered without server-side logging — your history and archive index live in this browser",

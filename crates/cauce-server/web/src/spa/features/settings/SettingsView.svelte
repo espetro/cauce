@@ -60,7 +60,7 @@
   }
 </script>
 
-<h1>{s.page_title}</h1>
+<h1 class="page-title">{s.page_title}</h1>
 
 {#if byokOn}
   <form

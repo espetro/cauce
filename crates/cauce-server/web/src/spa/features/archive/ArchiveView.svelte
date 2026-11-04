@@ -25,7 +25,7 @@
   const s = $derived(page.state);
 </script>
 
-<h1>{a.page_title}</h1>
+<h1 class="page-title">{a.page_title}</h1>
 
 {#if s.loading}
   <p class="stats">…</p>
@@ -142,14 +142,27 @@
     flex: 1 1 auto;
     min-width: 0;
   }
-  /* The trigger is the row's flex-wrap container (was the disclosure
+  /* The trigger is the row's grid container (was the disclosure
      summary); the wrapper's own recipe supplies flex/cursor/font — this
-     only restores the wrap + baseline alignment. */
+     only imposes the two-column grid: chevron column fixed, content
+     column wrapping underneath itself. A long title used to wrap under
+     the chevron and leave it hanging on its own line (audit M3). */
   .archive-disclosure :global(.ui-collapsible-trigger) {
-    flex-wrap: wrap;
-    align-items: baseline;
-    gap: 0.25rem 0.75rem;
+    display: grid;
+    grid-template-columns: 1rem minmax(0, 1fr);
+    align-items: start;
+    column-gap: 0.5rem;
+    row-gap: 0.125rem;
     min-width: 0;
+  }
+  /* The chevron sits in the fixed grid column; optical centring
+     against the title's cap height. */
+  .archive-chevron {
+    margin-top: 0.2em;
+  }
+  /* The host/date pair rides under the title, not under the chevron. */
+  .archive-meta {
+    grid-column: 2;
   }
   .archive-chevron {
     display: inline-block;
