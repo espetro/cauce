@@ -38,44 +38,44 @@
   const filterFields = $derived([
     {
       key: "time_range",
-      label: spa.search.filter.time_range,
+      label: spa.filter.time_range,
       type: "select" as const,
       value: page.timeRange,
       options: [
-        { value: "", label: spa.search.filter.time_range_all },
-        { value: "day", label: spa.search.filter.time_range_day },
-        { value: "week", label: spa.search.filter.time_range_week },
-        { value: "month", label: spa.search.filter.time_range_month },
-        { value: "year", label: spa.search.filter.time_range_year },
+        { value: "", label: spa.filter.time_range_all },
+        { value: "day", label: spa.filter.time_range_day },
+        { value: "week", label: spa.filter.time_range_week },
+        { value: "month", label: spa.filter.time_range_month },
+        { value: "year", label: spa.filter.time_range_year },
       ],
     },
     {
       key: "safesearch",
-      label: spa.search.filter.safesearch,
+      label: spa.filter.safesearch,
       type: "select" as const,
       value: page.safeSearch,
       options: [
-        { value: "", label: spa.search.filter.safesearch_off },
-        { value: "moderate", label: spa.search.filter.safesearch_moderate },
-        { value: "strict", label: spa.search.filter.safesearch_strict },
+        { value: "", label: spa.filter.safesearch_off },
+        { value: "moderate", label: spa.filter.safesearch_moderate },
+        { value: "strict", label: spa.filter.safesearch_strict },
       ],
     },
     {
       key: "engines",
-      label: spa.search.filter.engines,
+      label: spa.filter.engines,
       type: "multi-select" as const,
       value: page.engines,
       options: capabilities.engineIds.map((id) => ({ value: id, label: id })),
-      placeholder: spa.search.filter.engines_placeholder,
-      hint: spa.search.filter.engines_hint,
+      placeholder: spa.filter.engines_placeholder,
+      hint: spa.filter.engines_hint,
       disabled: capabilities.engineIds.length <= 1,
     },
     {
       key: "lang",
-      label: spa.search.filter.lang,
+      label: spa.filter.lang,
       type: "text" as const,
       value: page.lang,
-      placeholder: spa.search.filter.lang_placeholder,
+      placeholder: spa.filter.lang_placeholder,
       submitOnChange: false,
     },
   ]);
@@ -119,7 +119,7 @@
         fields={filterFields}
         onChange={(key, value) => page.setFilter(key, value)}
         showSubmit
-        submitLabel={spa.search.filter.submit}
+        submitLabel={spa.filter.submit}
         onSubmit={() => {}}
       />
       {#if page.streamError}
