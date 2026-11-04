@@ -19,6 +19,9 @@ sudo install -d -o cauce -g cauce /var/lib/cauce /etc/cauce
 ```toml
 [server]
 public_instance = true
+# Names a proxy may send as Host/Origin (the tunnel/CDN public names);
+# the Host/Origin guard otherwise accepts loopback + bind host only.
+allowed_hosts = ["search.example.com"]
 
 [auth]
 admin_tokens = ["<long-random-token>"]
@@ -42,7 +45,9 @@ journalctl -u cauce -f        # "addr:" line reports the bind
 
 **cloudflared** (no ports open, works on RPi/CGNAT): `cloudflared tunnel` routes
 `search.example.com` → `http://127.0.0.1:4479`. The socket stays loopback; the tunnel forwards real
-client IPs via `CF-Connecting-IP`, which `trust_proxy_headers` already honours.
+client IPs via `CF-Connecting-IP`, which `trust_proxy_headers` already honours. The tunnel carries
+`search.example.com` as the origin `Host`, so that name must be in `[server] allowed_hosts` (see
+the config above) or the Host/Origin guard answers 403.
 
 **nginx/traefik/anything else**: `proxy_pass http://127.0.0.1:4479` + `X-Forwarded-For` — nothing
 cauce-side is Caddy-specific.

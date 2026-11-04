@@ -408,6 +408,10 @@ pub struct RouterOptions {
     pub bind_host: String,
     /// Effective listener port (`--port` or `server.port`) for safe URL fallback.
     pub bind_port: u16,
+    /// Extra listen names (`server.allowed_hosts`) the Host/Origin guard
+    /// accepts on top of loopback and `bind_host`. Frozen at router build
+    /// like the rest of the guard inputs.
+    pub allowed_hosts: Vec<String>,
 }
 
 impl Default for RouterOptions {
@@ -416,6 +420,7 @@ impl Default for RouterOptions {
             ui: true,
             bind_host: "127.0.0.1".to_string(),
             bind_port: 4479,
+            allowed_hosts: Vec::new(),
         }
     }
 }
@@ -544,7 +549,7 @@ pub fn build_router_opts(state: AppState, opts: RouterOptions) -> Router {
         // The Host/Origin guard (W1-13) runs inside `request_context`, so
         // a rejected request still carries `X-Request-Id` and its span.
         .layer(middleware::from_fn_with_state(
-            HostGuard::new(&opts.bind_host),
+            HostGuard::new(&opts.bind_host, &opts.allowed_hosts),
             host_origin_guard,
         ))
         // PUB-01 guards run inside `request_context` (their 429s carry

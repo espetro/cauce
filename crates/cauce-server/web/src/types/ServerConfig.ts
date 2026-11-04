@@ -43,4 +43,15 @@ name: string,
  * on a small host: past the cap, requests get `429 overloaded` +
  * `Retry-After` instead of queuing into memory.
  */
-max_inflight: number, };
+max_inflight: number, 
+/**
+ * Extra host names the Host/Origin guard (W1-13) accepts on top of
+ * the loopback names and the bind host. Empty (default) keeps the
+ * guard exactly as it was. A named deployment behind a proxy
+ * (cloudflared, Caddy, a CDN) receives requests whose `Host` is the
+ * public name, so the guard would answer `403 not a cauce listen
+ * name`; list that name here. `Origin` is checked against the same
+ * set, so a browser talking to the public name passes too.
+ * Restart-required: the allow list is frozen at router build.
+ */
+allowed_hosts: Array<string>, };
