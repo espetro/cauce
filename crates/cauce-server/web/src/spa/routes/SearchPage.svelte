@@ -27,9 +27,6 @@
 
   const page = createSearchPage();
 
-  // The submitted query (route param, stable while the box is edited).
-  const submittedQ = $derived(page.hasSearched ? (params.get("q") ?? "").trim() : "");
-
   const askUrl = $derived(
     capabilities.aiEnabled ? appHref("/answer?q=" + encodeURIComponent(page.q)) : "",
   );
@@ -42,7 +39,12 @@
   onDestroy(() => page.dispose());
 </script>
 
-<ConversationShell heading={page.q || spa.common.brand} prompt={submittedQ}>
+<!-- DS-20B: no `prompt` here. The shell's prompt-card echoed the query
+     in a box right above a composer that already held the same text —
+     two identical "rust" boxes read as "did my search double-fire?".
+     The card belongs to the answer thread (where the composer becomes
+     a follow-up); search carries its context in the meta line. -->
+<ConversationShell heading={page.q || spa.common.brand}>
   {#snippet composer()}
     <Omnibox
       bind:value={page.q}

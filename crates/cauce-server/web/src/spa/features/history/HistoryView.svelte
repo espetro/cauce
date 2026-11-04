@@ -42,7 +42,7 @@
   ]);
 </script>
 
-<h1>{h.title}</h1>
+<h1 class="page-title">{h.title}</h1>
 
 <form
   class="filters"

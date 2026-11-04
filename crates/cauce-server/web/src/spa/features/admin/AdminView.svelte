@@ -35,7 +35,7 @@
   );
 </script>
 
-<h1>{spa.admin.title}</h1>
+<h1 class="page-title">{spa.admin.title}</h1>
 <UiTabs
   value={s.tab}
   {tabs}
