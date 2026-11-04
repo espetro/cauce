@@ -273,28 +273,38 @@
     align-items: center;
     gap: 0.5rem;
     flex-wrap: wrap;
+    /* D6: air between the window toggle and the first card row. */
+    margin-bottom: 1rem;
   }
   .panels {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(min(18rem, 100%), 1fr));
-    gap: 0.75rem;
-    margin-bottom: 0.75rem;
+    /* D6 review: more negative space — the dashboard read as one dense
+       block. Wider gutters between cards, more air under the section. */
+    gap: 1.25rem;
+    margin: 1.25rem 0 1.5rem;
   }
   /* DS-20F: the panel is a raised surface — hairline plus the weak
      ambient recipe, never the floating-layer shadow. */
   .panel {
     border: 1px solid var(--border);
     border-radius: var(--radius);
-    padding: 0.875rem;
+    padding: 1.25rem 1.25rem 1.375rem;
     min-width: 0;
     background: var(--bg);
     box-shadow: var(--shadow-sm);
+  }
+  /* Standalone panels (engines, cache) are grid siblings of the card
+     grid — they carry their own bottom rhythm. */
+  section.panel + section.panel,
+  .panels + section.panel {
+    margin-top: 1.25rem;
   }
   /* The panel title uses the shared type scale (DS-20A) instead of its
      own size — the lowercase transform fought the Title Case copy in
      en.yaml and read as a typo, not as a design choice. */
   .panel h2 {
-    margin: 0 0 0.5rem;
+    margin: 0 0 0.875rem;
     font-size: var(--text-sm);
     font-weight: 600;
     letter-spacing: var(--tracking-wide);
