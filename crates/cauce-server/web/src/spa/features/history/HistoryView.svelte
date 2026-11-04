@@ -16,9 +16,8 @@
   import { navigate } from "../../app/router.svelte.js";
   import { spa } from "../../lib/i18n.js";
   import UiButton from "../../ui/button.svelte";
-  import UiCheckbox from "../../ui/checkbox.svelte";
   import UiCollapsible from "../../ui/collapsible.svelte";
-  import UiSelect from "../../ui/select.svelte";
+  import FilterBar from "../../features/search/FilterBar.svelte";
   import type { createHistoryPage } from "./history.svelte.js";
 
   interface HistoryViewProps {
@@ -40,53 +39,57 @@
     { value: "agent", label: h.origin_agent },
     { value: "all", label: h.origin_all },
   ]);
+
+  const filterFields = $derived([
+    {
+      key: "since",
+      label: h.since_label,
+      type: "select" as const,
+      value: s.since,
+      options: sinceOptions,
+    },
+    {
+      key: "origin",
+      label: h.origin_label,
+      type: "select" as const,
+      value: s.origin,
+      options: originOptions,
+    },
+    {
+      key: "q",
+      label: h.query_label,
+      type: "text" as const,
+      value: s.q,
+      placeholder: h.query_placeholder,
+      submitOnChange: false,
+    },
+    {
+      key: "cached",
+      label: h.cached_only,
+      type: "checkbox" as const,
+      value: s.cached,
+      ariaLabel: h.cached_only,
+    },
+  ]);
 </script>
 
 <h1 class="page-title">{h.title}</h1>
 
-<form
-  class="filters"
-  action="/app/history"
-  method="get"
-  onsubmit={(e) => {
-    e.preventDefault();
-    page.submit(navigate);
+<FilterBar
+  fields={filterFields}
+  onChange={(key, value) => {
+    if (key === "since") s.since = String(value);
+    else if (key === "origin") s.origin = String(value);
+    else if (key === "q") s.q = String(value);
+    else if (key === "cached") s.cached = value === true;
   }}
->
-  <UiSelect
-    name="since"
-    ariaLabel={h.since_label}
-    value={s.since}
-    onValueChange={(v) => (s.since = v)}
-    options={sinceOptions}
-  />
-  <UiSelect
-    name="origin"
-    ariaLabel={h.origin_label}
-    value={s.origin}
-    onValueChange={(v) => (s.origin = v)}
-    options={originOptions}
-  />
-  <input
-    type="search"
-    name="q"
-    bind:value={s.q}
-    placeholder={h.query_placeholder}
-    aria-label={h.query_label}
-  />
-  <label class="cached-only">
-    <UiCheckbox
-      checked={s.cached}
-      onCheckedChange={(v) => (s.cached = v)}
-      ariaLabel={h.cached_only}
-    />
-    {h.cached_only}
-  </label>
-  <UiButton type="submit">{h.filter_submit}</UiButton>
-  {#if page.filtersActive()}
-    <a class="clear" href="/app/history">{h.clear}</a>
-  {/if}
-</form>
+  showSubmit
+  submitLabel={h.filter_submit}
+  onSubmit={() => page.submit(navigate)}
+/>
+{#if page.filtersActive()}
+  <a class="clear" href="/app/history">{h.clear}</a>
+{/if}
 
 {#if s.loading}
   <p class="stats">…</p>

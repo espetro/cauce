@@ -17,6 +17,7 @@
   import ConversationShell from "../app/ConversationShell.svelte";
   import Omnibox from "../features/search/Omnibox.svelte";
   import ResultRows from "../features/search/ResultRows.svelte";
+  import FilterBar from "../features/search/FilterBar.svelte";
   import UiButton from "../ui/button.svelte";
 
   interface SearchPageProps {
@@ -30,6 +31,54 @@
   const askUrl = $derived(
     capabilities.aiEnabled ? appHref("/answer?q=" + encodeURIComponent(page.q)) : "",
   );
+
+  // D3: the shared FilterBar's field array — pre-shaped per the honest
+  // capability gate so the row never advertises an engine filter the
+  // selected engines cannot honour (plan §182-188).
+  const filterFields = $derived([
+    {
+      key: "time_range",
+      label: spa.search.filter.time_range,
+      type: "select" as const,
+      value: page.timeRange,
+      options: [
+        { value: "", label: spa.search.filter.time_range_all },
+        { value: "day", label: spa.search.filter.time_range_day },
+        { value: "week", label: spa.search.filter.time_range_week },
+        { value: "month", label: spa.search.filter.time_range_month },
+        { value: "year", label: spa.search.filter.time_range_year },
+      ],
+    },
+    {
+      key: "safesearch",
+      label: spa.search.filter.safesearch,
+      type: "select" as const,
+      value: page.safeSearch,
+      options: [
+        { value: "", label: spa.search.filter.safesearch_off },
+        { value: "moderate", label: spa.search.filter.safesearch_moderate },
+        { value: "strict", label: spa.search.filter.safesearch_strict },
+      ],
+    },
+    {
+      key: "engines",
+      label: spa.search.filter.engines,
+      type: "multi-select" as const,
+      value: page.engines,
+      options: capabilities.engineIds.map((id) => ({ value: id, label: id })),
+      placeholder: spa.search.filter.engines_placeholder,
+      hint: spa.search.filter.engines_hint,
+      disabled: capabilities.engineIds.length <= 1,
+    },
+    {
+      key: "lang",
+      label: spa.search.filter.lang,
+      type: "text" as const,
+      value: page.lang,
+      placeholder: spa.search.filter.lang_placeholder,
+      submitOnChange: false,
+    },
+  ]);
 
   onMount(() => {
     void page.run(params);
@@ -66,6 +115,13 @@
         {/if}
         {#if askUrl}<span><a id="ask-link" href={askUrl}>{spa.answer.ask_link}</a></span>{/if}
       </p>
+      <FilterBar
+        fields={filterFields}
+        onChange={(key, value) => page.setFilter(key, value)}
+        showSubmit
+        submitLabel={spa.search.filter.submit}
+        onSubmit={() => {}}
+      />
       {#if page.streamError}
         <p class="field-error" role="alert">{page.streamError}</p>
       {/if}
