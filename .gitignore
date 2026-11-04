@@ -54,3 +54,6 @@ docs-site/
 
 # machine-local cargo config (external SSD target dir) — not portable
 .cargo/
+
+# wrangler local cache (pages deploy experiments)
+.wrangler/
