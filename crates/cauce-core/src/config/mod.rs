@@ -366,6 +366,16 @@ pub struct ServerConfig {
     /// `Retry-After` instead of queuing into memory.
     #[serde(default)]
     pub max_inflight: u32,
+    /// Extra host names the Host/Origin guard (W1-13) accepts on top of
+    /// the loopback names and the bind host. Empty (default) keeps the
+    /// guard exactly as it was. A named deployment behind a proxy
+    /// (cloudflared, Caddy, a CDN) receives requests whose `Host` is the
+    /// public name, so the guard would answer `403 not a cauce listen
+    /// name`; list that name here. `Origin` is checked against the same
+    /// set, so a browser talking to the public name passes too.
+    /// Restart-required: the allow list is frozen at router build.
+    #[serde(default)]
+    pub allowed_hosts: Vec<String>,
 }
 
 impl Default for ServerConfig {
@@ -377,6 +387,7 @@ impl Default for ServerConfig {
             public_instance: false,
             name: default_server_name(),
             max_inflight: 0,
+            allowed_hosts: Vec::new(),
         }
     }
 }
@@ -1969,7 +1980,11 @@ pub fn key_requires_restart(path: &str) -> bool {
         Some("server") => {
             matches!(
                 path,
-                "server.host" | "server.port" | "server.public_instance" | "server.max_inflight"
+                "server.host"
+                    | "server.port"
+                    | "server.public_instance"
+                    | "server.max_inflight"
+                    | "server.allowed_hosts"
             )
         }
         Some("auth") => path != "auth.admin_tokens",
@@ -2758,5 +2773,32 @@ mod tests {
                 }
             }
         }
+    }
+    /// `server.allowed_hosts` parses from a list, defaults to empty, and
+    /// is restart-required (the guard allow list is frozen at router
+    /// build, so a `PUT /api/config` cannot widen a live listener).
+    #[test]
+    fn allowed_hosts_config_key() {
+        let (tmp, env) = sandbox(&[]);
+        write_config(
+            &tmp.path().join("cfg"),
+            "[server]\nallowed_hosts = [\"api.cauce.fyi\", \"cauce.fyi\"]\n",
+        );
+        let cfg = Config::load_with(&env).unwrap();
+        assert_eq!(cfg.server.allowed_hosts, ["api.cauce.fyi", "cauce.fyi"]);
+
+        // Default keeps the guard exactly as it was.
+        let cfg = Config::default();
+        assert!(cfg.server.allowed_hosts.is_empty());
+
+        // Unknown `[server]` keys stay rejected (deny_unknown_fields).
+        write_config(
+            &tmp.path().join("cfg"),
+            "[server]\nallowed_hostz = [\"x.example\"]\n",
+        );
+        assert!(Config::load_with(&env).is_err());
+
+        // Restart-required: the allow list cannot be widened at runtime.
+        assert!(key_requires_restart("server.allowed_hosts"));
     }
 }

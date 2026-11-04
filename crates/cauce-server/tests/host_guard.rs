@@ -190,3 +190,63 @@ async fn guard_accepts_configured_bind_host() {
     let (status, _, body) = call_json(&router, request).await;
     assert_eq!(status, StatusCode::OK, "{body}");
 }
+
+/// `server.allowed_hosts` widens the allow list: a named deployment
+/// behind a proxy (cloudflared/Caddy/CDN) receives `Host: api.example.com`
+/// and browsers send `Origin: https://app.example.com` on mutating calls.
+/// Both pass; anything still off-list stays 403.
+#[tokio::test]
+async fn guard_accepts_allowed_hosts() {
+    let (state, _tmp) = test_state();
+    let router = build_router_opts(
+        state,
+        RouterOptions {
+            allowed_hosts: vec!["api.cauce.fyi".into(), "cauce.fyi".into()],
+            ..Default::default()
+        },
+    );
+
+    // Named Host passes (with and without a port suffix).
+    for host in ["api.cauce.fyi", "api.cauce.fyi:8443"] {
+        let request = Request::builder()
+            .method("GET")
+            .uri("/health")
+            .header("host", host)
+            .body(Body::empty())
+            .unwrap();
+        let (status, _, body) = call_json(&router, request).await;
+        assert_eq!(status, StatusCode::OK, "host {host}: {body}");
+    }
+
+    // A browser Origin on a mutating method matching an allowed host passes.
+    let request = Request::builder()
+        .method("POST")
+        .uri("/api/click")
+        .header("content-type", "application/json")
+        .header("origin", "https://cauce.fyi")
+        .body(Body::from(r#"{"url":"https://example.com/a"}"#))
+        .unwrap();
+    let (status, _, body) = call_json(&router, request).await;
+    assert_eq!(status, StatusCode::NO_CONTENT, "{body}");
+
+    // Off-list names are still foreign.
+    for host in ["attacker.example.com", "evil.cauce.fyi"] {
+        let request = Request::builder()
+            .method("GET")
+            .uri("/health")
+            .header("host", host)
+            .body(Body::empty())
+            .unwrap();
+        let (status, _, body) = call_json(&router, request).await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "host {host}: {body}");
+    }
+    let request = Request::builder()
+        .method("POST")
+        .uri("/api/click")
+        .header("content-type", "application/json")
+        .header("origin", "https://attacker.example.com")
+        .body(Body::from(r#"{"url":"https://example.com/a"}"#))
+        .unwrap();
+    let (status, _, _) = call_json(&router, request).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+}

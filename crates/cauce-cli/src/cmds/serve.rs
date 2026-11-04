@@ -138,8 +138,8 @@ async fn serve_async(opts: ServeOpts, cfg: Config, host: String) -> i32 {
     // The engine factory lets a `/settings` or `PUT /api/config` save
     // rebuild the fan-out in place (hot apply); the evictor re-reads the
     // stale-serve grace from the live config on every sweep.
-    let state =
-        AppState::new(pipeline.clone(), store.clone(), cfg).with_engine_factory(build_engines);
+    let state = AppState::new(pipeline.clone(), store.clone(), cfg.clone())
+        .with_engine_factory(build_engines);
     let evict = spawn_eviction_task(store, {
         let state = state.clone();
         move || state.with_config(|c| Duration::from_secs(c.cache.stale_grace_s))
@@ -150,6 +150,7 @@ async fn serve_async(opts: ServeOpts, cfg: Config, host: String) -> i32 {
             ui: !opts.headless,
             bind_host: host.clone(),
             bind_port: port,
+            allowed_hosts: cfg.server.allowed_hosts.clone(),
         },
     );
     let listener = match tokio::net::TcpListener::bind((host.as_str(), port)).await {
