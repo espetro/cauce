@@ -39,7 +39,7 @@
   }
 </script>
 
-<h1>{d.title}</h1>
+<h1 class="page-title">{d.title}</h1>
 
 {#if capabilities.loaded && !capabilities.flags.sharedStats}
   <!-- FX-07: the public dashboard is a single instance card — ops
@@ -280,22 +280,32 @@
     gap: 0.75rem;
     margin-bottom: 0.75rem;
   }
+  /* DS-20F: the panel is a raised surface — hairline plus the weak
+     ambient recipe, never the floating-layer shadow. */
   .panel {
     border: 1px solid var(--border);
     border-radius: var(--radius);
-    padding: 0.75rem;
+    padding: 0.875rem;
     min-width: 0;
+    background: var(--bg);
+    box-shadow: var(--shadow-sm);
   }
+  /* The panel title uses the shared type scale (DS-20A) instead of its
+     own size — the lowercase transform fought the Title Case copy in
+     en.yaml and read as a typo, not as a design choice. */
   .panel h2 {
     margin: 0 0 0.5rem;
-    font-size: 0.9rem;
+    font-size: var(--text-sm);
     font-weight: 600;
+    letter-spacing: var(--tracking-wide);
+    text-transform: uppercase;
     color: var(--muted);
-    text-transform: lowercase;
   }
   .panel .big {
-    font-size: 1.6rem;
+    font-size: var(--text-2xl);
     font-weight: 700;
+    line-height: var(--leading-tight);
+    letter-spacing: var(--tracking-tight);
   }
   .muted {
     color: var(--muted);

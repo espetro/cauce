@@ -662,6 +662,11 @@ assist:
 app:
   # Route fallback for `/app/*` paths the SPA does not serve yet.
   not_found: This surface is not part of the SPA yet.
+  # DS-20C: the landing hero. The eyebrow names the product in three
+  # words; the subtitle says what it is for. A first-time visitor
+  # should be able to answer "what is this?" without scrolling.
+  home_eyebrow: metasearch for humans and agents
+  home_subtitle: One server, three surfaces — a web UI, an HTTP API and an MCP server, over the same cache.
   # Link off the fallback that reloads the canonical HTMX page.
   open_html: Open the HTML page
   # Aria-live hint while a streaming search is in flight (the

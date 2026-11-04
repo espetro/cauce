@@ -28,6 +28,22 @@
   --color-warn: var(--warn);
   --color-overlay: var(--overlay);
   --font-mono: var(--mono);
+  /* DS-20A: the type scale. Every size in the app comes from here —
+     components must not hand-roll a font-size. The Tailwind names
+     (`text-sm`, `text-lg`, `text-2xl`) resolve onto these, so a
+     feature can use a utility without inventing a value. */
+  --text-xs: 0.75rem;
+  --text-sm: 0.875rem;
+  --text-base: 1rem;
+  --text-lg: 1.125rem;
+  --text-xl: 1.375rem;
+  --text-2xl: 1.75rem;
+  --leading-tight: 1.2;
+  --leading-normal: 1.5;
+  --leading-relaxed: 1.65;
+  --tracking-tight: -0.011em;
+  --tracking-normal: 0;
+  --tracking-wide: 0.08em;
 }
 
 /* DS-00 (bits-ui plan §1.3): --overlay is the dialog/menu scrim;
@@ -45,9 +61,18 @@
   --warn: #b91c1c;
   --overlay: rgb(0 0 0 / 0.32);
   --shadow: 0 4px 12px rgb(0 0 0 / 0.12);
+  /* DS-20F: the static-surface ambient recipe — panels/cards only.
+     Floating layers keep --shadow; the plan's shadow budget stays
+     "floating layers get the strong recipe, static surfaces get the
+     weak one or a hairline, nothing else". */
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.05);
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-in: cubic-bezier(0.7, 0, 0.84, 0);
   --radius: 0.5rem;
+  /* DS-20D: every control (input, select, button md, toggle item)
+     shares this height so filter bars and form rows stop mixing
+     three different control heights. */
+  --control-h: 2rem;
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   color-scheme: light;
 }
@@ -69,6 +94,9 @@
        against the near-black --bg. */
     --overlay: rgb(0 0 0 / 0.6);
     --shadow: 0 4px 16px rgb(0 0 0 / 0.6);
+    /* The ambient recipe needs more than 2% alpha to read against a
+       near-black canvas. */
+    --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.4);
     --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
     --ease-in: cubic-bezier(0.7, 0, 0.84, 0);
     color-scheme: dark;
@@ -85,6 +113,7 @@
   --greyed-bg: #17171a;
   --overlay: rgb(0 0 0 / 0.6);
   --shadow: 0 4px 16px rgb(0 0 0 / 0.6);
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.4);
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-in: cubic-bezier(0.7, 0, 0.84, 0);
   color-scheme: dark;
@@ -108,12 +137,77 @@ body {
   background: var(--bg);
   color: var(--fg);
   max-width: 45rem;
-  line-height: 1.5;
+  line-height: var(--leading-normal);
   /* Theme transitions scope to color properties only — never a blanket
      `*` transition interpolating layout. */
   transition:
     background-color 160ms ease,
     color 160ms ease;
+}
+
+/* DS-20A: the base type scale. Before this, every heading rendered at
+   browser-default 16px/400 — identical to body text — because the
+   DS plan shipped components and tokens but never a type scale. One
+   rule per level; features never hand-roll a font-size. */
+h1,
+h2,
+h3,
+h4 {
+  margin: 0;
+  font-weight: 600;
+  line-height: var(--leading-tight);
+  letter-spacing: var(--tracking-tight);
+  color: var(--fg);
+  text-wrap: balance;
+}
+
+h1 {
+  font-size: var(--text-xl);
+}
+
+h2 {
+  font-size: var(--text-lg);
+}
+
+h3 {
+  font-size: var(--text-base);
+}
+
+h4 {
+  font-size: var(--text-sm);
+  color: var(--muted);
+  letter-spacing: var(--tracking-normal);
+}
+
+/* The page title: a section label above the surface, not a hero. */
+.page-title {
+  font-size: var(--text-xl);
+  font-weight: 600;
+  line-height: var(--leading-tight);
+  letter-spacing: var(--tracking-tight);
+  margin: 0 0 0.25rem;
+}
+
+/* The eyebrow: a microscopic uppercase tag above a title (DS-20C). */
+.eyebrow {
+  display: inline-block;
+  margin: 0 0 0.5rem;
+  padding: 0.1875rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+}
+
+/* The one-line subtitle under a title (DS-20C). */
+.subtitle {
+  margin: 0 0 1rem;
+  color: var(--muted);
+  font-size: var(--text-base);
+  line-height: var(--leading-relaxed);
 }
 
 /* DS-00: reduced motion is a global guard, not just the body theme
@@ -200,38 +294,60 @@ body {
 }
 
 /* Variant-E hairline result rows (§7.1) — a bottom rule per row instead
-   of the SSR card border. */
+   of the SSR card border. DS-20: the row is a two-column grid (favicon
+   rides the title line; the snippet hangs on its own line), the title
+   is the fg colour with the accent reserved for hover — links-first
+   meant every row screamed blue; the reading-room pattern keeps the
+   emphasis on the text. */
 .rows article {
+  /* Two lines by flex-wrap: the img/title/host row wraps onto the
+     full-width snippet. A grid placed the sibling host span on top of
+     the title — the inline flow after the anchor only survives flex. */
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 0.5rem;
   margin: 0;
   padding: 0.75rem 0;
   border-bottom: 1px solid var(--border);
 }
 
 .rows article img {
-  vertical-align: middle;
-  margin-right: 0.5rem;
+  width: 1rem;
+  height: 1rem;
+  align-self: center;
+  /* Nudge down to the title's optical middle — baseline alignment
+     alone sits the favicon high. */
+  transform: translateY(0.1em);
 }
 
 .rows article a {
-  color: var(--accent);
+  color: var(--fg);
   text-decoration: none;
   font-weight: 600;
+  line-height: var(--leading-normal);
 }
 
 .rows article a:hover {
+  color: var(--accent);
   text-decoration: underline;
+  text-underline-offset: 2px;
 }
 
 .rows .host {
   color: var(--muted);
-  font-size: 0.875rem;
-  margin-left: 0.5rem;
+  font-size: var(--text-sm);
+  font-weight: 400;
+  white-space: nowrap;
 }
 
 /* UX-05: two lines, then an ellipsis. */
 .rows .snippet {
+  /* The snippet forces its own line. */
+  flex: 1 1 100%;
   margin: 0.25rem 0 0;
   color: var(--muted);
+  font-size: var(--text-sm);
   display: -webkit-box;
   -webkit-line-clamp: 2;
   line-clamp: 2;
@@ -441,12 +557,23 @@ body {
 .filters input[type="text"],
 .filters input[type="number"],
 .filters input[type="password"] {
-  padding: 0.25rem 0.4rem;
+  /* DS-20D: one control height across the filter bar, the settings
+     rows and the ui/ wrappers — the bar used to mix three heights. */
+  height: var(--control-h);
+  padding: 0 0.625rem;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--bg);
   color: var(--fg);
   font: inherit;
+}
+
+.filters input[type="search"]:focus-visible,
+.filters input[type="text"]:focus-visible,
+.filters input[type="number"]:focus-visible,
+.filters input[type="password"]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 
 .filters input[type="search"] {
@@ -643,12 +770,19 @@ table.data tr.detail td {
 .settings-form .frow input[type="password"] {
   flex: 1 1 auto;
   min-width: 0;
-  padding: 0.25rem 0.4rem;
+  /* DS-20D: same control height as the filter bar and the ui/ select. */
+  height: var(--control-h);
+  padding: 0 0.625rem;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--bg);
   color: var(--fg);
   font: inherit;
+}
+
+.settings-form .frow input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 
 .settings-form .hint {

@@ -160,6 +160,9 @@ pub fn spa_bundle() -> Value {
                 "app.not_found",
                 "app.open_html",
                 "app.stream_hint",
+                // DS-20C landing hero.
+                "app.home_eyebrow",
+                "app.home_subtitle",
                 // FX-07 instance modes: gate notice + token form,
                 // public dashboard card, archive-off line, cache
                 // details expander.
