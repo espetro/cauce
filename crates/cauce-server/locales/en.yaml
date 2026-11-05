@@ -35,6 +35,8 @@ common:
   nav_menu_close: close
   # `aria-label` of the primary nav landmark.
   nav_primary_label: primary
+  # Tooltip and `aria-label` of the top-nav link to the GitHub repository.
+  github_label: cauce on GitHub
   # Theme toggle button text and `aria-label`; cycles system -> light
   # -> dark (W2-08). JS rewrites the text to the active state's word.
   theme_switch: theme

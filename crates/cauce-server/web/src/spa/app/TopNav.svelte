@@ -18,6 +18,7 @@
     MoonIcon,
     CircleHalfIcon,
     SquaresFourIcon,
+    GithubLogoIcon,
     XIcon,
   } from "phosphor-svelte";
   import { spa } from "../lib/i18n.js";
@@ -40,6 +41,7 @@
   const c = spa.common;
 
   const DOCS_URL = "https://docs.cauce.fyi";
+  const REPO_URL = "https://github.com/espetro/cauce";
 
   interface WaffleEntry {
     label: string;
@@ -101,6 +103,19 @@
     <a href={appHref("/history")} aria-current={active === "history" ? "page" : undefined}>{c.nav_history}</a>
   </nav>
   <div class="nav-right">
+    <UiTooltip content={c.github_label} side="bottom">
+      {#snippet trigger(props)}
+        <UiButton
+          {...(props as ComponentProps<typeof UiButton>)}
+          variant="default"
+          size="icon"
+          ariaLabel={c.github_label}
+          href={REPO_URL}
+        >
+          <GithubLogoIcon size={15} aria-hidden="true" />
+        </UiButton>
+      {/snippet}
+    </UiTooltip>
     <!-- justified: the theme control cycles three states
       (system → light → dark), so it is not a binary `Toggle` and a
       `ToggleGroup` of one makes no sense either — it stays a single
