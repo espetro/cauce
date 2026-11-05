@@ -1,0 +1,55 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ *
+ * loader styles — Tailwind composition via `@apply` against the app theme.
+ * These classes are used across component boundaries (portal/render
+ * targets outside the component tree), so they are intentionally
+ * global — imported from the script, not the style block.
+ */
+
+@reference "../app/app.css";
+
+.ai-loader {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.1875rem;
+  }
+
+  .ai-loader-dot {
+    border-radius: 50%;
+    @apply bg-muted;
+    animation: ai-loader-pulse 1s ease-in-out infinite;
+  }
+
+  .ai-loader[data-size="sm"] .ai-loader-dot {
+    @apply w-1 h-1;
+  }
+
+  .ai-loader[data-size="md"] .ai-loader-dot {
+    @apply w-1.5 h-1.5;
+  }
+
+  .ai-loader[data-size="lg"] .ai-loader-dot {
+    @apply w-2 h-2;
+  }
+
+  .ai-loader-dot:nth-child(2) {
+    animation-delay: 250ms;
+  }
+
+  .ai-loader-dot:nth-child(3) {
+    animation-delay: 500ms;
+  }
+
+  @keyframes ai-loader-pulse {
+    0%,
+    100% {
+      opacity: 0.3;
+      transform: translateY(0);
+    }
+    50% {
+      opacity: 1;
+      transform: translateY(-0.125rem);
+    }
+  }
