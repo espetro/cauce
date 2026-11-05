@@ -98,11 +98,6 @@
     <a href={appHref("/")} aria-current={active === "search" ? "page" : undefined}
       >{c.nav_search}</a
     >
-    {#if capabilities.aiEnabled}
-      <a href={appHref("/answer")} aria-current={active === "answer" ? "page" : undefined}
-        >{c.nav_answer}</a
-      >
-    {/if}
     <a href={appHref("/history")} aria-current={active === "history" ? "page" : undefined}>{c.nav_history}</a>
   </nav>
   <div class="nav-right">

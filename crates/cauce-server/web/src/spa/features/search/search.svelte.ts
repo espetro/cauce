@@ -92,7 +92,7 @@ export interface SearchRow {
 
 export class SearchPageState {
   q = $state("");
-  /** AI-mode segment of the omnibox (submit -> `/answer?q=`). */
+  /** AI-mode segment of the omnibox (submit -> `/search?mode=ai&q=…`). */
   aiMode = $state(false);
   rows = $state<SearchRow[]>([]);
   hasSearched = $state(false);
@@ -259,12 +259,14 @@ export class SearchPageState {
     }
   }
 
-  /** Omnibox submit: `/app/answer?q=` in AI mode, `/app/search?…&stream=1` else. */
+  /** Omnibox submit: `/search?mode=ai&q=…` in AI mode (mode persisted
+      in the URL), `/search?q=…&stream=1` else. Both land on the one
+      search surface; `/answer/{log_id}` stays the durable SSR link. */
   submit(navigate: (to: string) => void): void {
     const value = this.q.trim();
     if (!value) return;
     if (this.aiMode) {
-      navigate("/app/answer?q=" + encodeURIComponent(value));
+      navigate("/app/search?mode=ai&q=" + encodeURIComponent(value));
       return;
     }
     navigate("/app/search?q=" + encodeURIComponent(value) + "&stream=1");
