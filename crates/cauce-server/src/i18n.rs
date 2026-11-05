@@ -118,6 +118,7 @@ pub fn spa_bundle() -> Value {
                 "common.nav_menu_label",
                 "common.nav_menu_close",
                 "common.nav_primary_label",
+                "common.github_label",
                 "common.theme_switch",
                 "common.theme_system",
                 "common.theme_light",
