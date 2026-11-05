@@ -23,7 +23,7 @@ Set `CAUCE_VERSION=v0.9.1` to pin a release or `CAUCE_INSTALL_DIR` to change the
 
 ## Install a release binary
 
-Pick the tarball for your platform under <https://github.com/espetro/cauce/releases> (Linux x86_64 glibc and musl, Linux aarch64, macOS arm64 and x86_64), e.g.:
+Pick the tarball for your platform under <https://github.com/espetro/cauce/releases> (Linux x86_64 glibc and musl, Linux aarch64, macOS arm64; Intel macOS builds stopped after 0.9.2, use cargo install), e.g.:
 
 ```bash
 curl -LO https://github.com/espetro/cauce/releases/download/v0.5.0/cauce-v0.5.0-x86_64-unknown-linux-gnu.tar.gz
