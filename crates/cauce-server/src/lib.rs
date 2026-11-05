@@ -13,6 +13,7 @@ mod app;
 mod assets;
 
 mod capabilities;
+pub mod discovery;
 mod error;
 mod handlers;
 pub mod i18n;

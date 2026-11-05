@@ -123,6 +123,18 @@ const EXPECTED_WAVE8_MOUNTED: &[(&str, &str)] = &[
     ("GET", "/api/threads"),
     ("GET", "/api/threads/{id}"),
     ("DELETE", "/api/threads/{id}"),
+    // Agent discovery and readiness.
+    ("GET", "/robots.txt"),
+    ("GET", "/sitemap.xml"),
+    ("GET", "/auth.md"),
+    ("GET", "/.well-known/api-catalog"),
+    ("GET", "/.well-known/mcp/server-card.json"),
+    ("GET", "/.well-known/agent-skills/index.json"),
+    ("GET", "/.well-known/agent-skills/search/SKILL.md"),
+    ("GET", "/.well-known/agent-card.json"),
+    ("GET", "/.well-known/ai-catalog.json"),
+    ("GET", "/.well-known/oauth-authorization-server"),
+    ("GET", "/.well-known/oauth-protected-resource"),
 ];
 
 // ---------------------------------------------------------------------------

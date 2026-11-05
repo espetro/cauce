@@ -10,6 +10,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>cauce</title>
     <link rel="search" type="application/opensearchdescription+xml" title="cauce" href="/opensearch.xml" />
+    <link rel="api-catalog" href="/.well-known/api-catalog" />
+    <link rel="ai-catalog" href="/.well-known/ai-catalog.json" />
+    <link rel="service-desc" type="application/json" href="/.well-known/mcp/server-card.json" />
+    <link rel="service-doc" href="https://docs.cauce.fyi" />
     <link rel="icon" href="/favicon.ico" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <meta property="og:type" content="website" />
@@ -21,6 +25,45 @@
     <meta name="twitter:title" content="cauce" />
     <meta name="twitter:description" content="Local metasearch for humans and agents" />
     <meta name="twitter:image" content="https://cauce.fyi/og.png" />
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "cauce",
+        "applicationCategory": "DeveloperApplication",
+        "operatingSystem": "Linux, macOS, Windows",
+        "description": "Local metasearch and grounded AI answers for humans and agents over a shared cache.",
+        "url": "https://cauce.fyi",
+        "license": "https://www.mozilla.org/MPL/2.0/"
+      }
+    </script>
+    <script>
+      // WebMCP tool registration on page load.
+      (function () {
+        var mc = (typeof document !== "undefined" && document.modelContext) ||
+                 (typeof navigator !== "undefined" && navigator.modelContext);
+        if (mc && typeof mc.registerTool === "function") {
+          try {
+            mc.registerTool({
+              name: "cauce_search",
+              description: "Search the web via cauce metasearch and retrieve ranked results with citations.",
+              inputSchema: {
+                type: "object",
+                properties: {
+                  query: { type: "string", description: "Search query terms" }
+                },
+                required: ["query"]
+              },
+              execute: async function (params) {
+                var q = params && params.query ? encodeURIComponent(params.query) : "";
+                var res = await fetch("/api/search?q=" + q);
+                return await res.json();
+              }
+            });
+          } catch (_) {}
+        }
+      })();
+    </script>
     <script>
       // Applies the stored theme before first paint so a saved light/dark
       // choice never flashes the opposite palette.

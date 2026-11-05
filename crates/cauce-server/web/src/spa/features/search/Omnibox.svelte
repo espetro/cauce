@@ -134,6 +134,8 @@
 <form
   class="composer-form"
   id={followup ? "answer-followup" : undefined}
+  toolname="cauce_search"
+  tooldescription="Search the web with cauce metasearch"
   onsubmit={(e) => {
     e.preventDefault();
     onsubmit();
@@ -149,6 +151,7 @@
         autocomplete="off"
         {placeholder}
         ariaLabel={placeholder}
+        toolparamdescription="Search query terms"
       />
       {#if busy && onstop}
         <UiButton

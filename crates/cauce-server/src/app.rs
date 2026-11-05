@@ -28,6 +28,7 @@ use cauce_core::config::{AiConfig, Config, ConfigError};
 use cauce_core::{Engine, HealthPolicy, SearchPipeline, Store};
 use tokio::net::TcpListener;
 
+use crate::discovery;
 use crate::error::ApiError;
 use crate::handlers;
 use crate::limits::{Limits, inflight_gate, rate_limit_gate};
@@ -650,6 +651,32 @@ fn handler_for(spec: &RouteSpec, state: &AppState) -> Option<MethodRouter<AppSta
         // FX-07: the instance-mode bootstrap pair.
         ("GET", "/api/capabilities", RouteKind::Json) => Some(get(handlers::capabilities)),
         ("GET", "/api/instance", RouteKind::Json) => Some(get(handlers::instance)),
+        // Agent discovery and machine-readable metadata.
+        ("GET", "/robots.txt", RouteKind::Static) => Some(get(discovery::robots_txt)),
+        ("GET", "/sitemap.xml", RouteKind::Static) => Some(get(discovery::sitemap_xml)),
+        ("GET", "/auth.md", RouteKind::Static) => Some(get(discovery::auth_md)),
+        ("GET", "/.well-known/api-catalog", RouteKind::Json) => Some(get(discovery::api_catalog)),
+        ("GET", "/.well-known/mcp/server-card.json", RouteKind::Json) => {
+            Some(get(discovery::mcp_server_card))
+        }
+        ("GET", "/.well-known/agent-skills/index.json", RouteKind::Json) => {
+            Some(get(discovery::agent_skills_index))
+        }
+        ("GET", "/.well-known/agent-skills/search/SKILL.md", RouteKind::Static) => {
+            Some(get(discovery::agent_skills_search_md))
+        }
+        ("GET", "/.well-known/agent-card.json", RouteKind::Json) => {
+            Some(get(discovery::a2a_agent_card))
+        }
+        ("GET", "/.well-known/ai-catalog.json", RouteKind::Json) => {
+            Some(get(discovery::ai_catalog))
+        }
+        ("GET", "/.well-known/oauth-authorization-server", RouteKind::Json) => {
+            Some(get(discovery::oauth_authorization_server))
+        }
+        ("GET", "/.well-known/oauth-protected-resource", RouteKind::Json) => {
+            Some(get(discovery::oauth_protected_resource))
+        }
         // The MCP streamable-HTTP transport is a `tower::Service` serving
         // every method on `/mcp` (W1-08): `any_service` mounts it
         // directly. The row is `RouteAuth::Admin` but `any_service` has

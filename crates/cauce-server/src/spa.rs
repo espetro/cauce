@@ -18,9 +18,11 @@
 //! file, You can obtain one at <https://mozilla.org/MPL/2.0/>.
 
 use axum::extract::Path;
-use axum::http::{StatusCode, Uri, header};
+use axum::http::{HeaderMap, StatusCode, Uri, header};
 use axum::response::{IntoResponse, Redirect, Response};
 use rust_embed::Embed;
+
+use crate::discovery;
 
 /// The built SPA bundle, `vite build`'s `outDir` (see `build:spa` in
 /// `package.json`; `mise run web` runs it before the freshness diff).
@@ -31,7 +33,10 @@ struct SpaAssets;
 
 /// `GET /app` — serve the SPA shell. The client router reads the path for
 /// the initial route; an unknown `/app/*` path renders its not-found view.
-pub async fn spa() -> impl IntoResponse {
+pub async fn spa(headers: HeaderMap) -> impl IntoResponse {
+    if discovery::prefers_markdown(&headers) {
+        return discovery::markdown_response();
+    }
     serve_spa("index.html")
 }
 
@@ -48,7 +53,10 @@ pub async fn spa_nested(Path(rest): Path<String>) -> impl IntoResponse {
 /// server-rendered pages owned. The SPA is the only UI layer now (FX-06),
 /// so each one permanently redirects to its `/app` twin, preserving the
 /// query string (`/search?q=x` → `/app/search?q=x`).
-pub async fn to_app(uri: Uri) -> Redirect {
+pub async fn to_app(headers: HeaderMap, uri: Uri) -> Response {
+    if discovery::prefers_markdown(&headers) {
+        return discovery::markdown_response();
+    }
     let pq = uri.path_and_query().map(|pq| pq.as_str()).unwrap_or("/");
     let (path, query) = match pq.split_once('?') {
         Some((p, q)) => (p, format!("?{q}")),
@@ -57,7 +65,17 @@ pub async fn to_app(uri: Uri) -> Redirect {
     // `/` must land on `/app`, not `/app/`: the router mounts `/app`
     // exactly and `/app/{*rest}` needs a non-empty tail, so a literal
     // `/app/` 404s.
-    Redirect::permanent(&format!("/app{}{}", path.trim_end_matches('/'), query))
+    (
+        [
+            (
+                header::LOCATION,
+                format!("/app{}{}", path.trim_end_matches('/'), query),
+            ),
+            (header::LINK, discovery::AGENT_LINK_HEADER.to_string()),
+        ],
+        StatusCode::PERMANENT_REDIRECT,
+    )
+        .into_response()
 }
 
 /// `GET /app/` — the wildcard tail only matches when non-empty, so
@@ -72,6 +90,7 @@ fn serve_spa(name: &str) -> Response {
             [
                 (header::CONTENT_TYPE, file.metadata.mimetype()),
                 (header::CACHE_CONTROL, cache_control(name)),
+                (header::LINK, discovery::AGENT_LINK_HEADER),
             ],
             file.data,
         )
