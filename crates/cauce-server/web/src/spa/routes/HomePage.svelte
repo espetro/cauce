@@ -38,17 +38,18 @@
 <main>
   <h1 class="vh">{spa.common.brand}</h1>
   <div class:hero={!LANDING} class:hero-landing={LANDING}>
-    {#if LANDING}
-      <!-- The logotype: mark plus wordmark, centred. The nav hides its
-           brand on this route so the identity is not duplicated. -->
-      <a class="logotype" href="/" aria-label={spa.common.brand}>
-        <img src={markUrl} alt="" />
-        <span>{spa.common.brand}</span>
-      </a>
-    {:else}
+    <!-- The logotype: mark plus wordmark, centred, in both builds —
+         the issue's ask is the landing home's identity, not a deploy
+         flag. The nav hides its own brand on this route so the
+         identity is not duplicated. -->
+    <a class="logotype" href="/" aria-label={spa.common.brand}>
+      <img src={markUrl} alt="" />
+      <span>{spa.common.brand}</span>
+    </a>
+    {#if !LANDING}
       <!-- DS-20C: the hero names the product. The vh h1 stays the axe
-          heading; the visible eyebrow + subtitle answer "what is this?"
-          for a first-time visitor without scrolling. -->
+          heading; the eyebrow + subtitle answer "what is this?" for a
+          first-time visitor without scrolling. -->
       <p class="eyebrow">{spa.app.home_eyebrow}</p>
       <p class="subtitle">{spa.app.home_subtitle}</p>
     {/if}
@@ -73,6 +74,10 @@
 <style>
   .hero {
     margin: 18vh 0 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
   }
   .hero-landing {
     margin: 16vh 0 0;
