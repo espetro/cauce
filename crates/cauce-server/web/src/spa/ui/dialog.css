@@ -1,0 +1,68 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ *
+ * `dialog` styles — Tailwind composition via `@apply` against
+ * the app theme. Imported from the component's <script> block so
+ * the build resolves `@apply` and svelte-check's CSS parser (which
+ * does not know Tailwind's at-rules) never sees them.
+ */
+
+@reference "../app/app.css";
+
+.ui-dialog-overlay {
+  @apply fixed inset-0 bg-overlay z-50;
+  /* ScrollLock sets body pointer-events:none — re-arm the scrim
+     so it eats clicks instead of leaking them to the page (same
+     recipe as ui/alert-dialog). */
+  pointer-events: auto;
+  animation: ui-dialog-overlay-in 200ms var(--ease-out);
+}
+
+@keyframes ui-dialog-overlay-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.ui-dialog-content {
+  @apply fixed top-1/2 left-1/2 w-[min(92vw,40rem)] max-h-[80vh] overflow-auto p-4 px-5 border border-border bg-bg text-fg shadow-[var(--shadow)];
+  transform: translate(-50%, -50%);
+  border-radius: calc(var(--radius) * 1.5);
+  z-index: 51;
+  animation: ui-dialog-content-in 220ms var(--ease-out);
+}
+
+@keyframes ui-dialog-content-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
+
+.ui-dialog-head {
+  @apply flex items-center justify-between gap-4 mb-2;
+}
+
+.ui-dialog-title {
+  @apply m-0 text-base font-bold;
+}
+
+.ui-dialog-close {
+  @apply inline-flex items-center justify-center w-7 h-7 p-0 border border-border rounded-[var(--radius)] bg-bg text-muted cursor-pointer;
+}
+
+.ui-dialog-close:hover {
+  @apply bg-greyed-bg text-fg;
+}
+
+.ui-dialog-close:focus-visible {
+  @apply outline-2 outline-offset-1 outline-accent;
+}
