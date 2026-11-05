@@ -156,10 +156,14 @@
     color: var(--muted);
     text-decoration: none;
     margin-bottom: clamp(1rem, 4vh, 2.5rem);
-    animation: cue-bob 2.4s ease-in-out infinite;
     transition:
       color 120ms ease-out,
       border-color 120ms ease-out;
+  }
+  /* The bob rides the inner icon, not the anchor: a hit target that
+     moves under the pointer is hostile to both playwright and people. */
+  .scroll-cue :global(svg) {
+    animation: cue-bob 2.4s ease-in-out infinite;
   }
   .scroll-cue:hover {
     color: var(--fg);
@@ -175,11 +179,11 @@
       transform: translateY(0);
     }
     50% {
-      transform: translateY(6px);
+      transform: translateY(4px);
     }
   }
   @media (prefers-reduced-motion: reduce) {
-    .scroll-cue {
+    .scroll-cue :global(svg) {
       animation: none;
     }
   }
