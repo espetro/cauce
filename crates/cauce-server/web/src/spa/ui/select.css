@@ -11,84 +11,48 @@
 @reference "../app/app.css";
 
 .ui-select-trigger {
-    display: inline-flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.5rem;
-    flex: 1 1 auto;
-    min-width: 0;
-    /* DS-20D: the shared control height. */
-    height: var(--control-h);
-    padding: 0 0.625rem;
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    background: var(--bg);
-    color: var(--fg);
-    font: inherit;
-    text-align: start;
-    cursor: pointer;
-  }
+  @apply inline-flex items-center justify-between gap-2 flex-1 min-w-0 h-[var(--control-h)] px-[0.625rem] border border-border rounded-[var(--radius)] bg-bg text-fg cursor-pointer text-start;
+}
 
-  .ui-select-trigger:focus-visible {
-    outline: 2px solid var(--accent);
-    outline-offset: 1px;
-  }
+.ui-select-trigger:focus-visible {
+  @apply outline-2 outline-offset-1 outline-accent;
+}
 
-  .ui-select-trigger[data-disabled] {
-    opacity: 0.5;
-    cursor: default;
-  }
+.ui-select-trigger[data-disabled] {
+  @apply opacity-50 cursor-default;
+}
 
-  .ui-select-label.placeholder {
-    color: var(--muted);
-  }
+.ui-select-label.placeholder {
+  @apply text-muted;
+}
 
-  .ui-select-chevron {
-    width: 0.75rem;
-    height: 0.75rem;
-    flex: none;
-    color: var(--muted);
-  }
+.ui-select-chevron {
+  @apply w-3 h-3 flex-none text-muted;
+}
 
-  .ui-select-content {
-    /* Match the form field: the menu follows the trigger's width when
-       the trigger is wide enough, and never shrinks below a readable
-       floor (Bits UI exposes both as CSS vars on the content). */
-    min-width: var(--bits-select-anchor-width, 8rem);
-    width: max-content;
-    max-width: min(var(--bits-select-content-available-width, 16rem), 100vw);
-    padding: 0.25rem;
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    background: var(--bg);
-    color: var(--fg);
-    box-shadow: var(--shadow);
-    z-index: 50;
-  }
+.ui-select-content {
+  /* Match the form field: the menu follows the trigger's width when
+     the trigger is wide enough, and never shrinks below a readable
+     floor (Bits UI exposes both as CSS vars on the content). */
+  @apply p-1 border border-border rounded-[var(--radius)] bg-bg text-fg shadow-[var(--shadow)] z-50;
+  min-width: var(--bits-select-anchor-width, 8rem);
+  width: max-content;
+  max-width: min(var(--bits-select-content-available-width, 16rem), 100vw);
+}
 
-  .ui-select-item {
-    display: flex;
-    align-items: center;
-    gap: 0.4rem;
-    padding: 0.25rem 0.4rem;
-    border-radius: calc(var(--radius) - 0.2rem);
-    font-size: 0.9375rem;
-    cursor: pointer;
-    user-select: none;
-  }
+.ui-select-item {
+  @apply flex items-center gap-[0.4rem] py-1 px-[0.4rem] text-[0.9375rem] cursor-pointer select-none;
+  border-radius: calc(var(--radius) - 0.2rem);
+}
 
-  .ui-select-item[data-highlighted] {
-    background: var(--greyed-bg);
-  }
+.ui-select-item[data-highlighted] {
+  @apply bg-greyed-bg;
+}
 
-  .ui-select-item[data-disabled] {
-    opacity: 0.5;
-    cursor: default;
-  }
+.ui-select-item[data-disabled] {
+  @apply opacity-50 cursor-default;
+}
 
-  .ui-select-check {
-    width: 0.75rem;
-    height: 0.75rem;
-    flex: none;
-    color: var(--accent);
-  }
+.ui-select-check {
+  @apply w-3 h-3 flex-none text-accent;
+}
