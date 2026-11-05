@@ -29,7 +29,7 @@
   const page = createSearchPage();
 
   const askUrl = $derived(
-    capabilities.aiEnabled ? appHref("/answer?q=" + encodeURIComponent(page.q)) : "",
+    capabilities.aiEnabled ? appHref("/search?mode=ai&q=" + encodeURIComponent(page.q)) : "",
   );
 
   // D3: the shared FilterBar's field array — pre-shaped per the honest
@@ -81,6 +81,9 @@
   ]);
 
   onMount(() => {
+    // Mode consolidation: `?mode=ai` arms the omnibox segment so the
+    // toggle reflects (and submits back to) the URL state.
+    page.aiMode = params.get("mode") === "ai";
     void page.run(params);
     document.title = page.q ? page.q + " · " + spa.common.brand : spa.common.brand;
   });

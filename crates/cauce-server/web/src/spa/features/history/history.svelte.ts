@@ -294,7 +294,7 @@ export function createHistoryPage() {
           clicksWord: H().clicks_word,
           deleteConfirm: H().delete_confirm_answer,
           queryUrl: "/answer/" + (a.id ?? 0),
-          rerunUrl: "/answer?q=" + encodeURIComponent(query),
+          rerunUrl: "/app/search?mode=ai&q=" + encodeURIComponent(query),
           jsonUrl: "",
           error: "",
           gone: false,

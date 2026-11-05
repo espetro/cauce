@@ -56,12 +56,23 @@
         );
       },
       onThreadId: (id) => {
-        history.replaceState({}, "", appHref("/answer?thread=" + encodeURIComponent(id)));
+        // Mode consolidation (owner review): AI lives at
+        // `/search?mode=ai&thread=…` — one search surface, mode in the
+        // query string; the durable `/answer/{log_id}` SSR link is
+        // untouched.
+        const sp = new URLSearchParams(location.search);
+        sp.set("thread", id);
+        history.replaceState({}, "", appHref("/search?" + sp.toString()));
       },
   });
 
   const q = $derived(params.get("q") || "");
   const threadParam = $derived(params.get("thread") || "");
+  /** The thread id written on `done` lands here via replaceState, so
+      the URL keeps ONE path: `/search?mode=ai&thread=…`. */
+  function replaceUrl(modeQs: string): void {
+    history.replaceState({}, "", appHref("/search?" + modeQs));
+  }
 
   // Bare `/app/answer`: the omnibox is the ask form; its segment toggle
   // decides intent — Search hands off to `/app/search`, AI asks here.
@@ -73,7 +84,7 @@
     if (!v) return;
     navigate(
       askAi
-        ? appHref("/answer?q=" + encodeURIComponent(v))
+        ? appHref("/search?mode=ai&q=" + encodeURIComponent(v))
         : appHref("/search?q=" + encodeURIComponent(v) + "&stream=1"),
     );
   }
@@ -168,7 +179,7 @@
               turn === thread.turns[thread.turns.length - 1]}
             onedit={() => thread.editLast()}
             onsources={(opener) => openSources(turn.n, opener)}
-            relatedHref={(r) => appHref("/answer?q=" + encodeURIComponent(r))}
+            relatedHref={(r) => appHref("/search?mode=ai&q=" + encodeURIComponent(r))}
           />
         {/each}
       </div>
