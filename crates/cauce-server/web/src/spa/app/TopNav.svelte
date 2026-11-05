@@ -23,7 +23,7 @@
   import { spa } from "../lib/i18n.js";
   import markUrl from "../assets/cauce-mark.png";
   import { capabilities } from "../lib/capabilities.svelte.js";
-  import { appHref, routeVisible } from "./router.svelte.js";
+  import { appHref, routeVisible, route } from "./router.svelte.js";
   import { cycleTheme, theme, themeAria } from "./theme.svelte.js";
   import UiButton from "../ui/button.svelte";
   import UiTooltip from "../ui/tooltip.svelte";
@@ -48,6 +48,10 @@
   }
 
   let sheetOpen = $state(false);
+
+  // The landing route owns the full logotype (mark + wordmark) above
+  // the search bar; the nav drops its own brand there so the identity
+  // is not doubled (W9-05).
 
   const entries: WaffleEntry[] = $derived.by(() => {
     const flags = capabilities.flags;
@@ -87,7 +91,9 @@
 <svelte:window onkeydown={(e) => e.key === "Escape" && (sheetOpen = false)} />
 
 <header class="site">
-  <a class="brand" href={appHref("/")}><img class="brand-mark" src={markUrl} alt="" />{c.brand}</a>
+  {#if route.path !== "/"}
+    <a class="brand" href={appHref("/")}><img class="brand-mark" src={markUrl} alt="" />{c.brand}</a>
+  {/if}
   <nav class="nav-primary" aria-label={c.nav_primary_label}>
     <a href={appHref("/")} aria-current={active === "search" ? "page" : undefined}
       >{c.nav_search}</a
