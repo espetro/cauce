@@ -38,15 +38,15 @@ More options (release tarballs, a checkout build): [docs/install.md](docs/instal
 - One web UI, one HTTP API, one MCP server, all reading the same TTL cache.
 - Tail-tolerant fan-out over pluggable engines (declarative YAML, exec, replay) with hedging and circuit breakers.
 - Grounded AI answers at `POST /api/answer`, with optional BYOK and a free daily-answer budget for public instances.
-- Local archive + search history in SQLite FTS5.
-- Self-hosted and local-first: a single Rust binary, loopback by default; a public-instance mode exists for the edge.
+- Local archive + search history in SQLite FTS5, or pluggable in-memory / edge storage (`MemoryStore`).
+- Self-hosted, local-first, and edge-ready: a single Rust binary, loopback by default; compile or embed as WASM / Serverless (Cloudflare Workers, Spin, AWS Lambda) via pure `Store` and `tower::Service` traits.
 
 ## Stack
 
 | Path                        | What it owns                                            |
 | --------------------------- | ------------------------------------------------------- |
-| `crates/cauce-core`         | Search pipeline, `Store` + `Engine` traits              |
-| `crates/cauce-server`       | axum HTTP/SSE/MCP, embedded Svelte SPA at `/app`        |
+| `crates/cauce-core`         | Search pipeline, `Store` (`MemoryStore`) + `Engine` traits |
+| `crates/cauce-server`       | axum HTTP/SSE/MCP, embedded Svelte SPA at `/app`, WASM harness |
 | `crates/cauce-engines`      | Declarative / exec / replay engine runtimes             |
 | `crates/cauce-store-sqlite` | rusqlite `Store` implementation                         |
 | `crates/cauce-agent`        | Grounded-answer agent loop                              |

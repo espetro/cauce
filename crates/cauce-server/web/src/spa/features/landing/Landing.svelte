@@ -62,7 +62,8 @@ cauce serve   # UI + API + MCP on http://127.0.0.1:4479`;
   const factRows: [string, string][] = [
     ["binary", "one ~37 MB binary, no runtime deps"],
     ["idle memory", "< 80 MB full mode · < 50 MB headless · < 40 MB mcp"],
-    ["storage", "SQLite (WAL): search log, answers and cache, all on your disk"],
+    ["storage", "SQLite (WAL) or in-memory / edge Store"],
+    ["targets", "macOS, Linux (x86_64/arm64), WASM / Serverless (Cloudflare Workers, Spin, Lambda)"],
     ["license", "MPL-2.0 (code) · Apache-2.0 (engines, SDK)"],
   ];
 </script>
@@ -168,7 +169,7 @@ cauce serve   # UI + API + MCP on http://127.0.0.1:4479`;
     <h2>Self-host in one command.</h2>
     <p class="lead">
       No containers, no managed services, no account. The binary is the whole product.
-      Run it on a laptop, a VPS, or an always-on box at home.
+      Run it on a laptop, a VPS, or deploy to edge / serverless WASM runtimes (Cloudflare Workers, Spin, AWS Lambda).
     </p>
     <div class="panel">
       <Code code={installSnippet} lang="shell" />

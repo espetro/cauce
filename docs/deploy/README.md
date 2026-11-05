@@ -10,6 +10,7 @@ cauce is one binary (`cauce serve` — UI + API + MCP). Pick the shape that fits
 | Any origin + Cloudflare zone     | [cf-zone.md](cf-zone.md)   | free-tier edge cache + WAF    |
 | SPA on CF Pages + API on a VPS   | [cf-pages.md](cf-pages.md) | static UI, proxied `/api/*`   |
 | AWS Lambda                       | [lambda.md](lambda.md)     | LWA image, SSE streaming      |
+| WASM / Serverless / Cloudflare   | [wasm-template.md](wasm-template.md) | In-memory/edge Store, tower::Service |
 
 ## The public-instance contract
 

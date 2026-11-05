@@ -10,7 +10,7 @@ Developer-facing internals (builds, UI specs, architecture) live under **Develop
 
 - **[Install](install/)**: release binary or `cargo install`, then `cauce serve`.
 - **[Agents](agents/)**: point Claude Code, Hermes, or any MCP client at `/mcp`.
-- **[Deploy](deploy/)**: VPS, Cloudflare Pages + tunnel, Docker, Lambda, and sizing.
+- **[Deploy](deploy/)**: VPS, Cloudflare Pages + tunnel, Docker, Lambda, WASM / Serverless, and sizing.
 - **[Threads](threads/)**: saved follow-up conversations and the `/api/threads` endpoints.
 - **[Reporting](reporting/)**: generate a self-contained diagnostics bundle.
 
