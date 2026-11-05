@@ -154,7 +154,12 @@
   }
 
   :global(.ui-select-content) {
-    min-width: var(--bits-select-content-available-width, 8rem);
+    /* Match the form field: the menu follows the trigger's width when
+       the trigger is wide enough, and never shrinks below a readable
+       floor (Bits UI exposes both as CSS vars on the content). */
+    min-width: var(--bits-select-anchor-width, 8rem);
+    width: max-content;
+    max-width: min(var(--bits-select-content-available-width, 16rem), 100vw);
     padding: 0.25rem;
     border: 1px solid var(--border);
     border-radius: var(--radius);
