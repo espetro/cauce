@@ -1,0 +1,35 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ *
+ * `tooltip` styles — Tailwind composition via `@apply` against
+ * the app theme. Imported from the component's <script> block so
+ * the build resolves `@apply` and svelte-check's CSS parser (which
+ * does not know Tailwind's at-rules) never sees them.
+ */
+
+@reference "../app/app.css";
+
+.ui-tooltip-content {
+  @apply max-w-64 py-1 px-2 border border-border rounded-[var(--radius)] bg-bg text-fg text-xs bg-bg shadow-[var(--shadow)] z-50;
+  line-height: 1.4;
+  animation: ui-tooltip-in 150ms ease-out;
+}
+
+@keyframes ui-tooltip-in {
+  from {
+    opacity: 0;
+    transform: translateY(2px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-tooltip-content {
+    @apply motion-reduce:animate-none;
+    animation: none;
+  }
+}
