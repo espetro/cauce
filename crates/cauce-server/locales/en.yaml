@@ -237,6 +237,10 @@ settings:
   tier_default: default
   proxy: egress proxy
   proxy_placeholder: direct
+  # Settings engines-table column headers (title case like the admin
+  # listing's; `tier`/`proxy` stay lowercase as the form-row labels).
+  col_tier: Tier
+  col_proxy: Egress proxy
   browse_engines: browse engines
   section_admission: Admission
   max_wait: Max queue wait (ms)
@@ -285,6 +289,17 @@ settings:
   byok_protocol: Protocol
   byok_protocol_default: instance default
   byok_base_url_locked: not allowed by this instance
+  # BYOK model picker: the provider's own `/models` list, fetched
+  # client-side from the base_url (no server proxy — the browser holds
+  # the key). The free-text input stays as the fallback.
+  byok_load_models: Load models
+  byok_models_loading: Loading…
+  byok_models_empty: The provider returned no models.
+  byok_models_failed: Could not load models
+  # BYOK test button: one tiny grounded answer through the real path.
+  byok_test: Test
+  byok_testing: Testing…
+  byok_test_ok: Connection works.
   # D2 settings rebuild: tab bar + general/privacy rows.
   general_tab: General
   privacy_tab: Privacy

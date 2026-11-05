@@ -108,7 +108,6 @@
     font-weight: 600;
     white-space: nowrap;
     padding: 0 0.25rem;
-    color: var(--bg);
     line-height: 1;
     pointer-events: none;
     transition: color 120ms ease-out;
@@ -122,12 +121,27 @@
     inset-inline-end: 0.25rem;
   }
 
+  /* One state, one visible label. The inactive label is hidden by
+     opacity (not `color: transparent`) so the minifier's rule merging
+     can never collapse it back into a visible one — the Svelte CSS
+     minifier merges same-declaration rules and the `transparent`
+     colour lost to the base rule. */
   :global(.ui-switch-track[data-state="checked"] .ui-switch-label-on) {
-    color: var(--on-accent);
+    color: var(--bg);
+    opacity: 1;
+  }
+
+  :global(.ui-switch-track[data-state="checked"] .ui-switch-label-off) {
+    opacity: 0;
+  }
+
+  :global(.ui-switch-track[data-state="unchecked"] .ui-switch-label-on) {
+    opacity: 0;
   }
 
   :global(.ui-switch-track[data-state="unchecked"] .ui-switch-label-off) {
     color: var(--muted);
+    opacity: 1;
   }
 
   :global(.ui-switch-text) {
