@@ -172,6 +172,9 @@ importers:
       '@tanstack/table-core':
         specifier: ^9.3.1
         version: 9.3.1
+      highlight.js:
+        specifier: ^11.12.0
+        version: 11.12.0
     devDependencies:
       '@formisch/svelte':
         specifier: ^1.1.0
@@ -909,6 +912,10 @@ packages:
   happy-dom@20.14.5:
     resolution: {integrity: sha512-x/RzkpWO40bTjIoT30iQtt64FLLmH/iRcUCN2X//bLx7H3ifkdfPXyqsro/OYtqzIAhiLMMA7mmiOR9C3NOKjQ==}
     engines: {node: '>=20.0.0'}
+
+  highlight.js@11.12.0:
+    resolution: {integrity: sha512-nbfWpyRMcMrPMmDwJB+dhX/eiaPKtc2RB+0QZskqJ3WjRA/FDS0e9hZrx8EC/lbEv8gXy98FcDbNa/dspAaJMg==}
+    engines: {node: '>=12.0.0'}
 
   inline-style-parser@0.2.7:
     resolution: {integrity: sha512-Nb2ctOyNR8DqQoR0OwRG95uNWIC0C1lCgf5Naz5H6Ji72KZ8OcFZLz2P5sNgwlyoJ8Yif11oMuYs5pBQa86csA==}
@@ -1819,6 +1826,8 @@ snapshots:
     transitivePeerDependencies:
       - bufferutil
       - utf-8-validate
+
+  highlight.js@11.12.0: {}
 
   inline-style-parser@0.2.7: {}
 
