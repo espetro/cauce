@@ -1,13 +1,15 @@
 #!/bin/sh
-# pre-push gate: run the full local validation before anything leaves.
+# pre-push: cheap local check only. The full gate (`mise run validate`)
+# runs in CI (.github/workflows/validate.yml) with cached toolchains and
+# build artifacts; run it by hand when you want it locally.
 # Install with: mise run hooks:install  (sets core.hooksPath=.githooks)
 
-# mise may not be on PATH for non-interactive shells or GUI git clients.
-export PATH="$HOME/.local/share/mise/shims:/opt/homebrew/bin:/usr/local/bin:$PATH"
-
-if ! command -v mise >/dev/null 2>&1; then
-    echo "pre-push: mise not found on PATH; install mise or remove core.hooksPath" >&2
+# Every commit not yet on a remote must carry a Signed-off-by trailer (DCO).
+missing=$(git log --format='%H' --not --remotes | while read -r c; do
+    git log -1 --format='%(trailers:key=Signed-off-by,valueonly)' "$c" | grep -q . || echo "$c"
+done)
+if [ -n "$missing" ]; then
+    echo "pre-push: commits missing Signed-off-by (use git commit -s):" >&2
+    echo "$missing" >&2
     exit 1
 fi
-
-exec mise run validate

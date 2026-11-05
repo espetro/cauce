@@ -114,7 +114,7 @@ contrib/loadtest.sh
 """
 
 [tasks."hooks:install"]
-description = "Point git at .githooks/ (pre-push runs mise run validate)"
+description = "Point git at .githooks/ (pre-push is a fast sign-off check; the full gate runs in CI)"
 run = "git config core.hooksPath .githooks && echo 'core.hooksPath=.githooks'"
 
 [tasks.docs]

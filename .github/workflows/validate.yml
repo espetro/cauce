@@ -44,8 +44,22 @@ jobs:
           echo "All ${#commits[@]} commit(s) in range carry Signed-off-by."
 
       - uses: jdx/mise-action@v2
+        with:
+          cache: true
 
       - uses: Swatinem/rust-cache@v2
+        with:
+          # PR branches restore from main's cache; only main writes it, so
+          # feature pushes never evict the warm baseline.
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+          shared-key: validate
+
+      - name: pnpm store cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/share/pnpm/store
+          key: pnpm-${{ runner.os }}-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: pnpm-${{ runner.os }}-
 
       - name: validate
         run: mise run validate
