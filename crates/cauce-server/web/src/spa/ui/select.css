@@ -1,0 +1,94 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ *
+ * `select` styles — Tailwind composition via `@apply` against
+ * the app theme. Imported from the component's <script> block so
+ * the build resolves `@apply` and svelte-check's CSS parser (which
+ * does not know Tailwind's at-rules) never sees them.
+ */
+
+@reference "../app/app.css";
+
+.ui-select-trigger {
+    display: inline-flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    flex: 1 1 auto;
+    min-width: 0;
+    /* DS-20D: the shared control height. */
+    height: var(--control-h);
+    padding: 0 0.625rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--bg);
+    color: var(--fg);
+    font: inherit;
+    text-align: start;
+    cursor: pointer;
+  }
+
+  .ui-select-trigger:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+  }
+
+  .ui-select-trigger[data-disabled] {
+    opacity: 0.5;
+    cursor: default;
+  }
+
+  .ui-select-label.placeholder {
+    color: var(--muted);
+  }
+
+  .ui-select-chevron {
+    width: 0.75rem;
+    height: 0.75rem;
+    flex: none;
+    color: var(--muted);
+  }
+
+  .ui-select-content {
+    /* Match the form field: the menu follows the trigger's width when
+       the trigger is wide enough, and never shrinks below a readable
+       floor (Bits UI exposes both as CSS vars on the content). */
+    min-width: var(--bits-select-anchor-width, 8rem);
+    width: max-content;
+    max-width: min(var(--bits-select-content-available-width, 16rem), 100vw);
+    padding: 0.25rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--bg);
+    color: var(--fg);
+    box-shadow: var(--shadow);
+    z-index: 50;
+  }
+
+  .ui-select-item {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.25rem 0.4rem;
+    border-radius: calc(var(--radius) - 0.2rem);
+    font-size: 0.9375rem;
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .ui-select-item[data-highlighted] {
+    background: var(--greyed-bg);
+  }
+
+  .ui-select-item[data-disabled] {
+    opacity: 0.5;
+    cursor: default;
+  }
+
+  .ui-select-check {
+    width: 0.75rem;
+    height: 0.75rem;
+    flex: none;
+    color: var(--accent);
+  }
