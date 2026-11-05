@@ -31,14 +31,28 @@
   section p { margin: 0 0 12px; font-size: 14px; line-height: 1.6; }
   .small { font-size: 12px; }
   .muted { color: var(--muted); }
-  .mono, code, pre {
+  .mono, code {
     font-family: var(--mono);
   }
   code { font-size: 0.92em; }
-  .grid-3 {
+  /* Bento: the API card is tall (two snippets) and spans both rows;
+     the web UI and MCP cards stack beside it at their natural heights. */
+  .bento {
     @apply grid;
-    grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr));
+    grid-template-columns: minmax(0, 5fr) minmax(0, 4fr);
+    grid-template-areas:
+      "api ui"
+      "api mcp";
     gap: 16px;
+  }
+  .bento .api { grid-area: api; }
+  .bento .ui { grid-area: ui; }
+  .bento .mcp { grid-area: mcp; }
+  @media (max-width: 820px) {
+    .bento {
+      grid-template-columns: minmax(0, 1fr);
+      grid-template-areas: "ui" "api" "mcp";
+    }
   }
   .grid-2 {
     @apply grid;
@@ -57,17 +71,6 @@
     gap: 10px;
     min-width: 0;
   }
-  pre {
-    @apply m-0;
-    padding: 12px 14px;
-    @apply bg-greyed-bg;
-    @apply border border-border;
-    @apply rounded-[var(--radius)];
-    @apply overflow-x-auto max-w-full;
-    font-size: 12px;
-    line-height: 1.5;
-    min-width: 0;
-  }
   .points {
     @apply m-0 p-0;
     list-style: none;
@@ -82,11 +85,25 @@
   .points li:last-child { border-bottom: 0; }
   .points strong { color: var(--fg); }
   .scroll-x { overflow-x: auto; }
+  /* One bordered, rounded frame around a code block and/or table so
+     their edges meet cleanly (border-collapse tables ignore border
+     radius, which left a ragged join). Children are borderless; a
+     hairline separates them. */
+  .panel {
+    @apply border border-border;
+    @apply rounded-[var(--radius)];
+    overflow: hidden;
+  }
+  .panel.scroll-x { overflow-x: auto; }
+  .panel :global(.code) {
+    border: 0;
+    border-radius: 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .panel :global(.code:last-child) { border-bottom: 0; }
   table {
     @apply w-full border-collapse;
     font-size: 13px;
-    @apply border border-border;
-    @apply rounded-[var(--radius)];
   }
   th, td {
     @apply text-left;

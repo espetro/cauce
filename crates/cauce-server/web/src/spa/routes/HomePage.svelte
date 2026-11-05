@@ -11,7 +11,8 @@
   TopNav hides its own brand on this route so the two don't double).
 
   The non-landing build (self-hosted `cauce serve`) keeps the plain app
-  hero: eyebrow + subtitle above the full-size composer.
+  hero (no air band or marketing sections); both builds show the logotype
+  and tagline above the composer.
 
   Submit routes to `/app/search?q=…&stream=1` (or hands off to
   `/answer?q=` in AI mode).
@@ -40,19 +41,21 @@
 <main>
   <h1 class="vh">{spa.common.brand}</h1>
   <div class:hero={!LANDING} class:hero-landing={LANDING}>
-    <!-- The logotype: mark plus wordmark, centred, in both builds —
-         the issue's ask is the landing home's identity, not a deploy
-         flag. The nav hides its own brand on this route so the
-         identity is not duplicated. -->
+    <!-- The logotype: mark plus wordmark, centred, in both builds. The
+         nav hides its own brand on this route so the identity is not
+         duplicated. -->
     <a class="logotype" href="/" aria-label={spa.common.brand}>
       <img src={markUrl} alt="" />
       <span>{spa.common.brand}</span>
     </a>
-    {#if !LANDING}
-      <!-- DS-20C: the subtitle names the product (the eyebrow chip was
-          dropped per owner review). The vh h1 stays the axe heading. -->
-      <p class="subtitle">{spa.app.home_subtitle}</p>
-    {/if}
+    <!-- DS-20C: the subtitle names the product. One line when it fits;
+         otherwise it breaks at the sentence boundary (two spans, each
+         unbreakable) instead of mid-phrase. -->
+    <p class="subtitle">
+      {#each spa.app.home_subtitle.split(/(?<=\.)\s+/) as sentence}
+        <span>{sentence}</span>{" "}
+      {/each}
+    </p>
     <Omnibox
       bind:value={page.q}
       bind:aiMode={page.aiMode}
@@ -92,16 +95,27 @@
     align-items: center;
     text-align: center;
   }
+  /* The hero fills the first screen (viewport minus the sticky nav), so
+     the scroll cue pinned at the bottom of .air is always above the
+     fold, whatever the viewport height. */
   .hero-landing {
-    margin: 16vh 0 0;
+    margin: 0;
+    padding-top: clamp(1.5rem, 10vh, 8rem);
+    min-height: calc(100svh - 5rem);
     display: flex;
     flex-direction: column;
     align-items: center;
     text-align: center;
   }
-  .hero :global(.subtitle) {
-    margin-bottom: 1.25rem;
-    max-width: 36rem;
+  .hero :global(.subtitle),
+  .hero-landing :global(.subtitle) {
+    margin-bottom: 1.5rem;
+    max-width: 100%;
+    color: var(--muted);
+    font-size: 1.0625rem;
+  }
+  .subtitle span {
+    display: inline-block;
   }
   /* The composer: a column flex container shrink-wraps children, so
      the form must carry its own measure — this is what keeps the bar
@@ -116,19 +130,20 @@
     flex-direction: column;
     align-items: center;
     gap: 0.5rem;
-    margin-bottom: 1.75rem;
+    margin-bottom: 1.25rem;
     color: var(--fg);
     text-decoration: none;
     font-weight: 700;
-    font-size: clamp(1.6rem, 5vw, 2.4rem);
+    font-size: clamp(1.875rem, 5.5vw, 2.75rem);
     letter-spacing: -0.02em;
   }
-  /* The mark carries the identity next to a 38px wordmark: it must read
-     as the logo, not a bullet. 3.25rem-4.25rem keeps the two optically
-     balanced (the 2048px source downscaled to 512 keeps it crisp at
-     2x). */
+  /* The mark carries the identity: at owner review round 5 it measured
+     68px against Google's 272x92 and DuckDuckGo's 209x54 logos - 3-4x
+     too small. Scale to the reference: mark ~104px desktop (the trimmed artwork now fills its box), and the
+     wordmark grows with it so the pair stays balanced. The 512px
+     source keeps it crisp at 2x. */
   .logotype img {
-    width: clamp(3.25rem, 8.5vw, 4.25rem);
+    width: clamp(4.5rem, 10vw, 6.5rem);
     height: auto;
     display: block;
   }
@@ -137,7 +152,8 @@
      pushes the marketing to the first-viewport edge (the scroll cue:
      the section heading just peeks in at the bottom). */
   .air {
-    height: clamp(10rem, 42vh, 26rem);
+    flex: 1;
+    min-height: 6rem;
     display: flex;
     align-items: flex-end;
     justify-content: center;
@@ -189,7 +205,7 @@
   }
   @media (max-width: 640px) {
     .hero-landing {
-      margin-top: 10vh;
+      padding-top: 6vh;
     }
   }
 </style>
