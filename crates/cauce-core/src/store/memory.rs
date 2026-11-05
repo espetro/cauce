@@ -870,16 +870,9 @@ impl Store for MemoryStore {
         engines.sort_by(|a, b| a.engine.cmp(&b.engine));
 
         // Cache panel
-        let cache_entries = inner
-            .cache
-            .values()
-            .filter(|c| c.expires_at > now)
-            .count() as u64;
-        let cache_entries_expired = inner
-            .cache
-            .values()
-            .filter(|c| c.expires_at <= now)
-            .count() as u64;
+        let cache_entries = inner.cache.values().filter(|c| c.expires_at > now).count() as u64;
+        let cache_entries_expired =
+            inner.cache.values().filter(|c| c.expires_at <= now).count() as u64;
         let cache_newest_at = inner.cache.values().map(|c| c.created_at).max();
 
         Ok(StatsSnapshot {
