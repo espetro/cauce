@@ -146,21 +146,7 @@
 </form>
 
 <style>
-  .composer-hint {
-    margin: 0.25rem 0 0;
-    font-size: 0.8125rem;
-    color: var(--muted);
-  }
-
-  .input-row {
-    display: flex;
-    gap: 0.375rem;
-    align-items: flex-end;
-    min-width: 0;
-  }
-
-  .input-row :global(.ai-prompt-textarea) {
-    flex: 1 1 auto;
-    min-width: 0;
-  }
+  /* Styles live in Omnibox.css — imported so the build resolves
+     `@apply` while Svelte's scoping semantics are unchanged. */
+  @import "./Omnibox.css";
 </style>

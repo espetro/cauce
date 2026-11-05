@@ -1,0 +1,70 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ *
+ * ArchiveView styles — Tailwind composition via `@apply` against the app theme.
+ * Imported from the component's <style> block: the build resolves
+ * `@apply` (via the @reference below) and Svelte's scoping semantics
+ * for the component's local classes are preserved exactly.
+ */
+
+@reference "../../app/app.css";
+
+  .archive-entry {
+    border-bottom: 1px solid var(--border);
+    padding: 0.4rem 0;
+  }
+  .archive-row {
+    @apply flex items-start gap-2;
+    min-width: 0;
+  }
+  .archive-disclosure {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  /* The trigger is the row's grid container (was the disclosure
+     summary); the wrapper's own recipe supplies flex/cursor/font — this
+     only imposes the two-column grid: chevron column fixed, content
+     column wrapping underneath itself. A long title used to wrap under
+     the chevron and leave it hanging on its own line (audit M3). */
+  .archive-disclosure :global(.ui-collapsible-trigger) {
+    @apply grid;
+    grid-template-columns: 1rem minmax(0, 1fr);
+    align-items: start;
+    column-gap: 0.5rem;
+    row-gap: 0.125rem;
+    min-width: 0;
+  }
+  /* The chevron sits in the fixed grid column; optical centring
+     against the title's cap height. */
+  .archive-chevron {
+    margin-top: 0.2em;
+  }
+  /* The host/date pair rides under the title, not under the chevron. */
+  .archive-meta {
+    grid-column: 2;
+  }
+  .archive-chevron {
+    @apply inline-block;
+    transition: transform 140ms var(--ease-out);
+  }
+  .archive-chevron.open {
+    transform: rotate(90deg);
+  }
+  .archive-title {
+    @apply font-semibold;
+    overflow-wrap: anywhere;
+  }
+  .archive-meta {
+    @apply text-muted text-[0.8125rem] inline-flex gap-2 flex-wrap;
+  }
+  .archive-snippet {
+    @apply text-muted text-sm;
+    margin: 0.25rem 0;
+    overflow-wrap: anywhere;
+  }
+  /* Row delete keeps the old flex-shrink so it never wraps under the
+     disclosure column. */
+  .archive-row :global(.ui-button) {
+    flex-shrink: 0;
+  }
