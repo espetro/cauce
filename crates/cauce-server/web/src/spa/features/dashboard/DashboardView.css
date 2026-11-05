@@ -1,0 +1,159 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ *
+ * DashboardView styles — Tailwind composition via `@apply` against the app theme.
+ * Imported from the component's <style> block: the build resolves
+ * `@apply` (via the @reference below) and Svelte's scoping semantics
+ * for the component's local classes are preserved exactly.
+ */
+
+@reference "../../app/app.css";
+
+  /* The window segment replaces the ?days= links; ToggleGroup.Root
+     renders a div, so the row is a flex div, not a p. */
+  .window {
+    @apply flex items-center gap-2 flex-wrap;
+    /* D6: air between the window toggle and the first card row. */
+    @apply mb-4;
+  }
+  .panels {
+    @apply grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(18rem, 100%), 1fr));
+    /* D6 review: more negative space — the dashboard read as one dense
+       block. Wider gutters between cards, more air under the section. */
+    @apply gap-5;
+    margin: 1.25rem 0 1.5rem;
+  }
+  /* DS-20F: the panel is a raised surface — hairline plus the weak
+     ambient recipe, never the floating-layer shadow. */
+  .panel {
+    @apply border border-border;
+    @apply rounded-[var(--radius)];
+    padding: 1.25rem 1.25rem 1.375rem;
+    min-width: 0;
+    @apply bg-bg;
+    @apply shadow-[var(--shadow)];
+  }
+  /* Standalone panels (engines, cache) are grid siblings of the card
+     grid — they carry their own bottom rhythm. */
+  section.panel + section.panel,
+  .panels + section.panel {
+    @apply mt-5;
+  }
+  /* The panel title uses the shared type scale (DS-20A) instead of its
+     own size — the lowercase transform fought the Title Case copy in
+     en.yaml and read as a typo, not as a design choice. */
+  .panel h2 {
+    margin: 0 0 0.875rem;
+    font-size: var(--text-sm);
+    @apply font-semibold;
+    letter-spacing: var(--tracking-wide);
+    @apply uppercase text-muted;
+  }
+  .panel .big {
+    font-size: var(--text-2xl);
+    @apply font-bold;
+    line-height: var(--leading-tight);
+    letter-spacing: var(--tracking-tight);
+  }
+  .muted {
+    @apply text-muted;
+  }
+  ul.flat {
+    list-style: none;
+    @apply m-0 p-0 text-sm;
+  }
+  ul.flat li {
+    @apply flex justify-between gap-3;
+    min-width: 0;
+  }
+  ul.flat li span {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  ul.flat li + li {
+    border-top: 1px solid var(--border);
+  }
+  table.stats {
+    @apply w-full border-collapse;
+    font-size: 0.8rem;
+  }
+  table.stats th,
+  table.stats td {
+    @apply text-left;
+    padding: 0.25rem 0.4rem;
+    border-bottom: 1px solid var(--border);
+  }
+  table.stats th {
+    @apply text-muted font-semibold;
+  }
+  @media (width < 640px) {
+    table.stats,
+    table.stats tbody {
+    @apply block w-full;
+    }
+    table.stats thead {
+    @apply absolute;
+      width: 1px;
+      height: 1px;
+    @apply p-0;
+      margin: -1px;
+    @apply overflow-hidden;
+      clip: rect(0, 0, 0, 0);
+    @apply whitespace-nowrap;
+      border: 0;
+    }
+    table.stats tr {
+    @apply grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0.25rem 0.75rem;
+      padding: 0.5rem 0;
+      border-bottom: 1px solid var(--border);
+    }
+    table.stats td {
+      min-width: 0;
+      padding: 0.2rem 0;
+      overflow-wrap: anywhere;
+    }
+    table.stats td::before {
+      content: attr(data-label);
+    @apply block text-muted;
+      font-size: 0.65rem;
+    @apply font-semibold;
+    }
+    table.stats td:first-child {
+      grid-column: 1 / -1;
+    }
+  }
+  .legend {
+    @apply text-xs text-muted flex gap-3;
+  }
+  .legend i {
+    @apply inline-block;
+    width: 0.6em;
+    height: 0.6em;
+    border-radius: 1px;
+    margin-right: 0.25em;
+  }
+  .legend i.c {
+    @apply bg-accent;
+  }
+  .legend i.n {
+    background: var(--muted);
+    opacity: 0.45;
+  }
+  dl.kv {
+    @apply grid;
+    grid-template-columns: auto 1fr;
+    gap: 0.15rem 1rem;
+    @apply m-0 text-sm;
+  }
+  dl.kv dt {
+    @apply text-muted;
+  }
+  dl.kv dd {
+    @apply m-0;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }

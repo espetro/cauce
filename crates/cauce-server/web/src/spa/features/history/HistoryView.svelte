@@ -245,53 +245,7 @@
 {/if}
 
 <style>
-  .when {
-    color: var(--muted);
-    font-variant-numeric: tabular-nums;
-  }
-  .clicks-chevron {
-    display: inline-block;
-    transition: transform 140ms var(--ease-out);
-    margin-left: 0.25rem;
-  }
-  .clicks-chevron.open {
-    transform: rotate(90deg);
-  }
-  .click-list {
-    margin: 0.25rem 0 0.25rem 0.875rem;
-    display: flex;
-    flex-direction: column;
-    gap: 0.125rem;
-  }
-  .click-line {
-    display: flex;
-    align-items: baseline;
-    gap: 0.375rem;
-    font-size: 0.8125rem;
-  }
-  .cdom {
-    color: var(--muted);
-    flex: none;
-  }
-  .click-line a {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .cpos {
-    color: var(--muted);
-    flex: none;
-  }
-  .row-actions {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.125rem;
-  }
-  .day-header {
-    display: block;
-    color: var(--accent);
-    font-size: 0.75rem;
-    font-weight: 600;
-    letter-spacing: 0.02em;
-  }
+  /* Styles live in HistoryView.css — imported so the build resolves
+     `@apply` while Svelte's scoping semantics are unchanged. */
+  @import "./HistoryView.css";
 </style>

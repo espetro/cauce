@@ -202,30 +202,7 @@
 </UiDialog>
 
 <style>
-  .cache-query {
-    font-weight: 500;
-  }
-  .cache-query.expired {
-    color: var(--muted);
-  }
-  .expired-text {
-    color: var(--muted);
-  }
-  .engines-cell {
-    display: block;
-    max-width: 12rem;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .row-actions {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.125rem;
-  }
-  .pager {
-    display: flex;
-    gap: 1rem;
-    margin-top: 0.5rem;
-  }
+  /* Styles live in CacheTab.css — imported so the build resolves
+     `@apply` while Svelte's scoping semantics are unchanged. */
+  @import "./CacheTab.css";
 </style>
