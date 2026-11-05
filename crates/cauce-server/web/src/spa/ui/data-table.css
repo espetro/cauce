@@ -1,0 +1,98 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ *
+ * `data-table` styles — Tailwind composition via `@apply` against
+ * the app theme. Imported from the component's <script> block so
+ * the build resolves `@apply` and svelte-check's CSS parser (which
+ * does not know Tailwind's at-rules) never sees them.
+ */
+
+@reference "../app/app.css";
+
+.dt-toolbar {
+  @apply flex items-center justify-between gap-3 mb-2 flex-wrap;
+}
+
+.dt-toolbar-start {
+  @apply flex items-center gap-2 min-w-0 flex-wrap;
+}
+
+.dt-search {
+  @apply relative ml-auto;
+}
+
+.dt-search-icon {
+  @apply absolute left-2 top-1/2 -translate-y-1/2 text-muted pointer-events-none;
+}
+
+.dt-search input {
+  @apply pt-[0.3rem] pr-2 pb-[0.3rem] pl-7 border border-border rounded-[var(--radius)] bg-bg text-fg text-[0.8125rem] w-56 max-w-[60vw];
+}
+
+.dt-search input:focus-visible {
+  @apply outline-2 outline-offset-1 outline-accent;
+}
+
+.dt-wrap {
+  /* The region scrolls only when the columns cannot shrink below
+     their content floor; the table itself reflows first. */
+  @apply overflow-x-auto max-w-full;
+}
+
+table.dt {
+  @apply w-full border-collapse text-sm;
+  /* Fixed layout: a resized column keeps its width instead of
+     being squeezed by the content of its neighbours. */
+  table-layout: fixed;
+}
+
+table.dt th {
+  @apply relative text-start text-muted font-medium text-[0.8125rem] pt-1 pr-2 pb-1 pl-0 border-b border-border select-none;
+}
+
+table.dt td {
+  @apply pt-[0.4rem] pr-2 pb-[0.4rem] pl-0 border-b border-border align-top;
+  overflow-wrap: anywhere;
+}
+
+table.dt tbody tr:hover td {
+  @apply bg-greyed-bg;
+}
+
+table.dt tbody tr.dt-selected td {
+  @apply bg-greyed-bg;
+}
+
+.dt-check {
+  @apply accent-accent w-[0.9375rem] h-[0.9375rem];
+}
+
+.dt-sort {
+  @apply inline-flex items-center gap-1 p-0 border-none bg-none text-inherit cursor-pointer text-start;
+}
+
+.dt-sort:hover {
+  @apply text-fg;
+}
+
+.dt-sort-icon {
+  @apply flex-none text-accent;
+}
+
+.dt-sort-idle {
+  @apply text-muted opacity-60;
+}
+
+.dt-resize {
+  @apply absolute end-0 top-0 bottom-0 w-1.5 p-0 border-none bg-none cursor-col-resize;
+  touch-action: none;
+}
+
+.dt-resize:hover {
+  @apply bg-accent opacity-40;
+}
+
+.dt-empty {
+  @apply text-muted py-4;
+}
