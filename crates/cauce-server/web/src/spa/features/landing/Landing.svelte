@@ -148,7 +148,7 @@ cargo install --locked --git https://github.com/espetro/cauce cauce-cli`;
     <div class="scroll-x">
       <table>
         <thead>
-          <tr><th>cauce</th><th>hosted AI-search APIs</th></tr>
+          <tr><th></th><th>cauce</th><th>hosted AI-search APIs</th></tr>
         </thead>
         <tbody>
           {#each compareRows as [k, a, b] (k)}
