@@ -74,7 +74,9 @@ pub use pages::{IndexBody, PageDeleteAck, pages_delete, pages_get, pages_index};
 pub use report::report;
 pub use search::{search, search_stream};
 pub use suggest::{SuggestResponse, suggest};
-pub use threads::{thread_owner, threads_delete, threads_get, threads_list};
+#[cfg(feature = "ai")]
+pub use threads::thread_owner;
+pub use threads::{threads_delete, threads_get, threads_list};
 
 /// Cap on caller-supplied `limit`/`offset`-style page sizes.
 pub(super) const MAX_LIMIT: u32 = 1_000;

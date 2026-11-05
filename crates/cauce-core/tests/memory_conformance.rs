@@ -1,3 +1,4 @@
+#![cfg(feature = "conformance")]
 //! Conformance tests run against `cauce_core::MemoryStore`.
 
 use cauce_core::MemoryStore;

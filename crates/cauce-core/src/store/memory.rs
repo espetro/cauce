@@ -88,7 +88,7 @@ fn percentile(sorted: &[u32], p: u64) -> u32 {
     if sorted.is_empty() {
         return 0;
     }
-    let idx = ((sorted.len() as u64 * p + 99) / 100).saturating_sub(1) as usize;
+    let idx = (sorted.len() as u64 * p).div_ceil(100).saturating_sub(1) as usize;
     sorted[idx.min(sorted.len() - 1)]
 }
 
@@ -114,11 +114,11 @@ impl Store for MemoryStore {
     async fn get_exact(&self, key: &CacheKey) -> Result<Option<CachedSearch>, StoreError> {
         let mut inner = self.inner.write().unwrap();
         let now = Utc::now();
-        if let Some(entry) = inner.cache.get_mut(key) {
-            if entry.expires_at > now {
-                entry.hits += 1;
-                return Ok(Some(entry.clone()));
-            }
+        if let Some(entry) = inner.cache.get_mut(key)
+            && entry.expires_at > now
+        {
+            entry.hits += 1;
+            return Ok(Some(entry.clone()));
         }
         Ok(None)
     }
@@ -147,7 +147,7 @@ impl Store for MemoryStore {
         }
 
         // Newest created first
-        matches.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+        matches.sort_by_key(|a| std::cmp::Reverse(a.created_at));
         matches.truncate(limit as usize);
         Ok(matches)
     }
@@ -184,7 +184,7 @@ impl Store for MemoryStore {
             }
         }
 
-        hits.sort_by(|a, b| b.expires_at.cmp(&a.expires_at));
+        hits.sort_by_key(|a| std::cmp::Reverse(a.expires_at));
         hits.truncate(limit as usize);
         Ok(hits)
     }
@@ -236,7 +236,7 @@ impl Store for MemoryStore {
     async fn list_cache(&self, limit: u32, offset: u32) -> Result<Vec<CachedSearch>, StoreError> {
         let inner = self.inner.read().unwrap();
         let mut entries: Vec<CachedSearch> = inner.cache.values().cloned().collect();
-        entries.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+        entries.sort_by_key(|a| std::cmp::Reverse(a.created_at));
         let res = entries
             .into_iter()
             .skip(offset as usize)
@@ -267,10 +267,10 @@ impl Store for MemoryStore {
     async fn get_answer(&self, key: &AnswerKey) -> Result<Option<CachedAnswer>, StoreError> {
         let inner = self.inner.read().unwrap();
         let now = Utc::now();
-        if let Some(ans) = inner.answers.get(key) {
-            if ans.expires_at > now {
-                return Ok(Some(ans.clone()));
-            }
+        if let Some(ans) = inner.answers.get(key)
+            && ans.expires_at > now
+        {
+            return Ok(Some(ans.clone()));
         }
         Ok(None)
     }
@@ -354,7 +354,7 @@ impl Store for MemoryStore {
             }
         }
 
-        hits.sort_by(|a, b| b.fetched_at.cmp(&a.fetched_at));
+        hits.sort_by_key(|a| std::cmp::Reverse(a.fetched_at));
         hits.truncate(limit as usize);
         Ok(hits)
     }
@@ -362,7 +362,7 @@ impl Store for MemoryStore {
     async fn list_pages(&self, limit: u32, offset: u32) -> Result<Vec<PageHit>, StoreError> {
         let inner = self.inner.read().unwrap();
         let mut pages: Vec<&PageRow> = inner.pages.values().collect();
-        pages.sort_by(|a, b| b.fetched_at.cmp(&a.fetched_at));
+        pages.sort_by_key(|a| std::cmp::Reverse(a.fetched_at));
 
         let res = pages
             .into_iter()
@@ -450,7 +450,7 @@ impl Store for MemoryStore {
             .filter(|t| t.owner == owner)
             .cloned()
             .collect();
-        threads.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+        threads.sort_by_key(|a| std::cmp::Reverse(a.updated_at));
         threads.truncate(limit as usize);
         Ok(threads)
     }
@@ -465,10 +465,10 @@ impl Store for MemoryStore {
             Err(_) => return Ok(None),
         };
         let inner = self.inner.read().unwrap();
-        if let Some(t) = inner.threads.get(&uuid) {
-            if t.owner == owner {
-                return Ok(Some(t.clone()));
-            }
+        if let Some(t) = inner.threads.get(&uuid)
+            && t.owner == owner
+        {
+            return Ok(Some(t.clone()));
         }
         Ok(None)
     }
@@ -477,11 +477,11 @@ impl Store for MemoryStore {
         let uuid = Uuid::parse_str(id)
             .map_err(|e| StoreError::Corrupt(format!("thread id {id:?}: {e}")))?;
         let mut inner = self.inner.write().unwrap();
-        if let Some(t) = inner.threads.get(&uuid) {
-            if t.owner == owner {
-                inner.threads.remove(&uuid);
-                return Ok(true);
-            }
+        if let Some(t) = inner.threads.get(&uuid)
+            && t.owner == owner
+        {
+            inner.threads.remove(&uuid);
+            return Ok(true);
         }
         Ok(false)
     }
@@ -495,20 +495,20 @@ impl Store for MemoryStore {
 
         // Searches
         for s in inner.search_log.values() {
-            if let Some(since) = filter.since {
-                if s.ts < since {
-                    continue;
-                }
+            if let Some(since) = filter.since
+                && s.ts < since
+            {
+                continue;
             }
-            if let Some(q) = &filter.q {
-                if !s.query.contains(q) {
-                    continue;
-                }
+            if let Some(q) = &filter.q
+                && !s.query.contains(q)
+            {
+                continue;
             }
-            if let Some(origin) = filter.origin {
-                if s.origin != origin {
-                    continue;
-                }
+            if let Some(origin) = filter.origin
+                && s.origin != origin
+            {
+                continue;
             }
             if filter.cached {
                 match inner.cache.get(&s.query_hash) {
@@ -521,10 +521,10 @@ impl Store for MemoryStore {
 
         // Clicks
         for c in inner.clicks.values() {
-            if let Some(since) = filter.since {
-                if c.ts < since {
-                    continue;
-                }
+            if let Some(since) = filter.since
+                && c.ts < since
+            {
+                continue;
             }
             // `q` filter does not apply to clicks
             if let Some(origin) = filter.origin {
@@ -552,20 +552,20 @@ impl Store for MemoryStore {
         // Answers
         if !filter.cached {
             for a in inner.answer_log.values() {
-                if let Some(since) = filter.since {
-                    if a.ts < since {
-                        continue;
-                    }
+                if let Some(since) = filter.since
+                    && a.ts < since
+                {
+                    continue;
                 }
-                if let Some(q) = &filter.q {
-                    if !a.query.contains(q) {
-                        continue;
-                    }
+                if let Some(q) = &filter.q
+                    && !a.query.contains(q)
+                {
+                    continue;
                 }
-                if let Some(origin) = filter.origin {
-                    if a.origin != origin {
-                        continue;
-                    }
+                if let Some(origin) = filter.origin
+                    && a.origin != origin
+                {
+                    continue;
                 }
                 items.push((a.ts, a.id.unwrap_or(0), HistoryItem::Answer(a.clone())));
             }
@@ -628,20 +628,20 @@ impl Store for MemoryStore {
         // Matching: search_log + answer_log matching filter
         let mut matching = 0;
         for s in inner.search_log.values() {
-            if let Some(since) = filter.since {
-                if s.ts < since {
-                    continue;
-                }
+            if let Some(since) = filter.since
+                && s.ts < since
+            {
+                continue;
             }
-            if let Some(q) = &filter.q {
-                if !s.query.contains(q) {
-                    continue;
-                }
+            if let Some(q) = &filter.q
+                && !s.query.contains(q)
+            {
+                continue;
             }
-            if let Some(origin) = filter.origin {
-                if s.origin != origin {
-                    continue;
-                }
+            if let Some(origin) = filter.origin
+                && s.origin != origin
+            {
+                continue;
             }
             if filter.cached {
                 match inner.cache.get(&s.query_hash) {
@@ -654,20 +654,20 @@ impl Store for MemoryStore {
 
         if !filter.cached {
             for a in inner.answer_log.values() {
-                if let Some(since) = filter.since {
-                    if a.ts < since {
-                        continue;
-                    }
+                if let Some(since) = filter.since
+                    && a.ts < since
+                {
+                    continue;
                 }
-                if let Some(q) = &filter.q {
-                    if !a.query.contains(q) {
-                        continue;
-                    }
+                if let Some(q) = &filter.q
+                    && !a.query.contains(q)
+                {
+                    continue;
                 }
-                if let Some(origin) = filter.origin {
-                    if a.origin != origin {
-                        continue;
-                    }
+                if let Some(origin) = filter.origin
+                    && a.origin != origin
+                {
+                    continue;
                 }
                 matching += 1;
             }
@@ -799,7 +799,7 @@ impl Store for MemoryStore {
                 searches: count,
             })
             .collect();
-        by_client.sort_by(|a, b| b.searches.cmp(&a.searches));
+        by_client.sort_by_key(|a| std::cmp::Reverse(a.searches));
 
         // Top queries
         let mut query_map: HashMap<String, u64> = HashMap::new();
@@ -813,7 +813,7 @@ impl Store for MemoryStore {
                 searches: count,
             })
             .collect();
-        top_queries.sort_by(|a, b| b.searches.cmp(&a.searches));
+        top_queries.sort_by_key(|a| std::cmp::Reverse(a.searches));
         top_queries.truncate(10);
 
         // Zero-result queries
@@ -822,7 +822,7 @@ impl Store for MemoryStore {
             *zero_map.entry(s.query.clone()).or_default() += 1;
         }
         let mut zero_vec: Vec<(String, u64)> = zero_map.into_iter().collect();
-        zero_vec.sort_by(|a, b| b.1.cmp(&a.1));
+        zero_vec.sort_by_key(|a| std::cmp::Reverse(a.1));
         let zero_result_queries = zero_vec.into_iter().map(|(q, _)| q).collect();
 
         // Hits by tier
@@ -929,20 +929,20 @@ impl Store for MemoryStore {
         let inner = self.inner.read().unwrap();
         let mut rows = Vec::new();
         for r in inner.audit.values() {
-            if let Some(since) = filter.since {
-                if r.ts < since {
-                    continue;
-                }
+            if let Some(since) = filter.since
+                && r.ts < since
+            {
+                continue;
             }
-            if let Some(actor) = &filter.actor {
-                if &r.actor != actor {
-                    continue;
-                }
+            if let Some(actor) = &filter.actor
+                && &r.actor != actor
+            {
+                continue;
             }
-            if let Some(action) = &filter.action {
-                if &r.action != action {
-                    continue;
-                }
+            if let Some(action) = &filter.action
+                && &r.action != action
+            {
+                continue;
             }
             rows.push(r.clone());
         }
