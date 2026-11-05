@@ -34,7 +34,7 @@ esac
 case "$os-$arch" in
   linux-x86_64) target=x86_64-unknown-linux-musl ;;
   linux-aarch64) target=aarch64-unknown-linux-musl ;;
-  macos-x86_64) target=x86_64-apple-darwin ;;
+  macos-x86_64) die "Intel macOS builds were dropped after 0.9.2; build from source with cargo install" ;;
   macos-aarch64) target=aarch64-apple-darwin ;;
 esac
 
