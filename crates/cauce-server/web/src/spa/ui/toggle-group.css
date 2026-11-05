@@ -35,6 +35,16 @@
   @apply opacity-50 cursor-default;
 }
 
+/* Soft-disable (aria-disabled): same inactive look, still focusable —
+   the focus ring stays so keyboard users reach the explanation. */
+.ui-item-soft-disabled {
+  @apply opacity-50 cursor-not-allowed;
+}
+
+.ui-item-soft-disabled:focus-visible {
+  @apply outline-2 outline-offset-1 outline-accent;
+}
+
 .ui-toggle-group[data-disabled] {
   @apply opacity-50;
 }

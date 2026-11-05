@@ -24,6 +24,7 @@
   import { ArrowUpIcon, StopIcon } from "phosphor-svelte";
   import { SA, spa } from "../../lib/i18n.js";
   import { capabilities } from "../../lib/capabilities.svelte.js";
+  import { byok } from "../../lib/byok.svelte.js";
   import AiPromptInput from "../../ai/prompt-input/prompt-input.svelte";
   import AiPromptTextarea from "../../ai/prompt-input/prompt-input-textarea.svelte";
   import AiPromptActions from "../../ai/prompt-input/prompt-input-actions.svelte";
@@ -47,6 +48,7 @@
   interface ModeOption {
     value: "search" | "ai";
     label: string;
+    softDisabled?: boolean;
   }
 
   let {
@@ -71,16 +73,51 @@
     return aiMode ? spa.answer.submit : spa.search.submit;
   });
 
+  // Why AI mode is not selectable. Two ways to make it usable: a
+  // server-side provider (`aiEnabled`), or the caller's own key on an
+  // instance that allows BYOK (`allowUserKeys` + a stored key).
+  // Everything else is a disabled item whose hover/focus popover names
+  // the reason and links to settings:
+  //  - BYOK allowed but no key stored → the visitor brings their own;
+  //  - no BYOK and no server AI → the instance has none configured.
+  const byokAllowed = $derived(capabilities.flags.allowUserKeys);
+  const hasOwnKey = $derived(byok.api_key.trim() !== "");
+  const aiUsable = $derived(capabilities.aiEnabled || (byokAllowed && hasOwnKey));
+  const aiDisabledReason = $derived.by(() => {
+    if (aiUsable) return "";
+    return byokAllowed ? spa.app.ai_disabled_byok : spa.app.ai_disabled_unavailable;
+  });
+
   // bind:ref into a $bindable prop throws props_invalid_value on
   // undefined — the ref must start as null, never undefined.
   let inputEl = $state<HTMLTextAreaElement | null>(null);
 
+  // The AI-mode disabled popover: hover/focus-driven, only while the
+  // mode is not selectable. Keyboard users get it via focus-within.
+  // The AI-mode disabled popover: hover/focus-driven, only while the
+  // mode is not selectable. Keyboard users get it via focus-within.
+  let popoverOpen = $state(false);
+
   const modeOptions = $derived<ModeOption[]>([
     { value: "search", label: spa.search.submit },
-    { value: "ai", label: spa.search.ai_mode },
+    {
+      value: "ai",
+      label: spa.search.ai_mode,
+      // The item is disabled while the mode is not usable; the hover /
+      // focus popover (on the wrapper) says why.
+      // Soft-disabled: the item keeps its place in the tab order (a
+      // hard-disabled item is unreachable, so the keyboard could
+      // never read the popover that explains why).
+      softDisabled: !aiUsable,
+    },
   ]);
 
   function arm(mode: "search" | "ai") {
+    if (mode === "ai" && !aiUsable) {
+      // The mode is not selectable here: say why instead of arming it.
+      popoverOpen = true;
+      return;
+    }
     aiMode = mode === "ai";
     inputEl?.focus();
   }
@@ -131,12 +168,33 @@
         >
       {/if}
     </div>
-    {#if capabilities.aiEnabled && !followup}
+    {#if !followup}
       <AiPromptActions>
-        <UiToggleGroup
-          bind:value={() => (aiMode ? "ai" : "search"), armFromGroup}
-          options={modeOptions}
-        />
+        <!-- The wrapper anchors the AI-disabled popover (hover or focus
+             within). `role="group"` gives the mouse handlers an ARIA
+             role; the toggle group inside keeps its own semantics. -->
+        <div
+          class="mode-wrap"
+          role="group"
+          aria-label={spa.search.mode_group_label}
+          onmouseenter={() => (popoverOpen = aiDisabledReason !== "")}
+          onmouseleave={() => (popoverOpen = false)}
+          onfocusin={() => (popoverOpen = aiDisabledReason !== "")}
+          onfocusout={() => (popoverOpen = false)}
+        >
+          <UiToggleGroup
+            bind:value={() => (aiMode ? "ai" : "search"), armFromGroup}
+            options={modeOptions}
+          />
+          {#if popoverOpen && aiDisabledReason !== ""}
+            <div class="mode-popover" role="note">
+              <p>{aiDisabledReason}</p>
+              {#if byokAllowed}
+                <a href="/app/settings">{spa.app.ai_disabled_settings_link}</a>
+              {/if}
+            </div>
+          {/if}
+        </div>
       </AiPromptActions>
     {/if}
   </AiPromptInput>

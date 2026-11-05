@@ -24,3 +24,41 @@
     flex: 1 1 auto;
     min-width: 0;
   }
+
+  /* The mode segment wrapper: anchor for the AI-disabled popover
+     (hover or focus-within on the group). */
+  .mode-wrap {
+    position: relative;
+    display: inline-flex;
+  }
+
+  .mode-popover {
+    position: absolute;
+    bottom: calc(100% + 0.5rem);
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 30;
+    width: max-content;
+    max-width: 17rem;
+    padding: 0.5rem 0.75rem;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 0.5rem;
+    box-shadow: 0 4px 12px rgb(0 0 0 / 0.15);
+    font-size: 0.8125rem;
+    line-height: 1.4;
+    color: var(--muted);
+    text-align: left;
+  }
+
+  .mode-popover p {
+    margin: 0;
+  }
+
+  .mode-popover a {
+    display: inline-block;
+    margin-top: 0.25rem;
+    color: var(--accent);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }

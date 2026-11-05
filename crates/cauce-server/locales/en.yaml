@@ -72,6 +72,9 @@ search:
   # between `/search` and `/answer`; renders only while an answer
   # loop exists.
   ai_mode: AI mode
+  # The omnibox Search/AI segment wrapper (aria-label on the group's
+  # container).
+  mode_group_label: Search mode
   # Result-count suffix (`12 results`).
   results: results
   # Empty-state lead-in (`No results` / `No results · <statuses>`).
@@ -817,6 +820,17 @@ app:
   backend_degraded_desc: The backend is up but reporting errors — some calls may fail.
   backend_retry: retry now
   backend_back: Backend is back
+  # The omnibox AI-mode segment: the item is disabled while the mode is
+  # not usable, and this popover names why — the BYOK variant invites
+  # the visitor to set their own key, the other covers an instance with
+  # no AI at all. The link text points at `/app/settings`.
+  ai_disabled_byok: AI mode needs an AI provider. This instance accepts your own key.
+  ai_disabled_unavailable: AI mode is not available on this instance.
+  ai_disabled_settings_link: Set up AI in settings
+
+landing:
+  # The circular scroll cue under the landing search bar.
+  scroll_cue: Scroll to learn more
 
 admin:
   # FX-05 merged ops surface `/app/admin` — tab labels reuse nav casing.

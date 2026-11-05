@@ -18,10 +18,12 @@
 -->
 <script lang="ts">
   import { onMount } from "svelte";
+  import { ArrowDownIcon } from "phosphor-svelte";
   import { navigate } from "../app/router.svelte.js";
   import { createSearchPage } from "../features/search/search.svelte.js";
   import { spa } from "../lib/i18n.js";
   import { LANDING } from "../lib/flags.js";
+  import { capabilities } from "../lib/capabilities.svelte.js";
   import markUrl from "../assets/cauce-mark.png";
   import Omnibox from "../features/search/Omnibox.svelte";
   import Landing from "../features/landing/Landing.svelte";
@@ -59,9 +61,22 @@
     />
     {#if LANDING}
       <!-- The reserved air band: intentionally empty (a trending or
-           plugin slot lands here later). Tall enough to read as a
-           choice, and what pushes the marketing to the fold edge. -->
-      <div class="air" aria-hidden="true"></div>
+           plugin slot lands here later). The scroll cue sits at its
+           bottom edge — a slow circular bounce pointing at the first
+           marketing section just below the fold. -->
+      <div class="air">
+        <a
+          class="scroll-cue"
+          href="#one-server"
+          aria-label={spa.landing.scroll_cue}
+          onclick={(e) => {
+            e.preventDefault();
+            document.querySelector("#one-server")?.scrollIntoView({ behavior: "smooth" });
+          }}
+        >
+          <ArrowDownIcon size={16} weight="bold" aria-hidden="true" />
+        </a>
+      </div>
     {/if}
   </div>
   {#if LANDING}
@@ -108,8 +123,12 @@
     font-size: clamp(1.6rem, 5vw, 2.4rem);
     letter-spacing: -0.02em;
   }
+  /* The mark carries the identity next to a 38px wordmark: it must read
+     as the logo, not a bullet. 3.25rem-4.25rem keeps the two optically
+     balanced (the 2048px source downscaled to 512 keeps it crisp at
+     2x). */
   .logotype img {
-    width: clamp(2.75rem, 7vw, 3.5rem);
+    width: clamp(3.25rem, 8.5vw, 4.25rem);
     height: auto;
     display: block;
   }
@@ -119,6 +138,50 @@
      the section heading just peeks in at the bottom). */
   .air {
     height: clamp(10rem, 42vh, 26rem);
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+  }
+  /* The scroll cue: a circular button that bobs, pointing at the
+     first marketing section below the fold. */
+  .scroll-cue {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.5rem;
+    height: 2.5rem;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: var(--bg);
+    color: var(--muted);
+    text-decoration: none;
+    margin-bottom: clamp(1rem, 4vh, 2.5rem);
+    animation: cue-bob 2.4s ease-in-out infinite;
+    transition:
+      color 120ms ease-out,
+      border-color 120ms ease-out;
+  }
+  .scroll-cue:hover {
+    color: var(--fg);
+    border-color: var(--fg);
+  }
+  .scroll-cue:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+  @keyframes cue-bob {
+    0%,
+    100% {
+      transform: translateY(0);
+    }
+    50% {
+      transform: translateY(6px);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .scroll-cue {
+      animation: none;
+    }
   }
   @media (max-width: 640px) {
     .hero-landing {

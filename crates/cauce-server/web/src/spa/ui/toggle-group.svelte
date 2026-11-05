@@ -25,6 +25,12 @@
     value: string;
     label: string;
     disabled?: boolean;
+    /**
+     * Soft-disable: `aria-disabled` without Bits' `disabled` — the item
+     * stays focusable so its own explanation (a wrapper popover) is
+     * keyboard-reachable; the activation is refused upstream.
+     */
+    softDisabled?: boolean;
   }
 
   interface Props {
@@ -57,9 +63,10 @@
 >
   {#each options as option (option.value)}
     <ToggleGroup.Item
-      class="ui-toggle-item"
+      class="ui-toggle-item{option.softDisabled ? ' ui-item-soft-disabled' : ''}"
       value={option.value}
       disabled={option.disabled}
+      aria-disabled={option.softDisabled || undefined}
       aria-label={option.label}
     >
       {option.label}
