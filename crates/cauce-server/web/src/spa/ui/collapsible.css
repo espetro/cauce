@@ -1,0 +1,60 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ *
+ * `collapsible` styles — Tailwind composition via `@apply` against
+ * the app theme. Imported from the component's <script> block so
+ * the build resolves `@apply` and svelte-check's CSS parser (which
+ * does not know Tailwind's at-rules) never sees them.
+ */
+
+@reference "../app/app.css";
+
+.ui-collapsible-trigger {
+  @apply flex items-center gap-[0.4rem] w-full p-0 border-none bg-none text-inherit cursor-pointer text-start;
+}
+
+.ui-collapsible-trigger:focus-visible {
+  @apply outline-2 outline-offset-1 outline-accent;
+}
+
+.ui-collapsible-trigger[data-disabled] {
+  @apply opacity-50 cursor-default;
+}
+
+.ui-collapsible-content {
+  @apply overflow-hidden;
+}
+
+.ui-collapsible-content[data-state="open"] {
+  animation: ui-collapsible-open 160ms ease-out;
+}
+
+.ui-collapsible-content[data-state="closed"] {
+  animation: ui-collapsible-close 160ms ease-in;
+}
+
+@keyframes ui-collapsible-open {
+  from {
+    height: 0;
+  }
+  to {
+    height: var(--bits-collapsible-content-height);
+  }
+}
+
+@keyframes ui-collapsible-close {
+  from {
+    height: var(--bits-collapsible-content-height);
+  }
+  to {
+    height: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-collapsible-content[data-state="open"],
+  .ui-collapsible-content[data-state="closed"] {
+    animation: none;
+  }
+}
