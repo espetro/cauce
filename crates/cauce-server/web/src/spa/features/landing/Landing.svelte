@@ -63,7 +63,7 @@ cargo install --locked --git https://github.com/espetro/cauce cauce-cli`;
 </script>
 
 <div class="landing">
-  <section>
+  <section id="one-server">
     <h2>One server, three surfaces.</h2>
     <p class="lead">
       Same pipeline, same cache, same <code>search_log</code> — pick the surface that fits.
