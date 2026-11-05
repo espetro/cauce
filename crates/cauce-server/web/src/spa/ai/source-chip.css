@@ -1,0 +1,38 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ *
+ * source-chip styles — Tailwind composition via `@apply` against the app theme.
+ * These classes are used across component boundaries (portal/render
+ * targets outside the component tree), so they are intentionally
+ * global — imported from the script, not the style block.
+ */
+
+@reference "../app/app.css";
+
+/* Same pill the legacy `.assist-chip` carried. */
+  .ai-source-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--bg);
+    color: var(--fg);
+    font-size: 0.8125rem;
+    padding: 0.125rem 0.625rem;
+    text-decoration: none;
+    transition: border-color 140ms var(--ease-out);
+  }
+
+  .ai-source-chip:hover {
+    @apply border-accent;
+  }
+
+  .ai-source-chip img {
+    border-radius: 50%;
+  }
+
+  .ai-source-chip:focus-visible {
+    @apply outline-2 outline-offset-1 outline-accent;
+  }
