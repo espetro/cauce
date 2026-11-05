@@ -14,6 +14,11 @@
   import { Dialog } from "bits-ui";
   import { XIcon } from "phosphor-svelte";
   import type { Snippet } from "svelte";
+  // The component's Tailwind composition (dialog.css) is a plain stylesheet imported from the script: the build
+  // resolves its `@apply` against the app theme, and svelte-check's
+  // CSS parser — which does not know Tailwind's at-rules — never
+  // sees them.
+  import "./dialog.css";
 
   interface Props {
     open: boolean;
@@ -41,92 +46,3 @@
   </Dialog.Portal>
 </Dialog.Root>
 
-<style>
-  :global(.ui-dialog-overlay) {
-    position: fixed;
-    inset: 0;
-    background: var(--overlay);
-    z-index: 50;
-    /* ScrollLock sets body pointer-events:none — re-arm the scrim
-       so it eats clicks instead of leaking them to the page (same
-       recipe as ui/alert-dialog). */
-    pointer-events: auto;
-    animation: ui-dialog-overlay-in 200ms var(--ease-out);
-  }
-
-  @keyframes ui-dialog-overlay-in {
-    from {
-      opacity: 0;
-    }
-    to {
-      opacity: 1;
-    }
-  }
-
-  :global(.ui-dialog-content) {
-    position: fixed;
-    top: 50%;
-    left: 50%;
-    width: min(92vw, 40rem);
-    max-height: 80vh;
-    overflow: auto;
-    padding: 1rem 1.25rem;
-    border: 1px solid var(--border);
-    border-radius: calc(var(--radius) * 1.5);
-    background: var(--bg);
-    color: var(--fg);
-    box-shadow: var(--shadow);
-    z-index: 51;
-    transform: translate(-50%, -50%);
-    animation: ui-dialog-content-in 220ms var(--ease-out);
-  }
-
-  @keyframes ui-dialog-content-in {
-    from {
-      opacity: 0;
-      transform: translate(-50%, -50%) scale(0.97);
-    }
-    to {
-      opacity: 1;
-      transform: translate(-50%, -50%) scale(1);
-    }
-  }
-
-  :global(.ui-dialog-head) {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 1rem;
-    margin-bottom: 0.5rem;
-  }
-
-  :global(.ui-dialog-title) {
-    margin: 0;
-    font-size: 1rem;
-    font-weight: 700;
-  }
-
-  :global(.ui-dialog-close) {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 1.75rem;
-    height: 1.75rem;
-    padding: 0;
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    background: var(--bg);
-    color: var(--muted);
-    cursor: pointer;
-  }
-
-  :global(.ui-dialog-close:hover) {
-    background: var(--greyed-bg);
-    color: var(--fg);
-  }
-
-  :global(.ui-dialog-close:focus-visible) {
-    outline: 2px solid var(--accent);
-    outline-offset: 1px;
-  }
-</style>
