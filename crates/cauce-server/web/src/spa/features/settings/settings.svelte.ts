@@ -26,7 +26,8 @@ import {
   putConfig,
 } from "../../lib/api.js";
 import { fmtHm, humanBytes } from "../../lib/format.js";
-import { spa } from "../../lib/i18n.js";
+import { fmt, spa } from "../../lib/i18n.js";
+import { toast } from "svelte-sonner";
 import { confirm } from "../../ui/confirm.js";
 
 const S = () => spa.settings;
@@ -179,16 +180,29 @@ export function createSettingsPage() {
     state.statusError = false;
     try {
       const res: ConfigPutResponse = await putConfig(formBody(output));
-      state.status = res.effective_after_restart
-        ? `${S().saved} · ${S().applies_after_restart} ${res.requires_restart.join(", ")}`
-        : S().saved;
       state.form = formFrom(res);
       reset(form, { initialInput: state.form });
       void cacheLine();
+      // D6: the save story is a toast, not a status line — the toast
+      // names the restart-needed keys when the server defers them.
+      if (res.effective_after_restart) {
+        toast.warning(
+          fmt(S().saved_restart_toast, { keys: res.requires_restart.join(", ") }),
+          { duration: 8_000 },
+        );
+      } else {
+        toast.success(S().saved_toast, { duration: 4_000 });
+      }
     } catch (e) {
       state.status = `${S().could_not_save} (${e instanceof Error ? e.message : String(e)})`;
       state.statusError = true;
+      toast.error(S().save_failed_toast, { description: state.status });
     }
+  }
+
+  /** Restore the dirty baseline (Discard button / discard action). */
+  function discard(): void {
+    if (state.form != null) reset(form, { initialInput: state.form });
   }
 
   async function bulkDelete(scope: "expired" | "all"): Promise<void> {
@@ -208,5 +222,5 @@ export function createSettingsPage() {
     }
   }
 
-  return { state, form, refresh, save, bulkDelete };
+  return { state, form, refresh, save, discard, bulkDelete };
 }

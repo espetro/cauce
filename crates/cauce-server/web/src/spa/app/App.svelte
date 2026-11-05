@@ -72,9 +72,13 @@
   const active = $derived.by(() => {
     switch (route.path) {
       case "/search":
+        // Mode consolidation: one search surface; `?mode=ai` still
+        // highlights the search nav entry.
         return "search";
       case "/answer":
-        return "answer";
+        // Legacy path kept for old links; it routes to the same shell
+        // below and reads as search now.
+        return "search";
       case "/history":
         return "history";
       case "/dashboard":
@@ -105,8 +109,14 @@
   {:else if route.path === "/"}
     <HomePage />
   {:else if route.path === "/search"}
-    <SearchPage params={route.params} />
+    {#if route.params.get("mode") === "ai"}
+      <AnswerPage params={route.params} />
+    {:else}
+      <SearchPage params={route.params} />
+    {/if}
   {:else if route.path === "/answer"}
+    <!-- Legacy links (`/answer?q=`, `/answer?thread=`) still work; the
+         canonical URL is now `/search?mode=ai`. -->
     <AnswerPage params={route.params} />
   {:else if route.path === "/history"}
     <HistoryPage params={route.params} />

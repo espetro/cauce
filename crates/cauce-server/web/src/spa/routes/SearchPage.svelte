@@ -17,6 +17,7 @@
   import ConversationShell from "../app/ConversationShell.svelte";
   import Omnibox from "../features/search/Omnibox.svelte";
   import ResultRows from "../features/search/ResultRows.svelte";
+  import FilterBar from "../features/search/FilterBar.svelte";
   import UiButton from "../ui/button.svelte";
 
   interface SearchPageProps {
@@ -28,10 +29,61 @@
   const page = createSearchPage();
 
   const askUrl = $derived(
-    capabilities.aiEnabled ? appHref("/answer?q=" + encodeURIComponent(page.q)) : "",
+    capabilities.aiEnabled ? appHref("/search?mode=ai&q=" + encodeURIComponent(page.q)) : "",
   );
 
+  // D3: the shared FilterBar's field array — pre-shaped per the honest
+  // capability gate so the row never advertises an engine filter the
+  // selected engines cannot honour (plan §182-188).
+  const filterFields = $derived([
+    {
+      key: "time_range",
+      label: spa.filter.time_range,
+      type: "select" as const,
+      value: page.timeRange,
+      options: [
+        { value: "", label: spa.filter.time_range_all },
+        { value: "day", label: spa.filter.time_range_day },
+        { value: "week", label: spa.filter.time_range_week },
+        { value: "month", label: spa.filter.time_range_month },
+        { value: "year", label: spa.filter.time_range_year },
+      ],
+    },
+    {
+      key: "safesearch",
+      label: spa.filter.safesearch,
+      type: "select" as const,
+      value: page.safeSearch,
+      options: [
+        { value: "", label: spa.filter.safesearch_off },
+        { value: "moderate", label: spa.filter.safesearch_moderate },
+        { value: "strict", label: spa.filter.safesearch_strict },
+      ],
+    },
+    {
+      key: "engines",
+      label: spa.filter.engines,
+      type: "multi-select" as const,
+      value: page.engines,
+      options: capabilities.engineIds.map((id) => ({ value: id, label: id })),
+      placeholder: spa.filter.engines_placeholder,
+      hint: spa.filter.engines_hint,
+      disabled: capabilities.engineIds.length <= 1,
+    },
+    {
+      key: "lang",
+      label: spa.filter.lang,
+      type: "text" as const,
+      value: page.lang,
+      placeholder: spa.filter.lang_placeholder,
+      submitOnChange: false,
+    },
+  ]);
+
   onMount(() => {
+    // Mode consolidation: `?mode=ai` arms the omnibox segment so the
+    // toggle reflects (and submits back to) the URL state.
+    page.aiMode = params.get("mode") === "ai";
     void page.run(params);
     document.title = page.q ? page.q + " · " + spa.common.brand : spa.common.brand;
   });
@@ -66,6 +118,13 @@
         {/if}
         {#if askUrl}<span><a id="ask-link" href={askUrl}>{spa.answer.ask_link}</a></span>{/if}
       </p>
+      <FilterBar
+        fields={filterFields}
+        onChange={(key, value) => page.setFilter(key, value)}
+        showSubmit
+        submitLabel={spa.filter.submit}
+        onSubmit={() => {}}
+      />
       {#if page.streamError}
         <p class="field-error" role="alert">{page.streamError}</p>
       {/if}
@@ -85,7 +144,7 @@
 </ConversationShell>
 
 <style>
-  .more-row {
-    margin: 0.75rem 0;
-  }
+  /* Styles live in SearchPage.css — imported so the build resolves
+     `@apply` while Svelte's scoping semantics are unchanged. */
+  @import "./SearchPage.css";
 </style>

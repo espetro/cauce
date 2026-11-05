@@ -18,6 +18,11 @@
 <script lang="ts">
   import { Tooltip } from "bits-ui";
   import type { Snippet } from "svelte";
+  // The component's Tailwind composition (tooltip.css) is a plain stylesheet imported from the script: the build
+  // resolves its `@apply` against the app theme, and svelte-check's
+  // CSS parser — which does not know Tailwind's at-rules — never
+  // sees them.
+  import "./tooltip.css";
 
   interface Props {
     content: string;
@@ -55,35 +60,3 @@
   </Tooltip.Portal>
 </Tooltip.Root>
 
-<style>
-  :global(.ui-tooltip-content) {
-    max-width: 16rem;
-    padding: 0.25rem 0.5rem;
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    background: var(--bg);
-    color: var(--fg);
-    font-size: 0.75rem;
-    line-height: 1.4;
-    box-shadow: var(--shadow);
-    z-index: 50;
-    animation: ui-tooltip-in 150ms ease-out;
-  }
-
-  @keyframes ui-tooltip-in {
-    from {
-      opacity: 0;
-      transform: translateY(2px) scale(0.98);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0) scale(1);
-    }
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    :global(.ui-tooltip-content) {
-      animation: none;
-    }
-  }
-</style>

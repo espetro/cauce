@@ -118,6 +118,33 @@ search:
   # Kind word when the wire payload names none.
   err_unknown: failed
 
+# D3: the shared FilterBar's copy (search + history surfaces).
+filter:
+  # Column labels.
+  time_range: time range
+  safesearch: safe search
+  engines: engines
+  lang: language
+  # Time-range options; the empty value means "any time".
+  time_range_all: any time
+  time_range_day: past day
+  time_range_week: past week
+  time_range_month: past month
+  time_range_year: past year
+  # Safe-search levels; the empty value means "off".
+  safesearch_off: 'off'
+  safesearch_moderate: moderate
+  safesearch_strict: strict
+  # Engine multi-select placeholder + hint.
+  engines_placeholder: select engines…
+  engines_hint: leave empty for defaults
+  # Language input placeholder.
+  lang_placeholder: e.g. en
+  # Submit button label.
+  submit: search
+  # "Clear filters" link.
+  clear: clear
+
 # `/cache` page copy (W2-04).
 cache:
   page_title: Cache
@@ -174,6 +201,24 @@ cache:
   expires_in: expires in {rel}
   # Row expiry phrase once `expires_at` has passed.
   expired_ago: expired {rel} ago
+  # Data-table column headers (D6 cache listing rebuild).
+  col_query: Query
+  col_created: Created
+  col_expires: Expires
+  col_hits: Hits
+  col_engines: Engines
+  col_size: Size
+  # Per-row info icon aria label (opens the payload dialog).
+  details: View payload
+  # Payload dialog title.
+  payload_title: Cached payload
+  # Toolbar bulk-delete button for the selected rows.
+  delete_selected: Delete selected
+  # Confirm body for a multi-row selection delete.
+  confirm_selected: Delete the selected cache entries?
+  # Toolbar error when some selection deletes failed; the number is
+  # prefixed (`2 failed`).
+  delete_failed: failed
 settings:
   page_title: Settings
   editing: editing
@@ -192,6 +237,10 @@ settings:
   tier_default: default
   proxy: egress proxy
   proxy_placeholder: direct
+  # Settings engines-table column headers (title case like the admin
+  # listing's; `tier`/`proxy` stay lowercase as the form-row labels).
+  col_tier: Tier
+  col_proxy: Egress proxy
   browse_engines: browse engines
   section_admission: Admission
   max_wait: Max queue wait (ms)
@@ -240,6 +289,56 @@ settings:
   byok_protocol: Protocol
   byok_protocol_default: instance default
   byok_base_url_locked: not allowed by this instance
+  # BYOK model picker: the provider's own `/models` list, fetched
+  # client-side from the base_url (no server proxy — the browser holds
+  # the key). The free-text input stays as the fallback.
+  byok_load_models: Load models
+  byok_models_loading: Loading…
+  byok_models_empty: The provider returned no models.
+  byok_models_failed: Could not load models
+  # BYOK test button: one tiny grounded answer through the real path.
+  byok_test: Test
+  byok_testing: Testing…
+  byok_test_ok: Connection works.
+  # D2 settings rebuild: tab bar + general/privacy rows.
+  general_tab: General
+  privacy_tab: Privacy
+  search_defaults_tab: Search defaults
+  instance_tab: Instance
+  ai_tab: AI
+  section_general: General
+  section_privacy: Privacy
+  section_search_defaults: Search defaults
+  theme: Theme
+  language: Language
+  results_per_page: Results per page
+  safe_search: Safe search
+  safesearch_off: 'off'
+  safesearch_moderate: moderate
+  safesearch_strict: strict
+  region: Region
+  default_engines: Default engines
+  default_engines_hint: Set per engine in the Engines page.
+  page_size: Page size
+  ttl_default: Default
+  page_size_default: Default
+  theme_system: system
+  theme_light: light
+  theme_dark: dark
+  # D6 settings rebuild: single page, grouped sections, two-column
+  # label/field grid, explicit save semantics.
+  section_browser: Browser
+  browser_hint: Saved in this browser, applied immediately.
+  section_instance: Instance
+  instance_hint: Server config — review, then Save. Marked keys need a restart.
+  discard: Discard
+  discard_confirm_title: Discard changes?
+  discard_confirm_body: Unsaved instance config edits will be lost.
+  saved_toast: Settings saved
+  saved_restart_toast: 'Settings saved — restart needed for {keys}'
+  save_failed_toast: Could not save settings
+  dirty_toast_title: Unsaved changes
+  dirty_toast_body: You have unsaved instance config edits.
 
 # `/history` page copy (W2-02).
 history:
@@ -498,6 +597,22 @@ engines:
   # Inline meta for a failed non-test htmx call (reset/toggle);
   # `{status}` is the HTTP status code.
   request_failed: 'request failed: HTTP {status}'
+  # Data-table column headers (D6 engines listing rebuild — the cards
+  # became rows; per-row actions live in the trailing column).
+  col_engine: Engine
+  col_kind: Kind
+  col_enabled: Enabled
+  col_breaker: Breaker
+  col_ewma: EWMA
+  col_p95: p95
+  col_reliability: Reliability
+  col_requests: Requests today
+  # Summary cell note for an engine the resolved config does not name
+  # or the running pipeline lacks (compact form of `not_in_config` /
+  # `not_running`).
+  cell_flags: not in config · not running
+  # Per-row actions aria labels.
+  action_details: Engine details
 
 # `/answer` page copy (W4-03): the ask form, the streamed-answer shell
 # and every string the shell's inline JS interpolates (serialized as
@@ -666,7 +781,7 @@ app:
   # words; the subtitle says what it is for. A first-time visitor
   # should be able to answer "what is this?" without scrolling.
   home_eyebrow: metasearch for humans and agents
-  home_subtitle: One server, three surfaces — a web UI, an HTTP API and an MCP server, over the same cache.
+  home_subtitle: Local metasearch for humans and agents. Free, private, and yours to self-host.
   # Link off the fallback that reloads the canonical HTMX page.
   open_html: Open the HTML page
   # Aria-live hint while a streaming search is in flight (the

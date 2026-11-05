@@ -15,6 +15,11 @@
 -->
 <script lang="ts">
   import { ToggleGroup } from "bits-ui";
+  // The component's Tailwind composition (toggle-group.css) is a plain stylesheet imported from the script: the build
+  // resolves its `@apply` against the app theme, and svelte-check's
+  // CSS parser — which does not know Tailwind's at-rules — never
+  // sees them.
+  import "./toggle-group.css";
 
   interface ToggleOption {
     value: string;
@@ -62,53 +67,3 @@
   {/each}
 </ToggleGroup.Root>
 
-<style>
-  /* Same pill segment the composer tool row already had (.segment). */
-  :global(.ui-toggle-group) {
-    display: inline-flex;
-    gap: 0.125rem;
-    padding: 0.125rem;
-    border: 1px solid var(--border);
-    border-radius: 999px;
-  }
-
-  :global(.ui-toggle-item) {
-    padding: 0.25rem 0.75rem;
-    border: none;
-    border-radius: 999px;
-    background: transparent;
-    color: var(--muted);
-    font: inherit;
-    font-size: 0.8125rem;
-    cursor: pointer;
-    transition:
-      background-color 120ms ease-out,
-      color 120ms ease-out;
-  }
-
-  :global(.ui-toggle-item[data-state="on"]) {
-    background: var(--accent);
-    /* Same on-accent recipe as ui/checkbox's mark. */
-    color: var(--bg);
-  }
-
-  :global(.ui-toggle-item:focus-visible) {
-    outline: 2px solid var(--accent);
-    outline-offset: 1px;
-  }
-
-  :global(.ui-toggle-item[data-disabled]) {
-    opacity: 0.5;
-    cursor: default;
-  }
-
-  :global(.ui-toggle-group[data-disabled]) {
-    opacity: 0.5;
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    :global(.ui-toggle-item) {
-      transition: none;
-    }
-  }
-</style>

@@ -1,0 +1,37 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ *
+ * ThreadsSection styles — Tailwind composition via `@apply` against the app theme.
+ * Imported from the component's <style> block: the build resolves
+ * `@apply` (via the @reference below) and Svelte's scoping semantics
+ * for the component's local classes are preserved exactly.
+ */
+
+@reference "../../app/app.css";
+
+  .threads {
+    @apply mb-6;
+  }
+
+  .thread-list {
+    @apply m-0 p-0;
+    list-style: none;
+  }
+
+  .thread-row {
+    @apply flex flex-wrap items-center;
+    gap: 0.25rem 0.9rem;
+    padding: 0.5rem 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .thread-title {
+    flex: 1 1 14rem;
+    min-width: 0;
+    @apply overflow-hidden text-ellipsis whitespace-nowrap;
+  }
+
+  .thread-meta {
+    @apply text-muted text-sm;
+  }

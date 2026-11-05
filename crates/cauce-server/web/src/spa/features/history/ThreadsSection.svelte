@@ -42,35 +42,7 @@
 {/if}
 
 <style>
-  .threads {
-    margin-bottom: 1.5rem;
-  }
-
-  .thread-list {
-    margin: 0;
-    padding: 0;
-    list-style: none;
-  }
-
-  .thread-row {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 0.25rem 0.9rem;
-    padding: 0.5rem 0;
-    border-bottom: 1px solid var(--border);
-  }
-
-  .thread-title {
-    flex: 1 1 14rem;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .thread-meta {
-    color: var(--muted);
-    font-size: 0.875rem;
-  }
+  /* Styles live in ThreadsSection.css — imported so the build resolves
+     `@apply` while Svelte's scoping semantics are unchanged. */
+  @import "./ThreadsSection.css";
 </style>

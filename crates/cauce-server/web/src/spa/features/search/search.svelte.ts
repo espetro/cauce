@@ -92,7 +92,7 @@ export interface SearchRow {
 
 export class SearchPageState {
   q = $state("");
-  /** AI-mode segment of the omnibox (submit -> `/answer?q=`). */
+  /** AI-mode segment of the omnibox (submit -> `/search?mode=ai&q=…`). */
   aiMode = $state(false);
   rows = $state<SearchRow[]>([]);
   hasSearched = $state(false);
@@ -113,6 +113,19 @@ export class SearchPageState {
   moreBusy = $state(false);
   /** The `CacheKey` this search's beacons join on (`null` = unknown). */
   hash = $state<string | null>(null);
+
+  // --- D3: the shared FilterBar (plan §182-188). The route owns these;
+  //     they are read from `params` in `run()` and written back via
+  //     `setFilter()` which navigates to a shareable URL. Until a filter
+  //     is set the value is "" (or []), which the API treats as unset.
+  /** `?time_range=` — day | week | month | year. */
+  timeRange = $state("");
+  /** `?safesearch=` — off | moderate | strict. */
+  safeSearch = $state("");
+  /** `?engines=` — comma-separated pin; [] means "use defaults". */
+  engines = $state<string[]>([]);
+  /** `?lang=` — ISO 639-1 or "" for the instance default. */
+  lang = $state("");
 
   #source: EventSource | null = null;
   #arrivals: string[] = [];
@@ -187,6 +200,12 @@ export class SearchPageState {
       }
     }
     this.hasSearched = true;
+    // D3: mirror the validated params into the FilterBar's state so the
+    // row renders the URL's filters (a shareable URL opens the same row).
+    this.timeRange = params.get("time_range") ?? "";
+    this.safeSearch = params.get("safesearch") ?? "";
+    this.lang = params.get("lang") ?? "";
+    this.engines = pinned;
     const api = apiParams(params);
     void this.#armHash(params);
     if (stream === "1") {
@@ -194,6 +213,27 @@ export class SearchPageState {
     } else {
       await this.#fetch(api);
     }
+  }
+
+  /**
+   * D3: write one filter back to the state and re-run the whole search —
+   * the same path an omnibox submit takes, so cache keys, streams and the
+   * URL stay in lockstep. The `engines` pin gets revalidated inside `run`.
+   */
+  async setFilter(key: string, value: unknown): Promise<void> {
+    if (key === "time_range") {
+      this.timeRange = String(value ?? "");
+    } else if (key === "safesearch") {
+      this.safeSearch = String(value ?? "");
+    } else if (key === "lang") {
+      this.lang = String(value ?? "");
+    } else if (key === "engines") {
+      this.engines = Array.isArray(value) ? value.map((s) => String(s)) : [];
+    }
+    const params = new URLSearchParams(this.#params);
+    if (String(value ?? "") === "") params.delete(key);
+    else params.set(key, String(value));
+    await this.run(params);
   }
 
   /** `More` — fetch page N+1 and replace the rows (outerHTML swap parity). */
@@ -219,12 +259,14 @@ export class SearchPageState {
     }
   }
 
-  /** Omnibox submit: `/app/answer?q=` in AI mode, `/app/search?…&stream=1` else. */
+  /** Omnibox submit: `/search?mode=ai&q=…` in AI mode (mode persisted
+      in the URL), `/search?q=…&stream=1` else. Both land on the one
+      search surface; `/answer/{log_id}` stays the durable SSR link. */
   submit(navigate: (to: string) => void): void {
     const value = this.q.trim();
     if (!value) return;
     if (this.aiMode) {
-      navigate("/app/answer?q=" + encodeURIComponent(value));
+      navigate("/app/search?mode=ai&q=" + encodeURIComponent(value));
       return;
     }
     navigate("/app/search?q=" + encodeURIComponent(value) + "&stream=1");
@@ -287,6 +329,12 @@ export class SearchPageState {
     this.moreVisible = false;
     this.moreBusy = false;
     this.hash = null;
+    // D3: clear the filter mirror so an early-returning run doesn't leave
+    // stale filter values in the UI.
+    this.timeRange = "";
+    this.safeSearch = "";
+    this.lang = "";
+    this.engines = [];
   }
 
   async #armHash(params: URLSearchParams): Promise<void> {

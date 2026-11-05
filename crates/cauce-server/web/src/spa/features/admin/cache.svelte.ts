@@ -163,6 +163,30 @@ export function createCacheTab() {
     }
   }
 
+  /**
+   * Delete several entries by key (the table's select-then-delete
+   * action). The wire has no multi-key delete, so this is a loop over
+   * `DELETE /api/cache/{key}`; failures are collected per key and
+   * reported on the first row that failed.
+   */
+  async function removeMany(keys: string[]): Promise<void> {
+    state.bulkError = "";
+    const failed: string[] = [];
+    for (const key of keys) {
+      try {
+        await deleteCacheEntry(key);
+      } catch {
+        failed.push(key);
+      }
+    }
+    if (failed.length > 0) {
+      state.bulkError = failed.length + " " + C().delete_failed;
+      await refresh();
+      return;
+    }
+    await refresh();
+  }
+
   async function bulk(scope: "expired" | "all"): Promise<void> {
     const ok = await confirm({
       title: scope === "expired" ? C().delete_expired : C().delete_all,
@@ -197,6 +221,7 @@ export function createCacheTab() {
     refresh,
     loadPayload,
     remove,
+    removeMany,
     bulk,
     submit,
     pagerUrl,

@@ -42,6 +42,18 @@ impl std::fmt::Display for SafeSearch {
     }
 }
 
+impl SafeSearch {
+    /// Variant name used as the lookup key in an engine's
+    /// `request.params.safesearch` map (`off` | `moderate` | `strict`).
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Off => "off",
+            Self::Moderate => "moderate",
+            Self::Strict => "strict",
+        }
+    }
+}
+
 impl std::str::FromStr for SafeSearch {
     type Err = String;
 
@@ -65,6 +77,19 @@ impl std::str::FromStr for TimeRange {
             "month" => Ok(Self::Month),
             "year" => Ok(Self::Year),
             other => Err(format!("unknown time_range: {other}")),
+        }
+    }
+}
+
+impl TimeRange {
+    /// Variant name used as the lookup key in an engine's
+    /// `request.params.time_range` map (`day` | `week` | `month` | `year`).
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Day => "day",
+            Self::Week => "week",
+            Self::Month => "month",
+            Self::Year => "year",
         }
     }
 }

@@ -50,6 +50,11 @@
 <script lang="ts">
   import { DropdownMenu } from "bits-ui";
   import type { Snippet } from "svelte";
+  // The component's Tailwind composition (dropdown-menu.css) is a plain stylesheet imported from the script: the build
+  // resolves its `@apply` against the app theme, and svelte-check's
+  // CSS parser — which does not know Tailwind's at-rules — never
+  // sees them.
+  import "./dropdown-menu.css";
 
   interface Props {
     items: DropdownItem[];
@@ -127,60 +132,3 @@
   </DropdownMenu.Portal>
 </DropdownMenu.Root>
 
-<style>
-  :global(.ui-dropdown-content) {
-    min-width: 8rem;
-    padding: 0.25rem;
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    background: var(--bg);
-    color: var(--fg);
-    box-shadow: var(--shadow);
-    z-index: 50;
-    animation: ui-dropdown-in 160ms var(--ease-out);
-  }
-
-  @keyframes ui-dropdown-in {
-    from {
-      opacity: 0;
-      transform: translateY(-2px) scale(0.98);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0) scale(1);
-    }
-  }
-
-  :global(.ui-dropdown-item) {
-    display: flex;
-    align-items: center;
-    gap: 0.4rem;
-    padding: 0.25rem 0.4rem;
-    border-radius: calc(var(--radius) - 0.2rem);
-    color: var(--fg);
-    font-size: 0.9375rem;
-    text-decoration: none;
-    cursor: pointer;
-    user-select: none;
-    outline: none;
-  }
-
-  :global(.ui-dropdown-item[data-highlighted]) {
-    background: var(--greyed-bg);
-  }
-
-  :global(.ui-dropdown-item[data-disabled]) {
-    opacity: 0.5;
-    cursor: default;
-  }
-
-  :global(.ui-dropdown-item[aria-current="page"]) {
-    color: var(--accent);
-  }
-
-  :global(.ui-dropdown-separator) {
-    height: 1px;
-    margin: 0.25rem 0.125rem;
-    background: var(--border);
-  }
-</style>

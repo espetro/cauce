@@ -1,0 +1,85 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ *
+ * SourcesPanel styles — Tailwind composition via `@apply` against the app theme.
+ * Imported from the component's <style> block: the build resolves
+ * `@apply` (via the @reference below) and Svelte's scoping semantics
+ * for the component's local classes are preserved exactly.
+ */
+
+@reference "../../app/app.css";
+
+  .sources-panel {
+    @apply fixed;
+    z-index: 5;
+    top: 3.25rem;
+    @apply right-0 bottom-0;
+    width: min(24rem, 40vw);
+    @apply overflow-y-auto;
+    padding: 0.75rem 1rem;
+    @apply bg-bg;
+    border-left: 1px solid var(--border);
+    @apply outline-none;
+  }
+
+  .sources-handle {
+    @apply hidden;
+  }
+
+  .sources-head {
+    @apply flex items-center justify-between;
+  }
+
+  .sources-head h2 {
+    @apply m-0 text-[0.9375rem];
+  }
+
+  .sources-list {
+    list-style: none;
+    margin: 0.5rem 0 0;
+    @apply p-0;
+  }
+
+  .source-row {
+    @apply flex gap-2;
+    padding: 0.625rem 0;
+    border-top: 1px solid var(--border);
+  }
+
+  .source-host {
+    @apply flex items-center;
+    gap: 0.3rem;
+    @apply m-0 text-muted text-[0.8125rem];
+  }
+
+  .snippet {
+    margin: 0.2rem 0 0;
+    @apply text-muted text-sm;
+  }
+
+  /* Bottom drawer: ≤80vh including the docked composer's height, and
+     seated above it so the sticky composer (UX-03) is never covered. */
+  @media (width < 700px) {
+    .sources-panel {
+      top: auto;
+    @apply left-0;
+      bottom: var(--composer-clearance, 5.5rem);
+      width: auto;
+      max-height: calc(80vh - var(--composer-clearance, 5.5rem));
+    border-left: none;
+      border-top: 1px solid var(--border);
+      border-radius: 0.75rem 0.75rem 0 0;
+    }
+
+    .sources-handle {
+    @apply block;
+      width: 2.5rem;
+      height: 0.3rem;
+      margin: 0 auto 0.5rem;
+      border-radius: 0.2rem;
+      background: var(--border);
+      cursor: grab;
+      touch-action: none;
+    }
+  }

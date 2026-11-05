@@ -48,20 +48,7 @@
 </svg>
 
 <style>
-  svg.bars {
-    width: 100%;
-    height: auto;
-    display: block;
-  }
-  svg.bars rect.cache {
-    fill: var(--accent);
-  }
-  svg.bars rect.network {
-    fill: var(--muted);
-    opacity: 0.45;
-  }
-  svg.bars text {
-    fill: var(--muted);
-    font-size: 8px;
-  }
+  /* Styles live in DayChart.css — imported so the build resolves
+     `@apply` while Svelte's scoping semantics are unchanged. */
+  @import "./DayChart.css";
 </style>

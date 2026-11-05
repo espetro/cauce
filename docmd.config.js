@@ -23,6 +23,15 @@ module.exports = {
     alt: "cauce",
     height: "26px",
   },
+  versions: {
+    // Versioned doc trees. `current` is the source of truth for this
+    // release (docs/); archived trees live in docs-versions/<id>/ and
+    // are staged in by deploy/cf-pages/build-docs.sh from git tags.
+    current: "0.9",
+    all: [
+      { id: "0.8", dir: "docs-versions/0.8", label: "v0.8.1" },
+    ],
+  },
   plugins: {
     // Docmd's LLM chat widget is off; the static llms.txt/okf bundles
     // the build already ships are the agent surface we support.

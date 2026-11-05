@@ -23,7 +23,7 @@
   import { spa } from "../lib/i18n.js";
   import markUrl from "../assets/cauce-mark.png";
   import { capabilities } from "../lib/capabilities.svelte.js";
-  import { appHref, routeVisible } from "./router.svelte.js";
+  import { appHref, routeVisible, route } from "./router.svelte.js";
   import { cycleTheme, theme, themeAria } from "./theme.svelte.js";
   import UiButton from "../ui/button.svelte";
   import UiTooltip from "../ui/tooltip.svelte";
@@ -48,6 +48,10 @@
   }
 
   let sheetOpen = $state(false);
+
+  // The landing route owns the full logotype (mark + wordmark) above
+  // the search bar; the nav drops its own brand there so the identity
+  // is not doubled (W9-05).
 
   const entries: WaffleEntry[] = $derived.by(() => {
     const flags = capabilities.flags;
@@ -87,16 +91,13 @@
 <svelte:window onkeydown={(e) => e.key === "Escape" && (sheetOpen = false)} />
 
 <header class="site">
-  <a class="brand" href={appHref("/")}><img class="brand-mark" src={markUrl} alt="" />{c.brand}</a>
+  {#if route.path !== "/"}
+    <a class="brand" href={appHref("/")}><img class="brand-mark" src={markUrl} alt="" />{c.brand}</a>
+  {/if}
   <nav class="nav-primary" aria-label={c.nav_primary_label}>
     <a href={appHref("/")} aria-current={active === "search" ? "page" : undefined}
       >{c.nav_search}</a
     >
-    {#if capabilities.aiEnabled}
-      <a href={appHref("/answer")} aria-current={active === "answer" ? "page" : undefined}
-        >{c.nav_answer}</a
-      >
-    {/if}
     <a href={appHref("/history")} aria-current={active === "history" ? "page" : undefined}>{c.nav_history}</a>
   </nav>
   <div class="nav-right">
@@ -176,115 +177,7 @@
 {/if}
 
 <style>
-  .site {
-    position: sticky;
-    top: 0;
-    z-index: 10;
-    display: flex;
-    align-items: center;
-    gap: 0.35rem 1rem;
-    margin-bottom: 1rem;
-    padding: 0.5rem 0;
-    border-bottom: 1px solid var(--border);
-    background: var(--bg);
-    font-size: 0.9375rem;
-    transition: background-color 160ms ease;
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .site {
-      transition: none;
-    }
-  }
-
-  .site a {
-    color: var(--fg);
-    text-decoration: none;
-  }
-
-  .site a:hover {
-    text-decoration: underline;
-  }
-
-  .brand {
-    font-weight: 700;
-    display: inline-flex;
-    align-items: center;
-    gap: 0.45rem;
-  }
-
-  .brand-mark {
-    width: 1.25rem;
-    height: 1.25rem;
-    display: block;
-  }
-
-  .nav-primary,
-  .nav-right {
-    display: flex;
-    align-items: center;
-    gap: 0.9rem;
-  }
-
-  .nav-primary {
-    min-width: 0;
-  }
-
-  .nav-right {
-    margin-left: auto;
-    color: var(--muted);
-  }
-
-  .site a[aria-current="page"] {
-    color: var(--accent);
-  }
-
-  .waffle-sheet-trigger {
-    display: none;
-  }
-
-  .waffle-sheet {
-    position: fixed;
-    inset: 0;
-    z-index: 40;
-    display: flex;
-    flex-direction: column;
-    padding: 0.5rem 1rem 1.5rem;
-    background: var(--bg);
-    overflow-y: auto;
-  }
-
-  .waffle-sheet-bar {
-    display: flex;
-    justify-content: flex-end;
-  }
-
-  .waffle-sheet-links {
-    display: flex;
-    flex-direction: column;
-  }
-
-  .waffle-sheet-links a {
-    padding: 0.85rem 0;
-    border-bottom: 1px solid var(--border);
-    font-size: 1.125rem;
-  }
-
-  /* >=36px hit area on the mobile nav row (plan §1.3); the dropdown
-     gives way to the full-screen sheet. */
-  @media (width < 700px) {
-    .nav-right :global(.ui-button[data-size="icon"]) {
-      width: 2.25rem;
-      height: 2.25rem;
-      min-height: 2.25rem;
-    }
-
-    .waffle-menu {
-      display: none;
-    }
-
-    .waffle-sheet-trigger {
-      display: inline-flex;
-    }
-  }
+  /* Styles live in TopNav.css — imported so the build resolves
+     `@apply` while Svelte's scoping semantics are unchanged. */
+  @import "./TopNav.css";
 </style>

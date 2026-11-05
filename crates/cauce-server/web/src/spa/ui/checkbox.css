@@ -1,0 +1,32 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ *
+ * `checkbox` styles — Tailwind composition via `@apply` against
+ * the app theme. Imported from the component's <script> block so
+ * the build resolves `@apply` and svelte-check's CSS parser (which
+ * does not know Tailwind's at-rules) never sees them.
+ */
+
+@reference "../app/app.css";
+
+.ui-checkbox {
+  @apply inline-flex items-center justify-center w-4 h-4 p-0 flex-none border border-border rounded-[0.25rem] bg-bg text-bg cursor-pointer;
+  vertical-align: -0.125em;
+}
+
+.ui-checkbox[data-state="checked"] {
+  @apply border-accent bg-accent;
+}
+
+.ui-checkbox:focus-visible {
+  @apply outline-2 outline-offset-2 outline-accent;
+}
+
+.ui-checkbox[data-disabled] {
+  @apply opacity-50 cursor-default;
+}
+
+.ui-checkbox .ui-checkbox-mark {
+  @apply w-3 h-3;
+}

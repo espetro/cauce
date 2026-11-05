@@ -92,30 +92,7 @@
 ></textarea>
 
 <style>
-  :global(.ai-prompt-textarea) {
-    width: 100%;
-    min-height: 1.75rem;
-    padding: 0.375rem 0.5rem;
-    border: none;
-    border-radius: var(--radius);
-    background: transparent;
-    color: var(--fg);
-    font: inherit;
-    font-size: 1rem;
-    line-height: 1.4;
-    resize: none;
-    /* The composer box carries the focus border (focus-within on
-       .ai-prompt-input) — the field itself takes no ring, matching the
-       legacy composer input's `outline: none`. */
-    outline: none;
-    overflow-y: auto;
-  }
-
-  :global(.ai-prompt-textarea::placeholder) {
-    color: var(--muted);
-  }
-
-  :global(.ai-prompt-textarea:disabled) {
-    color: var(--muted);
-  }
+  /* Styles live in prompt-input-textarea.css — imported so the build resolves
+     `@apply` while Svelte's scoping semantics are unchanged. */
+  @import "./prompt-input-textarea.css";
 </style>
