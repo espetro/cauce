@@ -83,6 +83,10 @@ jobs:
   release:
     needs: [macos, ubuntu]
     runs-on: ubuntu-latest
+    # The built tarballs wait here until a required reviewer approves the
+    # publish environment (repo Settings > Environments). Nothing becomes a
+    # public GitHub release before that approval.
+    environment: publish
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
