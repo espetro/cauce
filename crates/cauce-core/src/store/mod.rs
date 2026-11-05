@@ -28,6 +28,9 @@ use crate::engine::EngineId;
 use crate::request::{ClientKind, SearchOrigin};
 use crate::response::SearchResponse;
 
+pub mod memory;
+pub use memory::MemoryStore;
+
 /// Errors returned by `Store` impls. Backend details (SQL, IO) are flattened
 /// into `Backend`; malformed persisted data is `Corrupt`.
 #[derive(Debug, thiserror::Error)]

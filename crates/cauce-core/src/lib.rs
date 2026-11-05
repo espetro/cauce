@@ -70,6 +70,6 @@ pub use store::{
     AnswerThreadRow, AuditFacets, AuditFilter, AuditRow, BreakerState, CacheResultHit, CacheState,
     CachedAnswer, ClickRow, ClientCount, DayCount, DeleteAnswerLog, DeleteSearchLog,
     EngineHealthRow, EngineStatsRow, HistoryFilter, HistoryItem, HistoryStats, LatencyPercentiles,
-    LogSource, PAGE_MARK_CLOSE, PAGE_MARK_OPEN, PageHit, PageRow, PhaseStats, QueryCount,
-    SearchLogRow, StatsSnapshot, Store, StoreError, StoreTuning, TierHit,
+    LogSource, MemoryStore, PAGE_MARK_CLOSE, PAGE_MARK_OPEN, PageHit, PageRow, PhaseStats,
+    QueryCount, SearchLogRow, StatsSnapshot, Store, StoreError, StoreTuning, TierHit,
 };
