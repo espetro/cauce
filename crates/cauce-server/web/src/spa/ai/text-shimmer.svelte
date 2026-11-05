@@ -14,6 +14,10 @@
 -->
 <script lang="ts">
   import type { Snippet } from "svelte";
+  // Global styles (text-shimmer.css) are a plain stylesheet imported from
+  // the script: the build resolves `@apply` and these classes stay
+  // global as they are used across component boundaries.
+  import "./text-shimmer.css";
 
   interface Props {
     as?: "span" | "p" | "div";
@@ -36,21 +40,4 @@
   {@render children()}
 </svelte:element>
 
-<style>
-  :global(.ai-text-shimmer) {
-    background-size: 200% auto;
-    background-clip: text;
-    -webkit-background-clip: text;
-    color: transparent;
-    animation: ai-shimmer 4s linear infinite;
-  }
 
-  @keyframes ai-shimmer {
-    from {
-      background-position: 100% center;
-    }
-    to {
-      background-position: -100% center;
-    }
-  }
-</style>

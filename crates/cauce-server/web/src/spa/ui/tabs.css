@@ -1,0 +1,45 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ *
+ * `tabs` styles — Tailwind composition via `@apply` against
+ * the app theme. Imported from the component's <script> block so
+ * the build resolves `@apply` and svelte-check's CSS parser (which
+ * does not know Tailwind's at-rules) never sees them.
+ */
+
+@reference "../app/app.css";
+
+.ui-tabs-list {
+  @apply flex gap-1 border-b border-border mb-4;
+}
+
+.ui-tabs-trigger {
+  @apply py-[0.35rem] px-[0.9rem] border-none border-b-2 border-transparent -mb-px bg-none text-muted cursor-pointer;
+  transition:
+    color 120ms ease-out,
+    border-color 120ms ease-out;
+}
+
+.ui-tabs-trigger[data-state="active"] {
+  @apply text-accent;
+  border-bottom-color: var(--accent);
+}
+
+.ui-tabs-trigger:hover:not([data-state="active"]) {
+  @apply text-fg;
+}
+
+.ui-tabs-trigger:focus-visible {
+  @apply outline-2 outline-offset-1 outline-accent;
+}
+
+.ui-tabs-trigger[data-disabled] {
+  @apply opacity-50 cursor-default;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-tabs-trigger {
+    transition: none;
+  }
+}

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
-# file, You can obtain one at <https://mozilla.org/MPL/2.0/>.
+# project, You can obtain one at <https://mozilla.org/MPL/2.0/>.
 
 # Docs-only CF Pages build — for a dedicated docs Pages project (e.g.
 # `cauce-docs` serving docs.cauce.fyi or the docs path). Emits just the
@@ -41,6 +41,22 @@ rm -rf docs/developers docs-site
 mkdir -p docs/developers
 cp -a .agents/docs/. docs/developers/
 rm -rf docs/developers/screens
+
+# Versioned doc trees: current (docs/) plus archived trees under
+# docs-versions/<id>/ staged from git tags. docmd renders each into its
+# own tree and ships a version selector switching between them. If any
+# declared archived tree is missing, fail loudly instead of shipping a
+# one-version site.
+declare -A versions=(
+  [0.8]="docs-versions/0.8"
+)
+for id in "${!versions[@]}"; do
+  tree="${versions[$id]}"
+  if [ ! -d "$tree" ] || [ -z "$(ls -A "$tree")" ]; then
+    echo "error: archived docs tree $id ($tree) missing — stage it from a git tag (e.g. git show v0.8.1:docs/ > $tree/...)" >&2
+    exit 1
+  fi
+done
 
 npx -y @docmd/core build
 

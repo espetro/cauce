@@ -39,7 +39,7 @@ export function createThreadsSection() {
         title: t.title,
         updated: fmtTs(t.updated_at),
         turnsLabel: fmt(spa.history.threads_turns, { n: t.turns.length }),
-        resumeUrl: "/app/answer?thread=" + encodeURIComponent(t.id),
+        resumeUrl: "/app/search?mode=ai&thread=" + encodeURIComponent(t.id),
         error: "",
       }));
     } catch {

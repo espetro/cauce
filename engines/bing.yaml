@@ -27,6 +27,16 @@ request:
   headers:
     Accept-Language: "{lang}"
   timeout_ms: 8000
+  params:
+    time_range:
+      day: "filters=ex1:\"ez1\""
+      week: "filters=ex1:\"ez2\""
+      month: "filters=ex1:\"ez3\""
+      # year needs epoch-day start/end, not a simple label
+    safesearch:
+      strict: "adlt=strict"
+      moderate: "adlt=moderate"
+      off: "adlt=off"
   # lang -> Bing `mkt` market code; `default` is the fallback (en-US,
   # the broadest English market).
   market:

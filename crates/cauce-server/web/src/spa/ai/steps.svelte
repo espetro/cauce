@@ -13,6 +13,10 @@
 <script lang="ts">
   import { CaretRightIcon } from "phosphor-svelte";
   import UiCollapsible from "../ui/collapsible.svelte";
+  // Global styles (steps.css) are a plain stylesheet imported from
+  // the script: the build resolves `@apply` and these classes stay
+  // global as they are used across component boundaries.
+  import "./steps.css";
 
   interface Props {
     /** The trigger label (e.g. the `steps · n` i18n string). */
@@ -44,53 +48,4 @@
   </UiCollapsible>
 </div>
 
-<style>
-  /* Same quiet read as the legacy steps disclosure: muted, small,
-     never a live progress banner. */
-  :global(.ai-steps) {
-    margin: 0 0 0.5rem;
-    color: var(--muted);
-    font-size: 0.875rem;
-  }
 
-  :global(.ai-steps-summary) {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.3rem;
-  }
-
-  :global(.ai-steps-chevron) {
-    display: inline-block;
-    transition: transform 140ms var(--ease-out);
-  }
-
-  :global(.ai-steps-chevron.open) {
-    transform: rotate(90deg);
-  }
-
-  /* The kit's vertical bar + indented items (replaces the legacy
-     inline dot-join — one step per line reads better at length). */
-  :global(.ai-steps-body) {
-    display: grid;
-    grid-template-columns: min-content minmax(0, 1fr);
-    gap: 0.75rem;
-    margin-top: 0.375rem;
-  }
-
-  :global(.ai-steps-bar) {
-    width: 0.125rem;
-    height: 100%;
-    background: var(--border);
-    border-radius: 1px;
-  }
-
-  :global(.ai-steps-body ol) {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-  }
-
-  :global(.ai-steps-body li) {
-    padding: 0.0625rem 0;
-  }
-</style>

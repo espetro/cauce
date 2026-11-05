@@ -1,0 +1,50 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ *
+ * steps styles — Tailwind composition via `@apply` against the app theme.
+ * These classes are used across component boundaries (portal/render
+ * targets outside the component tree), so they are intentionally
+ * global — imported from the script, not the style block.
+ */
+
+@reference "../app/app.css";
+
+/* Same quiet read as the legacy steps disclosure: muted, small,
+     never a live progress banner. */
+  .ai-steps {
+    @apply m-0 mb-2 text-muted;
+    font-size: 0.875rem;
+  }
+
+  .ai-steps-summary {
+    @apply inline-flex items-center gap-[0.3rem];
+  }
+
+  .ai-steps-chevron {
+    @apply inline-block;
+    transition: transform 140ms var(--ease-out);
+  }
+
+  .ai-steps-chevron.open {
+    transform: rotate(90deg);
+  }
+
+  /* The kit's vertical bar + indented items (replaces the legacy
+     inline dot-join — one step per line reads better at length). */
+  .ai-steps-body {
+    @apply grid gap-3 mt-1.5;
+    grid-template-columns: min-content minmax(0, 1fr);
+  }
+
+  .ai-steps-bar {
+    @apply w-0.5 h-full bg-border rounded-[1px];
+  }
+
+  .ai-steps-body ol {
+    @apply list-none m-0 p-0;
+  }
+
+  .ai-steps-body li {
+    @apply py-[0.0625rem];
+  }
