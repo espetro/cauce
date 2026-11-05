@@ -18,6 +18,9 @@
     "admin_token_hint": "stored in this browser only, sent as a bearer credential",
     "admin_token_label": "admin token",
     "admin_token_save": "save token",
+    "ai_disabled_byok": "AI mode needs an AI provider. This instance accepts your own key.",
+    "ai_disabled_settings_link": "Set up AI in settings",
+    "ai_disabled_unavailable": "AI mode is not available on this instance.",
     "archiving_off": "the archive is disabled on this instance",
     "backend_back": "Backend is back",
     "backend_degraded_desc": "The backend is up but reporting errors — some calls may fail.",
@@ -332,8 +335,12 @@
     "window_7d": "last 7d",
     "window_all": "all time"
   },
+  "landing": {
+    "scroll_cue": "Scroll to learn more"
+  },
   "search": {
     "ai_mode": "AI mode",
+    "mode_group_label": "Search mode",
     "more": "More",
     "placeholder": "Search...",
     "searching": "searching...",

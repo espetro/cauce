@@ -136,6 +136,7 @@ pub fn spa_bundle() -> Value {
                 "search.placeholder",
                 "search.submit",
                 "search.ai_mode",
+                "search.mode_group_label",
                 "search.more",
                 "search.searching",
             ][..],
@@ -186,6 +187,10 @@ pub fn spa_bundle() -> Value {
                 // DS-20C landing hero.
                 "app.home_eyebrow",
                 "app.home_subtitle",
+                // The omnibox AI-mode disabled popover (W9-02).
+                "app.ai_disabled_byok",
+                "app.ai_disabled_unavailable",
+                "app.ai_disabled_settings_link",
                 // FX-07 instance modes: gate notice + token form,
                 // public dashboard card, archive-off line, cache
                 // details expander.
@@ -209,6 +214,8 @@ pub fn spa_bundle() -> Value {
                 "app.backend_back",
             ][..],
         ),
+        // The cauce.fyi landing (Landing.svelte's marketing sections).
+        ("landing", &["landing.scroll_cue"][..]),
         // FX-05 admin/read pages — the whole `history`/`dashboard`/
         // `settings`/`engines`/`cache`/`audit`/`archive` catalogs so the
         // SPA keeps the HTMX pages' strings verbatim.
