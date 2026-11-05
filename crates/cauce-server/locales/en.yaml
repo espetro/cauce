@@ -781,7 +781,7 @@ app:
   # words; the subtitle says what it is for. A first-time visitor
   # should be able to answer "what is this?" without scrolling.
   home_eyebrow: metasearch for humans and agents
-  home_subtitle: One server, three surfaces — a web UI, an HTTP API and an MCP server, over the same cache.
+  home_subtitle: Local metasearch for humans and agents. Free, private, and yours to self-host.
   # Link off the fallback that reloads the canonical HTMX page.
   open_html: Open the HTML page
   # Aria-live hint while a streaming search is in flight (the
