@@ -70,25 +70,7 @@
 </div>
 
 <style>
-  /* The boxed composer — same recipe the legacy `.composer` carried:
-     hairline, 1.5-tier radius, accent border on focus-within. */
-  :global(.ai-prompt-input) {
-    display: flex;
-    flex-direction: column;
-    gap: 0.375rem;
-    padding: 0.5rem;
-    border: 1px solid var(--border);
-    border-radius: calc(var(--radius) * 1.5);
-    background: var(--bg);
-    cursor: text;
-    transition: border-color 140ms var(--ease-out);
-  }
-
-  :global(.ai-prompt-input:focus-within) {
-    border-color: var(--accent);
-  }
-
-  :global(.ai-prompt-input[data-compact]) {
-    padding: 0.375rem;
-  }
+  /* Styles live in prompt-input.css — imported so the build resolves
+     `@apply` while Svelte's scoping semantics are unchanged. */
+  @import "./prompt-input.css";
 </style>

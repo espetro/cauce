@@ -1,0 +1,26 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ *
+ * Omnibox styles — Tailwind composition via `@apply` against the app theme.
+ * Imported from the component's <style> block: the build resolves
+ * `@apply` (via the @reference below) and Svelte's scoping semantics
+ * for the component's local classes are preserved exactly.
+ */
+
+@reference "../../app/app.css";
+
+  .composer-hint {
+    margin: 0.25rem 0 0;
+    @apply text-[0.8125rem] text-muted;
+  }
+
+  .input-row {
+    @apply flex gap-1.5 items-end;
+    min-width: 0;
+  }
+
+  .input-row :global(.ai-prompt-textarea) {
+    flex: 1 1 auto;
+    min-width: 0;
+  }

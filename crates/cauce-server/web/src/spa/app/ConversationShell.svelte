@@ -45,48 +45,7 @@
 </main>
 
 <style>
-  /* Fill the viewport below the sticky header so the docked composer
-     rests at the bottom edge even on a one-turn thread (and the mobile
-     sources drawer, which sits above it, never lands on top of it). */
-  .conversation-shell {
-    display: flex;
-    flex-direction: column;
-    min-height: calc(100dvh - 4.5rem);
-  }
-
-  .prompt-card {
-    order: 0;
-    margin: 0 0 0.75rem;
-    padding: 0.625rem 0.875rem;
-    border: 1px solid var(--border);
-    border-radius: 0.75rem;
-    font-weight: 600;
-  }
-
-  .prompt-card p {
-    margin: 0;
-    overflow-wrap: anywhere;
-  }
-
-  .shell-composer {
-    order: 1;
-    margin-bottom: 1rem;
-  }
-
-  .shell-body {
-    order: 2;
-    flex: 1;
-    min-width: 0;
-  }
-
-  .shell-composer[data-docked="true"] {
-    order: 3;
-    margin-bottom: 0;
-    position: sticky;
-    bottom: 0;
-    z-index: 1;
-    padding: 0.5rem 0;
-    background: var(--bg);
-    border-top: 1px solid var(--border);
-  }
+  /* Styles live in ConversationShell.css — imported so the build resolves
+     `@apply` while Svelte's scoping semantics are unchanged. */
+  @import "./ConversationShell.css";
 </style>

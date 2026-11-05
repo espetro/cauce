@@ -1,0 +1,109 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ *
+ * TopNav styles — Tailwind composition via `@apply` against the app theme.
+ * Imported from the component's <style> block: the build resolves
+ * `@apply` (via the @reference below) and Svelte's scoping semantics
+ * for the component's local classes are preserved exactly.
+ */
+
+@reference "../app/app.css";
+
+  .site {
+    @apply sticky top-0;
+    z-index: 10;
+    @apply flex items-center;
+    gap: 0.35rem 1rem;
+    @apply mb-4;
+    padding: 0.5rem 0;
+    border-bottom: 1px solid var(--border);
+    @apply bg-bg text-[0.9375rem];
+    transition: background-color 160ms ease;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .site {
+      transition: none;
+    }
+  }
+
+  .site a {
+    @apply text-fg no-underline;
+  }
+
+  .site a:hover {
+    @apply underline;
+  }
+
+  .brand {
+    @apply font-bold inline-flex items-center;
+    gap: 0.45rem;
+  }
+
+  .brand-mark {
+    @apply w-5 h-5 block;
+  }
+
+  .nav-primary,
+  .nav-right {
+    @apply flex items-center;
+    gap: 0.9rem;
+  }
+
+  .nav-primary {
+    min-width: 0;
+  }
+
+  .nav-right {
+    margin-left: auto;
+    @apply text-muted;
+  }
+
+  .site a[aria-current="page"] {
+    @apply text-accent;
+  }
+
+  .waffle-sheet-trigger {
+    @apply hidden;
+  }
+
+  .waffle-sheet {
+    @apply fixed inset-0;
+    z-index: 40;
+    @apply flex flex-col;
+    padding: 0.5rem 1rem 1.5rem;
+    @apply bg-bg overflow-y-auto;
+  }
+
+  .waffle-sheet-bar {
+    @apply flex justify-end;
+  }
+
+  .waffle-sheet-links {
+    @apply flex flex-col;
+  }
+
+  .waffle-sheet-links a {
+    padding: 0.85rem 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 1.125rem;
+  }
+
+  /* >=36px hit area on the mobile nav row (plan §1.3); the dropdown
+     gives way to the full-screen sheet. */
+  @media (width < 700px) {
+    .nav-right :global(.ui-button[data-size="icon"]) {
+      width: 2.25rem;
+      height: 2.25rem;
+      min-height: 2.25rem;
+    }
+
+    .waffle-menu {
+    @apply hidden;
+    }
+
+    .waffle-sheet-trigger {
+    @apply inline-flex;
+    }
+  }

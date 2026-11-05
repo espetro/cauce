@@ -141,7 +141,7 @@
 </ConversationShell>
 
 <style>
-  .more-row {
-    margin: 0.75rem 0;
-  }
+  /* Styles live in SearchPage.css — imported so the build resolves
+     `@apply` while Svelte's scoping semantics are unchanged. */
+  @import "./SearchPage.css";
 </style>

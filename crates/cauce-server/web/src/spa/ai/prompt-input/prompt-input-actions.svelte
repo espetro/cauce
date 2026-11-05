@@ -25,14 +25,7 @@
 </div>
 
 <style>
-  :global(.ai-prompt-actions) {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0 0.125rem;
-  }
-
-  :global(.ai-prompt-actions[data-align="end"]) {
-    justify-content: flex-end;
-  }
+  /* Styles live in prompt-input-actions.css — imported so the build resolves
+     `@apply` while Svelte's scoping semantics are unchanged. */
+  @import "./prompt-input-actions.css";
 </style>

@@ -1,0 +1,37 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ *
+ * prompt-input-textarea styles — Tailwind composition via `@apply` against the app theme.
+ * Imported from the component's <style> block: the build resolves
+ * `@apply` (via the @reference below) and Svelte's scoping semantics
+ * for the component's local classes are preserved exactly.
+ */
+
+@reference "../../app/app.css";
+
+  :global(.ai-prompt-textarea) {
+    @apply w-full;
+    min-height: 1.75rem;
+    padding: 0.375rem 0.5rem;
+    @apply border-none;
+    @apply rounded-[var(--radius)];
+    @apply bg-transparent text-fg;
+    font: inherit;
+    @apply text-base;
+    line-height: 1.4;
+    resize: none;
+    /* The composer box carries the focus border (focus-within on
+       .ai-prompt-input) — the field itself takes no ring, matching the
+       legacy composer input's `outline: none`. */
+    @apply outline-none;
+    @apply overflow-y-auto;
+  }
+
+  :global(.ai-prompt-textarea::placeholder) {
+    @apply text-muted;
+  }
+
+  :global(.ai-prompt-textarea:disabled) {
+    @apply text-muted;
+  }
