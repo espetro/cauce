@@ -29,9 +29,11 @@
   import UiCheckbox from "../../ui/checkbox.svelte";
   import UiSelect from "../../ui/select.svelte";
   import UiSwitch from "../../ui/switch.svelte";
+  import UiDataTable from "../../ui/data-table.svelte";
   import { confirm } from "../../ui/confirm.js";
   import type { createSettingsPage } from "./settings.svelte.js";
   import type { ByokCreds } from "../../lib/byok.svelte.js";
+  import type { ColumnDef } from "@tanstack/svelte-table";
 
   interface SettingsViewProps {
     page: ReturnType<typeof createSettingsPage>;
@@ -125,6 +127,16 @@
   // formisch tracks "differs from the initial value" — the same
   // baseline the Discard button restores.
   const dirty = $derived(form != null && form.isDirty);
+
+  // Engines config rides the same `ui/data-table` primitive the admin
+  // engines tab uses (one skin for both listings).
+  const engineColumns: ColumnDef<any, any, any>[] = [
+    { id: "id", header: spa.engines.col_engine, accessorKey: "id", size: 180, enableSorting: true },
+    { id: "kind", header: spa.engines.col_kind, accessorKey: "kind", size: 120, enableSorting: false },
+    { id: "enabled", header: spa.engines.col_enabled, accessorKey: "enabled", size: 100, enableSorting: false },
+    { id: "tier", header: spa.settings.tier, accessorKey: "tier", size: 100, enableSorting: false },
+    { id: "proxy", header: spa.settings.proxy, accessorKey: "proxy", size: 300, enableSorting: false },
+  ];
 
   let dirtyNotified = false;
   // One dirty-changes toast per page visit: raise it when edits first
@@ -560,50 +572,61 @@
       </div>
 
       <h3>{s.section_engines}</h3>
-      {#each f.engines as e, i (e.id)}
-        <div class="engine-row">
-          <strong class="engine-id">{e.id}</strong>
-          <span class="hint mono">{e.kind}</span>
-          <Field of={form} path={["engines", i, "enabled"]}>
-            {#snippet children(field)}
-              <label class="engine-field">
-                <UiCheckbox
-                  checked={field.input === true}
-                  onCheckedChange={field.onInput}
-                  name={field.props.name}
-                />
-                {s.enabled}
-              </label>
-            {/snippet}
-          </Field>
-          <Field of={form} path={["engines", i, "tier"]}>
-            {#snippet children(field)}
-              <label class="engine-field">
-                {s.tier}
-                <UiSelect
-                  value={field.input ?? ""}
-                  onValueChange={field.onInput}
-                  options={tierOptions}
-                  name={field.props.name}
-                />
-              </label>
-            {/snippet}
-          </Field>
-          <Field of={form} path={["engines", i, "proxy"]}>
-            {#snippet children(field)}
-              <label class="engine-field">
-                {s.proxy}
+      <UiDataTable
+        columns={engineColumns}
+        data={f.engines}
+        getRowId={(e) => e.id}
+        caption={s.section_engines}
+      >
+        {#snippet cell(cell)}
+          {@const eng = cell.row.original}
+          {@const i = f.engines.indexOf(eng)}
+          {#if cell.column.id === "id"}
+            <strong>{eng.id}</strong>
+          {:else if cell.column.id === "kind"}
+            <span class="hint mono">{eng.kind}</span>
+          {:else if cell.column.id === "enabled"}
+            <Field of={form} path={["engines", i, "enabled"]}>
+              {#snippet children(field)}
+                <label class="engine-field">
+                  <UiCheckbox
+                    checked={field.input === true}
+                    onCheckedChange={field.onInput}
+                    name={field.props.name}
+                  />
+                  {s.enabled}
+                </label>
+              {/snippet}
+            </Field>
+          {:else if cell.column.id === "tier"}
+            <Field of={form} path={["engines", i, "tier"]}>
+              {#snippet children(field)}
+                <label class="engine-field">
+                  {s.tier}
+                  <UiSelect
+                    value={field.input ?? ""}
+                    onValueChange={field.onInput}
+                    options={tierOptions}
+                    name={field.props.name}
+                  />
+                </label>
+              {/snippet}
+            </Field>
+          {:else if cell.column.id === "proxy"}
+            <Field of={form} path={["engines", i, "proxy"]}>
+              {#snippet children(field)}
                 <input
                   type="text"
                   {...field.props}
                   value={field.input ?? ""}
                   placeholder={s.proxy_placeholder}
+                  aria-label="{eng.id} {s.proxy}"
                 />
-              </label>
-            {/snippet}
-          </Field>
-        </div>
-      {/each}
+              {/snippet}
+            </Field>
+          {/if}
+        {/snippet}
+      </UiDataTable>
       <p class="hint"><a href="/app/admin?tab=engines">{s.browse_engines}</a></p>
 
       <h3>{s.section_cache}</h3>
@@ -719,38 +742,13 @@
     font-size: 0.75rem;
   }
 
-  /* Engines keep their inline row (id / kind / checkbox / tier /
-     proxy) — a grid row per engine, not the settings grid. */
-  .engine-row {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: baseline;
-    gap: 0.5rem 1rem;
-    padding: 0.35rem 0;
-    border-bottom: 1px solid var(--border);
-  }
-  .engine-row:last-of-type {
-    border-bottom: 0;
-  }
-  .engine-row label.engine-field {
+  /* Engines ride `ui/data-table` (shared with the admin engines tab);
+     only the inline field label needs local styling. */
+  label.engine-field {
     display: inline-flex;
     align-items: baseline;
     gap: 0.35rem;
     font-size: 0.8125rem;
-  }
-  .engine-field input {
-    width: 11rem;
-    min-width: 0;
-    height: var(--control-h);
-    padding: 0 0.625rem;
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    background: var(--bg);
-    color: var(--fg);
-    font: inherit;
-  }
-  .engine-id {
-    min-width: 8rem;
   }
   .mono {
     font-family: var(--mono);
