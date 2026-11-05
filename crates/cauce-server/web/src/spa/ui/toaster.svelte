@@ -17,7 +17,7 @@
 </script>
 
 <Toaster
-  position="bottom-center"
+  position="bottom-right"
   theme={theme.value}
   visibleToasts={3}
   closeButton={false}

@@ -12,6 +12,15 @@ cauce serve     # UI + API + MCP on http://127.0.0.1:4479
 This pulls the latest release binary for your platform.
 To run once without installing: `mise x github:espetro/cauce -- cauce serve`.
 
+## Install with the script
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/espetro/cauce/main/install.sh | sh
+```
+
+It picks the release tarball for your platform, checks it against `SHA256SUMS.txt`, and installs `cauce` to `~/.local/bin`.
+Set `CAUCE_VERSION=v0.9.1` to pin a release or `CAUCE_INSTALL_DIR` to change the target directory.
+
 ## Install a release binary
 
 Pick the tarball for your platform under <https://github.com/espetro/cauce/releases> (Linux x86_64 glibc and musl, Linux aarch64, macOS arm64 and x86_64), e.g.:

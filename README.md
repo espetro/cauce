@@ -14,20 +14,28 @@
 
 ## Try it now
 
-[cauce.fyi](https://cauce.fyi) — the public instance · docs at [docs.cauce.fyi](https://docs.cauce.fyi)
+[cauce.fyi](https://cauce.fyi) is the public instance. Docs at [docs.cauce.fyi](https://docs.cauce.fyi)
 
 ## Install it
 
 ```sh
+# install script (macOS and Linux)
+curl -fsSL https://raw.githubusercontent.com/espetro/cauce/main/install.sh | sh
+
+# or mise
 mise use -g github:espetro/cauce
+
+# or from source
+cargo install --locked --git https://github.com/espetro/cauce cauce-cli
+
 cauce serve        # UI + API + MCP on http://127.0.0.1:4479
 ```
 
-Or grab a release binary / build from source: [docs/install.md](docs/install.md)
+More options (release tarballs, a checkout build): [docs/install.md](docs/install.md)
 
 ## What it does
 
-- One web UI, one HTTP API, one MCP server — all reading the same TTL cache.
+- One web UI, one HTTP API, one MCP server, all reading the same TTL cache.
 - Tail-tolerant fan-out over pluggable engines (declarative YAML, exec, replay) with hedging and circuit breakers.
 - Grounded AI answers at `POST /api/answer`, with optional BYOK and a free daily-answer budget for public instances.
 - Local archive + search history in SQLite FTS5.
@@ -48,4 +56,4 @@ Or grab a release binary / build from source: [docs/install.md](docs/install.md)
 
 End-user docs: [docs.cauce.fyi](https://docs.cauce.fyi) · developer docs: [`.agents/docs/`](.agents/docs/)
 
-Filing a bug? `GET /api/report` or `cauce report` produces a redacted JSON bundle to attach — see [docs/reporting.md](docs/reporting.md).
+Filing a bug? `GET /api/report` or `cauce report` produces a redacted JSON bundle to attach. See [docs/reporting.md](docs/reporting.md).

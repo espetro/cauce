@@ -38,11 +38,13 @@
 
   .brand {
     @apply font-bold inline-flex items-center;
-    gap: 0.45rem;
+    gap: 0.6rem;
   }
 
   .brand-mark {
-    @apply w-5 h-5 block;
+    @apply block;
+    width: 2.25rem;
+    height: 2.25rem;
   }
 
   .nav-primary,
