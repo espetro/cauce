@@ -67,6 +67,11 @@
     MagnifyingGlassIcon,
   } from "phosphor-svelte";
   import type { Snippet } from "svelte";
+  // The component's Tailwind composition (data-table.css) is a plain stylesheet imported from the script: the build
+  // resolves its `@apply` against the app theme, and svelte-check's
+  // CSS parser — which does not know Tailwind's at-rules — never
+  // sees them.
+  import "./data-table.css";
 
   interface Props {
     columns: ColumnDef<any, any, any>[];
@@ -360,130 +365,3 @@
   </table>
 </div>
 
-<style>
-  .dt-toolbar {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.75rem;
-    margin-bottom: 0.5rem;
-    flex-wrap: wrap;
-  }
-  .dt-toolbar-start {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    min-width: 0;
-    flex-wrap: wrap;
-  }
-  .dt-search {
-    position: relative;
-    margin-left: auto;
-  }
-  .dt-search-icon {
-    position: absolute;
-    left: 0.5rem;
-    top: 50%;
-    transform: translateY(-50%);
-    color: var(--muted);
-    pointer-events: none;
-  }
-  .dt-search input {
-    padding: 0.3rem 0.5rem 0.3rem 1.75rem;
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    background: var(--bg);
-    color: var(--fg);
-    font-size: 0.8125rem;
-    width: 14rem;
-    max-width: 60vw;
-  }
-  .dt-search input:focus-visible {
-    outline: 2px solid var(--accent);
-    outline-offset: 1px;
-  }
-  .dt-wrap {
-    /* The region scrolls only when the columns cannot shrink below
-       their content floor; the table itself reflows first. */
-    overflow-x: auto;
-    max-width: 100%;
-  }
-  table.dt {
-    width: 100%;
-    border-collapse: collapse;
-    /* Fixed layout: a resized column keeps its width instead of
-       being squeezed by the content of its neighbours. */
-    table-layout: fixed;
-    font-size: 0.875rem;
-  }
-  table.dt th {
-    position: relative;
-    text-align: start;
-    color: var(--muted);
-    font-weight: 500;
-    font-size: 0.8125rem;
-    padding: 0.25rem 0.5rem 0.25rem 0;
-    border-bottom: 1px solid var(--border);
-    user-select: none;
-  }
-  table.dt td {
-    padding: 0.4rem 0.5rem 0.4rem 0;
-    border-bottom: 1px solid var(--border);
-    vertical-align: top;
-    overflow-wrap: anywhere;
-  }
-  table.dt tbody tr:hover td {
-    background: var(--greyed-bg);
-  }
-  table.dt tbody tr.dt-selected td {
-    background: var(--greyed-bg);
-  }
-  .dt-check {
-    accent-color: var(--accent);
-    width: 0.9375rem;
-    height: 0.9375rem;
-  }
-  .dt-sort {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.25rem;
-    padding: 0;
-    border: none;
-    background: none;
-    color: inherit;
-    font: inherit;
-    cursor: pointer;
-    text-align: start;
-  }
-  .dt-sort:hover {
-    color: var(--fg);
-  }
-  .dt-sort-icon {
-    flex: none;
-    color: var(--accent);
-  }
-  .dt-sort-idle {
-    color: var(--muted);
-    opacity: 0.6;
-  }
-  .dt-resize {
-    position: absolute;
-    inset-inline-end: 0;
-    top: 0;
-    bottom: 0;
-    width: 6px;
-    padding: 0;
-    border: none;
-    background: none;
-    cursor: col-resize;
-    touch-action: none;
-  }
-  .dt-resize:hover {
-    background: var(--accent);
-    opacity: 0.4;
-  }
-  .dt-empty {
-    color: var(--muted);
-    padding: 1rem 0;
-  }
-</style>

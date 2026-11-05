@@ -1,0 +1,57 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ *
+ * AuditTab styles — Tailwind composition via `@apply` against the app theme.
+ * Imported from the component's <style> block: the build resolves
+ * `@apply` (via the @reference below) and Svelte's scoping semantics
+ * for the component's local classes are preserved exactly.
+ */
+
+@reference "../../app/app.css";
+
+  .head {
+    @apply flex items-center justify-between gap-2;
+  }
+  /* The popover portals outside the component tree — these rules go
+     global so the scoped sheet can't reach them. */
+  :global(.audit-filter-popover) {
+    @apply flex flex-col gap-2 p-2;
+    @apply border border-border;
+    @apply rounded-[var(--radius)];
+    @apply bg-bg text-fg;
+    @apply shadow-[var(--shadow)];
+    @apply z-50;
+  }
+  .filter-fields {
+    @apply flex flex-col gap-1.5;
+    /* Popover selects hold a form-field width, never the page width
+       (D6 settings/feedback: dropdowns must not stretch). */
+    @apply w-56;
+  }
+  .filter-actions {
+    @apply flex gap-1.5 justify-end;
+  }
+  .chips {
+    @apply flex flex-wrap gap-1.5 mb-2;
+  }
+  .chip {
+    @apply inline-flex items-center gap-1;
+    @apply pt-0.5 pr-1 pb-0.5 pl-2;
+    @apply border border-border;
+    @apply rounded-[999px] bg-greyed-bg text-fg;
+    font-size: 0.75rem;
+  }
+  .chip-x {
+    @apply inline-flex items-center justify-center w-4 h-4 p-0;
+    @apply border-none;
+    @apply rounded-[999px] bg-none text-muted cursor-pointer;
+  }
+  .chip-x:hover {
+    @apply text-warn;
+  }
+  .target {
+    @apply block;
+    max-width: 16rem;
+    @apply overflow-hidden text-ellipsis whitespace-nowrap;
+  }

@@ -11,6 +11,11 @@
 <script lang="ts">
   import { Checkbox } from "bits-ui";
   import { CheckIcon } from "phosphor-svelte";
+  // The component's Tailwind composition (checkbox.css) is a plain stylesheet imported from the script: the build
+  // resolves its `@apply` against the app theme, and svelte-check's
+  // CSS parser — which does not know Tailwind's at-rules — never
+  // sees them.
+  import "./checkbox.css";
 
   interface Props {
     checked?: boolean;
@@ -53,40 +58,3 @@
   {/snippet}
 </Checkbox.Root>
 
-<style>
-  :global(.ui-checkbox) {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 1rem;
-    height: 1rem;
-    padding: 0;
-    flex: none;
-    border: 1px solid var(--border);
-    border-radius: 0.25rem;
-    background: var(--bg);
-    color: var(--bg);
-    cursor: pointer;
-    vertical-align: -0.125em;
-  }
-
-  :global(.ui-checkbox[data-state="checked"]) {
-    border-color: var(--accent);
-    background: var(--accent);
-  }
-
-  :global(.ui-checkbox:focus-visible) {
-    outline: 2px solid var(--accent);
-    outline-offset: 2px;
-  }
-
-  :global(.ui-checkbox[data-disabled]) {
-    opacity: 0.5;
-    cursor: default;
-  }
-
-  :global(.ui-checkbox .ui-checkbox-mark) {
-    width: 0.75rem;
-    height: 0.75rem;
-  }
-</style>

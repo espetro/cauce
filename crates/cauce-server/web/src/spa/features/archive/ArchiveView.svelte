@@ -128,69 +128,7 @@
 {/if}
 
 <style>
-  .archive-entry {
-    border-bottom: 1px solid var(--border);
-    padding: 0.4rem 0;
-  }
-  .archive-row {
-    display: flex;
-    align-items: flex-start;
-    gap: 0.5rem;
-    min-width: 0;
-  }
-  .archive-disclosure {
-    flex: 1 1 auto;
-    min-width: 0;
-  }
-  /* The trigger is the row's grid container (was the disclosure
-     summary); the wrapper's own recipe supplies flex/cursor/font — this
-     only imposes the two-column grid: chevron column fixed, content
-     column wrapping underneath itself. A long title used to wrap under
-     the chevron and leave it hanging on its own line (audit M3). */
-  .archive-disclosure :global(.ui-collapsible-trigger) {
-    display: grid;
-    grid-template-columns: 1rem minmax(0, 1fr);
-    align-items: start;
-    column-gap: 0.5rem;
-    row-gap: 0.125rem;
-    min-width: 0;
-  }
-  /* The chevron sits in the fixed grid column; optical centring
-     against the title's cap height. */
-  .archive-chevron {
-    margin-top: 0.2em;
-  }
-  /* The host/date pair rides under the title, not under the chevron. */
-  .archive-meta {
-    grid-column: 2;
-  }
-  .archive-chevron {
-    display: inline-block;
-    transition: transform 140ms var(--ease-out);
-  }
-  .archive-chevron.open {
-    transform: rotate(90deg);
-  }
-  .archive-title {
-    font-weight: 600;
-    overflow-wrap: anywhere;
-  }
-  .archive-meta {
-    color: var(--muted);
-    font-size: 0.8125rem;
-    display: inline-flex;
-    gap: 0.5rem;
-    flex-wrap: wrap;
-  }
-  .archive-snippet {
-    color: var(--muted);
-    font-size: 0.875rem;
-    margin: 0.25rem 0;
-    overflow-wrap: anywhere;
-  }
-  /* Row delete keeps the old flex-shrink so it never wraps under the
-     disclosure column. */
-  .archive-row :global(.ui-button) {
-    flex-shrink: 0;
-  }
+  /* Styles live in ArchiveView.css — imported so the build resolves
+     `@apply` while Svelte's scoping semantics are unchanged. */
+  @import "./ArchiveView.css";
 </style>

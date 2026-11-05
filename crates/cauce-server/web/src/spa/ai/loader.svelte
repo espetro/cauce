@@ -12,6 +12,11 @@
   guard in app.css already zeroes the animation.
 -->
 <script lang="ts">
+  // Global styles (loader.css) are a plain stylesheet imported from
+  // the script: the build resolves `@apply` and these classes stay
+  // global as they are used across component boundaries.
+  import "./loader.css";
+
   interface Props {
     /** Dot diameter in px (sm=4, md=6, lg=8). */
     size?: "sm" | "md" | "lg";
@@ -26,51 +31,4 @@
   <span class="ai-loader-dot"></span>
 </span>
 
-<style>
-  :global(.ai-loader) {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.1875rem;
-  }
 
-  :global(.ai-loader-dot) {
-    border-radius: 50%;
-    background: var(--muted);
-    animation: ai-loader-pulse 1s ease-in-out infinite;
-  }
-
-  :global(.ai-loader[data-size="sm"] .ai-loader-dot) {
-    width: 0.25rem;
-    height: 0.25rem;
-  }
-
-  :global(.ai-loader[data-size="md"] .ai-loader-dot) {
-    width: 0.375rem;
-    height: 0.375rem;
-  }
-
-  :global(.ai-loader[data-size="lg"] .ai-loader-dot) {
-    width: 0.5rem;
-    height: 0.5rem;
-  }
-
-  :global(.ai-loader-dot:nth-child(2)) {
-    animation-delay: 250ms;
-  }
-
-  :global(.ai-loader-dot:nth-child(3)) {
-    animation-delay: 500ms;
-  }
-
-  @keyframes ai-loader-pulse {
-    0%,
-    100% {
-      opacity: 0.3;
-      transform: translateY(0);
-    }
-    50% {
-      opacity: 1;
-      transform: translateY(-0.125rem);
-    }
-  }
-</style>

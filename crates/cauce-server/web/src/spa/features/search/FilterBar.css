@@ -1,0 +1,77 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ *
+ * FilterBar styles — Tailwind composition via `@apply` against the app theme.
+ * Imported from the component's <style> block: the build resolves
+ * `@apply` (via the @reference below) and Svelte's scoping semantics
+ * for the component's local classes are preserved exactly.
+ */
+
+@reference "../../app/app.css";
+
+  .filter-bar {
+    @apply grid;
+    grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr));
+    @apply gap-3;
+    align-items: end;
+  }
+
+  .fb-cell {
+    @apply flex flex-col items-start gap-1;
+    min-width: 0;
+  }
+
+  .fb-label {
+    /* Truncate long labels instead of wrapping. */
+    @apply max-w-full overflow-hidden text-ellipsis whitespace-nowrap text-[0.8125rem] font-semibold text-muted;
+  }
+
+  .fb-cell :global(.ui-select-trigger) {
+    @apply w-full;
+  }
+
+  .fb-cell :global(.ui-multi-select-trigger) {
+    @apply w-full;
+  }
+
+  .fb-input {
+    @apply w-full;
+    min-width: 0;
+    padding: 0 0.625rem;
+    height: var(--control-h);
+    @apply border border-border;
+    @apply rounded-[var(--radius)];
+    @apply bg-bg text-fg;
+    font: inherit;
+    font-size: var(--text-base);
+  }
+
+  .fb-input:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+  }
+
+  .fb-input[data-disabled] {
+    @apply opacity-50 cursor-default;
+  }
+
+  .fb-hint {
+    @apply m-0 text-xs text-muted;
+  }
+
+  .fb-submit-row {
+    @apply flex justify-end mt-3;
+  }
+
+  @media (max-width: 700px) {
+    .filter-bar {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .fb-input {
+      transition: none;
+    }
+  }

@@ -13,6 +13,11 @@
 <script lang="ts">
   import { Select } from "bits-ui";
   import { CaretDownIcon, CheckIcon } from "phosphor-svelte";
+  // The component's Tailwind composition (multi-select.css) is a plain stylesheet imported from the script: the build
+  // resolves its `@apply` against the app theme, and svelte-check's
+  // CSS parser — which does not know Tailwind's at-rules — never
+  // sees them.
+  import "./multi-select.css";
 
   interface Option {
     value: string;
@@ -121,82 +126,3 @@
   </Select.Portal>
 </Select.Root>
 
-<style>
-  :global(.ui-multi-select-trigger) {
-    display: inline-flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.5rem;
-    flex: 1 1 auto;
-    min-width: 0;
-    /* DS-20D: the shared control height. */
-    height: var(--control-h);
-    padding: 0 0.625rem;
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    background: var(--bg);
-    color: var(--fg);
-    font: inherit;
-    text-align: start;
-    cursor: pointer;
-  }
-
-  :global(.ui-multi-select-trigger:focus-visible) {
-    outline: 2px solid var(--accent);
-    outline-offset: 1px;
-  }
-
-  :global(.ui-multi-select-trigger[data-disabled]) {
-    opacity: 0.5;
-    cursor: default;
-  }
-
-  :global(.ui-multi-select-label.placeholder) {
-    color: var(--muted);
-  }
-
-  :global(.ui-multi-select-chevron) {
-    width: 0.75rem;
-    height: 0.75rem;
-    flex: none;
-    color: var(--muted);
-  }
-
-  :global(.ui-multi-select-content) {
-    min-width: var(--bits-select-content-available-width, 8rem);
-    padding: 0.25rem;
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    background: var(--bg);
-    color: var(--fg);
-    box-shadow: var(--shadow);
-    z-index: 50;
-  }
-
-  :global(.ui-multi-select-item) {
-    display: flex;
-    align-items: center;
-    gap: 0.4rem;
-    padding: 0.25rem 0.4rem;
-    border-radius: calc(var(--radius) - 0.2rem);
-    font-size: 0.9375rem;
-    cursor: pointer;
-    user-select: none;
-  }
-
-  :global(.ui-multi-select-item[data-highlighted]) {
-    background: var(--greyed-bg);
-  }
-
-  :global(.ui-multi-select-item[data-disabled]) {
-    opacity: 0.5;
-    cursor: default;
-  }
-
-  :global(.ui-multi-select-check) {
-    width: 0.75rem;
-    height: 0.75rem;
-    flex: none;
-    color: var(--accent);
-  }
-</style>

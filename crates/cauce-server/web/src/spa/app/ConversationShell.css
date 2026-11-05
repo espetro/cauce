@@ -1,0 +1,53 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ *
+ * ConversationShell styles — Tailwind composition via `@apply` against the app theme.
+ * Imported from the component's <style> block: the build resolves
+ * `@apply` (via the @reference below) and Svelte's scoping semantics
+ * for the component's local classes are preserved exactly.
+ */
+
+@reference "../app/app.css";
+
+  /* Fill the viewport below the sticky header so the docked composer
+     rests at the bottom edge even on a one-turn thread (and the mobile
+     sources drawer, which sits above it, never lands on top of it). */
+  .conversation-shell {
+    @apply flex flex-col;
+    min-height: calc(100dvh - 4.5rem);
+  }
+
+  .prompt-card {
+    order: 0;
+    margin: 0 0 0.75rem;
+    padding: 0.625rem 0.875rem;
+    @apply border border-border;
+    border-radius: 0.75rem;
+    @apply font-semibold;
+  }
+
+  .prompt-card p {
+    @apply m-0;
+    overflow-wrap: anywhere;
+  }
+
+  .shell-composer {
+    order: 1;
+    @apply mb-4;
+  }
+
+  .shell-body {
+    order: 2;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .shell-composer[data-docked="true"] {
+    order: 3;
+    @apply mb-0 sticky bottom-0;
+    z-index: 1;
+    padding: 0.5rem 0;
+    @apply bg-bg;
+    border-top: 1px solid var(--border);
+  }

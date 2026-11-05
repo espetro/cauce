@@ -1,0 +1,48 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ *
+ * `dropdown-menu` styles — Tailwind composition via `@apply` against
+ * the app theme. Imported from the component's <script> block so
+ * the build resolves `@apply` and svelte-check's CSS parser (which
+ * does not know Tailwind's at-rules) never sees them.
+ */
+
+@reference "../app/app.css";
+
+.ui-dropdown-content {
+  @apply min-w-32 p-1 border border-border rounded-[var(--radius)] bg-bg text-fg shadow-[var(--shadow)] z-50;
+  animation: ui-dropdown-in 160ms var(--ease-out);
+}
+
+@keyframes ui-dropdown-in {
+  from {
+    opacity: 0;
+    transform: translateY(-2px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.ui-dropdown-item {
+  @apply flex items-center gap-[0.4rem] py-1 px-[0.4rem] text-fg text-[0.9375rem] no-underline cursor-pointer select-none outline-none;
+  border-radius: calc(var(--radius) - 0.2rem);
+}
+
+.ui-dropdown-item[data-highlighted] {
+  @apply bg-greyed-bg;
+}
+
+.ui-dropdown-item[data-disabled] {
+  @apply opacity-50 cursor-default;
+}
+
+.ui-dropdown-item[aria-current="page"] {
+  @apply text-accent;
+}
+
+.ui-dropdown-separator {
+  @apply h-px my-1 mx-[0.125rem] bg-border;
+}

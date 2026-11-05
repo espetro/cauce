@@ -1,0 +1,103 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ *
+ * `alert-dialog` styles — Tailwind composition via `@apply` against
+ * the app theme. Imported from the component's <script> block so
+ * the build resolves `@apply` and svelte-check's CSS parser (which
+ * does not know Tailwind's at-rules) never sees them.
+ */
+
+@reference "../app/app.css";
+
+.ui-alert-dialog-overlay {
+  @apply fixed inset-0 bg-overlay z-50;
+  /* ScrollLock sets body pointer-events:none — re-arm the scrim
+     so it eats clicks instead of leaking them to the page. */
+  pointer-events: auto;
+  animation: ui-alert-overlay-in 200ms var(--ease-out);
+}
+
+@keyframes ui-alert-overlay-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.ui-alert-dialog-content {
+  @apply fixed top-1/2 left-1/2 w-[min(92vw,24rem)] p-4 px-5 border border-border bg-bg text-fg shadow-[var(--shadow)];
+  border-radius: calc(var(--radius) * 1.5);
+  z-index: 51;
+  transform: translate(-50%, -50%);
+  animation: ui-alert-content-in 220ms var(--ease-out);
+}
+
+@keyframes ui-alert-content-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
+
+.ui-alert-dialog-title {
+  @apply mt-0 mr-0 mb-1.5 ml-0 text-base font-bold;
+}
+
+.ui-alert-dialog-description {
+  @apply m-0 text-muted text-[0.9375rem];
+  line-height: 1.45;
+}
+
+.ui-alert-dialog-actions {
+  @apply flex justify-end gap-2 mt-[1.125rem];
+}
+
+/* Same recipe as `ui/button` (DS-00): the Cancel/Action primitives
+   here can't compose `UiButton` because ui/button lives on the
+   parallel DS-00 branch — keep the visual contract identical so the
+   merged tree reads as one system. */
+.ui-alert-dialog-btn {
+  @apply inline-flex items-center justify-center min-h-8 py-[0.3rem] px-[0.8rem] border border-border rounded-[var(--radius)] bg-bg text-fg text-[0.9375rem] cursor-pointer select-none;
+  transition:
+    background-color 140ms var(--ease-out),
+    border-color 140ms var(--ease-out),
+    color 140ms var(--ease-out),
+    transform 140ms var(--ease-out);
+}
+
+/* No `[data-disabled]` guards: Cancel/Action render native <button>
+   and the confirm host never passes a disabled state. */
+.ui-alert-dialog-btn:hover {
+  @apply bg-greyed-bg;
+}
+
+.ui-alert-dialog-btn:active {
+  transform: scale(0.97);
+}
+
+.ui-alert-dialog-btn:focus-visible {
+  @apply outline-2 outline-offset-1 outline-accent;
+}
+
+.ui-alert-dialog-btn[data-variant="primary"] {
+  @apply border-transparent bg-accent text-bg;
+}
+
+.ui-alert-dialog-btn[data-variant="primary"]:hover {
+  background: color-mix(in srgb, var(--accent) 88%, var(--fg));
+}
+
+.ui-alert-dialog-btn[data-variant="danger"] {
+  @apply border-transparent bg-warn text-bg;
+}
+
+.ui-alert-dialog-btn[data-variant="danger"]:hover {
+  background: color-mix(in srgb, var(--warn) 88%, var(--fg));
+}

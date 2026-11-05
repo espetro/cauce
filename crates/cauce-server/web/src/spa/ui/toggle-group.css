@@ -1,0 +1,46 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ *
+ * `toggle-group` styles — Tailwind composition via `@apply` against
+ * the app theme. Imported from the component's <script> block so
+ * the build resolves `@apply` and svelte-check's CSS parser (which
+ * does not know Tailwind's at-rules) never sees them.
+ */
+
+@reference "../app/app.css";
+
+/* Same pill segment the composer tool row already had (.segment). */
+.ui-toggle-group {
+  @apply inline-flex gap-0.5 p-0.5 border border-border rounded-[999px];
+}
+
+.ui-toggle-item {
+  @apply py-1 px-3 border-none rounded-[999px] bg-transparent text-muted cursor-pointer text-[0.8125rem];
+  transition:
+    background-color 120ms ease-out,
+    color 120ms ease-out;
+}
+
+.ui-toggle-item[data-state="on"] {
+  /* Same on-accent recipe as ui/checkbox's mark. */
+  @apply bg-accent text-bg;
+}
+
+.ui-toggle-item:focus-visible {
+  @apply outline-2 outline-offset-1 outline-accent;
+}
+
+.ui-toggle-item[data-disabled] {
+  @apply opacity-50 cursor-default;
+}
+
+.ui-toggle-group[data-disabled] {
+  @apply opacity-50;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-toggle-item {
+    transition: none;
+  }
+}

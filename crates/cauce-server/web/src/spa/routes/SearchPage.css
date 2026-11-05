@@ -1,0 +1,15 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ *
+ * SearchPage styles — Tailwind composition via `@apply` against the app theme.
+ * Imported from the component's <style> block: the build resolves
+ * `@apply` (via the @reference below) and Svelte's scoping semantics
+ * for the component's local classes are preserved exactly.
+ */
+
+@reference "../app/app.css";
+
+  .more-row {
+    margin: 0.75rem 0;
+  }
