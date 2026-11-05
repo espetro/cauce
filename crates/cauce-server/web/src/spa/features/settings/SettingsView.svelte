@@ -134,8 +134,8 @@
     { id: "id", header: spa.engines.col_engine, accessorKey: "id", size: 180, enableSorting: true },
     { id: "kind", header: spa.engines.col_kind, accessorKey: "kind", size: 120, enableSorting: false },
     { id: "enabled", header: spa.engines.col_enabled, accessorKey: "enabled", size: 100, enableSorting: false },
-    { id: "tier", header: spa.settings.tier, accessorKey: "tier", size: 100, enableSorting: false },
-    { id: "proxy", header: spa.settings.proxy, accessorKey: "proxy", size: 300, enableSorting: false },
+    { id: "tier", header: spa.settings.col_tier, accessorKey: "tier", size: 100, enableSorting: false },
+    { id: "proxy", header: spa.settings.col_proxy, accessorKey: "proxy", size: 300, enableSorting: false },
   ];
 
   let dirtyNotified = false;
@@ -170,6 +170,96 @@
   function saveByok(): void {
     setByok(draft);
     toast.success(s.saved_toast, { duration: 4_000 });
+  }
+
+  // --- BYOK model list ------------------------------------------------
+  //
+  // The provider's own model list, fetched client-side from the BYOK
+  // base_url's OpenAI-compatible `/models` endpoint. No server route:
+  // the browser already holds the credentials, the gateway is the same
+  // trust domain as the browser (local mode), and a server proxy would
+  // have to answer "whose key?" for a public instance. A failed fetch
+  // is not an error state — the free-text input stays.
+
+  let modelOptions = $state<{ value: string; label: string }[]>([]);
+  let modelsLoading = $state(false);
+
+  function modelsUrl(base: string): string {
+    const trimmed = base.trim().replace(/\/+$/, "");
+    return trimmed.endsWith("/v1") ? `${trimmed}/models` : `${trimmed}/v1/models`;
+  }
+
+  async function loadModels(): Promise<void> {
+    if (draft.base_url.trim() === "") return;
+    modelsLoading = true;
+    try {
+      const headers: Record<string, string> = {};
+      if (draft.api_key.trim() !== "") headers.Authorization = `Bearer ${draft.api_key.trim()}`;
+      const res = await fetch(modelsUrl(draft.base_url), { headers });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const body = (await res.json()) as { data?: { id?: string; name?: string }[] };
+      const rows = Array.isArray(body.data) ? body.data : [];
+      modelOptions = rows
+        .map((m) => ({ value: m.id ?? "", label: m.name ?? m.id ?? "" }))
+        .filter((m) => m.value !== "")
+        .sort((a, b) => a.label.localeCompare(b.label));
+      if (modelOptions.length === 0) {
+        toast.error(s.byok_models_empty);
+      }
+    } catch (err) {
+      modelOptions = [];
+      toast.error(`${s.byok_models_failed}: ${(err as Error).message}`);
+    } finally {
+      modelsLoading = false;
+    }
+  }
+
+  // --- BYOK test ------------------------------------------------------
+  //
+  // The cheapest end-to-end proof of the credential set: one tiny
+  // grounded answer through the same path the UI uses. It rides the
+  // stored (not draft) credentials, so it is saved first.
+
+  let testState = $state<"idle" | "testing" | "ok" | "error">("idle");
+  let testError = $state("");
+
+  async function testByok(): Promise<void> {
+    testState = "testing";
+    testError = "";
+    try {
+      // The override rides the request body, exactly like the answer
+      // thread's `byokWire()` — so the test proves the TYPED
+      // credentials, not whatever was saved earlier.
+      const ai: Record<string, string> = {};
+      if (draft.api_key.trim() !== "") ai.api_key = draft.api_key.trim();
+      if (draft.model.trim() !== "") ai.model = draft.model.trim();
+      if (draft.protocol !== "") ai.protocol = draft.protocol;
+      if (draft.base_url.trim() !== "") ai.base_url = draft.base_url.trim();
+
+      const res = await fetch("/api/answer", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          q: "ping",
+          context_results: [],
+          ...(Object.keys(ai).length > 0 ? { ai } : {}),
+        }),
+      });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => null)) as
+          | { error?: { message?: string } }
+          | null;
+        throw new Error(body?.error?.message ?? `HTTP ${res.status}`);
+      }
+      // The response is an SSE stream: a successful status plus a
+      // readable body is the signal; the frames themselves are the
+      // answer thread's business.
+      await res.body?.cancel();
+      testState = "ok";
+    } catch (err) {
+      testState = "error";
+      testError = (err as Error).message;
+    }
   }
 </script>
 
@@ -279,13 +369,35 @@
       <div class="row">
         <label for="settings-byok-model">{s.ai_model}</label>
         <div class="control">
-          <input
-            id="settings-byok-model"
-            type="text"
-            disabled={!capabilities.flags.allowUserKeys}
-            placeholder={s.ai_model_placeholder}
-            bind:value={draft.model}
-          />
+          <div class="control-inline">
+            {#if modelOptions.length > 0}
+              <!-- The provider's model list was fetched from the BYOK
+                   base_url's `/models` endpoint: pick, don't type. -->
+              <UiSelect
+                id="settings-byok-model"
+                value={draft.model}
+                onValueChange={(v) => (draft.model = v)}
+                options={modelOptions}
+                disabled={!capabilities.flags.allowUserKeys}
+              />
+            {:else}
+              <input
+                id="settings-byok-model"
+                type="text"
+                disabled={!capabilities.flags.allowUserKeys}
+                placeholder={s.ai_model_placeholder}
+                bind:value={draft.model}
+              />
+            {/if}
+            <UiButton
+              type="button"
+              size="sm"
+              variant="ghost"
+              onclick={loadModels}
+              disabled={!capabilities.flags.allowUserBaseUrl || modelsLoading}>
+              {modelsLoading ? s.byok_models_loading : s.byok_load_models}
+            </UiButton>
+          </div>
         </div>
       </div>
       <div class="row">
@@ -301,7 +413,22 @@
         </div>
       </div>
     </div>
-    <UiButton type="submit" size="sm">{s.save}</UiButton>
+    <div class="button-row">
+      <UiButton type="submit" size="sm">{s.save}</UiButton>
+      <UiButton
+        type="button"
+        size="sm"
+        variant="ghost"
+        onclick={testByok}
+        disabled={testState === "testing"}>
+        {testState === "testing" ? s.byok_testing : s.byok_test}
+      </UiButton>
+      {#if testState === "ok"}
+        <span class="test-ok" role="status">{s.byok_test_ok}</span>
+      {:else if testState === "error"}
+        <span class="field-error" role="alert">{testError}</span>
+      {/if}
+    </div>
   </form>
 </section>
 {/if}
@@ -717,6 +844,36 @@
     /* D6 review: dropdowns must NOT stretch to the page width — the
        control keeps a form-field width inside the grid column. */
     max-width: 18rem;
+  }
+  /* The side-by-side secondary control (Load models) sits beside the
+     main control in the same grid column, no wrap. */
+  .control-inline {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-width: 0;
+  }
+  .control-inline > :global(.ui-select-trigger),
+  .control-inline > input {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  .control-inline > :global(.ui-button) {
+    flex: none;
+  }
+  /* Save + Test share the row under the BYOK form. */
+  .button-row {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    margin-top: 0.875rem;
+  }
+  .button-row .test-ok {
+    color: var(--accent);
+    font-size: 0.8125rem;
+  }
+  .button-row .field-error {
+    font-size: 0.8125rem;
   }
   .control :global(.ui-select-trigger) {
     width: 100%;

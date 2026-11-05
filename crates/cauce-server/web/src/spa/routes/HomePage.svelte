@@ -47,10 +47,8 @@
       <span>{spa.common.brand}</span>
     </a>
     {#if !LANDING}
-      <!-- DS-20C: the hero names the product. The vh h1 stays the axe
-          heading; the eyebrow + subtitle answer "what is this?" for a
-          first-time visitor without scrolling. -->
-      <p class="eyebrow">{spa.app.home_eyebrow}</p>
+      <!-- DS-20C: the subtitle names the product (the eyebrow chip was
+          dropped per owner review). The vh h1 stays the axe heading. -->
       <p class="subtitle">{spa.app.home_subtitle}</p>
     {/if}
     <Omnibox
@@ -86,18 +84,24 @@
     align-items: center;
     text-align: center;
   }
-  .hero :global(.eyebrow) {
-    margin-bottom: 0.625rem;
-  }
   .hero :global(.subtitle) {
     margin-bottom: 1.25rem;
     max-width: 36rem;
   }
+  /* The composer: a column flex container shrink-wraps children, so
+     the form must carry its own measure — this is what keeps the bar
+     full-size on both builds (the 254px regression). */
+  .hero :global(.composer-form),
+  .hero-landing :global(.composer-form) {
+    width: min(42rem, 100%);
+  }
+  /* The logotype stacks: mark on top, wordmark below (owner review). */
   .logotype {
     display: inline-flex;
+    flex-direction: column;
     align-items: center;
-    gap: 0.6rem;
-    margin-bottom: 1.5rem;
+    gap: 0.5rem;
+    margin-bottom: 1.75rem;
     color: var(--fg);
     text-decoration: none;
     font-weight: 700;
@@ -105,7 +109,7 @@
     letter-spacing: -0.02em;
   }
   .logotype img {
-    width: clamp(2rem, 6vw, 2.75rem);
+    width: clamp(2.75rem, 7vw, 3.5rem);
     height: auto;
     display: block;
   }
