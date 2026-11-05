@@ -19,6 +19,11 @@
 <script lang="ts">
   import { Collapsible } from "bits-ui";
   import type { Snippet } from "svelte";
+  // The component's Tailwind composition (collapsible.css) is a plain stylesheet imported from the script: the build
+  // resolves its `@apply` against the app theme, and svelte-check's
+  // CSS parser — which does not know Tailwind's at-rules — never
+  // sees them.
+  import "./collapsible.css";
 
   interface Props {
     open?: boolean;
@@ -56,65 +61,3 @@
   </Collapsible.Content>
 </Collapsible.Root>
 
-<style>
-  :global(.ui-collapsible-trigger) {
-    display: flex;
-    align-items: center;
-    gap: 0.4rem;
-    width: 100%;
-    padding: 0;
-    border: none;
-    background: none;
-    color: inherit;
-    font: inherit;
-    text-align: start;
-    cursor: pointer;
-  }
-
-  :global(.ui-collapsible-trigger:focus-visible) {
-    outline: 2px solid var(--accent);
-    outline-offset: 1px;
-  }
-
-  :global(.ui-collapsible-trigger[data-disabled]) {
-    opacity: 0.5;
-    cursor: default;
-  }
-
-  :global(.ui-collapsible-content) {
-    overflow: hidden;
-  }
-
-  :global(.ui-collapsible-content[data-state="open"]) {
-    animation: ui-collapsible-open 160ms ease-out;
-  }
-
-  :global(.ui-collapsible-content[data-state="closed"]) {
-    animation: ui-collapsible-close 160ms ease-in;
-  }
-
-  @keyframes ui-collapsible-open {
-    from {
-      height: 0;
-    }
-    to {
-      height: var(--bits-collapsible-content-height);
-    }
-  }
-
-  @keyframes ui-collapsible-close {
-    from {
-      height: var(--bits-collapsible-content-height);
-    }
-    to {
-      height: 0;
-    }
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    :global(.ui-collapsible-content[data-state="open"]),
-    :global(.ui-collapsible-content[data-state="closed"]) {
-      animation: none;
-    }
-  }
-</style>

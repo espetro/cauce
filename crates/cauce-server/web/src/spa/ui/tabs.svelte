@@ -16,6 +16,11 @@
 -->
 <script lang="ts">
   import { Tabs } from "bits-ui";
+  // The component's Tailwind composition (tabs.css) is a plain stylesheet imported from the script: the build
+  // resolves its `@apply` against the app theme, and svelte-check's
+  // CSS parser — which does not know Tailwind's at-rules — never
+  // sees them.
+  import "./tabs.css";
 
   interface TabItem {
     value: string;
@@ -63,50 +68,3 @@
   </Tabs.List>
 </Tabs.Root>
 
-<style>
-  :global(.ui-tabs-list) {
-    display: flex;
-    gap: 0.25rem;
-    border-bottom: 1px solid var(--border);
-    margin-bottom: 1rem;
-  }
-
-  :global(.ui-tabs-trigger) {
-    padding: 0.35rem 0.9rem;
-    border: none;
-    border-bottom: 2px solid transparent;
-    margin-bottom: -1px;
-    background: none;
-    color: var(--muted);
-    font: inherit;
-    cursor: pointer;
-    transition:
-      color 120ms ease-out,
-      border-color 120ms ease-out;
-  }
-
-  :global(.ui-tabs-trigger[data-state="active"]) {
-    color: var(--accent);
-    border-bottom-color: var(--accent);
-  }
-
-  :global(.ui-tabs-trigger:hover:not([data-state="active"])) {
-    color: var(--fg);
-  }
-
-  :global(.ui-tabs-trigger:focus-visible) {
-    outline: 2px solid var(--accent);
-    outline-offset: 1px;
-  }
-
-  :global(.ui-tabs-trigger[data-disabled]) {
-    opacity: 0.5;
-    cursor: default;
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    :global(.ui-tabs-trigger) {
-      transition: none;
-    }
-  }
-</style>
