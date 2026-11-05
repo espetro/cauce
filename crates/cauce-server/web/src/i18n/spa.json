@@ -87,12 +87,22 @@
     "when_column": "when"
   },
   "cache": {
+    "col_created": "Created",
+    "col_engines": "Engines",
+    "col_expires": "Expires",
+    "col_hits": "Hits",
+    "col_query": "Query",
+    "col_size": "Size",
     "confirm_all": "Delete every cached entry? Searches will hit the network until the cache refills.",
     "confirm_expired": "Delete all expired entries?",
     "confirm_row": "Delete this cache entry?",
+    "confirm_selected": "Delete the selected cache entries?",
     "delete_all": "Delete all",
     "delete_expired": "Delete expired",
+    "delete_failed": "failed",
     "delete_row": "Delete",
+    "delete_selected": "Delete selected",
+    "details": "View payload",
     "empty": "no cached queries yet. run a search and it lands here.",
     "empty_filtered": "nothing cached matches \"{q}\".",
     "entry_many": "entries",
@@ -110,7 +120,8 @@
     "page_prev": "Newer",
     "page_title": "Cache",
     "payload_error": "error: could not load payload ({status})",
-    "payload_loading": "loading..."
+    "payload_loading": "loading...",
+    "payload_title": "Cached payload"
   },
   "common": {
     "brand": "cauce",
@@ -177,6 +188,7 @@
     "zero_results": "zero-result queries"
   },
   "engines": {
+    "action_details": "Engine details",
     "action_disable": "disable",
     "action_enable": "enable",
     "action_reset": "reset breaker",
@@ -187,6 +199,15 @@
     "breaker_open": "Open",
     "breaker_probing": "probing",
     "breaker_retries": "retries in {rel}",
+    "cell_flags": "not in config · not running",
+    "col_breaker": "Breaker",
+    "col_enabled": "Enabled",
+    "col_engine": "Engine",
+    "col_ewma": "EWMA",
+    "col_kind": "Kind",
+    "col_p95": "p95",
+    "col_reliability": "Reliability",
+    "col_requests": "Requests today",
     "disabled": "disabled",
     "empty": "No engines configured.",
     "enabled_no": "no",

@@ -201,6 +201,24 @@ cache:
   expires_in: expires in {rel}
   # Row expiry phrase once `expires_at` has passed.
   expired_ago: expired {rel} ago
+  # Data-table column headers (D6 cache listing rebuild).
+  col_query: Query
+  col_created: Created
+  col_expires: Expires
+  col_hits: Hits
+  col_engines: Engines
+  col_size: Size
+  # Per-row info icon aria label (opens the payload dialog).
+  details: View payload
+  # Payload dialog title.
+  payload_title: Cached payload
+  # Toolbar bulk-delete button for the selected rows.
+  delete_selected: Delete selected
+  # Confirm body for a multi-row selection delete.
+  confirm_selected: Delete the selected cache entries?
+  # Toolbar error when some selection deletes failed; the number is
+  # prefixed (`2 failed`).
+  delete_failed: failed
 settings:
   page_title: Settings
   editing: editing
@@ -564,6 +582,22 @@ engines:
   # Inline meta for a failed non-test htmx call (reset/toggle);
   # `{status}` is the HTTP status code.
   request_failed: 'request failed: HTTP {status}'
+  # Data-table column headers (D6 engines listing rebuild — the cards
+  # became rows; per-row actions live in the trailing column).
+  col_engine: Engine
+  col_kind: Kind
+  col_enabled: Enabled
+  col_breaker: Breaker
+  col_ewma: EWMA
+  col_p95: p95
+  col_reliability: Reliability
+  col_requests: Requests today
+  # Summary cell note for an engine the resolved config does not name
+  # or the running pipeline lacks (compact form of `not_in_config` /
+  # `not_running`).
+  cell_flags: not in config · not running
+  # Per-row actions aria labels.
+  action_details: Engine details
 
 # `/answer` page copy (W4-03): the ask form, the streamed-answer shell
 # and every string the shell's inline JS interpolates (serialized as

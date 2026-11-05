@@ -72,13 +72,13 @@
   }
 
   const columns: ColumnDef<any, any, any>[] = [
-    { id: "ts", header: a.when_column, accessorKey: "ts", enableSorting: false },
-    { id: "actor", header: a.actor_column, accessorKey: "actor", enableSorting: true },
-    { id: "action", header: a.action_column, accessorKey: "action", enableSorting: true },
-    { id: "target", header: a.target_column, accessorKey: "target" },
-    { id: "request", header: a.request_column, accessorKey: "shortRequestId" },
+    { id: "ts", header: a.when_column, accessorKey: "ts", size: 150, enableSorting: false },
+    { id: "actor", header: a.actor_column, accessorKey: "actor", size: 130, enableSorting: true },
+    { id: "action", header: a.action_column, accessorKey: "action", size: 150, enableSorting: true },
+    { id: "target", header: a.target_column, accessorKey: "target", size: 300 },
+    { id: "request", header: a.request_column, accessorKey: "shortRequestId", size: 140 },
     // Details ride the last column as an icon action.
-    { id: "details", header: "", enableSorting: false },
+    { id: "details", header: "", size: 60, enableSorting: false },
   ];
 
   // The open details dialog: the row whose JSON is showing. One dialog
